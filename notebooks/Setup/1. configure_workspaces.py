@@ -39,11 +39,13 @@ def generateWorkspaceConfigFile(workspace_prefix):
   dfexist = readWorkspaceConfigFile()
   excluded_configured_workspace = ''
   if dfexist is not None: 
-      dfexist.createOrReplaceTempView('configured_workspaces')
-      #excluded_configured_workspace = ' AND workspace_id not in (select workspace_id from `configured_workspaces`)'
+    dfexist.createOrReplaceTempView('configured_workspaces')
+    excluded_configured_workspace = ' AND workspace_id not in (select workspace_id from `configured_workspaces`)'
+  else:
+    excluded_configured_workspace = '' #running first time
   #get current workspaces that are not yet configured for analysis
   spsql = f'''select workspace_id, deployment_name as deployment_url, workspace_name, workspace_status from `global_temp`.`acctworkspaces` 
-            where workspace_status = "RUNNING" AND workspace_id not in (select workspace_id from configured_workspaces)'''
+            where workspace_status = "RUNNING" {excluded_configured_workspace}'''
   df = spark.sql(spsql)
   if(not df.rdd.isEmpty()):
     df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.cloud.databricks.com'))) #AWS
