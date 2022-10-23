@@ -1,27 +1,74 @@
-<img src=https://d1r5llqwmkrl74.cloudfront.net/notebooks/fsi/fs-lakehouse-logo-transparent.png width="600px">
 
-[![DBR](https://img.shields.io/badge/DBR-10.4ML-red?logo=databricks&style=for-the-badge)](https://docs.databricks.com/release-notes/runtime/10.4ml.html)
-[![CLOUD](https://img.shields.io/badge/CLOUD-ALL-blue?logo=googlecloud&style=for-the-badge)](https://cloud.google.com/databricks)
-[![POC](https://img.shields.io/badge/POC-10_days-green?style=for-the-badge)](https://databricks.com/try-databricks)
-
-*Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.*
-
-___
-<john.doe@databricks.com>
-
-___
+# Security Analysis Tool (SAT) 
 
 
-IMAGE TO REFERENCE ARCHITECTURE
+![SAT](https://github.com/databricks/SecurityAnalysisTool/blob/main/images/sat_icon.jpg)
+## Introduction
 
-___
+Security Analysis Tool (SAT) analyzes customer's Databricks account and workspace security configurations and provides recommendations that help them follow Databrick's security best practices. When a customer runs SAT, it will compare their workspace configurations against a set of security best practices and delivers a report for their Databricks AWS workspace (Azure, GCP coming soon). These checks identify recommendations to harden Databricks configurations, services, and resources.
 
-&copy; 2022 Databricks, Inc. All rights reserved. The source in this notebook is provided subject to the Databricks License [https://databricks.com/db-license-source].  All included or referenced third party libraries are subject to the licenses set forth below.
+Databricks has worked with thousands of customers to securely deploy the Databricks platform, with the appropriate security features that meet their architecture requirements. While many organizations deploy security differently, there are guidelines and features that are commonly used by organizations that need a high level of security. This tool checks for typical security features that are deployed by most high-security organizations, and reviews the largest risks and the risks that customers ask about most often. It will then provide a security configuration reference link to Databricks documentation along with a recommendation. 
 
-| library                                | description             | license    | source                                              |
-|----------------------------------------|-------------------------|------------|-----------------------------------------------------|
-| PyYAML                                 | Reading Yaml files      | MIT        | https://github.com/yaml/pyyaml                      |
+## Functionality
+Security Analysis Tool (SAT) is an observability tool that aims to improve the security hardening of Databricks deployments by making customers aware of deviations from established security best practices by helping customers monitor the security health of Databricks account workspaces easily. There is a need for a master checklist that prioritizes the checks by severity and running this as a routine scan for all the workspaces helps ensure continuous adherence to best practices. This also helps to build confidence to onboard sensitive datasets.
 
-## Instruction
 
-To run this accelerator, clone this repo into a Databricks workspace. Attach the `RUNME` notebook to any cluster running a DBR 11.0 or later runtime, and execute the notebook via Run-All. A multi-step-job describing the accelerator pipeline will be created, and the link will be provided. Execute the multi-step-job to see how the pipeline runs. The job configuration is written in the RUNME notebook in json format. The cost associated with running the accelerator is the user's responsibility.
+![SAT Functionality](./images/sat_functionality.png)
+
+SAT is typically run daily as an automated workflow in the customers account that collects details on various settings via REST APIs. The details of these check results are persisted in Delta tables in customer storage so that trends can be analyzed over time. These results are displayed in a centralized Databricks SQL dashboard and are broadly categorized into five distinct sections for others in the organizationorganizaation to view their respective workspace settings. It also provides links to the latest public documentation on how to configure correctly which helps customers educate on Databricks security in tiny increments feature by feature. Forewarned is Forearmed!. Alerts can be configured on critical checks to provide notifications to concerned stakeholders. It also provides additional details on individual checks that fail so that an admin persona can pinpoint and isolate the issue and remediate it quickly.
+
+## SAT Insights
+
+Data across any of the configured workspaces can be surfaced through a single pane of SQL Dashboard which is the primary consumption layer where all the insights are arranged in well defined categories namely: 
+* Network Security,
+* Identity & Access, 
+* Data Protection, 
+* Governance and 
+* Informational. 
+The data in each section is further categorizedcatgorized by severity namely: High, Medium, Low.
+
+![SAT Insights](./images/sat_dashboard_partial.png)
+
+The dashboard is broken into the following sections and each security pillar is laid out in a consistent format 
+
+* Overall Summary
+    * The high level summary calls out the distribution counts across all the security pillars further categorized by severity 
+* Workspace stats
+    * This section provides usage statistics around the number of users, groups, databases, tables, and details around tier, region amongamondg others
+* Individual Security Pillars
+    * Counts of deviations from recommended best practices by severity (High, Medium, Low)
+    * Table of each check in that section detailing the severity and status of the check along with a link to public documentation
+* Informational Section
+    * These are less prescriptiveprescriiptiive in nature but provides data points that need to be scrutinized by data personas to ensure those are judicious choice of thresholds for the organizatiion, use cases under consideration.
+* Additional Details
+    * This gives the ability to surface additional information to pipoint the source of the deviation. Example in case of a ‘cluster policy not used’, it may be necessary to provide a list of exact cluster workloads among hundreds where the policy is not applied. This helps prevent a needle in a haystack search situation.
+
+## Detection example
+
+Security Analysis Tool (SAT) does detection of over 37 (we are adding more ) best practice deviations to surface potential risks so that customers can review and improve each configuration. In the following example, the IP Access List check is listed as not configured according to the best practices and remediation with a recommendation, and a direct link to the documentation is provided to make it easy for the customers to take the next steps. The Priave Link check is listed as in-line with the best practices which give confirmation to the customers that they are following the Databricks security best practices.  More importantly, customers can run these checks whenever they wish to get a comprehensive view of the security configuration of their Databricks account workspaces as they make progress with their projects.  
+
+![SAT Insights](./images/sat_detection_partial.png)
+
+## Pre-Requisites
+To use this tool, you'll need:  
+* Databricks CLI installed
+* Admin access to Databricks account and workspace 
+* PAT tokens 
+Requires DBR 11.2 LTS or newer
+Requires Databricks SQL for reports and dashboards
+
+### Configuration
+* Download and setup Databricks CLI by following instructions [here](https://docs.databricks.com/dev-tools/cli/index.html) 
+* Add Security Analysis Tool to your Databricks workspace [Repos](https://docs.databricks.com/repos/work-with-notebooks-other-files.html)
+* Follow notebooks in SecurityAnalysisTool/notebooks/Setup folder    
+
+
+### Usage
+* Attach and Run security_analysis_driver notebook
+* Access SAT - Security Analysis Tool dashboard to see the report
+
+### Project support 
+
+Please note that all projects in the /databrickslabs github account are provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects.
+
+Any issues discovered through the use of this project should be filed as GitHub Issues on the Repo. They will be reviewed as time permits, but there are no formal SLAs for support. 
