@@ -60,7 +60,7 @@ def generateWorkspaceConfigFile(workspace_prefix):
     loggr.info('Appending following workspaces to configurations ...')
     display(df)
     prefix = getConfigPath()
-    df.toPandas().to_csv('.{prefix}/workspace_configs.csv', mode='a+', index=False, header=True) #Databricks Runtime 11.2 or above.
+    df.toPandas().to_csv(f'{prefix}/workspace_configs.csv', mode='a+', index=False, header=True) #Databricks Runtime 11.2 or above.
   else:
     loggr.info('No new workspaces found for appending into configurations')
 
