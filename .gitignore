@@ -7,6 +7,7 @@
 /src/securityanalysistoolproject/.DS_Store
 /configs/gensecrets.sh
 /configs/workspace_configs.csv
+/configs/security_best_practices_user.csv
 
 
 # Byte-compiled / optimized / DLL files
