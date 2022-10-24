@@ -34,7 +34,7 @@ Please gather the following information before you start setting up:
    ```
  ![Git import](./images/git_import.png)
 * 5.Please confirm PyPI access is available
-   * Open the \<SATProject\>/otebooks/Includes/install_sat_sdk  and run on the cluster that was created in step 2. Please make sure there are no errors.
+   * Open the \<SATProject\>/otebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. Please make sure there are no errors.
 
 
 
