@@ -202,8 +202,7 @@ def readBestPracticesConfigsFile():
   file_exists = exists(userfile)
   if(file_exists is False): #regen file only if not present
     shutil.copy2(f'{origfile}', f'{userfile}')
-    
-  schema = 'id int, check_id string,category string,check string, evaluation_value string,severity string,recommendation string,doc_url string,aws int,azure int,gcp int,logic string, api string,enable int,alert int'
+  schema = 'id int, check_id string,category string,check string, evaluation_value string,severity string,recommendation string,doc_url string,aws int,azure int,gcp int,enable int,alert int, logic string, api string'
 
   security_best_practices_pd = pd.read_csv(userfile, header=0)
   
@@ -329,3 +328,7 @@ def insertNewBatchRun():
 
 #For testing
 JSONLOCALTEST='{"account_id": "dcdbb945-e659-4e8c-b108-db6b3ac3d0eb", "export_db": "logs", "verify_ssl": "False", "verbosity": "info", "email_alerts": "", "master_name_scope": "sat_master_scope", "master_name_key": "user", "master_pwd_scope": "sat_master_scope", "master_pwd_key": "passx", "workspace_pat_scope": "sat_master_scope", "workspace_pat_token_prefix": "sat_tokenx", "url": "https://sfe.cloud.databricks.comx", "workspace_id": "1657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": "True", "scim": "False", "object_storage_encryption": "True", "vpc_peering": "False", "table_access_control_enabled": "True", "use_mastercreds":"False"}'
+
+# COMMAND ----------
+
+readBestPracticesConfigsFile()

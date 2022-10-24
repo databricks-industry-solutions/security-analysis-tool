@@ -38,9 +38,12 @@ def generateWorkspaceConfigFile(workspace_prefix):
   from pyspark.sql.functions import lit,concat,col
   dfexist = readWorkspaceConfigFile()
   excluded_configured_workspace = ''
+  header_value = True
   if dfexist is not None: 
     dfexist.createOrReplaceTempView('configured_workspaces')
     excluded_configured_workspace = ' AND workspace_id not in (select workspace_id from `configured_workspaces`)'
+    #don't append header to an existing file    
+    header_value = False
   else:
     excluded_configured_workspace = '' #running first time
   #get current workspaces that are not yet configured for analysis
@@ -60,7 +63,7 @@ def generateWorkspaceConfigFile(workspace_prefix):
     loggr.info('Appending following workspaces to configurations ...')
     display(df)
     prefix = getConfigPath()
-    df.toPandas().to_csv(f'{prefix}/workspace_configs.csv', mode='a+', index=False, header=True) #Databricks Runtime 11.2 or above.
+    df.toPandas().to_csv(f'{prefix}/workspace_configs.csv', mode='a+', index=False, header=header_value) #Databricks Runtime 11.2 or above.
   else:
     loggr.info('No new workspaces found for appending into configurations')
 
@@ -73,5 +76,5 @@ generateWorkspaceConfigFile(json_['workspace_pat_token_prefix'])
 
 # MAGIC %md 
 # MAGIC #### Look in the Configs folder for generated Files
-# MAGIC * ##### Modify workspace_configs.csv. Change the analysis_enabled flag to True and add alert_subscriber_user_id for the alerts subscription
-# MAGIC * ##### New entries will be added to es
+# MAGIC * ##### Modify workspace_configs.csv. Change the analysis_enabled flag to True and add alert_subscriber_user_id for the alerts subscription, and verify sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled for each workspace.
+# MAGIC * ##### New workspaces will be added to end of the file
