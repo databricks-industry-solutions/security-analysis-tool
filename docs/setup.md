@@ -68,12 +68,14 @@ Please gather the following information before you start setting up:
   <img src="./images/workspace_ls.png" width="50%" height="50%">
    
  
-*  Set up the secret scope by following the instructions [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html)  with the scope name you prefer and note it down:
+*  Set up the secret scope with the scope name you prefer and note it down:
 
   ```
    databricks --profile e2-certification secrets create-scope --scope sat_master_scope
    ```
-
+   
+   For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
+   
 *  Create username secret and password secret as  "user" and "pass" under the above "sat_master_scope" scope using Databricks Secrets CLI 
 
     *  Create secret for master account username
@@ -118,7 +120,7 @@ Please gather the following information before you start setting up:
 
 ## Setup
  Following are the one time easy steps to get your workspaces setup with the SAT:
-                  <img src="./images/setup_steps.png" width="50%" height="50%">                                        
+                  <img src="./images/setup_steps.png" width="100%" height="100%">                                        
                                                           
 * 1.List account workspaces to analyze with SAT
   * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
@@ -179,7 +181,7 @@ Path : \<SATProject\>/SAT/SecurityAnalysisTool-BranchV2Root/notebooks/security_a
    
 Cluster: Make sure to pick a Single user mode job compute cluster. 
   
-<img src="./images/workflow.png" width="50%" height="50%">   
+    <img src="./images/workflow.png" width="100%" height="100%">   
    
 Add schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
    
