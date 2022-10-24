@@ -95,7 +95,7 @@ You should see a listing of folders in your workspace :
          ```
 
 ## Setup
-Please go to the following folder and attach each notebook to DBR 11.4 cluster and run as per the following instructions :	
+Please go to the following folder and attach each notebook to DBR 11.2 cluster and run as per the following instructions :	
 ![Run analysis](./images/run_analysis.png) 
                                                           
 * List account workspaces to analyze with SAT
