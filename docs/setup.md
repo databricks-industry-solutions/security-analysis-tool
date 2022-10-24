@@ -15,7 +15,7 @@ Please have the following information ready before you start the setup process:
 
 Please gather the following information before you start setting up: 
 * Admin access to Databricks account and workspace 
-    * Please test your administrator account and password to make sure this is a working account: (https://accounts.cloud.databricks.com/login)[https://accounts.cloud.databricks.com/login]
+    * Please test your administrator account and password to make sure this is a working account: [https://accounts.cloud.databricks.com/login](https://accounts.cloud.databricks.com/login)
     * Copy the account id as shown below
        
        ![Account id](./images/account_id.png)
@@ -32,36 +32,38 @@ Please gather the following information before you start setting up:
 
 * Download and setup Databricks CLI by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html)  
 * Note: if you have multiple databricks profiles you will need to use --profile <profile name> switch to access correct workspace, 
-  follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles)
+  follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-certification**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
 * Setup authentication to your Databricks workspace by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#set-up-authentication)
 
   ```
-   databricks configure --token --profile <optional-profile-name>
+   databricks configure --token --profile e2-certification
    ```
   
   ![CLI setup](./images/cli_authentication.png)
   
 You should see a listing of folders in your workspace : 
- 
+   ```
+   databricks --profile e2-certification workspace ls
+   ```
  ![CLI setup](./images/workspace_ls.png)
  
 *  Set up the secret scope by following the instructions [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html)  with the scope name you prefer and note it down:
 
   ```
-   databricks --profile <optional-profile-name> secrets create-scope --scope sat_master_scope
+   databricks --profile e2-certification secrets create-scope --scope sat_master_scope
    ```
 
 *  Create username secret and password secret as  "user" and "pass" under the above "sat_master_scope" scope using Databricks Secrets CLI 
 
     *  Create secret for master account username
    ```
-   databricks --profile <optional-profile-name> secrets put --scope sat_master_scope --key user
+   databricks --profile e2-certification secrets put --scope sat_master_scope --key user
    ```
       
     *  Create secret for master account password
 
    ```
-   databricks --profile <optional-profile-name> secrets put --scope sat_master_scope --key pass
+   databricks --profile e2-certification secrets put --scope sat_master_scope --key pass
    ```    
 
    
