@@ -49,130 +49,130 @@ Please gather the following information before you start setting up:
 
 ## Configuration
 
-* Download and setup Databricks CLI by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html)  
-* Note: if you have multiple Databricks profiles you will need to use --profile <profile name> switch to access the correct workspace,
-  follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-certification**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
-* Setup authentication to your Databricks workspace by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#set-up-authentication)
+  * Download and setup Databricks CLI by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html)  
+  * Note: if you have multiple Databricks profiles you will need to use --profile <profile name> switch to access the correct workspace,
+    follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-certification**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
+  * Setup authentication to your Databricks workspace by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#set-up-authentication)
+
+      ```
+           databricks configure --token --profile e2-certification
+      ```
+
+    <img src="./images/cli_authentication.png" width="50%" height="50%">
+
+    You should see a listing of folders in your workspace : 
+     ```
+          databricks --profile e2-certification workspace ls
+     ```
+
+    <img src="./images/workspace_ls.png" width="50%" height="50%">
+
+
+  *  Set up the secret scope with the scope name you prefer and note it down:
 
     ```
-         databricks configure --token --profile e2-certification
-    ```
-  
-  <img src="./images/cli_authentication.png" width="50%" height="50%">
+     databricks --profile e2-certification secrets create-scope --scope sat_master_scope
+     ```
 
- You should see a listing of folders in your workspace : 
-   ```
-        databricks --profile e2-certification workspace ls
-   ```
-   
-  <img src="./images/workspace_ls.png" width="50%" height="50%">
-   
- 
-*  Set up the secret scope with the scope name you prefer and note it down:
+     For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
 
-  ```
-   databricks --profile e2-certification secrets create-scope --scope sat_master_scope
-   ```
-   
-   For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
-   
-*  Create username secret and password secret as  "user" and "pass" under the above "sat_master_scope" scope using Databricks Secrets CLI 
+  *  Create username secret and password secret as  "user" and "pass" under the above "sat_master_scope" scope using Databricks Secrets CLI 
 
-    *  Create secret for master account username
-      ```
-      databricks --profile e2-certification secrets put --scope sat_master_scope --key user
-      ```
+      *  Create secret for master account username
+        ```
+        databricks --profile e2-certification secrets put --scope sat_master_scope --key user
+        ```
 
-    *  Create secret for master account password
+      *  Create secret for master account password
 
-      ```
-      databricks --profile e2-certification secrets put --scope sat_master_scope --key pass
-      ```    
+        ```
+        databricks --profile e2-certification secrets put --scope sat_master_scope --key pass
+        ```    
 
-   
-      
-  Note: The values you place above are case sensitive
- 
- 
- * Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
-   * Set the value for the account id 
-   * Set the value for the sql_warehouse_id
-   * databricks secrets scope/key names to pick the secrets from the steps above.
-  
-* Your config in  \<SATProject\>/notebooks/Utils/initializ CMD 3 should look like this:
 
-   ```
-         {
-            "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- update this value
-            "verbosity":"info",
-            "master_name_scope":"sat_master_scope", <- Make sure this matches the secrets scope
-            "sql_warehouse_id":"4d9fef7de2b9995c",     <- update this value
-            "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
-            "dashboard_folder":"../../dashboards/",
-            "dashboard_tag":"SAT",
-            "master_name_key":"user",  
-            "master_pwd_scope":"sat_master_scope",  
-            "master_pwd_key":"pass",
-            "workspace_pat_scope":"sat_master_scope",
-            "workspace_pat_token_prefix":"sat_token"
-         }
-   ```
+
+    Note: The values you place above are case sensitive
+
+
+   * Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
+     * Set the value for the account id 
+     * Set the value for the sql_warehouse_id
+     * databricks secrets scope/key names to pick the secrets from the steps above.
+
+  * Your config in  \<SATProject\>/notebooks/Utils/initializ CMD 3 should look like this:
+
+     ```
+           {
+              "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- update this value
+              "verbosity":"info",
+              "master_name_scope":"sat_master_scope", <- Make sure this matches the secrets scope
+              "sql_warehouse_id":"4d9fef7de2b9995c",     <- update this value
+              "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
+              "dashboard_folder":"../../dashboards/",
+              "dashboard_tag":"SAT",
+              "master_name_key":"user",  
+              "master_pwd_scope":"sat_master_scope",  
+              "master_pwd_key":"pass",
+              "workspace_pat_scope":"sat_master_scope",
+              "workspace_pat_token_prefix":"sat_token"
+           }
+     ```
 
 ## Setup
  Following are the one time easy steps to get your workspaces setup with the SAT:
                   <img src="./images/setup_steps.png" width="100%" height="100%">                                        
                                                           
 1. List account workspaces to analyze with SAT
-  * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
-  * This creates configuration file as noted at the bottom of the notebook.
+   * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
+   * This creates configuration file as noted at the bottom of the notebook.
+
+    <img src="./images/list_workspaces.png" width="70%" height="70%">
    
-   <img src="./images/list_workspaces.png" width="70%" height="70%">
-   
-  * Goto  \<SATProject\>/configs/workspace_configs.csv and update the file for each workspace listed as a new line. 
-    You will need to set analysis_enabled as True to enroll a workspace to analyzed by the SAT.
-    
-    Set alert_subscriber_user_id to a valid user login email address to receive alerts
-   
-    Note: no  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
-                                                           
-   <img src="./images/workspace_configs.png" width="70%" height="70%">
+   * Goto  \<SATProject\>/configs/workspace_configs.csv and update the file for each workspace listed as a new line. 
+     You will need to set analysis_enabled as True to enroll a workspace to analyzed by the SAT.
+
+     Set alert_subscriber_user_id to a valid user login email address to receive alerts
+
+     Note: no  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
+
+    <img src="./images/workspace_configs.png" width="70%" height="70%">
    
    
    
 2. Generate secrets setup file
-  * Run the \<SATProject\>/notebooks/Setup/2.generate_secrets_setup_file notebook.  Setup your PAT tokens for each of the workspaces under the "master_name_scope” 
-   
-   <img src="./images/setup_secrets.png" width="70%" height="70%">
-   
-   We generated a template file: \<SATProject\>/configs/setupsecrets.sh to make this easy for you with 
-   [curl](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl), 
-   copy and paste and run the commands from the file with your PAT token values. 
-   You will need to [setup .netrc file](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl) to use this method
-   
-  Example:
+   * Run the \<SATProject\>/notebooks/Setup/2.generate_secrets_setup_file notebook.  Setup your PAT tokens for each of the workspaces under the "master_name_scope” 
 
-   curl --netrc --request POST 'https://oregon.cloud.databricks.com/api/2.0/secrets/put' -d '{"scope":"
-sat_master_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
+    <img src="./images/setup_secrets.png" width="70%" height="70%">
+
+    We generated a template file: \<SATProject\>/configs/setupsecrets.sh to make this easy for you with 
+    [curl](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl), 
+    copy and paste and run the commands from the file with your PAT token values. 
+    You will need to [setup .netrc file](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl) to use this method
+
+   Example:
+
+    curl --netrc --request POST 'https://oregon.cloud.databricks.com/api/2.0/secrets/put' -d '{"scope":"
+ sat_master_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
    
    
 3. Test API Connections    
-  * Test connections from your workspace to accounts API calls and all workspace API calls by running \<SATProject\>/notebooks/Setup/3. test_connections. It's important that all connections are successful before you can move to the next step.  
-   
-   <img src="./images/test_connections.png" width="70%" height="70%">
+   * Test connections from your workspace to accounts API calls and all workspace API calls by running \<SATProject\>/notebooks/Setup/3. test_connections. It's important that all connections are successful before you can move to the next step.  
+
+    <img src="./images/test_connections.png" width="70%" height="70%">
    
 4. Enable workspaces for SAT 
-  * Enable workspaces by running \<SATProject\>/notebooks/Setup/4. enable_workspaces_for_sat.  This makes the registered workspaces ready for SAT to monitor 
+   * Enable workspaces by running \<SATProject\>/notebooks/Setup/4. enable_workspaces_for_sat.  This makes the registered workspaces ready for SAT to monitor 
 
-   <img src="./images/enable_workspaces.png" width="70%" height="70%">
+    <img src="./images/enable_workspaces.png" width="70%" height="70%">
    
 5. Import SAT dashboard template
-  * We built a ready to go DBSQL dashboard for SAT. Import the dashboard by running \<SATProject\>/notebooks/Setup/5. import_dashboard_template
+   * We built a ready to go DBSQL dashboard for SAT. Import the dashboard by running \<SATProject\>/notebooks/Setup/5. import_dashboard_template
 
-   <img src="./images/import_dashboard.png" width="70%" height="70%">   
+    <img src="./images/import_dashboard.png" width="70%" height="70%">   
    
 6. Configure Alerts  (Optional)
-SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
-   
+   SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
+
    <img src="./images/configure_alerts.png" width="70%" height="70%">
    
 
@@ -180,24 +180,24 @@ SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts te
    
    
 ## Usage
-* Attach and run the notebook \<SATProject\>/notebooks/security_analysis_driver 
+1. Attach and run the notebook \<SATProject\>/notebooks/security_analysis_driver 
 
-  <img src="./images/run_analysis.png" width="70%" height="70%">
+   <img src="./images/run_analysis.png" width="70%" height="70%">
    
-* At this point you should see SAT database and tables in your SQL Warehouses:
+   At this point you should see **SAT** database and tables in your SQL Warehouses:
 
-  <img src="./images/sat_database.png" width="70%" height="70%">
+   <img src="./images/sat_database.png" width="70%" height="70%">
    
    
    
-* Access Databricks SQL Dashboards section and find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter dashboard by "SAT" tag. 
+2. Access Databricks SQL Dashboards section and find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter dashboard by **SAT** tag. 
    
-  <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
+   <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
 
-   Note: You need to run the individual queries cached behind the report for the first time. Look for queries in the queries pane tagged wtih “SAT” and run each one of them by clicking on the query, opening them in the SQL Edition and Run. Once you run all of the queries refresh your dashboard. 
+    Note: You need to run the individual queries cached behind the report for the first time. Look for queries in the queries pane tagged with **SAT** and run each one of them by clicking on the query, opening them in the SQL Edition and Run. Once you run all of the queries refresh your dashboard. 
 
-   You can share SAT dashboard with other members of your team by using "Share" functionality on the top right corner of the dashboard. 
-   
+    You can share SAT dashboard with other members of your team by using "Share" functionality on the top right corner of the dashboard. 
+
    
    
 ## Configure Workflow (Optional) 
