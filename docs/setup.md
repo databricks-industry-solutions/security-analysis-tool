@@ -170,7 +170,7 @@ sat_master_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>
 
    <img src="./images/import_dashboard.png" width="70%" height="70%">   
    
-* 6. Configure Alerts  (Optional)
+* 6.Configure Alerts  (Optional)
 SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
    
    <img src="./images/configure_alerts.png" width="70%" height="70%">
@@ -180,11 +180,21 @@ SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts te
    
    
 ## Usage
-* Attach and run the \<SATProject\>/notebooks/security_analysis_driver notebook
+* Attach and run the notebook \<SATProject\>/notebooks/security_analysis_driver 
 
-* Access SAT - Security Analysis Tool dashboard under Databricks SQL Dashboards section to see the report
+    <img src="./images/run_analysis.png" width="70%" height="70%">
+   
+     * At this point you should see SAT database and tables in your SQL Warehouses:
+       
+       <img src="./images/sat_database.png" width="70%" height="70%">
+   
+   
+   
+* Access Databricks SQL Dashboards section and find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter dashboard by "SAT" tag. 
+   
+      <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
 
-   Note: You may need to run the individual queries cached behind the report for the first time. Look for queries in the queries pane tagged wtih “SAT” and run each one of them by clicking on the query, opening them in the SQL Edition and Run. Once you run all of the queries refresh your dashboard. 
+   Note: You need to run the individual queries cached behind the report for the first time. Look for queries in the queries pane tagged wtih “SAT” and run each one of them by clicking on the query, opening them in the SQL Edition and Run. Once you run all of the queries refresh your dashboard. 
 
    You can share SAT dashboard with other members of your team by using "Share" functionality on the top right corner of the dashboard. 
    
