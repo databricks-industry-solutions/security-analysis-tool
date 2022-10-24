@@ -1,8 +1,8 @@
 
 # Security Analysis Tool (SAT) 
+<img src="./images/sat_icon.jpg" width="10%" height="10%">
 
 
-![SAT](https://github.com/databricks/SecurityAnalysisTool/blob/main/images/sat_icon.jpg)
 ## Introduction
 
 Security Analysis Tool (SAT) analyzes customer's Databricks account and workspace security configurations and provides recommendations that help them follow Databrick's security best practices. When a customer runs SAT, it will compare their workspace configurations against a set of security best practices and delivers a report for their Databricks AWS workspace (Azure, GCP coming soon). These checks identify recommendations to harden Databricks configurations, services, and resources.
