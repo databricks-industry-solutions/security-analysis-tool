@@ -2,35 +2,35 @@
 
 You will need the following information to set up SAT, we will show you how to gather them in the next section.
 
- * 1.Databricks Account ID, administrative user id and password  (To use account REST APIs)
- * 2.A Single user job cluster (To run the SAT checks)
- * 3.Databricks SQL Warehouse  (To run the SQL dashboard)
- * 4.Ensure that Databricks Repos is enabled (To access the SAT git)
- * 5.Pipy access from your workspace (To install the SAT utility library)
+ 1. Databricks Account ID, administrative user id and password  (To use account REST APIs)
+ 2. A Single user job cluster (To run the SAT checks)
+ 3. Databricks SQL Warehouse  (To run the SQL dashboard)
+ 4. Ensure that Databricks Repos is enabled (To access the SAT git)
+ 5. Pipy access from your workspace (To install the SAT utility library)
 
 
 
 ## Prerequisites 
 
 Please gather the following information before you start setting up: 
-* 1.Databricks Account ID 
+1. Databricks Account ID 
     * Please test your administrator account and password to make sure this is a working account: [https://accounts.cloud.databricks.com/login](https://accounts.cloud.databricks.com/login)
     * Copy the account id as shown below
        
        <img src="./images/account_id.png" width="30%" height="30%">
        
-* 2.A Single user cluster  
+2. A Single user cluster  
    *  Databricks Runtime Version  11.2 LTS or above
    *  Node type i3.xlarge
    
        <img src="./images/job_cluster.png" width="50%" height="50%">
        
-* 3.Databricks SQL Warehouse  
+3. Databricks SQL Warehouse  
    * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
        
        <img src="./images/dbsqlwarehouse_id.png" width="50%" height="50%">
        
-* 4.Databricks Repos to access SAT git
+4. Databricks Repos to access SAT git
    Import git repo into Databricks repo 
 
    ``` 
@@ -40,7 +40,7 @@ Please gather the following information before you start setting up:
       
      <img src="./images/git_import.png" width="50%" height="50%">
  
-* 5.Please confirm PyPI access is available
+5. Please confirm PyPI access is available
    
    * Open the \<SATProject\>/notebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. 
    Please make sure there are no errors.
@@ -122,7 +122,7 @@ Please gather the following information before you start setting up:
  Following are the one time easy steps to get your workspaces setup with the SAT:
                   <img src="./images/setup_steps.png" width="100%" height="100%">                                        
                                                           
-* 1.List account workspaces to analyze with SAT
+1. List account workspaces to analyze with SAT
   * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
   * This creates configuration file as noted at the bottom of the notebook.
    
@@ -139,7 +139,7 @@ Please gather the following information before you start setting up:
    
    
    
-* 2.Generate secrets setup file
+2. Generate secrets setup file
   * Run the \<SATProject\>/notebooks/Setup/2.generate_secrets_setup_file notebook.  Setup your PAT tokens for each of the workspaces under the "master_name_scope” 
    
    <img src="./images/setup_secrets.png" width="70%" height="70%">
@@ -155,22 +155,22 @@ Please gather the following information before you start setting up:
 sat_master_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
    
    
-* 3.Test API Connections    
+3. Test API Connections    
   * Test connections from your workspace to accounts API calls and all workspace API calls by running \<SATProject\>/notebooks/Setup/3. test_connections. It's important that all connections are successful before you can move to the next step.  
    
    <img src="./images/test_connections.png" width="70%" height="70%">
    
-* 4.Enable workspaces for SAT 
+4. Enable workspaces for SAT 
   * Enable workspaces by running \<SATProject\>/notebooks/Setup/4. enable_workspaces_for_sat.  This makes the registered workspaces ready for SAT to monitor 
 
    <img src="./images/enable_workspaces.png" width="70%" height="70%">
    
-* 5.Import SAT dashboard template
+5. Import SAT dashboard template
   * We built a ready to go DBSQL dashboard for SAT. Import the dashboard by running \<SATProject\>/notebooks/Setup/5. import_dashboard_template
 
    <img src="./images/import_dashboard.png" width="70%" height="70%">   
    
-* 6.Configure Alerts  (Optional)
+6. Configure Alerts  (Optional)
 SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
    
    <img src="./images/configure_alerts.png" width="70%" height="70%">
@@ -229,7 +229,7 @@ Add schedule as per your needs. That’s it. Now you are continuously monitoring
    
 ## Troubleshooting
    
-* 1.Incorrectly configured secrets
+1. Incorrectly configured secrets
     * Error:
    
       Secret does not exist with scope: sat_master_scope and key: sat_tokens
@@ -238,7 +238,7 @@ Add schedule as per your needs. That’s it. Now you are continuously monitoring
       Check if the tokens are configured with correct names by listing and comparing with the configuration.
       databricks secrets list --scope sat_master_scope
 
-* 2.Invalid access token
+2. Invalid access token
    
     * Error:
    
@@ -248,7 +248,7 @@ Add schedule as per your needs. That’s it. Now you are continuously monitoring
    
       Check your PAT token configuration for  “workspace_pat_token” key 
 
-* 3.Firewall blocking databricks accounts console
+3. Firewall blocking databricks accounts console
 
     * Error: 
          <p/>   
