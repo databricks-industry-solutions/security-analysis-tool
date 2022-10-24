@@ -182,17 +182,17 @@ SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts te
 ## Usage
 * Attach and run the notebook \<SATProject\>/notebooks/security_analysis_driver 
 
-    <img src="./images/run_analysis.png" width="70%" height="70%">
+  <img src="./images/run_analysis.png" width="70%" height="70%">
    
-     * At this point you should see SAT database and tables in your SQL Warehouses:
-       
-       <img src="./images/sat_database.png" width="70%" height="70%">
+* At this point you should see SAT database and tables in your SQL Warehouses:
+
+  <img src="./images/sat_database.png" width="70%" height="70%">
    
    
    
 * Access Databricks SQL Dashboards section and find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter dashboard by "SAT" tag. 
    
-      <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
+  <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
 
    Note: You need to run the individual queries cached behind the report for the first time. Look for queries in the queries pane tagged wtih “SAT” and run each one of them by clicking on the query, opening them in the SQL Edition and Run. Once you run all of the queries refresh your dashboard. 
 
@@ -215,7 +215,7 @@ Path : \<SATProject\>/SAT/SecurityAnalysisTool-BranchV2Root/notebooks/security_a
    
 Cluster: Make sure to pick a Single user mode job compute cluster. 
   
-    <img src="./images/workflow.png" width="100%" height="100%">   
+<img src="./images/workflow.png" width="50%" height="50%">   
    
 Add schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
    
