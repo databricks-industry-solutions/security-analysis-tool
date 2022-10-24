@@ -117,10 +117,10 @@ Please gather the following information before you start setting up:
    ```
 
 ## Setup
-Please go to the following folder and attach each notebook to the cluster and run as per the following instructions :	
-
+ Following are the one time easy steps to get your workspaces setup with the SAT:
+                  <img src="./images/setup_steps.png" width="50%" height="50%">                                        
                                                           
-* List account workspaces to analyze with SAT
+* 1.List account workspaces to analyze with SAT
   * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
   * This creates configuration files as noted at the bottom of the notebook.
   * Goto  \<SATProject\>/configs/workspace_configs.csv and update the file for each workspace listed as a new line. 
@@ -128,7 +128,7 @@ Please go to the following folder and attach each notebook to the cluster and ru
                                                           
    <img src="./images/workspace_configs.png" width="50%" height="50%">
    
-* Generate secrets setup file
+* 2.Generate secrets setup file
   * Run the \<SATProject\>/notebooks/Setup/2.generate_secrets_setup_file notebook.  Setup your PAT tokens for each of the workspaces under the "master_name_scope” 
    
    We generated a template file: \<SATProject\>/configs/setupsecrets.sh to make this easy for you with 
@@ -142,13 +142,13 @@ Please go to the following folder and attach each notebook to the cluster and ru
 sat_master_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
    
    
-* Test Connections    
+* 3.Test API Connections    
   * Test connections from your workspace to accounts API calls and all workspace API calls by running \<SATProject\>/notebooks/Setup/3. test_connections. It's important that all connections are successful before you can move to the next step.  
 
-* Enable workspaces for SAT 
+* 4.Enable workspaces for SAT 
   * Enable workspaces by running \<SATProject\>/notebooks/Setup/4. enable_workspaces_for_sat.  This makes the registered workspaces ready for SAT to monitor 
 
-* Import SAT dashboard template
+* 5.Import SAT dashboard template
   * We built a ready to go DBSQL dashboard for SAT. Import the dashboard by running \<SATProject\>/notebooks/Setup/5. import_dashboard_template
 Configure Alerts  (Optional)
 SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
