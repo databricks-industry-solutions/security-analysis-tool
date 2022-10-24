@@ -16,7 +16,18 @@
 
 import json
 
-json_ = {"account_id":"dcdbb945-e659-4e8c-b108-db6b3ac3d0eb",  "verbosity":"info", 
-         "sql_warehouse_id":"3f0c53cc69ad14fc", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder":"../../dashboards/","dashboard_tag":"SAT","master_name_scope":"sat_master_scope",
-  "master_name_key":"user", "master_pwd_scope":"sat_master_scope", "master_pwd_key":"pass",
-      "workspace_pat_scope":"sat_master_scope",  "workspace_pat_token_prefix":"sat_token","use_mastercreds":"true" }
+json_ = {
+   "account_id":"dcdbb945-e659-4e8c-b108-db6b3ac3d0eb",
+   "verbosity":"info",
+   "sql_warehouse_id":"3f0c53cc69ad14fc",
+   "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
+   "dashboard_folder":"../../dashboards/",
+   "dashboard_tag":"SAT",
+   "master_name_scope":"sat_master_scope",
+   "master_name_key":"user",
+   "master_pwd_scope":"sat_master_scope",
+   "master_pwd_key":"pass",
+   "workspace_pat_scope":"sat_master_scope",
+   "workspace_pat_token_prefix":"sat_token",
+   "use_mastercreds":"true"
+}
