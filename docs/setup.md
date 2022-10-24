@@ -64,11 +64,7 @@ You should see a listing of folders in your workspace :
    databricks --profile <optional-profile-name> secrets put --scope sat_master_scope --key pass
    ```    
 
-     *  Create a secret for workspace PAT token
-
-   ```
-   databricks --profile <optional-profile-name>   secrets put --scope sat_master_scope --key pass
-   ``` 
+   
       
   Note: The values you place above are case sensitive
  * Import git repo into Databricks repo 
