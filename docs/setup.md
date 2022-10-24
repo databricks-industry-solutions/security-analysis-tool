@@ -68,6 +68,9 @@ You should see a listing of folders in your workspace :
       
   Note: The values you place above are case sensitive
  * Import git repo into Databricks repo 
+   ```
+   https://github.com/databricks-industry-solutions/security-analysis-tool
+   ```
  ![Git import](./images/git_import.png)
  
  * Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
