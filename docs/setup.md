@@ -1,6 +1,6 @@
 ## Checklist to prepare for SAT setup
 
-You will need the following information to setup SAT, we will show you how to gather them in the next section.
+You will need the following information to set up SAT, we will show you how to gather them in the next section.
 
  * 1.Databricks Account ID
  * 2.A Single user job cluster  
@@ -34,14 +34,14 @@ Please gather the following information before you start setting up:
    ```
  ![Git import](./images/git_import.png)
 * 5.Please confirm PyPI access is available
-   * Open the \<SATProject\>/otebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. Please make sure there are no errors.
+   * Open the \<SATProject\>/notebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. Please make sure there are no errors.
 
 
 
 ## Configuration
 
 * Download and setup Databricks CLI by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html)  
-* Note: if you have multiple databricks profiles you will need to use --profile <profile name> switch to access correct workspace, 
+* Note: if you have multiple Databricks profiles you will need to use --profile <profile name> switch to access the correct workspace,
   follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-certification**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
 * Setup authentication to your Databricks workspace by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#set-up-authentication)
 
@@ -106,7 +106,7 @@ You should see a listing of folders in your workspace :
          ```
 
 ## Setup
-Please go to the following folder and attach each notebook the cluster and run as per the following instructions :	
+Please go to the following folder and attach each notebook to the cluster and run as per the following instructions :	
 
                                                           
 * List account workspaces to analyze with SAT
@@ -121,7 +121,7 @@ Please go to the following folder and attach each notebook the cluster and run a
    
    We generated a template file: \<SATProject\>/configs/setupsecrets.sh to make this easy for you with 
    [curl](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl), 
-   copy paste and run the commands from the file with your PAT token values. 
+   copy and paste and run the commands from the file with your PAT token values. 
    You will need to [setup .netrc file](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl) to use this method
    
   Example:
@@ -145,11 +145,15 @@ SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts te
 * Attach and run the \<SATProject\>/notebooks/security_analysis_driver notebook
 
 * Access SAT - Security Analysis Tool dashboard under Databricks SQL Dashboards section to see the report
-Note: You may need to run the individual queries cached behind the report for the first time. Look for queries in the queries pane tagged wtih “SAT” and run each one of them by clicking on the query, opening them in the SQL Edition and Run. Once you ran all of the queries refresh your dashboard. 
+
+   Note: You may need to run the individual queries cached behind the report for the first time. Look for queries in the queries pane tagged wtih “SAT” and run each one of them by clicking on the query, opening them in the SQL Edition and Run. Once you run all of the queries refresh your dashboard. 
+
+   You can share SAT dashboard with other members of your team by using "Share" functionality on the top right corner of the dashboard. 
+   
    
    
 ## Configure Workflow (Optional) 
-Databricks Workflows is the fully-managed orchestration service. You can configure SAT to automate when and how you would like to schedule it by using by taking advanate of Workflows. 
+Databricks Workflows is the fully-managed orchestration service. You can configure SAT to automate when and how you would like to schedule it by using by taking advantage of Workflows. 
    
 Goto Workflows - > click on create jobs -> setu as following:
 
@@ -165,7 +169,7 @@ Cluster: Make sure to pick a Single user mode job compute cluster.
 ![Git import](./images/workflow.png)    
    
    
-Add schedule as per your needs. That’s it. Now you are continuously monitoring health of your account workspaces.
+Add schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
    
 ## (Optional ) Activate Alerts - Goto Alerts and find the alert created by SAT tag and unmute it and run the query behind the alert to activate it. Set the alert schedule to your needs. 
    
