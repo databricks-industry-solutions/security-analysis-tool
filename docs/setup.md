@@ -1,31 +1,41 @@
 ## Checklist to prepare for SAT setup
 
-Please have the following information ready before you start the setup process:
+You will need the following information to setup SAT, we will show you how to gather them in the next section.
 
-* Databricks account admin and password 
-* Workspace PAT tokens for each workspace
-* Databricks Account ID
-* Databricks SQL Warehouse ID
-* Pipy access form your workspace
-* Databricks Repos for git
+ * 1.Databricks Account ID
+ * 2.A Single user job cluster  
+ * 3.Databricks SQL Warehouse 
+ * 4.Databricks Repos to access SAT git
+ * 5.Pipy access from your workspace
 
 
 
 ## Prerequisites 
 
 Please gather the following information before you start setting up: 
-* Admin access to Databricks account and workspace 
+* 1.Databricks Account ID 
     * Please test your administrator account and password to make sure this is a working account: [https://accounts.cloud.databricks.com/login](https://accounts.cloud.databricks.com/login)
     * Copy the account id as shown below
        
        ![Account id](./images/account_id.png)
-* A Single user cluster with DBR 11.2 LTS or above 
-* Requires Databricks SQL for reports and dashboards
+* 2.A Single user cluster  
+   *  Databricks Runtime Version  11.2 LTS or above
+   *  Node type i3.xlarge
+       ![Job_cluser](./images/job_cluser.png)
+* 3.Databricks SQL Warehouse  
    * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
        
        ![DBSQL id](./images/dbsqlwarehouse_id.png)
-*  Please confirm PyPI access is available
-*  Make sure you are using repos
+
+* 4.Databricks Repos to access SAT git
+   Import git repo into Databricks repo 
+   ```
+   https://github.com/databricks-industry-solutions/security-analysis-tool
+   ```
+ ![Git import](./images/git_import.png)
+* 5.Please confirm PyPI access is available
+   * Open the \<SATProject\>/otebooks/Includes/install_sat_sdk  and run on the cluster that was created in step 2. Please make sure there are no errors.
+
 
 
 ## Configuration
@@ -69,11 +79,7 @@ You should see a listing of folders in your workspace :
    
       
   Note: The values you place above are case sensitive
- * Import git repo into Databricks repo 
-   ```
-   https://github.com/databricks-industry-solutions/security-analysis-tool
-   ```
- ![Git import](./images/git_import.png)
+ 
  
  * Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
    * Set the value for the account id 
@@ -100,8 +106,8 @@ You should see a listing of folders in your workspace :
          ```
 
 ## Setup
-Please go to the following folder and attach each notebook to DBR 11.2 cluster and run as per the following instructions :	
-![Run analysis](./images/run_analysis.png) 
+Please go to the following folder and attach each notebook the cluster and run as per the following instructions :	
+
                                                           
 * List account workspaces to analyze with SAT
   * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
@@ -136,15 +142,11 @@ Configure Alerts  (Optional)
 SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
    
 ## Usage
-* Attach to DBR 11.2 cluster and run the \<SATProject\>/notebooks/security_analysis_driver notebook
+* Attach and run the \<SATProject\>/notebooks/security_analysis_driver notebook
 
 * Access SAT - Security Analysis Tool dashboard under Databricks SQL Dashboards section to see the report
-Note: You may need to run the individual queries cached behind the report the first time. Look for queries tagged “SAT” and run them and then refresh your dashboard. 
+Note: You may need to run the individual queries cached behind the report for the first time. Look for queries in the queries pane tagged wtih “SAT” and run each one of them by clicking on the query, opening them in the SQL Edition and Run. Once you ran all of the queries refresh your dashboard. 
    
- * (Optional ) Activate Alerts - Goto Alerts and find the alert created by SAT tag and unmute it and run the query behind the alert to activate it. Set the alert schedule to your needs. 
-   
-![Git import](./images/alerts_1.png)       
-![Git import](./images/alerts_2.png)       
    
 ## Configure Workflow (Optional) 
 Databricks Workflows is the fully-managed orchestration service. You can configure SAT to automate when and how you would like to schedule it by using by taking advanate of Workflows. 
@@ -164,6 +166,11 @@ Cluster: Make sure to pick a Single user mode job compute cluster.
    
    
 Add schedule as per your needs. That’s it. Now you are continuously monitoring health of your account workspaces.
+   
+## (Optional ) Activate Alerts - Goto Alerts and find the alert created by SAT tag and unmute it and run the query behind the alert to activate it. Set the alert schedule to your needs. 
+   
+![Git import](./images/alerts_1.png)       
+![Git import](./images/alerts_2.png)       
    
    
 ## Troubleshooting
