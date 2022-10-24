@@ -21,7 +21,7 @@ Please gather the following information before you start setting up:
 * 2.A Single user cluster  
    *  Databricks Runtime Version  11.2 LTS or above
    *  Node type i3.xlarge
-       ![Job_cluser](./images/job_cluser.png)
+       ![Job_cluser](./images/job_cluster.png)
 * 3.Databricks SQL Warehouse  
    * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
        
