@@ -49,18 +49,8 @@ Security Analysis Tool (SAT) does detection of over 37 (we are adding more ) bes
 
 ![SAT Insights](./images/sat_detection_partial.png)
 
-## Pre-Requisites
-To use this tool, you'll need:  
-* Databricks CLI installed
-* Admin access to Databricks account and workspace 
-* PAT tokens 
-Requires DBR 11.2 LTS or newer
-Requires Databricks SQL for reports and dashboards
-
-### Configuration
-* Download and setup Databricks CLI by following instructions [here](https://docs.databricks.com/dev-tools/cli/index.html) 
-* Add Security Analysis Tool to your Databricks workspace [Repos](https://docs.databricks.com/repos/work-with-notebooks-other-files.html)
-* Follow notebooks in SecurityAnalysisTool/notebooks/Setup folder    
+## Configuration and Usage instructions
+Refer to [setup guide](./docs/setup.md)  
 
 
 ### Usage
