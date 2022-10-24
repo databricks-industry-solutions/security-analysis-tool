@@ -115,7 +115,3 @@ else:
 
 # MAGIC %sql
 # MAGIC select * from security_analysis.security_checks order by run_id desc, workspaceid asc, check_time asc
-
-# COMMAND ----------
-
-

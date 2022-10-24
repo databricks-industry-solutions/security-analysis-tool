@@ -18,8 +18,8 @@ import json
 
 json_ = {
    "account_id":"dcdbb945-e659-4e8c-b108-db6b3ac3d0eb",
-   "verbosity":"info",
    "sql_warehouse_id":"3f0c53cc69ad14fc",
+   "verbosity":"info",
    "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
    "dashboard_folder":"../../dashboards/",
    "dashboard_tag":"SAT",
