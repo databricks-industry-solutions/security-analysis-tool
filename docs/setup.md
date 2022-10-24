@@ -17,22 +17,26 @@ Please gather the following information before you start setting up:
     * Please test your administrator account and password to make sure this is a working account: [https://accounts.cloud.databricks.com/login](https://accounts.cloud.databricks.com/login)
     * Copy the account id as shown below
        
-       ![Account id](./images/account_id.png)
+       <img src="./images/account_id.png" width="30%" height="30%">
+       
 * 2.A Single user cluster  
    *  Databricks Runtime Version  11.2 LTS or above
    *  Node type i3.xlarge
-       ![Job_cluser](./images/job_cluster.png)
+   
+       <img src="./images/job_cluster.png" width="50%" height="50%">
+       
 * 3.Databricks SQL Warehouse  
    * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
        
-       ![DBSQL id](./images/dbsqlwarehouse_id.png)
-
+       <img src="./images/dbsqlwarehouse_id.png" width="50%" height="50%">
+       
 * 4.Databricks Repos to access SAT git
    Import git repo into Databricks repo 
    ```
    https://github.com/databricks-industry-solutions/security-analysis-tool
    ```
- ![Git import](./images/git_import.png)
+ 
+ <img src="./images/git_import.png" width="50%" height="50%">
 * 5.Please confirm PyPI access is available
    * Open the \<SATProject\>/notebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. Please make sure there are no errors.
 
@@ -49,9 +53,9 @@ Please gather the following information before you start setting up:
    databricks configure --token --profile e2-certification
    ```
   
-  ![CLI setup](./images/cli_authentication.png)
-  
-You should see a listing of folders in your workspace : 
+   <img src="./images/cli_authentication.png" width="50%" height="50%">
+
+ You should see a listing of folders in your workspace : 
    ```
    databricks --profile e2-certification workspace ls
    ```
@@ -166,15 +170,17 @@ Source: Workspace (or your git clone of SAT)
 Path : \<SATProject\>/SAT/SecurityAnalysisTool-BranchV2Root/notebooks/security_analysis_driver
    
 Cluster: Make sure to pick a Single user mode job compute cluster. 
-![Git import](./images/workflow.png)    
-   
+  
+<img src="./images/workflow.png" width="50%" height="50%">   
    
 Add schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
    
 ## (Optional ) Activate Alerts - Goto Alerts and find the alert created by SAT tag and unmute it and run the query behind the alert to activate it. Set the alert schedule to your needs. 
    
-![Git import](./images/alerts_1.png)       
-![Git import](./images/alerts_2.png)       
+
+   <img src="./images/alerts_1.png" width="50%" height="50%">   
+   
+   <img src="./images/alerts_2.png" width="50%" height="50%">   
    
    
 ## Troubleshooting
