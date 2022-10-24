@@ -6,6 +6,7 @@
 /src/securityanalysistoolproject/dbr_profiler_tool.egg-info/
 /src/securityanalysistoolproject/.DS_Store
 /configs/gensecrets.sh
+/configs/setupsecrets.sh
 /configs/workspace_configs.csv
 /configs/security_best_practices_user.csv
 
