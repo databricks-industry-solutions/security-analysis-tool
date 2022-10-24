@@ -100,9 +100,15 @@ def processWorkspace(wsrow):
   dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(json_)})
   dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(json_)})
  
-import multiprocessing
-pool = multiprocessing.Pool(processes=8)
-outputs = pool.map(processWorkspace, workspaces, chunksize=5)
+multiprocess=True
+if multiprocess:
+  import multiprocessing
+  with multiprocessing.Pool(processes=8) as pool:
+    outputs = pool.map(processWorkspace, workspaces, chunksize=5)
+else:
+  for ws in workspaces:
+    processWorkspace(ws)
+
 
 
 # COMMAND ----------
@@ -111,4 +117,5 @@ outputs = pool.map(processWorkspace, workspaces, chunksize=5)
 # MAGIC select * from security_analysis.security_checks order by run_id desc, workspaceid asc, check_time asc
 
 # COMMAND ----------
+
 
