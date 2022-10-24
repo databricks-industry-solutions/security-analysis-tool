@@ -53,25 +53,25 @@ You will need the following information to set up SAT, we will show you how to g
     follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-certification**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
   * Setup authentication to your Databricks workspace by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#set-up-authentication)
 
+       ```
+            databricks configure --token --profile e2-certification
+       ```
+
+     <img src="./images/cli_authentication.png" width="50%" height="50%">
+
+     You should see a listing of folders in your workspace : 
       ```
-           databricks configure --token --profile e2-certification
+           databricks --profile e2-certification workspace ls
       ```
 
-    <img src="./images/cli_authentication.png" width="50%" height="50%">
-
-    You should see a listing of folders in your workspace : 
-     ```
-          databricks --profile e2-certification workspace ls
-     ```
-
-    <img src="./images/workspace_ls.png" width="50%" height="50%">
+     <img src="./images/workspace_ls.png" width="50%" height="50%">
 
 
   *  Set up the secret scope with the scope name you prefer and note it down:
 
-    ```
-     databricks --profile e2-certification secrets create-scope --scope sat_master_scope
      ```
+      databricks --profile e2-certification secrets create-scope --scope sat_master_scope
+      ```
 
      For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
 
@@ -87,10 +87,8 @@ You will need the following information to set up SAT, we will show you how to g
         ```
         databricks --profile e2-certification secrets put --scope sat_master_scope --key pass
         ```    
-
-
-
-    Note: The values you place above are case sensitive
+        
+        Note: The values you place above are case sensitive
 
 
    * Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
@@ -201,31 +199,32 @@ You will need the following information to set up SAT, we will show you how to g
    
    
 ## Configure Workflow (Optional) 
-Databricks Workflows is the fully-managed orchestration service. You can configure SAT to automate when and how you would like to schedule it by using by taking advantage of Workflows. 
-   
-Goto Workflows - > click on create jobs -> setu as following:
+  * Databricks Workflows is the fully-managed orchestration service. You can configure SAT to automate when and how you would like to schedule it by using by taking advantage of Workflows. 
 
-Task Name  : security_analysis_drive
-   
-Type: Notebook
-   
-Source: Workspace (or your git clone of SAT)
-   
-Path : \<SATProject\>/SAT/SecurityAnalysisTool-BranchV2Root/notebooks/security_analysis_driver
-   
-Cluster: Make sure to pick a Single user mode job compute cluster. 
-  
-<img src="./images/workflow.png" width="50%" height="50%">   
-   
-Add schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
-   
-## (Optional ) Activate Alerts - Goto Alerts and find the alert created by SAT tag and unmute it and run the query behind the alert to activate it. Set the alert schedule to your needs. 
-   
+  * Goto Workflows - > click on create jobs -> setup as following:
 
- <img src="./images/alerts_1.png" width="50%" height="50%">   
-   
- <img src="./images/alerts_2.png" width="50%" height="50%">   
-   
+    Task Name  : security_analysis_drive
+
+    Type: Notebook
+
+    Source: Workspace (or your git clone of SAT)
+
+    Path : \<SATProject\>/SAT/SecurityAnalysisTool-BranchV2Root/notebooks/security_analysis_driver
+
+    Cluster: Make sure to pick the Single user mode job compute cluster you created. 
+
+    <img src="./images/workflow.png" width="50%" height="50%">   
+
+    Add schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
+
+## Activate Alerts (Optional) 
+  * Goto Alerts and find the alert created by SAT tag and unmute it and run the query behind the alert to activate it. Set the alert schedule to your needs. 
+
+
+      <img src="./images/alerts_1.png" width="50%" height="50%">   
+
+      <img src="./images/alerts_2.png" width="50%" height="50%">   
+
    
 ## Troubleshooting
    
