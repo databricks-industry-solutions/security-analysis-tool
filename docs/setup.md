@@ -11,41 +11,40 @@ You will need the following information to set up SAT, we will show you how to g
 
 
 ## Prerequisites 
-
-Please gather the following information before you start setting up: 
-1. Databricks Account ID 
-    * Please test your administrator account and password to make sure this is a working account: [https://accounts.cloud.databricks.com/login](https://accounts.cloud.databricks.com/login)
-    * Copy the account id as shown below
-       
-       <img src="./images/account_id.png" width="30%" height="30%">
-       
-2. A Single user cluster  
-   *  Databricks Runtime Version  11.2 LTS or above
-   *  Node type i3.xlarge
-   
-       <img src="./images/job_cluster.png" width="50%" height="50%">
-       
-3. Databricks SQL Warehouse  
-   * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
-       
-       <img src="./images/dbsqlwarehouse_id.png" width="50%" height="50%">
-       
-4. Databricks Repos to access SAT git
-   Import git repo into Databricks repo 
-
-   ``` 
-          https://github.com/databricks-industry-solutions/security-analysis-tool
-   ```
-      
-      
-     <img src="./images/git_import.png" width="50%" height="50%">
  
-5. Please confirm PyPI access is available
-   
-   * Open the \<SATProject\>/notebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. 
-   Please make sure there are no errors.
+ Please gather the following information before you start setting up: 
+ 
+ 1. Databricks Account ID 
+     * Please test your administrator account and password to make sure this is a working account: [https://accounts.cloud.databricks.com/login](https://accounts.cloud.databricks.com/login)
+     * Copy the account id as shown below
+
+        <img src="./images/account_id.png" width="30%" height="30%">
+
+ 2. A Single user cluster  
+    *  Databricks Runtime Version  11.2 LTS or above
+    *  Node type i3.xlarge
+
+        <img src="./images/job_cluster.png" width="50%" height="50%">
+
+ 3. Databricks SQL Warehouse  
+    * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
+
+        <img src="./images/dbsqlwarehouse_id.png" width="50%" height="50%">
+
+ 4. Databricks Repos to access SAT git
+    Import git repo into Databricks repo 
+
+    ``` 
+           https://github.com/databricks-industry-solutions/security-analysis-tool
+    ```
 
 
+      <img src="./images/git_import.png" width="50%" height="50%">
+
+ 5. Please confirm PyPI access is available
+
+    * Open the \<SATProject\>/notebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. 
+    Please make sure there are no errors.
 
 ## Configuration
 
@@ -118,6 +117,7 @@ Please gather the following information before you start setting up:
            }
      ```
 
+ 
 ## Setup
  Following are the one time easy steps to get your workspaces setup with the SAT:
                   <img src="./images/setup_steps.png" width="100%" height="100%">                                        
