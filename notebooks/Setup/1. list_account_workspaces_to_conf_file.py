@@ -53,8 +53,8 @@ def generateWorkspaceConfigFile(workspace_prefix):
   if(not df.rdd.isEmpty()):
     df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.cloud.databricks.com'))) #AWS
     df = df.withColumn("workspace_token", concat(lit(workspace_prefix), lit('_'), col('workspace_id')))   #added with workspace prfeix
-    df = df.withColumn("alert_subscriber_user_id", lit(''))
-    df = df.withColumn("analysis_enabled", lit(False)) 
+    df = df.withColumn("alert_subscriber_user_id", lit(json_['username_for_alerts']))
+    df = df.withColumn("analysis_enabled", lit(True)) 
     df = df.withColumn("sso_enabled", lit(False)) 
     df = df.withColumn("scim_enabled", lit(False)) 
     df = df.withColumn("vpc_peering_done", lit(False)) 
@@ -76,5 +76,5 @@ generateWorkspaceConfigFile(json_['workspace_pat_token_prefix'])
 
 # MAGIC %md 
 # MAGIC #### Look in the Configs folder for generated Files
-# MAGIC * ##### Modify workspace_configs.csv. Change the analysis_enabled flag to True and add alert_subscriber_user_id for the alerts subscription, and verify sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled for each workspace.
+# MAGIC * ##### Modify workspace_configs.csv. Update the analysis_enabled flag, alert_subscriber_user_id for workspace level alerts subscription, and verify sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled for each workspace.
 # MAGIC * ##### New workspaces will be added to end of the file
