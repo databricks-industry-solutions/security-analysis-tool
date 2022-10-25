@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC Notebook to setup SAT 
+# MAGIC Notebook to initialize setup of SAT 
 
 # COMMAND ----------
 

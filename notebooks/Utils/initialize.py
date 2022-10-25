@@ -18,9 +18,9 @@
 import json
 
 json_ = {
-   "account_id":"dcdbb945-e659-4e8c-b108-db6b3ac3d0eb",
-   "sql_warehouse_id":"3f0c53cc69ad14fc",
-   "username_for_alerts":"arun.pamulapati@databricks.com",
+   "account_id":"",
+   "sql_warehouse_id":"",
+   "username_for_alerts":"",
    "verbosity":"info",
    "master_name_scope":"sat_master_scope",
    "master_name_key":"user",
