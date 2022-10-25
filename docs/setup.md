@@ -8,6 +8,8 @@ You will need the following information to set up SAT, we will show you how to g
  4. Ensure that Databricks Repos is enabled (To access the SAT git)
  5. Pipy access from your workspace (To install the SAT utility library)
 
+**Note**: SAT creates a new **security_analysis** databses and Delta tables. 
+
 
 
 ## Prerequisites 
@@ -96,23 +98,25 @@ You will need the following information to set up SAT, we will show you how to g
      * Set the value for the sql_warehouse_id
      * databricks secrets scope/key names to pick the secrets from the steps above.
 
-  * Your config in  \<SATProject\>/notebooks/Utils/initializ CMD 3 should look like this:
+  * Your config in  \<SATProject\>/notebooks/Utils/initializ CMD 2 should look like this:
 
      ```
            {
               "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- update this value
+              "sql_warehouse_id":"4d9fef7de2b9995c",     <- update this value
+              "username_for_alerts":"arun.pamulapati@databricks.com", <- update this value
               "verbosity":"info",
               "master_name_scope":"sat_master_scope", <- Make sure this matches the secrets scope
-              "sql_warehouse_id":"4d9fef7de2b9995c",     <- update this value
-              "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
-              "dashboard_folder":"../../dashboards/",
-              "dashboard_tag":"SAT",
               "master_name_key":"user",  
               "master_pwd_scope":"sat_master_scope",  
               "master_pwd_key":"pass",
               "workspace_pat_scope":"sat_master_scope",
               "workspace_pat_token_prefix":"sat_token"
+              "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
+              "dashboard_folder":"../../dashboards/",
+              "dashboard_tag":"SAT",
            }
+                                 
      ```
 
  
@@ -179,7 +183,8 @@ You will need the following information to set up SAT, we will show you how to g
    
 ## Usage
 1. Attach and run the notebook \<SATProject\>/notebooks/security_analysis_driver 
-
+   Note: This process takes upto 30 mins per workspace
+ 
    <img src="./images/run_analysis.png" width="70%" height="70%">
    
    At this point you should see **SAT** database and tables in your SQL Warehouses:
