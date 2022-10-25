@@ -1,7 +1,13 @@
 -------------
 workspace_ids
 -------------
-SELECT workspace_id FROM  security_analysis.account_workspaces WHERE analysis_enabled = true
+SELECT
+  workspace_id as value,
+  concat(workspace_name, " (", workspace_id, ")") as name
+FROM
+  security_analysis.account_workspaces
+WHERE
+  analysis_enabled = true
 
 -------------
 summary_stats
@@ -32,7 +38,7 @@ FROM
       security_analysis.security_best_practices sbp
     where
       score = 1
-      and sc.chk_name = sbp.chk_name
+      and sc.id = sbp.id
       and run_id = (
         select
           max(runID)
@@ -40,7 +46,7 @@ FROM
           security_analysis.run_number_table
       )
       and category not IN ('Workspace Settings', 'Workspace Stats')
-      and workspaceid={{workspaceid}}
+      and workspaceid = {{workspaceid}}
     group by
       sbp.category,
       sbp.severity
@@ -86,7 +92,7 @@ FROM
   security_analysis.security_checks sc,
   security_analysis.security_best_practices sbp
 where
-  sc.chk_name = sbp.chk_name
+  sc.id = sbp.id
   and sbp.severity = {{severity}}
   and sc.score = 1
   and sbp.category = {{category}}
@@ -101,6 +107,7 @@ where
 category_pillars
 -------------
 SELECT
+  BP.check_id,
   check as Check,
   BP.severity as Severity,
   score as Status,
@@ -121,7 +128,7 @@ SELECT
 FROM
   (
     SELECT
-      chk_name,
+      id,
       score,
       chk_date,
       workspaceid
@@ -137,7 +144,7 @@ FROM
   ) SC,
   security_analysis.security_best_practices BP
 WHERE
-  SC.chk_name = BP.chk_name
+  SC.id = BP.id
   and BP.category = {{category}}
   and workspaceid ={{workspaceid}}
 ORDER BY
