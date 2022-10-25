@@ -65,12 +65,7 @@ In the example below, the customer can know more about the “Log delivery” by
 ## Configuration and Usage instructions
 Refer to [setup guide](./docs/setup.md)  
 
-
-### Usage
-* Attach and Run security_analysis_driver notebook
-* Access SAT - Security Analysis Tool dashboard to see the report
-
-### Project support 
+## Project support 
 
 Please note that all projects in the /databrickslabs github account are provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects.
 
