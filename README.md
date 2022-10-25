@@ -20,34 +20,47 @@ SAT is typically run daily as an automated workflow in the customers account tha
 ## SAT Insights
 
 Data across any of the configured workspaces can be surfaced through a single pane of SQL Dashboard which is the primary consumption layer where all the insights are arranged in well defined categories namely: 
-* Network Security,
-* Identity & Access, 
-* Data Protection, 
-* Governance and 
-* Informational. 
+* Network Security
+* Identity & Access
+* Data Protection 
+* Governance  
+* Informational 
+
 The data in each section is further categorizedcatgorized by severity namely: High, Medium, Low.
 
 ![SAT Insights](./images/sat_dashboard_partial.png)
 
-The dashboard is broken into the following sections and each security pillar is laid out in a consistent format 
+The dashboard is broken into the five sections and each pillar is laid out in a consistent format.
 
-* Overall Summary
-    * The high level summary calls out the distribution counts across all the security pillars further categorized by severity 
-* Workspace stats
-    * This section provides usage statistics around the number of users, groups, databases, tables, and details around tier, region amongamondg others
-* Individual Security Pillars
-    * Counts of deviations from recommended best practices by severity (High, Medium, Low)
-    * Table of each check in that section detailing the severity and status of the check along with a link to public documentation
-* Informational Section
-    * These are less prescriptiveprescriiptiive in nature but provides data points that need to be scrutinized by data personas to ensure those are judicious choice of thresholds for the organizatiion, use cases under consideration.
-* Additional Details
-    * This gives the ability to surface additional information to pipoint the source of the deviation. Example in case of a ‘cluster policy not used’, it may be necessary to provide a list of exact cluster workloads among hundreds where the policy is not applied. This helps prevent a needle in a haystack search situation.
+* Workspace Security Summary
+    * The high-level summary calls out findings by category, categorized by severity.
+* Workspace Stats
+    * This section provides usage statistics around the number of users, groups, databases, tables, and service details like tier and region.
+* Individual Security Category Details
+    * A section for each security category that contains:
+      * Security section summary details, such as counts of deviations from recommended best practices
+      * A table with security finding details for the security category, sorted by severity. The table describes each security violation and provides  links to documentation that help to fix the finding.
+
+*  Informational Section
+    * These are less prescriptive in nature but provide data points that can be scrutinized by data personas to verify thresholds are set correctly for their organization.
+* Additional Finding Details
+    * This section provides additional details that help to pinpoint the source of a security deviation, including the logic used to detect them. For example, the 'cluster policy not used' will provide a list of the cluster workloads where the policy is not applied, avoiding a needle-in-a-haystack situation.
 
 ## Detection example
 
-Security Analysis Tool (SAT) does detection of over 37 (we are adding more ) best practice deviations to surface potential risks so that customers can review and improve each configuration. In the following example, the IP Access List check is listed as not configured according to the best practices and remediation with a recommendation, and a direct link to the documentation is provided to make it easy for the customers to take the next steps. The Priave Link check is listed as in-line with the best practices which give confirmation to the customers that they are following the Databricks security best practices.  More importantly, customers can run these checks whenever they wish to get a comprehensive view of the security configuration of their Databricks account workspaces as they make progress with their projects.  
+Security Analysis Tool (SAT) analyzes 37 best practices, with more on the way. In the example below, the SAT scan highlights one finding that surfaces a potential risk, and one that meets Databricks' best practices. The Deprecated runtime versions check is red indicating that there are runtimes that are deprecated. Workloads on unsupported runtime versions may continue to run, but they receive no Databricks support or fixes. The Remediation column in the screenshot describes the risk and links to the documentation of the Databricks runtime versions that are currently supported. 
+
+On the other hand, the Log delivery check is green, confirming that the workspace follows Databricks security best practices. Run these checks regularly to comprehensively view Databricks account workspace security and ensure continuous improvement.
 
 ![SAT Insights](./images/sat_detection_partial.png)
+
+Customers can use the "Additional Details" section to display information on what configuration setting or control failed a specific best practice rule. For example, the image below showcases additional details on the "Deprecated runtime versions" risk for administrators to investigate. 
+
+![SAT Insights](./images/additional_details_1.png)
+
+In the example below, the customer can know more about the “Log delivery” by inputting “GOV-3”. 
+
+![SAT Insights](./images/additional_details_2.png)
 
 ## Configuration and Usage instructions
 Refer to [setup guide](./docs/setup.md)  
