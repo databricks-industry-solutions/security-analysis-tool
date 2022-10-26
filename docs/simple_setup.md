@@ -125,7 +125,10 @@ You will need the following information to set up SAT, we will show you how to g
      ```
 
  
-## Setup (Easy method)
+## Setup option 1 (Simple and recommended method)
+                                                                         
+<details>
+  <summary>Setup instructions</summary>                                                                          
  Following is the one time easy setup to get your workspaces setup with the SAT:
                                                           
 * Attach  \<SATProject\>/notebooks/security_analysis_initializer to the SAT cluster you created above and Run -> Run all 
@@ -136,7 +139,71 @@ You will need the following information to set up SAT, we will show you how to g
     
     <img src="./images/initialize_sat_complete.png" width="70%" height="70%">
    
+</details>
+ 
+## Setup option 2 (Most flexible for the power users)
+ 
+<details>
+  <summary>Setup instructions</summary> 
+ Following are the one time easy steps to get your workspaces setup with the SAT:
+                  <img src="./images/setup_steps.png" width="100%" height="100%">                                        
+                                                          
+1. List account workspaces to analyze with SAT
+   * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
+   * This creates configuration file as noted at the bottom of the notebook.
+
+    <img src="./images/list_workspaces.png" width="70%" height="70%">
    
+   * Goto  \<SATProject\>/configs/workspace_configs.csv and update the file for each workspace listed as a new line. 
+     You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyzed by the SAT.
+
+     Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
+
+     Note: no  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
+
+    <img src="./images/workspace_configs.png" width="70%" height="70%">
+   
+   
+   
+2. Generate secrets setup file
+   * Run the \<SATProject\>/notebooks/Setup/2.generate_secrets_setup_file notebook.  Setup your PAT tokens for each of the workspaces under the "master_name_scope” 
+
+    <img src="./images/setup_secrets.png" width="70%" height="70%">
+
+    We generated a template file: \<SATProject\>/configs/setupsecrets.sh to make this easy for you with 
+    [curl](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl), 
+    copy and paste and run the commands from the file with your PAT token values. 
+    You will need to [setup .netrc file](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl) to use this method
+
+   Example:
+
+    curl --netrc --request POST 'https://oregon.cloud.databricks.com/api/2.0/secrets/put' -d '{"scope":"
+ sat_master_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
+   
+   
+3. Test API Connections    
+   * Test connections from your workspace to accounts API calls and all workspace API calls by running \<SATProject\>/notebooks/Setup/3. test_connections. It's important that all connections are successful before you can move to the next step.  
+
+    <img src="./images/test_connections.png" width="70%" height="70%">
+   
+4. Enable workspaces for SAT 
+   * Enable workspaces by running \<SATProject\>/notebooks/Setup/4. enable_workspaces_for_sat.  This makes the registered workspaces ready for SAT to monitor 
+
+    <img src="./images/enable_workspaces.png" width="70%" height="70%">
+   
+5. Import SAT dashboard template
+   * We built a ready to go DBSQL dashboard for SAT. Import the dashboard by running \<SATProject\>/notebooks/Setup/5. import_dashboard_template
+
+    <img src="./images/import_dashboard.png" width="70%" height="70%">   
+   
+6. Configure Alerts  (Optional)
+   SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
+
+   <img src="./images/configure_alerts.png" width="70%" height="70%">
+   
+</details>
+   
+ 
    
 ## Usage
 1. Attach and run the notebook \<SATProject\>/notebooks/security_analysis_driver 
