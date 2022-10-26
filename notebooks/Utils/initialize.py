@@ -20,7 +20,7 @@ import json
 json_ = {
    "account_id":"",
    "sql_warehouse_id":"",
-   "username_for_alerts":"arun.pamulapati@databricks.com",
+   "username_for_alerts":"",
    "verbosity":"info"
 }
 

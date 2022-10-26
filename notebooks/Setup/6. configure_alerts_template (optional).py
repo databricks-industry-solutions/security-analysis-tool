@@ -36,6 +36,7 @@ current_workspace = context['tags']['orgId']
 
 import requests
 data_source_id =''
+user_id = None
 for ws in workspaces:
     if (ws.workspace_id ==current_workspace):  
         DOMAIN = ws.deployment_url
@@ -119,9 +120,11 @@ for ws in workspaces:
                       json=None
                     )
 
-                    resources = json.loads(response.text)['Resources']
-                    for resource in resources:
-                      user_id = resource["id"]
+                    result = json.loads(response.text)
+                    if result['totalResults'] != 0 :
+                       resources = result['Resources']
+                       for resource in resources:
+                         user_id = resource["id"]
 
                     if user_id is not None:
                         response = requests.post(
@@ -137,4 +140,5 @@ for ws in workspaces:
                           loggr.info(f"Alert subscription is successfuly associated to user {response.json()['user']}!")
                         else:
                           loggr.info(f"Error creating alert subscription: {(response.json())}")
-    
+                    else: 
+                        loggr.info(f"User not found with login : {ws_to_load.alert_subscriber_user_id}")
