@@ -95,7 +95,7 @@ for ws in workspaces:
                    "options":{
                       "op":">=",
                       "value":1,
-                      "muted":"false",
+                      "muted":False,
                       "column":"total",
                       "custom_subject":"SAT-Alert for workspace:"+ws_to_load.workspace_id,
                       "custom_body":"Hello,\nAlert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}.\nThere have been the following unexpected events on the last day:\n{{QUERY_RESULT_ROWS}}\n\n",
