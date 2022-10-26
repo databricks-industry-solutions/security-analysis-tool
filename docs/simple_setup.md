@@ -131,6 +131,8 @@ You will need the following information to set up SAT, we will show you how to g
 * Attach  \<SATProject\>/notebooks/security_analysis_initializer to the SAT cluster you created above and Run -> Run all 
  
     <img src="./images/initialize_sat.png" width="70%" height="70%">
+ 
+ 
     
     <img src="./images/initialize_sat_complete.png" width="70%" height="70%">
    
@@ -142,6 +144,7 @@ You will need the following information to set up SAT, we will show you how to g
  
    <img src="./images/run_analysis.png" width="70%" height="70%">
    
+ 
    At this point you should see **SAT** database and tables in your SQL Warehouses:
 
    <img src="./images/sat_database.png" width="70%" height="70%">
@@ -155,12 +158,14 @@ You will need the following information to set up SAT, we will show you how to g
     Note: You need to select the workspace and click "Apply Changes" to get the report.  
 
     You can share SAT dashboard with other members of your team by using "Share" functionality on the top right corner of the dashboard. 
+ 
     
 3.  Activate Alerts 
-  * Goto Alerts and find the alert created by SAT tag and unmute it and run the query behind the alert to activate it. Set the alert schedule to your needs. 
+  * Goto Alerts and find the alert created by SAT tag and **unmute** it. Set the alert schedule to your needs. 
 
 
       <img src="./images/alerts_1.png" width="50%" height="50%">   
+ 
 
       <img src="./images/alerts_2.png" width="50%" height="50%">   
 
