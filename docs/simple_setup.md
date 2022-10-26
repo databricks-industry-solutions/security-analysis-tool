@@ -95,18 +95,18 @@ You will need the following information to set up SAT, we will show you how to g
         ```    
         
 
-      * Create a secret for workspace PAT token
-       
-        **Note**: Replace \<workspace_id\> with your SAT deployment workspace id. 
+     * Create a secret for workspace PAT token
+
+      **Note**: Replace \<workspace_id\> with your SAT deployment workspace id. 
         You can find your workspace id by following the instructions [here](https://docs.databricks.com/workspace/workspace-details.html)
-        
+
         You can create a PAT token by following the instructions [here](https://docs.databricks.com/dev-tools/api/latest/authentication.html#generate-a-personal-access-token)
-        
-        
-        ```
-        databricks --profile e2-certification secrets put --scope sat_master_scope --key sat_token_<workspace_id> 
-        ``` 
-        
+
+
+      ```
+      databricks --profile e2-certification secrets put --scope sat_master_scope --key sat_token_<workspace_id> 
+      ``` 
+
    * Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
      * Set the value for the account id 
      * Set the value for the sql_warehouse_id
@@ -119,7 +119,7 @@ You will need the following information to set up SAT, we will show you how to g
            {
               "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- update this value
               "sql_warehouse_id":"4d9fef7de2b9995c",     <- update this value
-              "username_for_alerts":"arun.pamulapati@databricks.com", <- update this value
+              "username_for_alerts":"john.doe@org.com", <- update this value with a valid Databricks user id 
            }
                                  
      ```
