@@ -35,6 +35,30 @@ current_workspace = context['tags']['orgId']
 # COMMAND ----------
 
 import requests
+data_source_id =''
+for ws in workspaces:
+    if (ws.workspace_id ==current_workspace):  
+        DOMAIN = ws.deployment_url
+        TOKEN =  dbutils.secrets.get(json_['master_pwd_scope'], ws.ws_token) 
+        
+        loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!") 
+       
+        response = requests.get(
+          'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
+          headers={'Authorization': 'Bearer %s' % TOKEN},
+          json=None
+        )
+        resources = json.loads(response.text)
+        #print (resource)
+        for resource in resources:
+          if resource['endpoint_id'] == json_['sql_warehouse_id']:
+             data_source_id = resource['id']
+             loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
+
+
+# COMMAND ----------
+
+import requests
 #find the current workspace id so that we can create alerts for each workspace
 for ws in workspaces:
     if (ws.workspace_id ==current_workspace):  
@@ -47,6 +71,7 @@ for ws in workspaces:
               'https://%s/api/2.0/preview/sql/queries' % (DOMAIN),
               headers={'Authorization': 'Bearer %s' % TOKEN},
               json={
+                        "data_source_id":data_source_id,
                         "name": "sat_alert_"+ws_to_load.workspace_id,
                         "description": "",
                         "query": "SELECT\n  concat(\"<br> <b>Check name:</b> \",sbp.check_id, \", <b>Check:</b>\" , sbp.check, \" in workspace:\", sc.workspaceid, \n  \", <b>Recommendation:</b>\",sbp.recommendation, \"</br>\" ) as message,  count(*) as total\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nWHERE \nsbp.id = sc.id and\nsc.workspaceid = "+ws_to_load.workspace_id+" and\nsbp.alert = 1 and sc.score = 1 and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\nGROUP BY \n1\nORDER BY total DESC\n\n\n\n\n"
@@ -73,9 +98,8 @@ for ws in workspaces:
                       "column":"total",
                       "custom_subject":"SAT-Alert for workspace:"+ws_to_load.workspace_id,
                       "custom_body":"Hello,\nAlert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}.\nThere have been the following unexpected events on the last day:\n{{QUERY_RESULT_ROWS}}\n\n",
-                      "schedule_failures":0,
-                       "muted":"false",
-
+                      "schedule_failures":0
+                
                    },
 
                    "query_id":query_id

@@ -20,8 +20,13 @@ import json
 json_ = {
    "account_id":"",
    "sql_warehouse_id":"",
-   "username_for_alerts":"",
-   "verbosity":"info",
+   "username_for_alerts":"arun.pamulapati@databricks.com",
+   "verbosity":"info"
+}
+
+# COMMAND ----------
+
+json_.update({
    "master_name_scope":"sat_master_scope",
    "master_name_key":"user",
    "master_pwd_scope":"sat_master_scope",
@@ -32,4 +37,4 @@ json_ = {
    "dashboard_folder":"../../dashboards/",
    "dashboard_tag":"SAT",
    "use_mastercreds":"true"
-}
+})

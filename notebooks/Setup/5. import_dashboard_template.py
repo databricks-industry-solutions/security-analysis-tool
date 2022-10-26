@@ -34,13 +34,37 @@ current_workspace = context['tags']['orgId']
 
 # COMMAND ----------
 
+import requests
+data_source_id =''
+for ws in workspaces:
+    if (ws.workspace_id ==current_workspace):  
+        DOMAIN = ws.deployment_url
+        TOKEN =  dbutils.secrets.get(json_['master_pwd_scope'], ws.ws_token) 
+        
+        loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!") 
+       
+        response = requests.get(
+          'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
+          headers={'Authorization': 'Bearer %s' % TOKEN},
+          json=None
+        )
+        resources = json.loads(response.text)
+        #print (resource)
+        for resource in resources:
+          if resource['endpoint_id'] == json_['sql_warehouse_id']:
+             data_source_id = resource['id']
+             loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
+
+
+# COMMAND ----------
+
 class Client():
-    def __init__(self, url, token,  endpoint_id, dashboard_tags = None):
+    def __init__(self, url, token,  endpoint_id, data_source_id, dashboard_tags = None):
         self.url = "https://"+url
         self.headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
         permissions = "[{\"group_name\": \"users\",\"permission_level\": \"CAN_RUN\"},{\"group_name\": \"admins\",\"permission_level\": \"CAN_MANAGE\"}]"
         self.permissions = {"access_control_list": permissions}
-        self.data_source_id = None
+        self.data_source_id = data_source_id
         self.endpoint_id = endpoint_id
         self.dashboard_tags = dashboard_tags
         
@@ -51,7 +75,7 @@ class Client():
 
 def get_client(workspace,pat_token):
     TOKEN =  dbutils.secrets.get(json_['master_pwd_scope'], ws.ws_token) 
-    client = Client(workspace.deployment_url, TOKEN, json_['sql_warehouse_id'], json_['dashboard_tag'])
+    client = Client(workspace.deployment_url, TOKEN, json_['sql_warehouse_id'], data_source_id, json_['dashboard_tag'])
     return  client, json_['dashboard_id'],  json_['dashboard_folder']
 
 

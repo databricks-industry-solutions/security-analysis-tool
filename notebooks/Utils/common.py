@@ -328,7 +328,3 @@ def insertNewBatchRun():
 
 #For testing
 JSONLOCALTEST='{"account_id": "", "export_db": "logs", "verify_ssl": "False", "verbosity": "info", "email_alerts": "", "master_name_scope": "sat_master_scope", "master_name_key": "user", "master_pwd_scope": "sat_master_scope", "master_pwd_key": "passx", "workspace_pat_scope": "sat_master_scope", "workspace_pat_token_prefix": "sat_tokenx", "url": "https://sfe.cloud.databricks.comx", "workspace_id": "1657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": "True", "scim": "False", "object_storage_encryption": "True", "vpc_peering": "False", "table_access_control_enabled": "True", "use_mastercreds":"False"}'
-
-# COMMAND ----------
-
-readBestPracticesConfigsFile()
