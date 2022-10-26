@@ -228,7 +228,7 @@ You will need the following information to set up SAT, we will show you how to g
  
     
 3.  Activate Alerts 
-  * Goto Alerts and find the alert created by SAT tag and **unmute** it. Set the alert schedule to your needs. 
+  * Goto Alerts and find the alert(s) created by SAT tag and adjust the schedule to your needs. 
 
 
       <img src="./images/alerts_1.png" width="50%" height="50%">   
