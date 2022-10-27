@@ -18,7 +18,7 @@ loggr = LoggingUtils.get_logger()
 # COMMAND ----------
 
 dfexist = readWorkspaceConfigFile()
-dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceGlobalTempView('all_workspaces') 
+dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceGlobalTempView('all_workspaces') 
 
 # COMMAND ----------
 

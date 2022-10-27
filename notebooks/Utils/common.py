@@ -295,7 +295,7 @@ def insertNewBatchRun():
 # MAGIC    deployment_url string,
 # MAGIC    workspace_name string,
 # MAGIC    workspace_status string,
-# MAGIC    workspace_token string,
+# MAGIC    ws_token string,
 # MAGIC    alert_subscriber_user_id string, 
 # MAGIC    analysis_enabled boolean,
 # MAGIC    sso_enabled boolean, 

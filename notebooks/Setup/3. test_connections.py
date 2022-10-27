@@ -130,7 +130,3 @@ for ws in workspaces:
       
       
 modifyWorkspaceConfigFile(input_status_arr)
-
-# COMMAND ----------
-
-
