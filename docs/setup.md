@@ -147,8 +147,12 @@ You will need the following information to set up SAT, we will show you how to g
   <summary>Setup instructions</summary> 
  Following are the one time easy steps to get your workspaces setup with the SAT:
                   <img src="./images/setup_steps.png" width="100%" height="100%">                                        
-                                                          
-1. List account workspaces to analyze with SAT
+1. (Optional) Modify security_best_practices
+   * Goto \<SATProject\>/configs/security_best_practices.csv and make a copy as \<SATProject\>/configs/security_best_practices_user.csv if security_best_practices_user.csv already does not exist. 
+   * Modify enable to 0 if you don't want a specific check to be performed. 
+   * Modify alert to 1 if you would like to receive an email when a deviation is detected , in addition to marking the deviation on the report
+   
+2. List account workspaces to analyze with SAT
    * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
    * This creates configuration file as noted at the bottom of the notebook.
 
@@ -165,7 +169,7 @@ You will need the following information to set up SAT, we will show you how to g
    
    
    
-2. Generate secrets setup file
+3. Generate secrets setup file
    * Run the \<SATProject\>/notebooks/Setup/2.generate_secrets_setup_file notebook.  Setup your PAT tokens for each of the workspaces under the "master_name_scope” 
 
     <img src="./images/setup_secrets.png" width="70%" height="70%">
@@ -181,22 +185,22 @@ You will need the following information to set up SAT, we will show you how to g
  sat_master_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
    
    
-3. Test API Connections    
+4. Test API Connections    
    * Test connections from your workspace to accounts API calls and all workspace API calls by running \<SATProject\>/notebooks/Setup/3. test_connections. It's important that all connections are successful before you can move to the next step.  
 
     <img src="./images/test_connections.png" width="70%" height="70%">
    
-4. Enable workspaces for SAT 
+5. Enable workspaces for SAT 
    * Enable workspaces by running \<SATProject\>/notebooks/Setup/4. enable_workspaces_for_sat.  This makes the registered workspaces ready for SAT to monitor 
 
     <img src="./images/enable_workspaces.png" width="70%" height="70%">
    
-5. Import SAT dashboard template
+6. Import SAT dashboard template
    * We built a ready to go DBSQL dashboard for SAT. Import the dashboard by running \<SATProject\>/notebooks/Setup/5. import_dashboard_template
 
     <img src="./images/import_dashboard.png" width="70%" height="70%">   
    
-6. Configure Alerts  (Optional)
+7. Configure Alerts  (Optional)
    SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
 
    <img src="./images/configure_alerts.png" width="70%" height="70%">
