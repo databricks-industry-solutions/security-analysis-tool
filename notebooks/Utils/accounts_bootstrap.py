@@ -3,6 +3,11 @@
 
 # COMMAND ----------
 
+import time
+start_time = time.time()
+
+# COMMAND ----------
+
 # MAGIC %run ./common
 
 # COMMAND ----------
@@ -18,7 +23,7 @@ else:
 import json
 if not jsonstr:
     print('cannot run notebook by itself')
-    dbutils.notebook.exit()
+    dbutils.notebook.exit('cannot run notebook by itself')
 else:
     json_ = json.loads(jsonstr)
 
@@ -60,6 +65,11 @@ except requests.exceptions.RequestException as e:
   loggr.exception(e)
 except Exception:
   loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+if not is_successful_acct:
+  raise Exception('Unsuccessful account connection. Verify credentials.')
 
 # COMMAND ----------
 
@@ -141,3 +151,7 @@ bootstrap('acctlogdelivery', acct_client.get_logdelivery_list)
 # COMMAND ----------
 
 bootstrap('acctpvtlink', acct_client.get_privatelink_info)
+
+# COMMAND ----------
+
+print(f"Account Bootstrap - {time.time() - start_time} seconds to run")

@@ -38,3 +38,5 @@ json_.update({
    "dashboard_tag":"SAT",
    "use_mastercreds":"true"
 })
+
+#also comment out json JSONLOCALTEST in common
