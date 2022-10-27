@@ -8,6 +8,11 @@
 
 # COMMAND ----------
 
+import time
+start_time = time.time()
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/common
 
 # COMMAND ----------
@@ -23,7 +28,7 @@ else:
 import requests, json
 if not jsonstr:
     print('cannot run notebook by itself')
-    dbutils.notebook.exit()
+    dbutils.notebook.exit('cannot run notebook by itself')
 else:
     json_ = json.loads(jsonstr)
 
@@ -186,3 +191,7 @@ def num_notebooks_rule(df):
         return ('WST-7', {'value':'Coming soon'}, 'Workspace Stats')
 
 sqlctrl(workspace_id,'''select * where 1=1''', num_notebooks_rule, True)
+
+# COMMAND ----------
+
+print(f"Workspace stats - {time.time() - start_time} seconds to run")

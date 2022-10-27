@@ -156,10 +156,10 @@ def readWorkspaceConfigFile():
   prefix = getConfigPath()
   
   dfa=pd.DataFrame()
-  schema = 'workspace_id string, deployment_url string, workspace_name string,workspace_status string, ws_token string, alert_subscriber_user_id string, analysis_enabled boolean, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encypted boolean, table_access_control_enabled boolean'
+  schema = 'workspace_id string, deployment_url string, workspace_name string,workspace_status string, ws_token string, alert_subscriber_user_id string, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean'
   dfexist = spark.createDataFrame([], schema)
   try:
-    dict = {'workspace_id': 'str', 'analysis_enabled': 'bool'} 
+    dict = {'workspace_id': 'str', 'connection_test': 'bool', 'analysis_enabled': 'bool'} 
     dfa = pd.read_csv(f'{prefix}/workspace_configs.csv', header=0, dtype=dict)
     if len(dfa) > 0:
       dfexist = spark.createDataFrame(dfa, schema)
@@ -169,23 +169,6 @@ def readWorkspaceConfigFile():
   except pd.errors.EmptyDataError as e:
     pass
   return dfexist
-
-# COMMAND ----------
-
-def readWorkspaceConfigFile_OLD():
-  import pandas as pd
-  prefix = getConfigPath()
-  schema = 'workspace_id string, workspace_name string, workspace_status string, deployment_url string, ws_token string, alert_subscriber_user_id string, analysis_enabled boolean'
-  dfexist = spark.createDataFrame([], schema)
-  try:
-    dfa = pd.read_csv(f'{prefix}/workspace_configs.csv', header=0)
-    if len(dfa) > 0:
-      dfexist = spark.createDataFrame(dfa, schema) 
-      display(dfexist)
-  except Exception as e:
-    print(e)
-  dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceGlobalTempView('all_workspaces')  
-
 
 # COMMAND ----------
 
@@ -327,4 +310,4 @@ def insertNewBatchRun():
 # COMMAND ----------
 
 #For testing
-JSONLOCALTEST='{"account_id": "", "export_db": "logs", "verify_ssl": "False", "verbosity": "info", "email_alerts": "", "master_name_scope": "sat_master_scope", "master_name_key": "user", "master_pwd_scope": "sat_master_scope", "master_pwd_key": "passx", "workspace_pat_scope": "sat_master_scope", "workspace_pat_token_prefix": "sat_tokenx", "url": "https://sfe.cloud.databricks.comx", "workspace_id": "1657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": "True", "scim": "False", "object_storage_encryption": "True", "vpc_peering": "False", "table_access_control_enabled": "True", "use_mastercreds":"False"}'
+JSONLOCALTEST='{"account_id": "", "sql_warehouse_id": "", "username_for_alerts": "sat@youremail.com", "verbosity": "info", "master_name_scope": "sat_master_scope", "master_name_key": "user", "master_pwd_scope": "sat_master_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_master_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": "true", "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": false, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false}'

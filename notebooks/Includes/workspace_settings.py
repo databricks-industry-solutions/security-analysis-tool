@@ -3,6 +3,11 @@
 
 # COMMAND ----------
 
+import time
+start_time = time.time()
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/common
 
 # COMMAND ----------
@@ -18,7 +23,7 @@ else:
 import requests, json
 if not jsonstr:
     print('cannot run notebook by itself')
-    dbutils.notebook.exit()
+    dbutils.notebook.exit('cannot run notebook by itself')
 else:
     json_ = json.loads(jsonstr)
 
@@ -127,3 +132,7 @@ def enableResultsDownloading(df): #Results Downloading
 
 if enabled:
     sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableResultsDownloading"''', enableResultsDownloading)
+
+# COMMAND ----------
+
+print(f"Workspace Settings - {time.time() - start_time} seconds to run")

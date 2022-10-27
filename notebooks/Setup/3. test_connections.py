@@ -61,6 +61,40 @@ workspaces = workspacesdf.collect()
 
 # COMMAND ----------
 
+#Based on the connection test, modify the connection_test flag so rogue workspaces are not included in the analysis
+def modifyWorkspaceConfigFile(input_connection_arr):
+  print(input_connection_arr)
+  dfworkspaces = readWorkspaceConfigFile()
+  if dfworkspaces.rdd.isEmpty() or not input_connection_arr:
+    loggr.info('No changes to workspace config file')
+    return
+  
+  dfworkspaces.createOrReplaceTempView('allwsm')
+  schema = 'workspace_id string, connection_test boolean'
+  spark.createDataFrame(input_connection_arr, schema).createOrReplaceTempView('incomsm')
+
+  dfmerge = spark.sql(f'''select 
+          allwsm.workspace_id,
+          allwsm.deployment_url,
+          allwsm.workspace_name,
+          allwsm.workspace_status,
+          allwsm.ws_token,
+          allwsm.alert_subscriber_user_id,
+          allwsm.sso_enabled,
+          allwsm.scim_enabled,
+          allwsm.vpc_peering_done,
+          allwsm.object_storage_encypted,
+          allwsm.table_access_control_enabled,
+          incomsm.connection_test,
+          allwsm.analysis_enabled 
+            from allwsm inner join incomsm on allwsm.workspace_id=incomsm.workspace_id''')
+  display(dfmerge)
+  prefix = getConfigPath()
+  dfmerge.toPandas().to_csv(f'{prefix}/workspace_configs.csv', mode='w', index=False, header=True) #Databricks Runtime 11.2 or above.
+
+# COMMAND ----------
+
+input_status_arr=[]
 for ws in workspaces:
   import json
   mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
@@ -83,7 +117,8 @@ for ws in workspaces:
   is_successful_ws=False
   try:
     is_successful_ws = db_client.test_connection()
-
+    stat_tuple = (ws.workspace_id, is_successful_ws)
+    input_status_arr.append(stat_tuple)
     if is_successful_ws == True:
       loggr.info(f"Workspace {hostname} Connection successful!")
     else:
@@ -92,3 +127,10 @@ for ws in workspaces:
       loggr.exception(f"Unsuccessful {hostname} workspace connection. Verify credentials.")
   except Exception:
       loggr.exception("Exception encountered")
+      
+      
+modifyWorkspaceConfigFile(input_status_arr)
+
+# COMMAND ----------
+
+

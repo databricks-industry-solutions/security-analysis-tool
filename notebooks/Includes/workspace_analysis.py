@@ -3,6 +3,11 @@
 
 # COMMAND ----------
 
+import time
+start_time = time.time()
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/common
 
 # COMMAND ----------
@@ -18,7 +23,7 @@ else:
 import requests, json
 if not jsonstr:
     print('cannot run notebook by itself')
-    dbutils.notebook.exit()
+    dbutils.notebook.exit('cannot run notebook by itself')
 else:
     json_ = json.loads(jsonstr)
 
@@ -750,3 +755,7 @@ def uc_check(df):
 
 if enabled:    
   sqlctrl(workspace_id, '''select cluster_id, cluster_name, data_security_mode from global_temp.clusters where cluster_source='UI' and (data_security_mode not in ('USER_ISOLATION', 'SINGLE_USER') or data_security_mode is null)''', uc_check)
+
+# COMMAND ----------
+
+print(f"Workspace Analysis - {time.time() - start_time} seconds to run")

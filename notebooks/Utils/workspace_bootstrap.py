@@ -3,6 +3,11 @@
 
 # COMMAND ----------
 
+import time
+start_time = time.time()
+
+# COMMAND ----------
+
 # MAGIC %run ./common
 
 # COMMAND ----------
@@ -18,16 +23,21 @@ else:
 import requests, json
 if not jsonstr:
     print('cannot run notebook by itself')
-    dbutils.notebook.exit()
+    dbutils.notebook.exit('cannot run notebook by itself')
 else:
     json_ = json.loads(jsonstr)
-
 
 # COMMAND ----------
 
 from core.logging_utils import LoggingUtils
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
+
+# COMMAND ----------
+
+loggr.info('-----------------')
+loggr.info(json.dumps(json_))
+loggr.info('-----------------')
 
 # COMMAND ----------
 
@@ -45,7 +55,6 @@ else:
     token = ''
 
 json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-
 db_client = SatDBClient(json_)
 
 
@@ -63,6 +72,11 @@ except requests.exceptions.RequestException as e:
     loggr.exception('Unsuccessful connection. Verify credentials.')
 except Exception:
     loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+if not is_successful_ws:
+  dbutils.notebook.exit('Unsuccessful Workspace connection. Verify credentials.')
 
 # COMMAND ----------
 
@@ -379,3 +393,7 @@ bootstrap('libraries', lib_client.get_libraries_status_list)
 
 # This is expensive. 
 #bootstrap('wsnotebooks', workspace_client.get_all_notebooks)
+
+# COMMAND ----------
+
+print(f"Workspace Bootstrap - {time.time() - start_time} seconds to run")

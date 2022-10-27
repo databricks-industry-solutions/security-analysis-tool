@@ -54,12 +54,14 @@ def generateWorkspaceConfigFile(workspace_prefix):
     df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.cloud.databricks.com'))) #AWS
     df = df.withColumn("workspace_token", concat(lit(workspace_prefix), lit('_'), col('workspace_id')))   #added with workspace prfeix
     df = df.withColumn("alert_subscriber_user_id", lit(json_['username_for_alerts']))
-    df = df.withColumn("analysis_enabled", lit(True)) 
     df = df.withColumn("sso_enabled", lit(False)) 
     df = df.withColumn("scim_enabled", lit(False)) 
     df = df.withColumn("vpc_peering_done", lit(False)) 
     df = df.withColumn("object_storage_encypted", lit(False)) 
     df = df.withColumn("table_access_control_enabled", lit(False)) 
+    df = df.withColumn("connection_test", lit(False)) 
+    df = df.withColumn("analysis_enabled", lit(True)) 
+    
     loggr.info('Appending following workspaces to configurations ...')
     display(df)
     prefix = getConfigPath()
