@@ -25,10 +25,11 @@ You will need the following information to set up SAT, we will show you how to g
 
  2. A Single user cluster  
     *  Databricks Runtime Version  11.3 LTS or above
-    *  Node type i3.xlarge
+    *  Node type i3.xlarge (please start with a max of a two node cluster and adjust to 5 nodes if you have many workspaces that will be analyzed with SAT)  
 
         <img src="./images/job_cluster.png" width="50%" height="50%">
-
+     **Note:**  In our tests we found that the full run of SAT takes about 10 mins per workspace. 
+     
  3. Databricks SQL Warehouse  
     * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
 
@@ -95,17 +96,17 @@ You will need the following information to set up SAT, we will show you how to g
         ```    
         
 
-     * Create a secret for workspace PAT token
+  * Create a secret for workspace PAT token
 
       **Note**: Replace \<workspace_id\> with your SAT deployment workspace id. 
-        You can find your workspace id by following the instructions [here](https://docs.databricks.com/workspace/workspace-details.html)
+       You can find your workspace id by following the instructions [here](https://docs.databricks.com/workspace/workspace-details.html)
 
-        You can create a PAT token by following the instructions [here](https://docs.databricks.com/dev-tools/api/latest/authentication.html#generate-a-personal-access-token)
+       You can create a PAT token by following the instructions [here](https://docs.databricks.com/dev-tools/api/latest/authentication.html#generate-a-personal-access-token)
 
 
-      ```
-      databricks --profile e2-certification secrets put --scope sat_master_scope --key sat_token_<workspace_id> 
-      ``` 
+       ```
+       databricks --profile e2-certification secrets put --scope sat_master_scope --key sat_token_<workspace_id> 
+       ``` 
 
    * Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
      * Set the value for the account id 
@@ -113,7 +114,7 @@ You will need the following information to set up SAT, we will show you how to g
      * Set the vlaue for username_for_alerts
      * databricks secrets scope/key names to pick the secrets from the steps above.
 
-  * Your config in  \<SATProject\>/notebooks/Utils/initializ CMD 2 should look like this:
+  * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 2 should look like this:
 
      ```
            {
@@ -146,11 +147,12 @@ You will need the following information to set up SAT, we will show you how to g
 <details>
   <summary>Setup instructions</summary> 
  Following are the one time easy steps to get your workspaces setup with the SAT:
-                  <img src="./images/setup_steps.png" width="100%" height="100%">                                        
+                  <img src="./images/setup_steps.png" width="100%" height="100%">  
+ 
 1. (Optional) Modify security_best_practices
-   * Goto \<SATProject\>/configs/security_best_practices.csv and make a copy as \<SATProject\>/configs/security_best_practices_user.csv if security_best_practices_user.csv already does not exist. 
-   * Modify enable to 0 if you don't want a specific check to be performed. 
-   * Modify alert to 1 if you would like to receive an email when a deviation is detected , in addition to marking the deviation on the report
+   *  Goto \<SATProject\>/configs/security_best_practices.csv and make a copy as \<SATProject\>/configs/security_best_practices_user.csv if security_best_practices_user.csv already does not exist. 
+   * Modify **enable** to 0 if you don't want a specific check to be performed. 
+   * Modify **alert** to 1 if you would like to receive an email when a deviation is detected, in addition to marking the deviation on the report
    
 2. List account workspaces to analyze with SAT
    * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
@@ -162,8 +164,7 @@ You will need the following information to set up SAT, we will show you how to g
      You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyzed by the SAT.
 
      Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
-
-     Note: no  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
+     Note: Please avoid  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
 
     <img src="./images/workspace_configs.png" width="70%" height="70%">
    
@@ -186,7 +187,7 @@ You will need the following information to set up SAT, we will show you how to g
    
    
 4. Test API Connections    
-   * Test connections from your workspace to accounts API calls and all workspace API calls by running \<SATProject\>/notebooks/Setup/3. test_connections. It's important that all connections are successful before you can move to the next step.  
+   * Test connections from your workspace to accounts API calls and all workspace API calls by running \<SATProject\>/notebooks/Setup/3. test_connections. The workspaces that didn't pass the connection test are marked in workspace_configs.csv with connection_test as False and are not analyzed.
 
     <img src="./images/test_connections.png" width="70%" height="70%">
    
@@ -200,7 +201,7 @@ You will need the following information to set up SAT, we will show you how to g
 
     <img src="./images/import_dashboard.png" width="70%" height="70%">   
    
-7. Configure Alerts  (Optional)
+7. Configure Alerts 
    SAT can deliver alerts via email via Databricks SQL Alerts. Import the alerts template by running \<SATProject\>/notebooks/Setup/6. configure_alerts_template (optional)
 
    <img src="./images/configure_alerts.png" width="70%" height="70%">
@@ -211,7 +212,7 @@ You will need the following information to set up SAT, we will show you how to g
    
 ## Usage
 1. Attach and run the notebook \<SATProject\>/notebooks/security_analysis_driver 
-   Note: This process takes upto 30 mins per workspace
+   Note: This process takes upto 10 mins per workspace
  
    <img src="./images/run_analysis.png" width="70%" height="70%">
    
@@ -247,7 +248,7 @@ You will need the following information to set up SAT, we will show you how to g
 
   * Goto Workflows - > click on create jobs -> setup as following:
 
-    Task Name  : security_analysis_drive
+    Task Name  : security_analysis_driver
 
     Type: Notebook
 
@@ -255,7 +256,7 @@ You will need the following information to set up SAT, we will show you how to g
 
     Path : \<SATProject\>/SAT/SecurityAnalysisTool-BranchV2Root/notebooks/security_analysis_driver
 
-    Cluster: Make sure to pick the Single user mode job compute cluster you created. 
+    Cluster: Make sure to pick the Single user mode job compute cluster you created before. 
 
     <img src="./images/workflow.png" width="50%" height="50%">   
 
