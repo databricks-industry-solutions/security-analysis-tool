@@ -39,4 +39,4 @@ json_.update({
    "use_mastercreds":"true"
 })
 
-#also comment out json JSONLOCALTEST in common
+#also obfuscate out json JSONLOCALTEST in common

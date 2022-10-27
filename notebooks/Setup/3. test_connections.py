@@ -72,7 +72,7 @@ def modifyWorkspaceConfigFile(input_connection_arr):
   dfworkspaces.createOrReplaceTempView('allwsm')
   schema = 'workspace_id string, connection_test boolean'
   spark.createDataFrame(input_connection_arr, schema).createOrReplaceTempView('incomsm')
-
+  #incomsm has only analysis_enabled true, lets add the false rows too use left outer join.
   dfmerge = spark.sql(f'''select 
           allwsm.workspace_id,
           allwsm.deployment_url,
@@ -85,9 +85,10 @@ def modifyWorkspaceConfigFile(input_connection_arr):
           allwsm.vpc_peering_done,
           allwsm.object_storage_encypted,
           allwsm.table_access_control_enabled,
-          incomsm.connection_test,
+          coalesce(incomsm.connection_test, False), 
           allwsm.analysis_enabled 
-            from allwsm inner join incomsm on allwsm.workspace_id=incomsm.workspace_id''')
+            from allwsm left outer join incomsm on allwsm.workspace_id=incomsm.workspace_id''')
+  
   display(dfmerge)
   prefix = getConfigPath()
   dfmerge.toPandas().to_csv(f'{prefix}/workspace_configs.csv', mode='w', index=False, header=True) #Databricks Runtime 11.2 or above.
