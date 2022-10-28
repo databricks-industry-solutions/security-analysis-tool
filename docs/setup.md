@@ -58,18 +58,18 @@ Please gather the following information before you start setting up:
 
   * Download and setup Databricks CLI by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html)  
   * Note: if you have multiple Databricks profiles you will need to use --profile <profile name> switch to access the correct workspace,
-    follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-certification**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
+    follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-sat**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
   * Setup authentication to your Databricks workspace by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#set-up-authentication)
 
        ```
-            databricks configure --token --profile e2-certification
+            databricks configure --token --profile e2-sat
        ```
 
      <img src="./images/cli_authentication.png" width="50%" height="50%">
 
      You should see a listing of folders in your workspace : 
       ```
-           databricks --profile e2-certification workspace ls
+           databricks --profile e2-sat workspace ls
       ```
 
      <img src="./images/workspace_ls.png" width="50%" height="50%">
@@ -80,7 +80,7 @@ Please gather the following information before you start setting up:
      Note: The values you place below are case sensitive and needs to be exact. 
  
      ```
-      databricks --profile e2-certification secrets create-scope --scope sat_master_scope
+      databricks --profile e2-sat  secrets create-scope --scope sat_master_scope
       ```
 
      For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
@@ -89,13 +89,13 @@ Please gather the following information before you start setting up:
 
       *  Create secret for master account username
         ```
-        databricks --profile e2-certification secrets put --scope sat_master_scope --key user
+        databricks --profile e2-sat secrets put --scope sat_master_scope --key user
         ```
 
       *  Create secret for master account password
 
         ```
-        databricks --profile e2-certification secrets put --scope sat_master_scope --key pass
+        databricks --profile e2-sat secrets put --scope sat_master_scope --key pass
         ```    
         
 
@@ -108,7 +108,7 @@ Please gather the following information before you start setting up:
 
 
        ```
-       databricks --profile e2-certification secrets put --scope sat_master_scope --key sat_token_<workspace_id> 
+       databricks --profile e2-sat secrets put --scope sat_master_scope --key sat_token_<workspace_id> 
        ``` 
 
    * In your environment where you imported SAT project from git (Refer to Step 4 in Prerequisites) Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
