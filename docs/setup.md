@@ -14,8 +14,10 @@ You will need the following information to set up SAT, we will show you how to g
 
 
 ## Prerequisites 
- 
- Please gather the following information before you start setting up: 
+
+ (Estimated time to complete these steps: 15 - 30 mins)
+
+Please gather the following information before you start setting up: 
  
  1. Databricks Account ID 
      * Please test your administrator account and password to make sure this is a working account: [https://accounts.cloud.databricks.com/login](https://accounts.cloud.databricks.com/login)
@@ -128,7 +130,9 @@ You will need the following information to set up SAT, we will show you how to g
 
  
 ## Setup option 1 (Simple and recommended method)
-   
+                                                           
+  (Estimated time to complete these steps: 5 - 10 mins)  
+                                                           
  Make sure both SAT job cluster (Refer to Prerequisites Step 2 ) and Warehouse (Refer to Prerequisites Step 3) are running.                                                                   
 <details>
   <summary>Setup instructions</summary>                                                                          
@@ -145,6 +149,8 @@ You will need the following information to set up SAT, we will show you how to g
 </details>
  
 ## Setup option 2 (Most flexible for the power users)
+ 
+  (Estimated time to complete these steps:30 mins)  
  
 <details>
   <summary>Setup instructions</summary> 
@@ -213,6 +219,9 @@ You will need the following information to set up SAT, we will show you how to g
  
    
 ## Usage
+ 
+ (Estimated time to complete these steps: 5 - 10 mins per workspace)  
+ 
 1. Attach and run the notebook \<SATProject\>/notebooks/security_analysis_driver 
    Note: This process takes upto 10 mins per workspace
  
@@ -246,6 +255,9 @@ You will need the following information to set up SAT, we will show you how to g
    
    
 ## Configure Workflow (Optional) 
+ 
+ (Estimated time to complete these steps: 5 mins)  
+ 
   * Databricks Workflows is the fully-managed orchestration service. You can configure SAT to automate when and how you would like to schedule it by using by taking advantage of Workflows. 
 
   * Goto Workflows - > click on create jobs -> setup as following:
