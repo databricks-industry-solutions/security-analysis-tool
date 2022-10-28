@@ -75,17 +75,9 @@ def processWorkspace(wsrow):
   dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(json_)})
   dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(json_)})
 
-multiprocess=True
-if multiprocess:
-  from concurrent.futures import ThreadPoolExecutor
-  import multiprocessing
-  max_work = multiprocessing.cpu_count()
-  pool = ThreadPoolExecutor(max_workers=int(max_work*0.75))
-  futures = [pool.submit(processWorkspace, ws) for ws in workspaces]
-  pool.shutdown(wait=True)    
-else:
-  for ws in workspaces:
-    processWorkspace(ws)
+#TO DO parallelize. But think of global temp views.
+for ws in workspaces:
+  processWorkspace(ws)
 
     
 
