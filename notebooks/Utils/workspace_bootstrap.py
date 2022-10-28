@@ -69,8 +69,10 @@ try:
   else:
     loggr.info("Unsuccessful workspace connection. Verify credentials.")
 except requests.exceptions.RequestException as e:
+    is_successful_ws = False
     loggr.exception('Unsuccessful connection. Verify credentials.')
 except Exception:
+    is_successful_ws = False
     loggr.exception("Exception encountered")
 
 # COMMAND ----------

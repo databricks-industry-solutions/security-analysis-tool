@@ -66,7 +66,7 @@ def processWorkspace(wsrow):
   vpc_peering_done = wsrow.vpc_peering_done
   object_storage_encypted = wsrow.object_storage_encypted  
   table_access_control_enabled = wsrow.table_access_control_enabled
-    
+
   clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
   json_.update({"sso":sso, "scim":scim,"object_storage_encryption":object_storage_encypted, "vpc_peering":vpc_peering_done,"table_access_control_enabled":table_access_control_enabled, 'url':hostname, 'workspace_id': workspace_id, 'cloud_type': cloud_type, 'clusterid':clusterid})
   loggr.info(json_)
@@ -74,16 +74,18 @@ def processWorkspace(wsrow):
   dbutils.notebook.run('./Includes/workspace_analysis', 3000, {"json_":json.dumps(json_)})
   dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(json_)})
   dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(json_)})
- 
+
 multiprocess=True
 if multiprocess:
-  import multiprocessing
-  with multiprocessing.Pool(processes=8) as pool:
-    outputs = pool.map(processWorkspace, workspaces, chunksize=5)
+  from concurrent.futures import ThreadPoolExecutor
+  pool = ThreadPoolExecutor(max_workers=3)
+  futures = [pool.submit(processWorkspace, ws) for ws in workspaces]
+  pool.shutdown(wait=True)    
 else:
   for ws in workspaces:
     processWorkspace(ws)
 
+    
 
 
 # COMMAND ----------

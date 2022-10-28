@@ -118,16 +118,18 @@ for ws in workspaces:
   is_successful_ws=False
   try:
     is_successful_ws = db_client.test_connection()
-    stat_tuple = (ws.workspace_id, is_successful_ws)
-    input_status_arr.append(stat_tuple)
     if is_successful_ws == True:
       loggr.info(f"Workspace {hostname} Connection successful!")
     else:
       loggr.info(f"Unsuccessful {hostname} workspace connection. Verify credentials.")
   except requests.exceptions.RequestException as e:
-      loggr.exception(f"Unsuccessful {hostname} workspace connection. Verify credentials.")
+    is_successful_ws=False
+    loggr.exception(f"Unsuccessful {hostname} workspace connection. Verify credentials.")
   except Exception:
-      loggr.exception("Exception encountered")
-      
+    is_successful_ws=False
+    loggr.exception("Exception encountered")
+  finally:
+    stat_tuple = (ws.workspace_id, is_successful_ws)     
+    input_status_arr.append(stat_tuple)
       
 modifyWorkspaceConfigFile(input_status_arr)

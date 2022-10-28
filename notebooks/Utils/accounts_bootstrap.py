@@ -61,9 +61,11 @@ try:
   else:
       loggr.info("Unsuccessful account connection. Verify credentials.") 
 except requests.exceptions.RequestException as e:
+  is_successful_acct = False  
   loggr.exception('Unsuccessful connection. Verify credentials.')
   loggr.exception(e)
 except Exception:
+  is_successful_acct = False
   loggr.exception("Exception encountered")
 
 # COMMAND ----------
