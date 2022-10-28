@@ -78,7 +78,9 @@ def processWorkspace(wsrow):
 multiprocess=True
 if multiprocess:
   from concurrent.futures import ThreadPoolExecutor
-  pool = ThreadPoolExecutor(max_workers=3)
+  import multiprocessing
+  max_work = multiprocessing.cpu_count()
+  pool = ThreadPoolExecutor(max_workers=int(max_work*0.75))
   futures = [pool.submit(processWorkspace, ws) for ws in workspaces]
   pool.shutdown(wait=True)    
 else:
@@ -86,6 +88,10 @@ else:
     processWorkspace(ws)
 
     
+
+
+# COMMAND ----------
+
 
 
 # COMMAND ----------
