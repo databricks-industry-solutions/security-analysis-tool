@@ -32,7 +32,8 @@ You will need the following information to set up SAT, we will show you how to g
      
  3. Databricks SQL Warehouse  
     * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
-
+    * This Warehouse needs to be in running state when you run steps in the Setup section.
+    
         <img src="./images/dbsqlwarehouse_id.png" width="50%" height="50%">
 
  4. Databricks Repos to access SAT git
@@ -74,7 +75,7 @@ You will need the following information to set up SAT, we will show you how to g
 
   *  Set up the secret scope with the scope name you prefer and note it down:
      
-     Note: The values you place above are case sensitive
+     Note: The values you place below are case sensitive and needs to be exact. 
  
      ```
       databricks --profile e2-certification secrets create-scope --scope sat_master_scope
@@ -108,7 +109,7 @@ You will need the following information to set up SAT, we will show you how to g
        databricks --profile e2-certification secrets put --scope sat_master_scope --key sat_token_<workspace_id> 
        ``` 
 
-   * Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
+   * In your environment where you imported SAT project from git (Refer to Step 4 in Prerequisites) Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
      * Set the value for the account id 
      * Set the value for the sql_warehouse_id
      * Set the vlaue for username_for_alerts
@@ -127,7 +128,8 @@ You will need the following information to set up SAT, we will show you how to g
 
  
 ## Setup option 1 (Simple and recommended method)
-                                                                         
+   
+ Make sure both SAT job cluster (Refer to Prerequisites Step 2 ) and Warehouse (Refer to Prerequisites Step 3) are running.                                                                   
 <details>
   <summary>Setup instructions</summary>                                                                          
  Following is the one time easy setup to get your workspaces setup with the SAT:
