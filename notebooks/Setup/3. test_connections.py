@@ -85,7 +85,7 @@ def modifyWorkspaceConfigFile(input_connection_arr):
           allwsm.vpc_peering_done,
           allwsm.object_storage_encypted,
           allwsm.table_access_control_enabled,
-          coalesce(incomsm.connection_test, False), 
+          coalesce(incomsm.connection_test, False) as connection_test, 
           allwsm.analysis_enabled 
             from allwsm left outer join incomsm on allwsm.workspace_id=incomsm.workspace_id''')
   
