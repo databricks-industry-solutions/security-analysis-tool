@@ -80,22 +80,22 @@ Please gather the following information before you start setting up:
      Note: The values you place below are case sensitive and needs to be exact. 
  
      ```
-      databricks --profile e2-sat  secrets create-scope --scope sat_master_scope
+      databricks --profile e2-sat  secrets create-scope --scope sat_scope
       ```
 
      For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
 
-  *  Create username secret and password secret of administrative user id and password  as  "user" and "pass" under the above "sat_master_scope" scope using Databricks Secrets CLI 
+  *  Create username secret and password secret of administrative user id and password  as  "user" and "pass" under the above "sat_scope" scope using Databricks Secrets CLI 
 
       *  Create secret for master account username
         ```
-        databricks --profile e2-sat secrets put --scope sat_master_scope --key user
+        databricks --profile e2-sat secrets put --scope sat_scope --key user
         ```
 
       *  Create secret for master account password
 
         ```
-        databricks --profile e2-sat secrets put --scope sat_master_scope --key pass
+        databricks --profile e2-sat secrets put --scope sat_scope --key pass
         ```    
         
 
@@ -108,7 +108,7 @@ Please gather the following information before you start setting up:
 
 
        ```
-       databricks --profile e2-sat secrets put --scope sat_master_scope --key sat_token_<workspace_id> 
+       databricks --profile e2-sat secrets put --scope sat_scope --key sat_token_<workspace_id> 
        ``` 
 
    * In your environment where you imported SAT project from git (Refer to Step 4 in Prerequisites) Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
@@ -191,7 +191,7 @@ Please gather the following information before you start setting up:
    Example:
 
     curl --netrc --request POST 'https://oregon.cloud.databricks.com/api/2.0/secrets/put' -d '{"scope":"
- sat_master_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
+ sat_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
    
    
 4. Test API Connections    
@@ -283,11 +283,11 @@ Please gather the following information before you start setting up:
 1. Incorrectly configured secrets
     * Error:
    
-      Secret does not exist with scope: sat_master_scope and key: sat_tokens
+      Secret does not exist with scope: sat_scope and key: sat_tokens
 
     * Resolution:
       Check if the tokens are configured with correct names by listing and comparing with the configuration.
-      databricks secrets list --scope sat_master_scope
+      databricks secrets list --scope sat_scope
 
 2. Invalid access token
    
