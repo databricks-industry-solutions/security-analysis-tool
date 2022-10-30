@@ -75,15 +75,11 @@ def processWorkspace(wsrow):
   dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(json_)})
   dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(json_)})
 
-#TO DO parallelize. But think of global temp views.
+
 for ws in workspaces:
   processWorkspace(ws)
-
+  loggr.info(f"Completed analyzing {ws.workspace_id}!")
     
-
-
-# COMMAND ----------
-
 
 
 # COMMAND ----------

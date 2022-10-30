@@ -27,11 +27,11 @@ json_ = {
 # COMMAND ----------
 
 json_.update({
-   "master_name_scope":"sat_master_scope",
+   "master_name_scope":"sat_scope",
    "master_name_key":"user",
-   "master_pwd_scope":"sat_master_scope",
+   "master_pwd_scope":"sat_scope",
    "master_pwd_key":"pass",
-   "workspace_pat_scope":"sat_master_scope",
+   "workspace_pat_scope":"sat_scope",
    "workspace_pat_token_prefix":"sat_token",
    "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
    "dashboard_folder":"../../dashboards/",
