@@ -39,7 +39,7 @@ data_source_id =''
 for ws in workspaces:
     if (ws.workspace_id ==current_workspace):  
         DOMAIN = ws.deployment_url
-        TOKEN =  dbutils.secrets.get(json_['master_pwd_scope'], ws.ws_token) 
+        TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
         
         loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!") 
        
@@ -74,8 +74,7 @@ class Client():
 # COMMAND ----------
 
 def get_client(workspace,pat_token):
-    TOKEN =  dbutils.secrets.get(json_['master_pwd_scope'], ws.ws_token) 
-    client = Client(workspace.deployment_url, TOKEN, json_['sql_warehouse_id'], data_source_id, json_['dashboard_tag'])
+    client = Client(workspace.deployment_url, pat_token, json_['sql_warehouse_id'], data_source_id, json_['dashboard_tag'])
     return  client, json_['dashboard_id'],  json_['dashboard_folder']
 
 
@@ -232,7 +231,7 @@ def load_dashboard(target_client: Client, dashboard_id, dashboard_state, folder_
 
 for ws in workspaces:
     if (ws.workspace_id ==current_workspace): 
-        target_client, dashboard_id_to_load,dashboard_folder  = get_client(ws, dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key']))
+        target_client, dashboard_id_to_load,dashboard_folder  = get_client(ws, dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token))
         workspace_state = {}
         loggr.info(f"Loading dashboard to master workspace {ws.workspace_id} from dashboard folder {dashboard_folder}")
         load_dashboard(target_client, dashboard_id_to_load,  workspace_state, dashboard_folder)
