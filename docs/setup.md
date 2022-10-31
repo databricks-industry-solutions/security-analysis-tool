@@ -34,7 +34,7 @@ Please gather the following information before you start setting up:
      
  3. Databricks SQL Warehouse  
     * Goto SQL (pane) -> SQL Warehouse -> and pick the SQL Warehouse for your dashboard and note down the ID as shown below
-    * This Warehouse needs to be in running state when you run steps in the Setup section.
+    * This Warehouse needs to be in a running state when you run steps in the Setup section.
     
         <img src="./images/dbsqlwarehouse_id.png" width="50%" height="50%">
 
@@ -48,13 +48,13 @@ Please gather the following information before you start setting up:
 
       <img src="./images/git_import.png" width="50%" height="50%">
 
- 5. Please confirm PyPI access is available
+ 5. Please confirm that PyPI access is available
 
     * Open the \<SATProject\>/notebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. 
     Please make sure there are no errors.
  
 
-6. Configrue secrets
+6. Configure secrets
 
   * Download and setup Databricks CLI by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html)  
   * Note: if you have multiple Databricks profiles you will need to use --profile <profile name> switch to access the correct workspace,
@@ -77,7 +77,7 @@ Please gather the following information before you start setting up:
 
   *  Set up the secret scope with the scope name you prefer and note it down:
      
-     Note: The values you place below are case sensitive and needs to be exact. 
+     Note: The values you place below are case sensitive and need to be exact. 
  
      ```
       databricks --profile e2-sat  secrets create-scope --scope sat_scope
@@ -99,7 +99,7 @@ Please gather the following information before you start setting up:
         ```    
         
 
-  * Create a secret for workspace PAT token
+  * Create a secret for the workspace PAT token
 
       **Note**: Replace \<workspace_id\> with your SAT deployment workspace id. 
        You can find your workspace id by following the instructions [here](https://docs.databricks.com/workspace/workspace-details.html)
@@ -114,7 +114,7 @@ Please gather the following information before you start setting up:
    * In your environment where you imported SAT project from git (Refer to Step 4 in Prerequisites) Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
      * Set the value for the account id 
      * Set the value for the sql_warehouse_id
-     * Set the vlaue for username_for_alerts
+     * Set the value for username_for_alerts
      * databricks secrets scope/key names to pick the secrets from the steps above.
 
   * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 2 should look like this:
@@ -164,12 +164,12 @@ Please gather the following information before you start setting up:
    
 2. List account workspaces to analyze with SAT
    * Goto  \<SATProject\>/notebooks/Setup/1.list_account_workspaces_to_conf_file and Run -> Run all 
-   * This creates configuration file as noted at the bottom of the notebook.
+   * This creates a configuration file as noted at the bottom of the notebook.
 
     <img src="./images/list_workspaces.png" width="70%" height="70%">
    
    * Goto  \<SATProject\>/configs/workspace_configs.csv and update the file for each workspace listed as a new line. 
-     You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyzed by the SAT.
+     You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
 
      Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
      Note: Please avoid  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
@@ -234,14 +234,17 @@ Please gather the following information before you start setting up:
    
    
    
-2. Access Databricks SQL Dashboards section and find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter dashboard by **SAT** tag. 
+2. Access Databricks SQL Dashboards section and find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter the dashboard by **SAT** tag. 
    
    <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
 
     Note: You need to select the workspace and click "Apply Changes" to get the report.  
 
-    You can share SAT dashboard with other members of your team by using "Share" functionality on the top right corner of the dashboard. 
+    You can share SAT dashboard with other members of your team by using the "Share" functionality on the top right corner of the dashboard. 
+    
+    Here is what your SAT Dashboard should look like:
  
+   <img src="../images/sat_dashboard_partial.png" width="50%" height="50%">   
     
 3.  Activate Alerts 
   * Goto Alerts and find the alert(s) created by SAT tag and adjust the schedule to your needs. 
@@ -274,7 +277,7 @@ Please gather the following information before you start setting up:
 
     <img src="./images/workflow.png" width="50%" height="50%">   
 
-    Add schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
+    Add a schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
 
 
    
@@ -286,7 +289,7 @@ Please gather the following information before you start setting up:
       Secret does not exist with scope: sat_scope and key: sat_tokens
 
     * Resolution:
-      Check if the tokens are configured with correct names by listing and comparing with the configuration.
+      Check if the tokens are configured with the correct names by listing and comparing with the configuration.
       databricks secrets list --scope sat_scope
 
 2. Invalid access token
