@@ -138,6 +138,11 @@ Please gather the following information before you start setting up:
 <details>
   <summary>Setup instructions</summary>                                                                          
  Following is the one time easy setup to get your workspaces setup with the SAT:
+
+* (Optional) Modify security_best_practices
+   *  Goto \<SATProject\>/configs/security_best_practices.csv and make a copy as \<SATProject\>/configs/security_best_practices_user.csv if security_best_practices_user.csv already does not exist. 
+   * Modify **enable** to 0 if you don't want a specific check to be performed. 
+   * Modify **alert** to 1 if you would like to receive an email when a deviation is detected, in addition to marking the deviation on the report
                                                           
 * Attach  \<SATProject\>/notebooks/security_analysis_initializer to the SAT cluster you created above and Run -> Run all 
  
@@ -158,7 +163,7 @@ Please gather the following information before you start setting up:
  Following are the one time easy steps to get your workspaces setup with the SAT:
                   <img src="./images/setup_steps.png" width="100%" height="100%">  
  
-1. (Optional) Modify security_best_practices
+1. Modify security_best_practices
    *  Goto \<SATProject\>/configs/security_best_practices.csv and make a copy as \<SATProject\>/configs/security_best_practices_user.csv if security_best_practices_user.csv already does not exist. 
    * Modify **enable** to 0 if you don't want a specific check to be performed. 
    * Modify **alert** to 1 if you would like to receive an email when a deviation is detected, in addition to marking the deviation on the report
