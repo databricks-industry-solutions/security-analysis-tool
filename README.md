@@ -20,7 +20,7 @@ Security Analysis Tool (SAT) is an observability tool that aims to improve the s
 
 ![SAT Functionality](./images/sat_functionality.png)
 
-SAT is typically run daily as an automated workflow in the customers account that collects details on various settings via REST APIs. The details of these check results are persisted in Delta tables in customer storage so that trends can be analyzed over time. These results are displayed in a centralized Databricks SQL dashboard and are broadly categorized into five distinct sections for others in the organizationorganizaation to view their respective workspace settings. It also provides links to the latest public documentation on how to configure correctly which helps customers educate on Databricks security in tiny increments feature by feature. Forewarned is Forearmed!. Alerts can be configured on critical checks to provide notifications to concerned stakeholders. It also provides additional details on individual checks that fail so that an admin persona can pinpoint and isolate the issue and remediate it quickly.
+SAT is typically run daily as an automated workflow in the customers account that collects details on various settings via REST APIs. The details of these check results are persisted in Delta tables in customer storage so that trends can be analyzed over time. These results are displayed in a centralized Databricks SQL dashboard and are broadly categorized into five distinct sections for others in the organization to view their respective workspace settings. It also provides links to the latest public documentation on how to configure correctly which helps customers educate on Databricks security in tiny increments feature by feature. Forewarned is Forearmed!. Alerts can be configured on critical checks to provide notifications to concerned stakeholders. It also provides additional details on individual checks that fail so that an admin persona can pinpoint and isolate the issue and remediate it quickly.
 
 ## SAT Insights
 
@@ -31,7 +31,7 @@ Data across any of the configured workspaces can be surfaced through a single pa
 * Governance  
 * Informational 
 
-The data in each section is further categorizedcatgorized by severity namely: High, Medium, Low.
+The data in each section is further categorized by severity namely: High, Medium, Low.
 
 ![SAT Insights](./images/sat_dashboard_partial.png)
 
