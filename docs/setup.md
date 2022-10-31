@@ -132,6 +132,7 @@ Please gather the following information before you start setting up:
 ## Setup option 1 (Simple and recommended method)
                                                            
   (Estimated time to complete these steps: 5 - 10 mins)  
+ This method uses admin credentials (configured in the Step 6 of Prerequisites section) to call workspace APIs.   
                                                            
  Make sure both SAT job cluster (Refer to Prerequisites Step 2 ) and Warehouse (Refer to Prerequisites Step 3) are running.                                                                   
 <details>
@@ -151,7 +152,7 @@ Please gather the following information before you start setting up:
 ## Setup option 2 (Most flexible for the power users)
  
   (Estimated time to complete these steps:30 mins)  
- 
+   This method uses admin credentials (configured in the Step 6 of Prerequisites section) by default to call workspace APIs. But can be changed to use workspace PAT tokens instead.
 <details>
   <summary>Setup instructions</summary> 
  Following are the one time easy steps to get your workspaces setup with the SAT:
@@ -179,6 +180,9 @@ Please gather the following information before you start setting up:
    
    
 3. Generate secrets setup file
+  Note: You can skip this step and go to step 4, if you would like to use admin credentials (configured in the Step 6 of Prerequisites section) to call workspace APIs.
+ 
+   * Change \<SATProject\>/notebooks/Utils/initialize value of from  "use_mastercreds":"true" to "use_mastercreds":"false"
    * Run the \<SATProject\>/notebooks/Setup/2.generate_secrets_setup_file notebook.  Setup your PAT tokens for each of the workspaces under the "master_name_scope” 
 
     <img src="./images/setup_secrets.png" width="70%" height="70%">
