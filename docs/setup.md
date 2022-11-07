@@ -2,13 +2,15 @@
 
 You will need the following information to set up SAT, we will show you how to gather them in the next section.
 
+We created a companion Security Analysis Tool (SAT) [Setup primer video](https://www.youtube.com/watch?v=kLSc3UHKL40) and a [Deployment checklist sheet](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/docs/SAT%20Deployment%20Checklist.xlsx) to help prepare for the SAT setup. 
+
  1. Databricks Account ID, administrative user id and password  (To use the account REST APIs)
  2. A Single user job cluster (To run the SAT checks)
  3. Databricks SQL Warehouse  (To run the SQL dashboard)
  4. Ensure that Databricks Repos is enabled (To access the SAT git)
  5. Pipy access from your workspace (To install the SAT utility library)
  6. PAT token for the SAT primary deployment workspace 
- 
+  
 **Note**: SAT creates a new **security_analysis** databses and Delta tables. 
 
 
@@ -289,7 +291,30 @@ Please gather the following information before you start setting up:
     Add a schedule as per your needs. That’s it. Now you are continuously monitoring the health of your account workspaces.
 
 
-   
+## FAQs
+ 1. How can SAT be configured if access to github is not possible due to firewall restrictions to git or other organization policies?
+    
+    You can still setup SAT by downloading the [release zip](https://github.com/databricks-industry-solutions/security-analysis-tool/releases) file and by using Git repo to load SAT project into your workspace.
+     * Add Repo by going to Repos in your workspace:  
+     
+      <img src="./images/add_repo_1.png" width="50%" height="50%">   
+ 
+     * Type SAT as your "Repository name" and uncheck "Create repo by cloning a Git repository"
+ 
+      <img src="./images/add_repo_2.png" width="50%" height="50%">
+ 
+     * Click on the pulldown menu and click on Import
+      
+      <img src="./images/add_repo_3.png" width="50%" height="50%">
+
+     * Drag and drop the release zip file and click Import
+ 
+      <img src="./images/add_repo_4.png" width="50%" height="50%">
+      
+      <img src="./images/add_repo_5.png" width="50%" height="50%"> 
+    
+    You should see the SAT project in your workspace. 
+    
 ## Troubleshooting
    
 1. Incorrectly configured secrets
