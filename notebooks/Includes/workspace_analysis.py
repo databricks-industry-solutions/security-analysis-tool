@@ -304,7 +304,7 @@ def token_rule(df):
       return (check_id, 0, {})   
     
 if enabled:
-  sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) <= {expiry_limit_evaluation_value}) and expiry_time = -1''', token_rule)
+  sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) <= {expiry_limit_evaluation_value}) and expiry_time != -1''', token_rule)
 
 # COMMAND ----------
 
