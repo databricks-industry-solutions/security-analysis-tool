@@ -304,7 +304,7 @@ def token_rule(df):
       return (check_id, 0, {})   
     
 if enabled:
-  sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) <= {expiry_limit_evaluation_value})''', token_rule)
+  sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) <= {expiry_limit_evaluation_value}) and expiry_time = -1''', token_rule)
 
 # COMMAND ----------
 
@@ -749,7 +749,7 @@ def uc_check(df):
     df = df.rdd.map(lambda x: (x[0],  re.sub('[\"\'\\\\]', '_',x[1]), x[2])).toDF(['cluster_id', 'cluster_name', 'data_security_mode'])        
     uclst = df.collect()
     uclst_dict = {i.cluster_id : [i.cluster_name, i.data_security_mode] for i in uclst}
-    print(uclst_dict)
+    
     return (check_id, 1, uclst_dict)
   return (check_id, 0, {})   
 
