@@ -95,12 +95,22 @@ def modifyWorkspaceConfigFile(input_connection_arr):
 
 # COMMAND ----------
 
+import json
+#Get current workspace id
+context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
+current_workspace = context['tags']['orgId']
+
+# COMMAND ----------
+
 input_status_arr=[]
 for ws in workspaces:
   import json
   mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])  
-  if(bool(json_['use_mastercreds']) is False):
+  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key']) 
+  
+  # Use configured token if use_mastercreds is set to false or the worspace we are testing is the master (current) workspace 
+  # We need the current workspace connection tested with the token to configure alerts and dashboard later
+  if( (bool(json_['use_mastercreds']) is False ) or (ws.workspace_id ==current_workspace)):
       tokenscope = json_['workspace_pat_scope']
       tokenkey = ws.ws_token #already has prefix in config file
       token = dbutils.secrets.get(tokenscope, tokenkey)
