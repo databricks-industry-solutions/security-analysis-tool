@@ -42,12 +42,22 @@ class SatDBClient:
 
     def _update_token_master(self):
         '''update token master in http header'''
-        user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
-        self._url = "https://accounts.cloud.databricks.com" #url for accounts api
-        self._token = {
-            "Authorization" : f"Basic {user_pass}",
-            "User-Agent": "databricks-sat/0.1.0"
-        }
+        LOGGR.info("in _update_token_master")
+        if(self._cloud_type == 'gcp'):
+            self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
+            self._token = {
+                "Authorization": f"Bearer {self._master_name}",
+                "X-Databricks-GCP-SA-Access-Token": f"{self._master_password}",
+                "User-Agent": "databricks-sat/0.1.0"
+            }
+            LOGGR.info(f'GCP self._token {self._token}')
+        else:    
+            user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+            self._url = "https://accounts.cloud.databricks.com" #url for accounts api
+            self._token = {
+                "Authorization" : f"Basic {user_pass}",
+                "User-Agent": "databricks-sat/0.1.0"
+            }
 
     def _update_token(self):
         '''update token in http header'''
@@ -58,11 +68,18 @@ class SatDBClient:
                 "User-Agent": "databricks-sat/0.1.0"
             }
         else: # use master creds for workspaces also
-            user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
-            self._token = {
-                "Authorization" : f"Basic {user_pass}",
+            if(self._cloud_type == 'gcp'):
+                self._token = {
+                "Authorization": f"Bearer {self._raw_token}",
                 "User-Agent": "databricks-sat/0.1.0"
-            }
+                }   
+                LOGGR.info(f'In GCP  self._url {self._url}')
+            else:    
+                user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+                self._token = {
+                    "Authorization" : f"Basic {user_pass}",
+                    "User-Agent": "databricks-sat/0.1.0"
+                }
 
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''

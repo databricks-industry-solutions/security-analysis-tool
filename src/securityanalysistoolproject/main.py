@@ -6,6 +6,7 @@ from core import parser as pars
 from core.logging_utils import LoggingUtils
 from core.dbclient import SatDBClient
 import requests
+import urllib3
 
 
 #pylint: disable=unused-import
@@ -28,7 +29,7 @@ from clientpkgs.workspace_client import WorkspaceClient
 def main():
     '''main - tester program'''
     configParser = configparser.ConfigParser()   
-    configFilePath = '/Users/ramdas.murali/_dev_stuff/config.txt'
+    configFilePath = '/Users/arun.pamulapati/_dev_stuff/config_gcp.txt'
     configParser.read(configFilePath)
     jsonstr = configParser['MEISTERSTUFF']['json']
     workspace_id = json.loads(jsonstr)['workspace_id']
@@ -39,14 +40,14 @@ def main():
         is_successful = sat_db_client.test_connection()
 
         if is_successful:
-            LOGGR.info("Connection successful!")
+            LOGGR.info("Workspace Connection successful!")
         else:
             LOGGR.info("Unsuccessful connection. Verify credentials.")
 
         is_successful = sat_db_client.test_connection(master_acct=True)
 
         if is_successful:
-            LOGGR.info("Connection successful!")
+            LOGGR.info("Accunts API Connection successful!")
         else:
             LOGGR.info("Unsuccessful connection. Verify credentials.")
 
