@@ -13,7 +13,7 @@ We created a companion Security Analysis Tool (SAT) [Setup primer video](https:/
  5. Pipy access from your workspace (To install the SAT utility library)
  6. PAT token for the SAT primary deployment workspace 
   
-**Note**: SAT creates a new **security_analysis** databses and Delta tables. 
+**Note**: SAT creates a new **security_analysis** database and Delta tables. 
 
 
 
