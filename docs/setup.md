@@ -1,5 +1,7 @@
 ## Checklist to prepare for SAT setup
 
+(SAT is supported for Databricks AWS accounts only, we are planning to release SAT for Azure and GCP for Q4,  Jan 30th 2023   )
+
 You will need the following information to set up SAT, we will show you how to gather them in the next section.
 
 We created a companion Security Analysis Tool (SAT) [Setup primer video](https://www.youtube.com/watch?v=kLSc3UHKL40) and a [Deployment checklist sheet](./SAT%20Deployment%20Checklist.xlsx) to help prepare for the SAT setup. 
