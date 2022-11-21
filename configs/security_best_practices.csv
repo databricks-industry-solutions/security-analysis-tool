@@ -5,7 +5,7 @@ https://<workspace_url>/api/2.0/secrets/scopes/list "
 https://<workspace_url>/api/2.0/clusters/list"
 3,DP-3,Data Protection,BYOK,-1,Low,Add a customer-managed key for managed services and workspace storage,https://docs.databricks.com/security/keys/customer-managed-keys-storage-aws.html,1,0,0,1,0,Check if storage_customer_managed_key_id value is set for each workspace ,curl -n -X GET 'https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces'
 4,DP-4,Data Protection,S3 Encryption,-1,High,Encrypt S3 buckets and restrict access,https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-encryption.html,1,0,0,1,0,Manual check,Manual check
-5,DP-5,Data Protection,Results Downloading,-1,High,Disable download button for notebook results,https://docs.databricks.com/administration-guide/workspace/notebooks.html#manage-download-results,1,0,0,1,0,Check workspace-conf for enableResultsDownloading setting,curl -n -X GET 'https://<workspace_url>/api/2.0/preview/workspace-conf?keys=enableJobViewAcls'
+5,DP-5,Data Protection,Results Downloading,-1,High,Disable download button for notebook results,https://docs.databricks.com/administration-guide/workspace/notebooks.html#manage-download-results,1,0,0,1,0,Check workspace-conf for enableResultsDownloading setting,curl -n -X GET 'https://<workspace_url>/api/2.0/preview/workspace-conf?keys=enableResultsDownloading'
 6,GOV-1,Governance,Cluster Policies,-1,High,Configure cluster policies to enforce data access patterns and control costs,https://docs.databricks.com/administration-guide/clusters/policies.html,1,0,0,1,0,Check if policy_id is set for clusters,"curl --netrc -X GET \
 https://<workspace_url>/api/2.0/clusters/list \
 | jq . 
