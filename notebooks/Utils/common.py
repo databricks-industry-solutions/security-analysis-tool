@@ -172,26 +172,46 @@ def readWorkspaceConfigFile():
 
 # COMMAND ----------
 
-#read the best practices file. User configs present in this file, so use the security_best_practices_user
-#to refresh delete this and it will regen however enabled and alerts will be lost.
+# Read the best practices file. (security_best_practices.csv)
+# Sice User configs are present in this file, the file is renamed (to security_best_practices_user)
+# This is needed only on bootstrap, subsequetly the database is the master copy of the user configuration
+# Every time the values are altered, the _user file ca be regenerated - but it is more as FYI
 def readBestPracticesConfigsFile():
   import pandas as pd
   from os.path import exists
   import shutil
 
+  hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+  cloud_type = getCloudType(hostname)
+  doc_url = cloud_type + '_doc_url'
+
   prefix = getConfigPath()
   origfile = f'{prefix}/security_best_practices.csv'
   userfile = f'{prefix}/security_best_practices_user.csv' #delete this file to get latest 
   file_exists = exists(userfile)
-  if(file_exists is False): #regen file only if not present
-    shutil.copy2(f'{origfile}', f'{userfile}')
-  schema = 'id int, check_id string,category string,check string, evaluation_value string,severity string,recommendation string,doc_url string,aws int,azure int,gcp int,enable int,alert int, logic string, api string'
+    
+  if(file_exists): #bootstrap has already been done, the DB is the master, do ot overwrite
+    return
+    
+  schema_list = ['id', 'check_id', 'category', 'check', 'evaluation_value', 'severity', 
+                        'recommendation', 'aws', 'azure', 'gcp', 'enable', 'alert', 'logic', 'api', doc_url]
 
-  security_best_practices_pd = pd.read_csv(userfile, header=0)
-  
-  security_best_practices = spark.createDataFrame(security_best_practices_pd, schema)
+  schema = '''id int, check_id string,category string,check string, evaluation_value string,severity string,
+               recommendation string,aws int,azure int,gcp int,enable int,alert int, logic string, api string,  doc_url string'''
+
+  security_best_practices_pd = pd.read_csv(origfile, header=0, usecols=schema_list).rename(columns = {doc_url:'doc_url'})
+  security_best_practices_pd.to_csv(userfile, encoding='utf-8', index=False)
+    
+  security_best_practices = (spark.createDataFrame(security_best_practices_pd, schema)
+                            .select('id', 'check_id', 'category', 'check', 'evaluation_value', 
+                                    'severity', 'recommendation', 'doc_url', 'aws', 'azure', 'gcp', 'enable', 'alert', 'logic', 'api'))
+    
   security_best_practices.write.format('delta').mode('overwrite').saveAsTable('security_analysis.security_best_practices')
-  display(security_best_practices)
+  display(security_best_practices)  
+
+# COMMAND ----------
+
+readBestPracticesConfigsFile()
 
 # COMMAND ----------
 

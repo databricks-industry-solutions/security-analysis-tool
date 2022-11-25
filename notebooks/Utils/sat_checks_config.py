@@ -9,6 +9,16 @@ def getCloudType(url):
     return 'gcp'
   return ''
 
+def getConfigPath():
+  import os
+  cwd = os.getcwd().lower()
+  if (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1):
+    return '../../configs'
+  elif (cwd.rfind('/notebooks') != -1):
+    return '../configs'
+  else:
+    return 'configs'
+
 # COMMAND ----------
 
 #Account Level SAT Check Configuration
@@ -54,6 +64,12 @@ def set_sat_check_config():
     #print(s_sql)
     spark.sql(s_sql)
     
+    #update user config file (security_best_practices_user.csv)
+    prefix = getConfigPath()
+    userfile = f'{prefix}/security_best_practices_user.csv'
+    security_best_practices_pd = spark.table('security_analysis.security_best_practices').toPandas()
+    security_best_practices_pd.to_csv(userfile, encoding='utf-8', index=False)
+    
 #Reset SAT check widgets 
 def get_all_sat_checks():
     dbutils.widgets.removeAll()
@@ -75,10 +91,6 @@ def get_all_sat_checks():
 
     #Define Driver Widgets
     dbutils.widgets.dropdown("sat_check", first_check, [str(x) for x in checks], "a. SAT Check")
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 
