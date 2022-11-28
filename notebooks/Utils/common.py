@@ -211,10 +211,6 @@ def readBestPracticesConfigsFile():
 
 # COMMAND ----------
 
-readBestPracticesConfigsFile()
-
-# COMMAND ----------
-
 def getSecurityBestPracticeRecord(id, cloud_type):
   df = spark.sql(f'''select * from security_analysis.security_best_practices where id = '{id}' ''')
   dict_elems = {} 

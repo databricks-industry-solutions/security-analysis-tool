@@ -22,39 +22,73 @@ dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True
 
 # COMMAND ----------
 
-workspacesdf = spark.sql('select * from `global_temp`.`all_workspaces`')
-display(workspacesdf)
-workspaces = workspacesdf.collect()
-
-# COMMAND ----------
-
 import json
 context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
 current_workspace = context['tags']['orgId']
 
 # COMMAND ----------
 
+workspacedf = spark.sql("select * from `global_temp`.`all_workspaces` where workspace_id='" + current_workspace + "'" )
+if (workspacedf.rdd.isEmpty()):
+    dbutils.notebook.exit("The current workspace is not found in configured lst of workspaces for analysis.")
+display(workspacedf)
+ws = (workspacedf.collect())[0]
+
+# COMMAND ----------
+
 import requests
-data_source_id =''
-for ws in workspaces:
-    if (ws.workspace_id ==current_workspace):  
-        DOMAIN = ws.deployment_url
-        TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
-        
-        loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!") 
-       
-        response = requests.get(
+DOMAIN = ws.deployment_url
+TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
+loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!")
+response = requests.get(
           'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % TOKEN},
           json=None
         )
-        resources = json.loads(response.text)
-        #print (resource)
-        for resource in resources:
-          if resource['endpoint_id'] == json_['sql_warehouse_id']:
-             data_source_id = resource['id']
-             loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
+resources = json.loads(response.text)
 
+found = False
+for resource in resources:
+    if resource['endpoint_id'] == json_['sql_warehouse_id']:
+        data_source_id = resource['id']
+        loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
+        found = True
+        break
+            
+if (found == False):
+    dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")
+
+# COMMAND ----------
+
+#todo: Add parent folder to all SQL assets, expose name in _json (default SAT)
+#create a folder to house all SAT sql artifacts
+def create_ws_dir(ws, dir_name):
+    
+    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
+    url = "https://"+ ws.deployment_url
+    headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
+    path = "/Users/"+context['tags']['user']+"/"+ dir_name
+    body = {"path":  path}
+    target_url = url + "/api/2.0/workspace/mkdirs"
+    loggr.info(f"Creating {path} using {target_url}")
+    
+    requests.post(target_url, headers=headers, json=body).json()
+    loggr.info(f"Dir {dir_name} created")
+
+
+#delete folder that houses all SAT sql artifacts
+def delete_ws_dir(ws, dir_name):
+    
+    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
+    url = "https://"+ ws.deployment_url
+    headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
+    path = "/Users/"+context['tags']['user']+"/"+ dir_name
+    body = {"path":  path, "recursive": True}
+    target_url = url + "/api/2.0/workspace/delete"
+    loggr.info(f"Creating {path} using {target_url}")
+    
+    requests.post(target_url, headers=headers, json=body).json()
+    loggr.info(f"Dir {dir_name} deleted")
 
 # COMMAND ----------
 
@@ -96,6 +130,7 @@ def clone_dashboard(dashboard, target_client: Client, dashboard_state):
                         del p["parentQueryId"]
                     del p["value"]
         new_query = clone_or_update_query(dashboard_state, q, target_client)
+        print("new_query=", new_query)
         if target_client.permisions_defined():
             permissions = requests.post(target_client.url+"/api/2.0/preview/sql/permissions/queries/"+new_query["id"], headers = target_client.headers, json=target_client.permissions).json()
             loggr.info(f"     Permissions set to {permissions}")
@@ -226,12 +261,13 @@ def load_dashboard(target_client: Client, dashboard_id, dashboard_state, folder_
         dashboard_state = clone_dashboard(dashboard, target_client, dashboard_state)
         return dashboard_id, dashboard_state
 
+# COMMAND ----------
+
+target_client, dashboard_id_to_load,dashboard_folder  = get_client(ws, dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token))
+workspace_state = {}
+loggr.info(f"Loading dashboard to master workspace {ws.workspace_id} from dashboard folder {dashboard_folder}")
+load_dashboard(target_client, dashboard_id_to_load,  workspace_state, dashboard_folder)
 
 # COMMAND ----------
 
-for ws in workspaces:
-    if (ws.workspace_id ==current_workspace): 
-        target_client, dashboard_id_to_load,dashboard_folder  = get_client(ws, dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token))
-        workspace_state = {}
-        loggr.info(f"Loading dashboard to master workspace {ws.workspace_id} from dashboard folder {dashboard_folder}")
-        load_dashboard(target_client, dashboard_id_to_load,  workspace_state, dashboard_folder)
+dbutils.notebook.exit('OK')
