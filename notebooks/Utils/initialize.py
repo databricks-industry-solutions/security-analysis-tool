@@ -36,7 +36,7 @@ json_.update({
    "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
    "dashboard_folder":"../../dashboards/",
    "dashboard_tag":"SAT",
-   "use_mastercreds":"true"
+   "use_mastercreds":"True"
 })
 
 #also obfuscate out json JSONLOCALTEST in common

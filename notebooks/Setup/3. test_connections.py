@@ -115,7 +115,7 @@ for ws in workspaces:
   
   # Use configured token if use_mastercreds is set to false or the worspace we are testing is the master (current) workspace 
   # We need the current workspace connection tested with the token to configure alerts and dashboard later
-  if( (bool(json_['use_mastercreds']) is False ) or (ws.workspace_id ==current_workspace)):
+  if((bool(eval(json_['use_mastercreds'])) is False ) or (ws.workspace_id ==current_workspace)):
       tokenscope = json_['workspace_pat_scope']
       tokenkey = ws.ws_token #already has prefix in config file
       token = dbutils.secrets.get(tokenscope, tokenkey)

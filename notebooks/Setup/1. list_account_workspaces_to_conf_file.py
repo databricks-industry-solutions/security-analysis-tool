@@ -51,7 +51,7 @@ def generateWorkspaceConfigFile(workspace_prefix):
             where workspace_status = "RUNNING" {excluded_configured_workspace}'''
   df = spark.sql(spsql)
   if(not df.rdd.isEmpty()):
-    df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.cloud.databricks.com'))) #AWS
+    df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.'), lit(cloud_type), lit('.databricks.com'))) 
     df = df.withColumn("ws_token", concat(lit(workspace_prefix), lit('_'), col('workspace_id')))   #added with workspace prfeix
     df = df.withColumn("alert_subscriber_user_id", lit(json_['username_for_alerts']))
     df = df.withColumn("sso_enabled", lit(False)) 
