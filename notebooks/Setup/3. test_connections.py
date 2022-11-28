@@ -42,11 +42,14 @@ try:
       loggr.info("Account Connection successful!")
   else:
       loggr.info("Unsuccessful account connection. Verify credentials.") 
+      dbutils.notebook.exit("Unsuccessful account connection. Verify credentials.")
 except requests.exceptions.RequestException as e:
   loggr.exception('Unsuccessful connection. Verify credentials.')
   loggr.exception(e)
+  dbutils.notebook.exit("Unsuccessful account connection. Verify credentials.")
 except Exception:
   loggr.exception("Exception encountered")
+  dbutils.notebook.exit("Unsuccessful account connection. Verify credentials.")
 
 # COMMAND ----------
 
@@ -57,6 +60,8 @@ dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceTempView('configur
 
 workspacesdf = spark.sql('select * from `configured_workspaces`')
 display(workspacesdf)
+if workspacesdf.rdd.isEmpty():
+    dbutils.notebook.exit("Workspace list is empty. At least one should be configured for analysis")
 workspaces = workspacesdf.collect()
 
 # COMMAND ----------
@@ -141,5 +146,9 @@ for ws in workspaces:
   finally:
     stat_tuple = (ws.workspace_id, is_successful_ws)     
     input_status_arr.append(stat_tuple)
-      
+    
 modifyWorkspaceConfigFile(input_status_arr)
+
+# COMMAND ----------
+
+dbutils.notebook.exit('OK')
