@@ -1,4 +1,10 @@
 # Databricks notebook source
+dbutils.widgets.text("cred_file_path", "", "a. Service account key file path")
+dbutils.widgets.text("target_principal", "", "b. Impersonation service account")
+dbutils.widgets.text("long_term", "True", "c. Generate Long term PAT tokens")
+
+# COMMAND ----------
+
 # MAGIC %run ../../Includes/install_sat_sdk
 
 # COMMAND ----------
@@ -21,14 +27,35 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-gcp_accounts_url = 'https://accounts.gcp.databricks.com'
-gcp_workspace_url = '8577638828144838.8.gcp.databricks.com'
-cred_file_path= '/dbfs/FileStore/tables/SA_1_key.json'
-target_principal='arun-sa-2@fe-dev-sandbox.iam.gserviceaccount.com'
-long_term = True
+import json
+#Get current workspace id
+context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
+current_workspace = context['tags']['orgId']
 
-secret_scope = 'sat_scope'
-secret_scope_initial_manage_principal ='users'
+# COMMAND ----------
+
+cred_file_path = dbutils.widgets.get("cred_file_path")
+target_principal = dbutils.widgets.get("target_principal")
+long_term = (bool(eval(dbutils.widgets.get("long_term"))))
+loggr.info(f" Service account key file path {cred_file_path}")
+loggr.info(f" Impersonation service account {target_principal}")
+loggr.info(f" Generate Long term PAT tokens {long_term}")
+
+
+
+if cred_file_path is None or target_principal is None or long_term is None:
+    dbutils.notebook.exit("Please set values for : Service account key file path, Impersonation service account, Generate Long term PAT tokens")
+
+
+workspace_pat_scope = json_['workspace_pat_scope']
+tokenscope = json_['workspace_pat_token_prefix']
+ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"_"+current_workspace)
+
+account_id = json_["account_id"] 
+
+
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
 
 # COMMAND ----------
 
@@ -39,12 +66,13 @@ account_id=json_["account_id"]
 #replace values for accounts exec
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
+gcp_accounts_url = 'https://accounts.'+cloud_type+'.databricks.com'
 
 # COMMAND ----------
 
-def generatePATToken(deployment_url, tempToken):
+def generatePATtoken(deployment_url, tempToken):
     import requests
-
+    token_value = None  
 
     response = requests.post(
       '%s/api/2.0/token/create' % (deployment_url),
@@ -53,10 +81,10 @@ def generatePATToken(deployment_url, tempToken):
     )
 
     if response.status_code == 200:
-      loggr.info(f"PAT Token is successfuly created: {response.json()['token_value']}!")
+      loggr.info(f"PAT Token is successfuly created!")
       token_value = response.json()["token_value"] 
     else:
-      loggr.info(f"Error creating alert query: {(response.json())}")   
+      loggr.info(f"Error creating PAT token: {response}")   
 
 
     return token_value
@@ -75,7 +103,7 @@ def generateToken(deployment_url, long_term=False):
       source_credentials=source_credentials,
       target_principal=target_principal,
       target_scopes = target_scopes,
-      lifetime=3600)
+      lifetime=36000)
 
     creds = impersonated_credentials.IDTokenCredentials(
                                       target_credentials,
@@ -84,48 +112,32 @@ def generateToken(deployment_url, long_term=False):
 
     authed_session = AuthorizedSession(creds)
     resp = authed_session.get(gcp_accounts_url)
-    print(resp.status_code)
-    print(resp.text)
-    loggr.info(f"Short term token for {deployment_url} : {creds.token}!")
-    if long_term:
-        return creds.token, generatePATToken(deployment_url,creds.token)
-        
-    else:    
-        return creds.token, creds.token
+    loggr.info(f"Short term token for {deployment_url} !")
+    
+    return creds.token
     
 
 # COMMAND ----------
 
-def storePATTokenAsSecret(deployment_url, workspace_id, tempToken, token):
+def storeTokenAsSecret(deployment_url, scope, key, PAT_token, token):
     import requests
-
+    
 
     response = requests.post(
       '%s/api/2.0/secrets/put' % (deployment_url),
-      headers={'Authorization': 'Bearer %s' % tempToken},
-      json={ "scope": secret_scope,
-              "key": 'sat_token'+'_'+workspace_id,
+      headers={'Authorization': 'Bearer %s' % PAT_token},
+      json={ "scope": scope,
+              "key": key,
               "string_value": token 
            }
     )
 
     if response.status_code == 200:
-      loggr.info(f"PAT Token is successfuly stored in secrets: {response.json()}!")
+      loggr.info(f"Token is successfuly stored in secrets: {response.json()}!")
     else:
-      loggr.info(f"Error storing secrets: {(response.json())}")   
+      loggr.info(f"Error storing secrets: {response}")   
 
 
-
-
-# COMMAND ----------
-
-import json
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
-
-# COMMAND ----------
-
-print(current_workspace)
 
 # COMMAND ----------
 
@@ -141,11 +153,43 @@ if response.status_code == 200:
     loggr.info("Workspaces query successful!")
     workspaces = response.json()
     for ws in workspaces:
-        print(ws['workspace_id'])
-        if (str(ws['workspace_id']) == current_workspace):   
-            deployment_url = "https://"+ ws['deployment_name']+'.'+cloud_type+'.databricks.com'
-            loggr.info(f" Getting token for Workspace : {deployment_url}")
-            tempToken, longTermToken = generateToken(deployment_url, long_term)
-            storePATTokenAsSecret(deployment_url, str(ws['workspace_id']), tempToken, longTermToken)
+        if str(ws['workspace_id']) == current_workspace:
+            gcp_workspace_url = 'https://'+ws['deployment_name']+'.'+cloud_type+'.databricks.com'
+        
 else:
     loggr.info(f"Error querying workspace API. Check account tokens: {response}")   
+    
+loggr.info(f"Current workspace URL : {gcp_workspace_url}")   
+
+# COMMAND ----------
+
+import requests
+
+response = requests.get(
+  '%s/api/2.0/accounts/%s/workspaces' % (gcp_accounts_url,account_id),
+  headers={'Authorization': 'Bearer %s' % mastername, 'X-Databricks-GCP-SA-Access-Token': '%s' % masterpwd},
+  json=None
+)
+
+if response.status_code == 200:
+    loggr.info("Workspaces query successful!")
+    workspaces = response.json()
+    #generate rest of the workspace tokens and store them in the secret store of the main workspace
+    
+    for ws in workspaces:
+        if((str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')):
+            deployment_url = "https://"+ ws['deployment_name']+'.'+cloud_type+'.databricks.com'
+            loggr.info(f" Getting token for Workspace : {deployment_url}")
+            token = generateToken(deployment_url)
+            if token and long_term:
+                loggr.info(f" Getting PAT token for Workspace : {deployment_url}")  
+                token = generatePATtoken(deployment_url,token)
+            
+            if token:
+                storeTokenAsSecret(gcp_workspace_url, workspace_pat_scope, tokenscope+"_"+str(ws['workspace_id']), ws_pat_token, token)
+else:
+    loggr.info(f"Error querying workspace API. Check account tokens: {response}")   
+
+# COMMAND ----------
+
+dbutils.notebook.exit('OK')
