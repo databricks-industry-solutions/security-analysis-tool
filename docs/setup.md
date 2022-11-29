@@ -178,12 +178,20 @@ Please gather the following information before you start setting up:
 
     <img src="./images/list_workspaces.png" width="70%" height="70%">
    
-   * Goto  \<SATProject\>/configs/workspace_configs.csv and update the file for each workspace listed as a new line. 
+   * Goto  \<SATProject\>/configs/workspace_configs.csv which is generated after the above step and update the file for each workspace listed as a new line. 
      You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
-
+     
      Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
+ 
      Note: Please avoid  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
-
+     
+     Update values for each workspace for the manual checks:(    sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled)
+ 
+     * sso_enabled : True if you enabled Single Singn-on for the workspace
+     * scim_enabled: True if you integrated with  SCIM for the workspace
+     * vpc_peering_done: False if you have not peered with another VPC 
+     * object_storage_encypted: True if you encrypted your data buckets
+     * table_access_control_enabled : True if you enabled ACLs so that you can utilize Table ACL clusters that enforce user isolation
     <img src="./images/workspace_configs.png" width="70%" height="70%">
    
    
