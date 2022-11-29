@@ -227,7 +227,6 @@ def getConfigPath():
 # MAGIC   check_time TIMESTAMP
 # MAGIC )
 # MAGIC USING DELTA
-# MAGIC LOCATION '/user/hive/warehouse/security_analysis.db/run_number_table'
 
 # COMMAND ----------
 
@@ -257,7 +256,6 @@ def insertNewBatchRun():
 # MAGIC   chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
 # MAGIC )
 # MAGIC USING DELTA
-# MAGIC LOCATION '/user/hive/warehouse/security_analysis.db/security_checks'
 # MAGIC PARTITIONED BY (chk_date);
 
 # COMMAND ----------
@@ -275,7 +273,6 @@ def insertNewBatchRun():
 # MAGIC   chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
 # MAGIC )
 # MAGIC USING DELTA
-# MAGIC LOCATION '/user/hive/warehouse/security_analysis.db/account_info'
 # MAGIC PARTITIONED BY (chk_date);
 
 # COMMAND ----------
@@ -305,7 +302,6 @@ def insertNewBatchRun():
 # MAGIC    table_access_control_enabled boolean
 # MAGIC )
 # MAGIC USING DELTA
-# MAGIC LOCATION '/user/hive/warehouse/security_analysis.db/account_workspaces'
 
 # COMMAND ----------
 
