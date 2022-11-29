@@ -40,3 +40,13 @@ json_.update({
 })
 
 #also obfuscate out json JSONLOCALTEST in common
+
+# COMMAND ----------
+
+#GCP configurations 
+json_.update({
+   "service_account_key_file_path":"",
+   "impersonate_service_account":"",
+   "generate_pat_tokens":"True",
+})
+
