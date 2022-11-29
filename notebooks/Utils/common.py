@@ -227,7 +227,6 @@ def getConfigPath():
 # MAGIC   check_time TIMESTAMP
 # MAGIC )
 # MAGIC USING DELTA
-# MAGIC LOCATION '/user/hive/warehouse/security_analysis.db/run_number_table'
 
 # COMMAND ----------
 
@@ -236,6 +235,12 @@ def insertNewBatchRun():
   ts = time.time()
   df = spark.sql(f'insert into security_analysis.run_number_table (check_time) values ({ts})')
 
+
+# COMMAND ----------
+
+def notifyworkspaceCompleted(workspaceID, completed):
+  runID = spark.sql('select max(runID) from security_analysis.run_number_table').collect()[0][0]
+  spark.sql(f'''INSERT INTO security_analysis.workspace_run_complete VALUES ({workspaceID}, {runID}, {completed})''')
 
 # COMMAND ----------
 
@@ -257,7 +262,6 @@ def insertNewBatchRun():
 # MAGIC   chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
 # MAGIC )
 # MAGIC USING DELTA
-# MAGIC LOCATION '/user/hive/warehouse/security_analysis.db/security_checks'
 # MAGIC PARTITIONED BY (chk_date);
 
 # COMMAND ----------
@@ -275,16 +279,7 @@ def insertNewBatchRun():
 # MAGIC   chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
 # MAGIC )
 # MAGIC USING DELTA
-# MAGIC LOCATION '/user/hive/warehouse/security_analysis.db/account_info'
 # MAGIC PARTITIONED BY (chk_date);
-
-# COMMAND ----------
-
-# MAGIC %sql -- drop table security_analysis.account_workspaces
-
-# COMMAND ----------
-
-##dbutils.fs.rm('/user/hive/warehouse/security_analysis.db/account_workspaces', True)
 
 # COMMAND ----------
 
@@ -305,7 +300,17 @@ def insertNewBatchRun():
 # MAGIC    table_access_control_enabled boolean
 # MAGIC )
 # MAGIC USING DELTA
-# MAGIC LOCATION '/user/hive/warehouse/security_analysis.db/account_workspaces'
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE DATABASE IF NOT EXISTS security_analysis;
+# MAGIC CREATE TABLE IF NOT EXISTS security_analysis.workspace_run_complete(
+# MAGIC     workspace_id string,
+# MAGIC     run_id bigint,
+# MAGIC     completed boolean
+# MAGIC )
+# MAGIC USING DELTA
 
 # COMMAND ----------
 

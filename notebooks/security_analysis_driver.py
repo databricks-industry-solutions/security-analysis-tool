@@ -77,8 +77,14 @@ def processWorkspace(wsrow):
 
 
 for ws in workspaces:
-  processWorkspace(ws)
-  loggr.info(f"Completed analyzing {ws.workspace_id}!")
+  try:
+    processWorkspace(ws)
+    notifyworkspaceCompleted(ws.workspace_id, True)
+    loggr.info(f"Completed analyzing {ws.workspace_id}!")
+  except Exception as e:
+    print(e)
+    notifyworkspaceCompleted(ws.workspace_id, False)
+
     
 
 
@@ -86,3 +92,8 @@ for ws in workspaces:
 
 # MAGIC %sql
 # MAGIC select * from security_analysis.security_checks order by run_id desc, workspaceid asc, check_time asc
+
+# COMMAND ----------
+
+# MAGIC %sql use security_analysis;
+# MAGIC select * from workspace_run_complete;
