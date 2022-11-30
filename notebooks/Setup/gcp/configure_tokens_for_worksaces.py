@@ -1,10 +1,4 @@
 # Databricks notebook source
-dbutils.widgets.text("cred_file_path", "", "a. Service account key file path")
-dbutils.widgets.text("target_principal", "", "b. Impersonation service account")
-dbutils.widgets.text("long_term", "True", "c. Generate Long term PAT tokens")
-
-# COMMAND ----------
-
 # MAGIC %run ../../Includes/install_sat_sdk
 
 # COMMAND ----------
@@ -34,13 +28,12 @@ current_workspace = context['tags']['orgId']
 
 # COMMAND ----------
 
-cred_file_path = dbutils.widgets.get("cred_file_path")
-target_principal = dbutils.widgets.get("target_principal")
-long_term = (bool(eval(dbutils.widgets.get("long_term"))))
+cred_file_path = json_["service_account_key_file_path"] 
+target_principal = json_["impersonate_service_account"]
+long_term = (bool(eval(json_["generate_pat_tokens"])))
 loggr.info(f" Service account key file path {cred_file_path}")
 loggr.info(f" Impersonation service account {target_principal}")
 loggr.info(f" Generate Long term PAT tokens {long_term}")
-
 
 
 if cred_file_path is None or target_principal is None or long_term is None:
