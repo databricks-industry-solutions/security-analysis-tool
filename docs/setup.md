@@ -4,12 +4,15 @@ You will need the following information to set up SAT, we will show you how to g
 
 We created a companion Security Analysis Tool (SAT) [Setup primer video](https://www.youtube.com/watch?v=kLSc3UHKL40) and a [Deployment checklist sheet](./SAT%20Deployment%20Checklist.xlsx) to help prepare for the SAT setup. 
 
- 1. Databricks Account ID, administrative user id and password  (To use the account REST APIs)
- 2. A Single user job cluster (To run the SAT checks)
- 3. Databricks SQL Warehouse  (To run the SQL dashboard)
- 4. Ensure that Databricks Repos is enabled (To access the SAT git)
- 5. Pipy access from your workspace (To install the SAT utility library)
- 6. PAT token for the SAT primary deployment workspace 
+ 1. Databricks Account ID 
+ 2. Authentication information:
+    * **AWS:** Administrative user id and password  (To use the account REST APIs)
+    * **GCP:** Service account key and impersonate-service-account  (To use the account REST APIs)
+ 3. A Single user job cluster (To run the SAT checks)
+ 4. Databricks SQL Warehouse  (To run the SQL dashboard)
+ 5. Ensure that Databricks Repos is enabled (To access the SAT git)
+ 6. Pipy access from your workspace (To install the SAT utility library)
+ 7. PAT token for the SAT primary deployment workspace 
   
 **Note**: SAT creates a new **security_analysis** databses and Delta tables. 
 
@@ -18,7 +21,7 @@ We created a companion Security Analysis Tool (SAT) [Setup primer video](https:/
 ## Prerequisites 
 
  (Estimated time to complete these steps: 15 - 30 mins)
-
+<summary>Setup instructions</summary> 
 Please gather the following information before you start setting up: 
  
  1. Databricks Account ID 
@@ -87,20 +90,34 @@ Please gather the following information before you start setting up:
 
      For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
 
-  *  Create username secret and password secret of administrative user id and password  as  "user" and "pass" under the above "sat_scope" scope using Databricks Secrets CLI 
+  * Authentication information:
+  
+    <details>
+     <summary>AWS instructions</summary>  
+     Create username secret and password secret of administrative user id and password  as  "user" and "pass" under the above "sat_scope" scope using Databricks Secrets CLI 
 
-      *  Create secret for master account username
-        ```
-        databricks --profile e2-sat secrets put --scope sat_scope --key user
-        ```
+       *  Create secret for master account username
+           ```
+           databricks --profile e2-sat secrets put --scope sat_scope --key user
+           ```
 
-      *  Create secret for master account password
+       *  Create secret for master account password
 
-        ```
-        databricks --profile e2-sat secrets put --scope sat_scope --key pass
-        ```    
-        
+           ```
+           databricks --profile e2-sat secrets put --scope sat_scope --key pass
+           ```    
+    </details>
+ 
+    <details>
+     <summary>GCP instructions</summary>  
 
+      We will be using the instructions in [Authenticate to workspace or account APIs with a Google ID token](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html).
+       *  Follow the document above and complete all steps in the [Step 1](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts) as detailed in the document.
+       *  Notedown the name and location of service account key json file. (You will need this in the step below)
+       *  Notedown the impersonate-service-account email address. (You will need this in the step below)
+     
+    </details> 
+ 
   * Create a secret for the workspace PAT token
 
       **Note**: Replace \<workspace_id\> with your SAT deployment workspace id. 
@@ -119,18 +136,36 @@ Please gather the following information before you start setting up:
      * Set the value for username_for_alerts
      * databricks secrets scope/key names to pick the secrets from the steps above.
 
-  * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 2 should look like this:
+     * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 2 should look like this:
 
-     ```
-           {
-              "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- update this value
-              "sql_warehouse_id":"4d9fef7de2b9995c",     <- update this value
-              "username_for_alerts":"john.doe@org.com", <- update this value with a valid Databricks user id 
-           }
-                                 
-     ```
+        ```
+              {
+                 "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- update this value
+                 "sql_warehouse_id":"4d9fef7de2b9995c",     <- update this value
+                 "username_for_alerts":"john.doe@org.com", <- update this value with a valid Databricks user id 
+              }
 
+        ```
+     
+     * **GCP:** 
+       * Upload the service account key json file, adjust \<key file name\> 
  
+          ```
+            databricks --profile e2-sat fs cp <key file name>  dbfs:/FileStore/tables/<key file name> --overwrite
+          ``` 
+       * Set the value for the service_account_key_file_path
+       * Set the value for impersonate_service_account
+       * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this:
+
+          ```
+                #GCP configurations 
+                   json_.update({
+                      "service_account_key_file_path":"/dbfs/FileStore/tables/SA_1_key.json",    <- update this value
+                      "impersonate_service_account":"xyz-sa-2@project.iam.gserviceaccount.com",   <- update this value
+                      "generate_pat_tokens":"True", 
+                   })
+          ```
+     
 ## Setup option 1 (Simple and recommended method)
                                                            
   (Estimated time to complete these steps: 5 - 10 mins)  
