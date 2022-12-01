@@ -39,14 +39,14 @@ json_.update({
    "use_mastercreds":"True"
 })
 
-#also obfuscate out json JSONLOCALTEST in common
 
 # COMMAND ----------
 
-#GCP configurations 
-json_.update({
-   "service_account_key_file_path":"",
-   "impersonate_service_account":"",
-   "generate_pat_tokens":"True",
-})
+# DBTITLE 1,#GCP configurations 
+#json_.update({
+#   "service_account_key_file_path":"/dbfs/FileStore/tables/SA_1_key.json",
+#   "impersonate_service_account":"arun-sa-2@fe-dev-sandbox.iam.gserviceaccount.com",
+#   "generate_pat_tokens":"False",
+#   "use_mastercreds":"False"
+#})
 

@@ -28,7 +28,25 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
+if cloud_type=='gcp':
+    #refresh account level tokens    
+    gcp_status1 = dbutils.notebook.run('./Setup/gcp/configure_sa_auth_tokens', 3000)
+    if (gcp_status1 != 'OK'):
+        loggr.exception('Error Encountered in GCP Step#1', gcp_status1)
+        dbuilts.notebook.exit()
+
+
+if cloud_type=='gcp' and bool(eval(json_['generate_pat_tokens'])) is False :
+    #refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
+    gcp_status2 = dbutils.notebook.run('./Setup/gcp/configure_tokens_for_worksaces', 3000)
+    if (gcp_status2 != 'OK'):
+        loggr.exception('Error Encountered in GCP Step#2', gcp_status2)
+        dbuilts.notebook.exit()
+
+# COMMAND ----------
+
 import json
+
 out = dbutils.notebook.run('./Utils/accounts_bootstrap', 300, {"json_":json.dumps(json_)})
 loggr.info(out)
 
