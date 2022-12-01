@@ -168,8 +168,10 @@ Please gather the following information before you start setting up:
                    })
           ``` 
         *  Follow the instructions in Step 4 of [Authenticate to workspace or account APIs with a Google ID token]([https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-4-add-the-service-account-as-a-workspace-or-account-user)) as detailed in the document for each workspce you would like to analyze and the account to add your main service account (SA-2).
+
+        <img src="./images/gcp_service_account_workspaces_api.png" width="70%" height="70%">
  
- 
+        <img src="./images/gcp_service_account_acounts_api.png" width="70%" height="70%">
  
  
 ## Setup option 1 (Simple and recommended method)
