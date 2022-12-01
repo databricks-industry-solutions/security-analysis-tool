@@ -153,6 +153,7 @@ Please gather the following information before you start setting up:
           ```
             databricks --profile e2-sat fs cp <key file name>  dbfs:/FileStore/tables/<key file name> --overwrite
           ``` 
+       * Un-comment Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4
        * Set the value for the service_account_key_file_path
        * Set the value for impersonate_service_account
        * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this:
@@ -161,11 +162,16 @@ Please gather the following information before you start setting up:
                 #GCP configurations 
                    json_.update({
                       "service_account_key_file_path":"/dbfs/FileStore/tables/SA_1_key.json",    <- update this value
-                      "impersonate_service_account":"xyz-sa-2@project.iam.gserviceaccount.com",   <- update this value
-                      "generate_pat_tokens":"True", 
+                      "impersonate_service_account":"xyz-sa-2@project.iam.gserviceaccount.com",  <- update this value
+                      "generate_pat_tokens":"True", <- Keep this True if you would like SAT to generate PAT tokens for the workspaces
+                      "use_mastercreds":"False" <- don't update this value                                  
                    })
-          ```
-     
+          ``` 
+        *  Follow the instructions in Step 4 of [Authenticate to workspace or account APIs with a Google ID token]([https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-4-add-the-service-account-as-a-workspace-or-account-user)) as detailed in the document for each workspce you would like to analyze and the account to add your main service account (SA-2).
+ 
+ 
+ 
+ 
 ## Setup option 1 (Simple and recommended method)
                                                            
   (Estimated time to complete these steps: 5 - 10 mins)  
