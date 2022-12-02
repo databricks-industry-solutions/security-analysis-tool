@@ -97,7 +97,7 @@ def ssh_public_keys(df):
 if enabled:
   sqlctrl(workspace_id, '''SELECT *
     FROM global_temp.clusters
-    WHERE size(ssh_public_keys) > 0  and cluster_source='UI' ''', ssh_public_keys)
+    WHERE size(ssh_public_keys) > 0 and (cluster_source='UI' OR cluster_source='API') ''', ssh_public_keys)
 
 # COMMAND ----------
 
@@ -126,7 +126,7 @@ if enabled:
 check_id='35' #Private Link
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')
+workspaceId = db_client._workspace_id
 
 def private_link(df):
   if df is not None and not df.rdd.isEmpty():
@@ -145,7 +145,7 @@ if enabled:
 check_id='36' #BYOVPC
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')
+workspaceId = db_client._workspace_id
 
 def byopc(df):
   if df is not None and not df.rdd.isEmpty():
@@ -165,7 +165,7 @@ if enabled:
 check_id='37' #IP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')
+workspaceId = db_client._workspace_id
 
 def public_access_enabled(df):
   if df is not None and len(df.columns)==0:
@@ -186,7 +186,7 @@ if enabled:
 check_id='28' #VPC Peering
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')   
+workspaceId = db_client._workspace_id
 
 def vpc_peering(df):
   if vpc_peering:
@@ -377,13 +377,15 @@ def local_disk_encryption(df):
 if enabled:
   sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name
     FROM global_temp.clusters
-    WHERE enable_local_disk_encryption=False and cluster_source='UI' ''', local_disk_encryption)
+    WHERE enable_local_disk_encryption=False and (cluster_source='UI' OR cluster_source='API') ''', local_disk_encryption)
 
 # COMMAND ----------
 
 # DBTITLE 1,BYOK
 check_id='3' #BYOK
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+workspaceId = db_client._workspace_id
 
 # Report on workspaces that do not have a byok id associated with them
 def byok_check(df):   
@@ -395,7 +397,6 @@ def byok_check(df):
     return (check_id, 0, {})   
   
 if enabled:
-  workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')
   sqlctrl(workspace_id, f'''SELECT workspace_id
       FROM global_temp.`acctworkspaces`
       WHERE (storage_customer_managed_key_id is null) and workspace_id={workspaceId}''', byok_check)
@@ -447,7 +448,7 @@ def cluster_policy_check(df):
 if enabled:  
     sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name, policy_id
       FROM global_temp.clusters
-      WHERE policy_id is null  and cluster_source='UI' ''', cluster_policy_check)
+      WHERE policy_id is null and (cluster_source='UI' OR cluster_source='API')  ''', cluster_policy_check)
 
 # COMMAND ----------
 
@@ -473,7 +474,7 @@ def ctags_check(df):
 if enabled: 
   sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name
       FROM global_temp.`clusters`
-      WHERE custom_tags is null and cluster_source='UI' ''', ctags_check)
+      WHERE custom_tags is null and (cluster_source='UI' OR cluster_source='API') ''', ctags_check)
 
 # COMMAND ----------
 
@@ -516,7 +517,7 @@ def logconf_check(df):
 if enabled:
     sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name
       FROM global_temp.`clusters`
-      WHERE cluster_log_conf is null  and cluster_source='UI' ''', logconf_check)
+      WHERE cluster_log_conf is null and (cluster_source='UI' OR cluster_source='API') ''', logconf_check)
 
 # COMMAND ----------
 
@@ -719,7 +720,7 @@ def time_check(df):
   return (check_id, 0, {})   
 
 if enabled:   
-  sqlctrl(workspace_id, '''select cluster_id, current_time, last_restart, datediff(current_time,last_restart) as diff from (select cluster_id,cluster_name,start_time,last_restarted_time, greatest(start_time,last_restarted_time) as last_start, to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000), "yyyy-MM-dd hh:mm:ss") as last_restart , current_timestamp() as current_time from global_temp.clusters where state="RUNNING" and cluster_source='UI')''', time_check)
+  sqlctrl(workspace_id, '''select cluster_id, current_time, last_restart, datediff(current_time,last_restart) as diff from (select cluster_id,cluster_name,start_time,last_restarted_time, greatest(start_time,last_restarted_time) as last_start, to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000), "yyyy-MM-dd hh:mm:ss") as last_restart , current_timestamp() as current_time from global_temp.clusters where state="RUNNING" and (cluster_source='UI' OR cluster_source='API')) ''', time_check)
 
 # COMMAND ----------
 
@@ -736,7 +737,7 @@ def versions_check(df):
   return (check_id, 0, {})   
 
 if enabled:    
-  sqlctrl(workspace_id, '''select cluster_id, spark_version from global_temp.`clusters` where spark_version not in (select key from global_temp.`spark_versions`)''', versions_check)
+  sqlctrl(workspace_id, '''select cluster_id, spark_version from global_temp.`clusters` where spark_version not in (select key from global_temp.`spark_versions`) and (cluster_source='UI' OR cluster_source='API') ''', versions_check)
 
 # COMMAND ----------
 
@@ -754,7 +755,11 @@ def uc_check(df):
   return (check_id, 0, {})   
 
 if enabled:    
-  sqlctrl(workspace_id, '''select cluster_id, cluster_name, data_security_mode from global_temp.clusters where cluster_source='UI' and (data_security_mode not in ('USER_ISOLATION', 'SINGLE_USER') or data_security_mode is null)''', uc_check)
+  sqlctrl(workspace_id, '''select cluster_id, cluster_name, data_security_mode from global_temp.clusters where (cluster_source='UI' OR cluster_source='API') and (data_security_mode not in ('USER_ISOLATION', 'SINGLE_USER') or data_security_mode is null)''', uc_check)
+
+# COMMAND ----------
+
+# add UC checks for job clusters
 
 # COMMAND ----------
 
