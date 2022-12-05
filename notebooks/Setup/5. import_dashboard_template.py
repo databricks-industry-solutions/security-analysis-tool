@@ -62,7 +62,10 @@ if (found == False):
 
 #todo: Add parent folder to all SQL assets, expose name in _json (default SAT)
 #create a folder to house all SAT sql artifacts
-def create_ws_dir(ws, dir_name):
+import requests
+def create_ws_folder(ws, dir_name):
+    #delete tthe WS folder if it exists
+    delete_ws_folder(ws, dir_name)
     
     token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
     url = "https://"+ ws.deployment_url
@@ -70,14 +73,44 @@ def create_ws_dir(ws, dir_name):
     path = "/Users/"+context['tags']['user']+"/"+ dir_name
     body = {"path":  path}
     target_url = url + "/api/2.0/workspace/mkdirs"
-    loggr.info(f"Creating {path} using {target_url}")
     
+    loggr.info(f"Creating {path} using {target_url}")
     requests.post(target_url, headers=headers, json=body).json()
-    loggr.info(f"Dir {dir_name} created")
+    
+    target_url = url + "/api/2.0/workspace/get-status"
+    loggr.info(f"Get Status {path} using {target_url}")
+    response=requests.get(target_url, headers=headers, json=body).json()    
+    print(response)
+    return response['object_id']
 
 
 #delete folder that houses all SAT sql artifacts
-def delete_ws_dir(ws, dir_name):
+def get_ws_folder_object_id(ws, dir_name):
+    
+    #Use the workspace list API to get the object_id for the folder you want to use. 
+    #Here’s an example for how to get it for a folder called “/Users/me@example.com”:
+    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
+    url = "https://"+ ws.deployment_url
+    headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
+    path = "/Users/"+context['tags']['user']+"/"
+    body = {"path":  path}
+    
+    target_url = url + "/api/2.0/workspace/list"
+    loggr.info(f"Get metadata for all of the subfolders and objects in this path {path} using {target_url}")
+    response=requests.get(target_url, headers=headers, json=body).json()    
+    loggr.info(response['objects'])
+    path = path+dir_name
+    for ws_objects in response['objects']:
+        loggr.info(ws_objects)
+        if str(ws_objects['object_type']) == 'DIRECTORY' and str(ws_objects['path']) == path:
+            return str(ws_objects['object_id'])
+    
+    
+    return None
+    
+
+#delete folder that houses all SAT sql artifacts
+def delete_ws_folder(ws, dir_name):
     
     token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
     url = "https://"+ ws.deployment_url
@@ -89,6 +122,12 @@ def delete_ws_dir(ws, dir_name):
     
     requests.post(target_url, headers=headers, json=body).json()
     loggr.info(f"Dir {dir_name} deleted")
+    
+
+
+# COMMAND ----------
+
+folder_id = create_ws_folder(ws, 'SAT_dashboard')
 
 # COMMAND ----------
 
@@ -148,7 +187,8 @@ def clone_or_update_query(dashboard_state, q, target_client):
         "description": q["description"],
         "schedule": q["schedule"],
         "tags": q["tags"],
-        "options": q["options"]
+        "options": q["options"],
+        "parent":"folders/"+str(folder_id)   
     }
     new_query = None
     if q['id'] in dashboard_state["queries"]:
@@ -191,7 +231,8 @@ def clone_query_visualization(client: Client, query, target_query):
         default_table_viz_data = {
             "name": orig_default_table["name"],
             "description": orig_default_table["description"],
-            "options": orig_default_table["options"]
+            "options": orig_default_table["options"],
+            "parent":"folders/"+str(folder_id)   
         }
         if target_default_table is not None:
             mapping[orig_default_table["id"]] = target_default_table["id"]
@@ -207,13 +248,14 @@ def clone_query_visualization(client: Client, query, target_query):
             "type": v["type"],
             "query_plan": v["query_plan"],
             "query_id": target_query["id"],
+            "parent":"folders/"+str(folder_id)   
         }
         new_v = requests.post(client.url+"/api/2.0/preview/sql/visualizations", headers = client.headers, json=data).json()
         mapping[v["id"]] = new_v["id"]
     return mapping
 
 def duplicate_dashboard(client: Client, dashboard, dashboard_state):
-    data = {"name": dashboard["name"], "tags": dashboard["tags"]}
+    data = {"name": dashboard["name"], "tags": dashboard["tags"], "parent":"folders/"+str(folder_id) }
     new_dashboard = None
     if "new_id" in dashboard_state:
         existing_dashboard = requests.get(client.url+"/api/2.0/preview/sql/dashboards/"+dashboard_state["new_id"], headers = client.headers).json()
@@ -245,7 +287,8 @@ def duplicate_dashboard(client: Client, dashboard, dashboard_state):
             "visualization_id": visualization_id_clone,
             "text": widget["text"],
             "options": widget["options"],
-            "width": widget["width"]
+            "width": widget["width"],
+            "parent":"folders/"+str(folder_id)   
         }
         requests.post(client.url+"/api/2.0/preview/sql/widgets", headers = client.headers, json=data).json()
 

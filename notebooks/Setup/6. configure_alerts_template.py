@@ -30,7 +30,7 @@ current_workspace = context['tags']['orgId']
 
 workspacedf = spark.sql("select * from `global_temp`.`all_workspaces` where workspace_id='" + current_workspace + "'" )
 if (workspacedf.rdd.isEmpty()):
-    dbutils.notebook.exit("The current workspace is not found in configured lst of workspaces for analysis.")
+    dbutils.notebook.exit("The current workspace is not found in configured list of workspaces for analysis.")
 display(workspacedf)
 ws = (workspacedf.collect())[0]
 
@@ -39,6 +39,83 @@ ws = (workspacedf.collect())[0]
 workspacesdf = spark.sql('select * from `global_temp`.`all_workspaces`')
 display(workspacesdf)
 workspaces = workspacesdf.collect()
+
+# COMMAND ----------
+
+#todo: Add parent folder to all SQL assets, expose name in _json (default SAT)
+#create a folder to house all SAT sql artifacts
+import requests
+def create_ws_folder(ws, dir_name):
+    #delete tthe WS folder if it exists
+    delete_ws_folder(ws, dir_name)
+    
+    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
+    url = "https://"+ ws.deployment_url
+    headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
+    path = "/Users/"+context['tags']['user']+"/"+ dir_name
+    body = {"path":  path}
+    target_url = url + "/api/2.0/workspace/mkdirs"
+    
+    loggr.info(f"Creating {path} using {target_url}")
+    requests.post(target_url, headers=headers, json=body).json()
+    
+    target_url = url + "/api/2.0/workspace/get-status"
+    loggr.info(f"Get Status {path} using {target_url}")
+    response=requests.get(target_url, headers=headers, json=body).json()    
+    print(response)
+    return response['object_id']
+
+
+#delete folder that houses all SAT sql artifacts
+def get_ws_folder_object_id(ws, dir_name):
+    
+    #Use the workspace list API to get the object_id for the folder you want to use. 
+    #Here’s an example for how to get it for a folder called “/Users/me@example.com”:
+    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
+    url = "https://"+ ws.deployment_url
+    headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
+    path = "/Users/"+context['tags']['user']+"/"
+    body = {"path":  path}
+    
+    target_url = url + "/api/2.0/workspace/list"
+    loggr.info(f"Get metadata for all of the subfolders and objects in this path {path} using {target_url}")
+    response=requests.get(target_url, headers=headers, json=body).json()    
+    loggr.info(response['objects'])
+    path = path+dir_name
+    for ws_objects in response['objects']:
+        loggr.info(ws_objects)
+        if str(ws_objects['object_type']) == 'DIRECTORY' and str(ws_objects['path']) == path:
+            return str(ws_objects['object_id'])
+    
+    
+    return None
+    
+
+#delete folder that houses all SAT sql artifacts
+def delete_ws_folder(ws, dir_name):
+    
+    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
+    url = "https://"+ ws.deployment_url
+    headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
+    path = "/Users/"+context['tags']['user']+"/"+ dir_name
+    body = {"path":  path, "recursive": True}
+    target_url = url + "/api/2.0/workspace/delete"
+    loggr.info(f"Creating {path} using {target_url}")
+    
+    requests.post(target_url, headers=headers, json=body).json()
+    loggr.info(f"Dir {dir_name} deleted")
+    
+
+
+# COMMAND ----------
+
+folder_id = create_ws_folder(ws, 'SAT_alerts')
+
+# COMMAND ----------
+
+#object_id = get_ws_folder_object_id(ws, 'SAT')
+
+#loggr.info(f"Using object_id for the SAT folder : {object_id}!") 
 
 # COMMAND ----------
 
@@ -80,14 +157,17 @@ for ws_to_load in workspaces:
               headers={'Authorization': 'Bearer %s' % TOKEN})
     alerts = response.json()
     found = False
-    for alert in alerts:
-        if (alert['name'] == alert_name):
-            found = True
-    #if alert is already configured, move on to next ws
-    if (response.status_code == 200 and found ):
+    #for alert in alerts:
+    #    if (alert['name'] == alert_name):
+    #        found = True
+    #if alert is already configured, or folder is not found move on to next ws
+    if (response.status_code == 200 and found):
         loggr.info(f"Alert already configured for workspace {ws_to_load.workspace_id}") 
         continue
 
+    if (folder_id is None):
+        loggr.info(f"Folder can't be created or found {ws_to_load.workspace_id}") 
+        continue    
     response = requests.post(
               'https://%s/api/2.0/preview/sql/queries' % (DOMAIN),
               headers={'Authorization': 'Bearer %s' % TOKEN},
@@ -95,6 +175,7 @@ for ws_to_load in workspaces:
                         "data_source_id":data_source_id,
                         "name": "sat_alert_"+ws_to_load.workspace_id,
                         "description": "",
+                        "parent":"folders/"+str(folder_id),
                         "query": "SELECT\n  concat(\"<br> <b>Check name:</b> \",sbp.check_id, \", <b>Check:</b>\" , sbp.check, \" in workspace:\", sc.workspaceid, \n  \", <b>Recommendation:</b>\",sbp.recommendation, \"</br>\" ) as message,  count(*) as total\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nWHERE \nsbp.id = sc.id and\nsc.workspaceid = "+ws_to_load.workspace_id+" and\nsbp.alert = 1 and sc.score = 1 and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\nGROUP BY \n1\nORDER BY total DESC\n\n\n\n\n"
 
                       }
@@ -122,8 +203,8 @@ for ws_to_load in workspaces:
                       "schedule_failures":0
                 
                    },
-
-                   "query_id":query_id
+                   "query_id":query_id,
+                   "parent":"folders/"+str(folder_id)   
                 }
                 )
 
