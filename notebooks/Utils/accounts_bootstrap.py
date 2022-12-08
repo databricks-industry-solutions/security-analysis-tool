@@ -75,6 +75,11 @@ if not is_successful_acct:
 
 # COMMAND ----------
 
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### Accounts
 
@@ -86,8 +91,13 @@ if not is_successful_acct:
 # COMMAND ----------
 
 from clientpkgs.accounts_client import AccountsClient
+from clientpkgs.azure_accounts_client import AzureAccountsClient
+
 try:
-    acct_client = AccountsClient(json_)
+    if(cloud_type != "azure"):
+        acct_client = AccountsClient(json_)
+    else:
+        acct_client = AzureAccountsClient(json_)
 except Exception:
     loggr.exception("Exception encountered")
 
