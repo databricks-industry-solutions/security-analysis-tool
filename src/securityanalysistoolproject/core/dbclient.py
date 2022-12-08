@@ -39,7 +39,8 @@ class SatDBClient:
         self._use_mastercreds = pars.str2bool(configs['use_mastercreds'])
         self._master_name = configs['mastername'].strip()
         self._master_password = configs['masterpwd'].strip()
-
+        #Azure
+        self._subscription_id = configs['subscription_id'].strip()
     def _update_token_master(self):
         '''update token master in http header'''
         LOGGR.info("in _update_token_master")
@@ -51,6 +52,12 @@ class SatDBClient:
                 "User-Agent": "databricks-sat/0.1.0"
             }
             LOGGR.info(f'GCP self._token {self._token}')
+        elif(self._cloud_type == 'azure'):
+            self._url = "https://management.azure.com/subscriptions/"
+            self._token = {
+                "Authorization": f"Bearer {self._master_password}",
+                "User-Agent": "databricks-sat/0.1.0"
+            }
         else:    
             user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
             self._url = "https://accounts.cloud.databricks.com" #url for accounts api
@@ -74,6 +81,11 @@ class SatDBClient:
                 "User-Agent": "databricks-sat/0.1.0"
                 }   
                 LOGGR.info(f'In GCP  self._url {self._url}')
+            elif (self._cloud_type == 'azure'):
+                self._token = {
+                "Authorization": f"Bearer {self._raw_token}",
+                "User-Agent": "databricks-sat/0.1.0"
+                }      
             else:    
                 user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
                 self._token = {
@@ -85,8 +97,12 @@ class SatDBClient:
         '''test connection to workspace and master account'''
         if master_acct: #master acct may use a different credential
             self._update_token_master()
-            results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
-                        headers=self._token, timeout=60)
+            if (self._cloud_type == 'azure'):
+                results = requests.get(f'{self._url}/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
+                            headers=self._token, timeout=60)
+            else:    
+                results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
+                            headers=self._token, timeout=60)
         else:
             self._update_token()
             results = requests.get(f'{self._url}/api/2.0/clusters/spark-versions',

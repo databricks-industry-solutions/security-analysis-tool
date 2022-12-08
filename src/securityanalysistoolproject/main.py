@@ -29,7 +29,7 @@ from clientpkgs.workspace_client import WorkspaceClient
 def main():
     '''main - tester program'''
     configParser = configparser.ConfigParser()   
-    configFilePath = '/Users/arun.pamulapati/_dev_stuff/config_gcp.txt'
+    configFilePath = '/Users/arun.pamulapati/_dev_stuff/config_azure.txt'
     configParser.read(configFilePath)
     jsonstr = configParser['MEISTERSTUFF']['json']
     workspace_id = json.loads(jsonstr)['workspace_id']
