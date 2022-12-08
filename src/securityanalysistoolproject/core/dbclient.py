@@ -126,8 +126,11 @@ class SatDBClient:
             self._update_token()
 
         while True:
-            full_endpoint = f"{self._url}/api/{version}{endpoint}"
-
+            if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different
+                full_endpoint = f"{self._url}/{endpoint}"
+            else:
+                full_endpoint = f"{self._url}/api/{version}{endpoint}"
+            
             LOGGR.debug(f"Get: {full_endpoint}")
 
             if json_params:

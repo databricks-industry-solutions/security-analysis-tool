@@ -16,6 +16,7 @@ from clientpkgs.scim_client import ScimClient
 from clientpkgs.jobs_client import JobsClient
 from clientpkgs.secrets_client import SecretsClient
 from clientpkgs.accounts_client import AccountsClient
+from clientpkgs.accounts_client import AzureAccountsClient
 from clientpkgs.job_runs_client import JobRunsClient
 from clientpkgs.pools_client import PoolsClient
 from clientpkgs.ws_settings_client import WSSettingsClient
@@ -128,6 +129,11 @@ def main():
         # print(lst)
         # lst = acctClient.get_logdelivery_list()
         # print(lst)
+
+        #Azure
+        acctClient = AzureAccountsClient(jsonstr)
+        lst = acctClient.get_workspace_list()
+        print(lst)
 
         # clusterClient = ClustersClient(client_config)
         # clusterLst = clusterClient.get_cluster_list(alive=False)
