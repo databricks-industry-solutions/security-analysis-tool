@@ -43,7 +43,8 @@ loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!")
 response = requests.get(
           'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % TOKEN},
-          json=None
+          json=None,
+          timeout=60 
         )
 resources = json.loads(response.text)
 
@@ -75,12 +76,12 @@ def create_ws_folder(ws, dir_name):
     target_url = url + "/api/2.0/workspace/mkdirs"
     
     loggr.info(f"Creating {path} using {target_url}")
-    requests.post(target_url, headers=headers, json=body).json()
+    requests.post(target_url, headers=headers, json=body,timeout=60).json()
     
     target_url = url + "/api/2.0/workspace/get-status"
     loggr.info(f"Get Status {path} using {target_url}")
-    response=requests.get(target_url, headers=headers, json=body).json()    
-    print(response)
+    response=requests.get(target_url, headers=headers, json=body, timeout=60).json()    
+    loggr.info(response)
     return response['object_id']
 
 
@@ -97,7 +98,7 @@ def get_ws_folder_object_id(ws, dir_name):
     
     target_url = url + "/api/2.0/workspace/list"
     loggr.info(f"Get metadata for all of the subfolders and objects in this path {path} using {target_url}")
-    response=requests.get(target_url, headers=headers, json=body).json()    
+    response=requests.get(target_url, headers=headers, json=body, timeout=60).json()    
     loggr.info(response['objects'])
     path = path+dir_name
     for ws_objects in response['objects']:
@@ -120,7 +121,7 @@ def delete_ws_folder(ws, dir_name):
     target_url = url + "/api/2.0/workspace/delete"
     loggr.info(f"Creating {path} using {target_url}")
     
-    requests.post(target_url, headers=headers, json=body).json()
+    requests.post(target_url, headers=headers, json=body, timeout=60).json()
     loggr.info(f"Dir {dir_name} deleted")
     
 
@@ -169,9 +170,9 @@ def clone_dashboard(dashboard, target_client: Client, dashboard_state):
                         del p["parentQueryId"]
                     del p["value"]
         new_query = clone_or_update_query(dashboard_state, q, target_client)
-        print("new_query=", new_query)
+        loggr.info("new_query=", new_query)
         if target_client.permisions_defined():
-            permissions = requests.post(target_client.url+"/api/2.0/preview/sql/permissions/queries/"+new_query["id"], headers = target_client.headers, json=target_client.permissions).json()
+            permissions = requests.post(target_client.url+"/api/2.0/preview/sql/permissions/queries/"+new_query["id"], headers = target_client.headers, json=target_client.permissions,timeout=60).json()
             loggr.info(f"     Permissions set to {permissions}")
 
         visualizations = clone_query_visualization(target_client, q, new_query)
@@ -188,27 +189,27 @@ def clone_or_update_query(dashboard_state, q, target_client):
         "schedule": q["schedule"],
         "tags": q["tags"],
         "options": q["options"],
-        "parent":"folders/"+str(folder_id)   
+        "parent":"folders/"+str(folder_id)
     }
     new_query = None
     if q['id'] in dashboard_state["queries"]:
         existing_query_id = dashboard_state["queries"][q['id']]["new_id"]
         # check if the query still exists (it might have been manually deleted by mistake)
         existing_query = requests.get(target_client.url + "/api/2.0/preview/sql/queries/" + existing_query_id,
-                                      headers=target_client.headers).json()
+                                      headers=target_client.headers, timeout=60).json()
         if 'id' in existing_query and 'moved_to_trash_at' not in existing_query:
             loggr.info(f"     updating the existing query {existing_query_id}")
             new_query = requests.post(target_client.url + "/api/2.0/preview/sql/queries/" + existing_query_id,
-                                      headers=target_client.headers, json=q_creation).json()
+                                      headers=target_client.headers, json=q_creation, timeout=60).json()
             # Delete all query visualization to reset its settings
             for v in new_query["visualizations"]:
                 loggr.info(f"     deleting query visualization {v['id']}")
                 requests.delete(target_client.url + "/api/2.0/preview/sql/visualizations/" + v["id"],
-                                headers=target_client.headers).json()
+                                headers=target_client.headers,timeout=60).json()
     if not new_query:
         loggr.info(f"     cloning query {q_creation}...")
         new_query = requests.post(target_client.url + "/api/2.0/preview/sql/queries", headers=target_client.headers,
-                                  json=q_creation).json()
+                                  json=q_creation,timeout=60).json()
     return new_query
 
 def clone_query_visualization(client: Client, query, target_query):
@@ -231,13 +232,12 @@ def clone_query_visualization(client: Client, query, target_query):
         default_table_viz_data = {
             "name": orig_default_table["name"],
             "description": orig_default_table["description"],
-            "options": orig_default_table["options"],
-            "parent":"folders/"+str(folder_id)   
+            "options": orig_default_table["options"]
         }
         if target_default_table is not None:
             mapping[orig_default_table["id"]] = target_default_table["id"]
         loggr.info(f"         updating default Viz {target_default_table['id']}...")
-        requests.post(client.url+"/api/2.0/preview/sql/visualizations/"+target_default_table["id"], headers = client.headers, json=default_table_viz_data)
+        requests.post(client.url+"/api/2.0/preview/sql/visualizations/"+target_default_table["id"], headers = client.headers, json=default_table_viz_data,timeout=60)
     #Then create the other visualizations
     for v in sorted(query["visualizations"], key=lambda x: x["id"]):
         loggr.info(v)
@@ -247,33 +247,32 @@ def clone_query_visualization(client: Client, query, target_query):
             "options": v["options"],
             "type": v["type"],
             "query_plan": v["query_plan"],
-            "query_id": target_query["id"],
-            "parent":"folders/"+str(folder_id)   
+            "query_id": target_query["id"]
         }
-        new_v = requests.post(client.url+"/api/2.0/preview/sql/visualizations", headers = client.headers, json=data).json()
+        new_v = requests.post(client.url+"/api/2.0/preview/sql/visualizations", headers = client.headers, json=data,timeout=60).json()
         mapping[v["id"]] = new_v["id"]
     return mapping
 
 def duplicate_dashboard(client: Client, dashboard, dashboard_state):
-    data = {"name": dashboard["name"], "tags": dashboard["tags"], "parent":"folders/"+str(folder_id) }
+    data = {"name": dashboard["name"], "tags": dashboard["tags"],"parent":"folders/"+str(folder_id) }
     new_dashboard = None
     if "new_id" in dashboard_state:
-        existing_dashboard = requests.get(client.url+"/api/2.0/preview/sql/dashboards/"+dashboard_state["new_id"], headers = client.headers).json()
+        existing_dashboard = requests.get(client.url+"/api/2.0/preview/sql/dashboards/"+dashboard_state["new_id"], headers = client.headers,timeout=60).json()
         if "options" in existing_dashboard and "moved_to_trash_at" not in existing_dashboard["options"]:
             loggr.info("  dashboard exists, updating it")
-            new_dashboard = requests.post(client.url+"/api/2.0/preview/sql/dashboards/"+dashboard_state["new_id"], headers = client.headers, json=data).json()
+            new_dashboard = requests.post(client.url+"/api/2.0/preview/sql/dashboards/"+dashboard_state["new_id"], headers = client.headers, json=data,timeout=60).json()
             #Drop all the widgets and re-create them
             for widget in new_dashboard["widgets"]:
                 loggr.info(f"    deleting widget {widget['id']} from existing dashboard {new_dashboard['id']}")
-                requests.delete(client.url+"/api/2.0/preview/sql/widgets/"+widget['id'], headers = client.headers).json()
+                requests.delete(client.url+"/api/2.0/preview/sql/widgets/"+widget['id'], headers = client.headers, timeout=60).json()
         else:
             loggr.info("    couldn't find the dashboard defined in the state, it probably has been deleted.")
     if new_dashboard is None:
         loggr.info(f"  creating new dashboard...")
-        new_dashboard = requests.post(client.url+"/api/2.0/preview/sql/dashboards", headers = client.headers, json=data).json()
+        new_dashboard = requests.post(client.url+"/api/2.0/preview/sql/dashboards", headers = client.headers, json=data,timeout=60).json()
         dashboard_state["new_id"] = new_dashboard["id"]
     if client.permisions_defined():
-        permissions = requests.post(client.url+"/api/2.0/preview/sql/permissions/dashboards/"+new_dashboard["id"], headers = client.headers, json=client.permissions).json()
+        permissions = requests.post(client.url+"/api/2.0/preview/sql/permissions/dashboards/"+new_dashboard["id"], headers = client.headers, json=client.permissions,timeout=60).json()
         loggr.info(f"     Dashboard permissions set to {permissions}")
     for widget in dashboard["widgets"]:
         loggr.info(f"          cloning widget {widget}...")
@@ -287,10 +286,9 @@ def duplicate_dashboard(client: Client, dashboard, dashboard_state):
             "visualization_id": visualization_id_clone,
             "text": widget["text"],
             "options": widget["options"],
-            "width": widget["width"],
-            "parent":"folders/"+str(folder_id)   
+            "width": widget["width"]
         }
-        requests.post(client.url+"/api/2.0/preview/sql/widgets", headers = client.headers, json=data).json()
+        requests.post(client.url+"/api/2.0/preview/sql/widgets", headers = client.headers, json=data, timeout=60).json()
 
     return new_dashboard
 

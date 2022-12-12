@@ -110,7 +110,8 @@ import requests
 response = requests.get(
   '%s/api/2.0/accounts/%s/workspaces' % (gcp_accounts_url,account_id),
   headers={'Authorization': 'Bearer %s' % identity_token, 'X-Databricks-GCP-SA-Access-Token': '%s' % access_token},
-  json=None
+  json=None,
+  timeout=60
 )
 
 if response.status_code == 200:
@@ -137,7 +138,8 @@ def storeTokenAsSecret(deployment_url, scope, key, PAT_token, token):
       json={ "scope": scope,
               "key": key,
               "string_value": token 
-           }
+           },
+      timeout=60
     )
 
     if response.status_code == 200:

@@ -40,7 +40,21 @@ if cloud_type=='gcp':
     if (gcp_status2 != 'OK'):
         loggr.exception('Error Encountered in GCP Step#2', gcp_status2)
         dbuilts.notebook.exit()
+
+if cloud_type=='azure':
+    #generate account level tokens    
+    azure_status1 = dbutils.notebook.run('./Setup/azure/configure_sa_auth_tokens', 3000)
+    if (gcp_status1 != 'OK'):
+        loggr.exception('Error Encountered in Azure Step#1', azure_status1)
+        dbuilts.notebook.exit()
     
+if cloud_type=='azure':
+    #generate workspace level tokens
+    azure_status2 = dbutils.notebook.run('./Setup/azure/configure_tokens_for_worksaces', 3000)
+    if (gcp_status2 != 'OK'):
+        loggr.exception('Error Encountered in Azure Step#2', azure_status2)
+        dbuilts.notebook.exit()        
+        
 status1 = dbutils.notebook.run('./Setup/1. list_account_workspaces_to_conf_file', 3000)
 if (status1 != 'OK'):
     loggr.exception('Error Encountered in Step#1', status1)

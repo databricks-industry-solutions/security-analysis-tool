@@ -32,6 +32,16 @@ dbutils.notebook.run('../Utils/accounts_bootstrap', 300, {"json_":json.dumps(jso
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC select * from `global_temp`.`acctworkspaces`
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select properties.*  from `global_temp`.`acctworkspaces`  where properties.workspaceId  is not NULL
+
+# COMMAND ----------
+
 #this logic does not overwrite the previous config file. It just appends new lines so users can
 #easily modify the new lines for new workspaces.
 def generateWorkspaceConfigFile(workspace_prefix):
