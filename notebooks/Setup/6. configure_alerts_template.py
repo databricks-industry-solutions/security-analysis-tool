@@ -57,7 +57,7 @@ def create_ws_folder(ws, dir_name):
     target_url = url + "/api/2.0/workspace/mkdirs"
     
     loggr.info(f"Creating {path} using {target_url}")
-    requests.post(target_url, headers=headers, json=body).json()
+    requests.post(target_url, headers=headers, json=body,timeout=60).json()
     
     target_url = url + "/api/2.0/workspace/get-status"
     loggr.info(f"Get Status {path} using {target_url}")
@@ -79,7 +79,7 @@ def get_ws_folder_object_id(ws, dir_name):
     
     target_url = url + "/api/2.0/workspace/list"
     loggr.info(f"Get metadata for all of the subfolders and objects in this path {path} using {target_url}")
-    response=requests.get(target_url, headers=headers, json=body).json()    
+    response=requests.get(target_url, headers=headers, json=body, timeout=60).json()    
     loggr.info(response['objects'])
     path = path+dir_name
     for ws_objects in response['objects']:
@@ -102,7 +102,7 @@ def delete_ws_folder(ws, dir_name):
     target_url = url + "/api/2.0/workspace/delete"
     loggr.info(f"Creating {path} using {target_url}")
     
-    requests.post(target_url, headers=headers, json=body).json()
+    requests.post(target_url, headers=headers, json=body, timeout=60  ).json()
     loggr.info(f"Dir {dir_name} deleted")
     
 
@@ -130,7 +130,8 @@ loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!")
 response = requests.get(
           'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % TOKEN},
-          json=None
+          json=None,
+          timeout=60  
         )
 resources = json.loads(response.text)
 #print (resources)
@@ -154,7 +155,8 @@ for ws_to_load in workspaces:
     response = requests.get(
               'https://%s/api/2.0/preview/sql/alerts' % (DOMAIN),
               json = body,
-              headers={'Authorization': 'Bearer %s' % TOKEN})
+              headers={'Authorization': 'Bearer %s' % TOKEN},
+              timeout=60)
     alerts = response.json()
     found = False
     #for alert in alerts:
@@ -178,7 +180,8 @@ for ws_to_load in workspaces:
                         "parent":"folders/"+str(folder_id),
                         "query": "SELECT\n  concat(\"<br> <b>Check name:</b> \",sbp.check_id, \", <b>Check:</b>\" , sbp.check, \" in workspace:\", sc.workspaceid, \n  \", <b>Recommendation:</b>\",sbp.recommendation, \"</br>\" ) as message,  count(*) as total\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nWHERE \nsbp.id = sc.id and\nsc.workspaceid = "+ws_to_load.workspace_id+" and\nsbp.alert = 1 and sc.score = 1 and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\nGROUP BY \n1\nORDER BY total DESC\n\n\n\n\n"
 
-                      }
+                      },
+              timeout=60  
             )
 
     if response.status_code == 200:
@@ -205,7 +208,8 @@ for ws_to_load in workspaces:
                    },
                    "query_id":query_id,
                    "parent":"folders/"+str(folder_id)   
-                }
+                },
+                timeout=60  
                 )
 
     if response.status_code == 200:
@@ -218,7 +222,8 @@ for ws_to_load in workspaces:
         response = requests.get(
                       'https://%s/api/2.0/preview/scim/v2/Users?filter=userName+eq+%s' % (DOMAIN,ws_to_load.alert_subscriber_user_id),
                       headers={'Authorization': 'Bearer %s' % TOKEN},
-                      json=None
+                      json=None,
+                      timeout=60
                     )
 
     result = json.loads(response.text)
@@ -234,7 +239,8 @@ for ws_to_load in workspaces:
                           json={
                               "alert_id":alert_id,
                               "user_id":user_id
-                            }
+                            },
+                          timeout=60  
                         )
 
                 if response.status_code == 200:

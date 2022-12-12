@@ -96,8 +96,10 @@ else:
 import requests
 
 response =  requests.get(  # Use token to call downstream service
-        'https://management.azure.com/subscriptions/%s/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01'% (subscription_id),
-        headers={'Authorization': 'Bearer ' + result['access_token']})
+                        'https://management.azure.com/subscriptions/%s/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01'% (subscription_id),
+                        headers={'Authorization': 'Bearer ' + result['access_token']},
+                        timeout=60
+                        )
 
 if response.status_code == 200:
     loggr.info("Workspaces query successful!")
@@ -126,7 +128,8 @@ def storeTokenAsSecret(deployment_url, scope, key, PAT_token, token):
       json={ "scope": scope,
               "key": key,
               "string_value": token 
-           }
+           },
+      timeout=60  
     )
 
     if response.status_code == 200:
