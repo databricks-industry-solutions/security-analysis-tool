@@ -178,7 +178,9 @@ for ws_to_load in workspaces:
                         "name": "sat_alert_"+ws_to_load.workspace_id,
                         "description": "",
                         "parent":"folders/"+str(folder_id),
-                        "query": "SELECT\n  concat(\"<br> <b>Check name:</b> \",sbp.check_id, \", <b>Check:</b>\" , sbp.check, \" in workspace:\", sc.workspaceid, \n  \", <b>Recommendation:</b>\",sbp.recommendation, \"</br>\" ) as message,  count(*) as total\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nWHERE \nsbp.id = sc.id and\nsc.workspaceid = "+ws_to_load.workspace_id+" and\nsbp.alert = 1 and sc.score = 1 and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\nGROUP BY \n1\nORDER BY total DESC\n\n\n\n\n"
+                        "query": "SELECT\n  concat(\"<br> <b>Check name:</b> \",sbp.check_id, \", <b>Check:</b>\" , sbp.check, \" in workspace:\", sc.workspaceid, \n  \", <b>Recommendation:</b>\",sbp.recommendation, \"</br>\" ) as message,  count(*) as total\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nWHERE \nsbp.id = sc.id and\nsc.workspaceid = "+ws_to_load.workspace_id+" and\nsbp.alert = 1 and sc.score = 1 and run_id = (\n    select\n  max(run_id)\n from\n security_analysis.workspace_run_complete\n  where workspace_id = "+ws_to_load.workspace_id+" and completed = true )\nGROUP BY \n1\nORDER BY total DESC\n\n\n\n\n"
+                
+                   
 
                       },
               timeout=60  

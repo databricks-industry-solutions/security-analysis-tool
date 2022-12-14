@@ -27,7 +27,7 @@
             "email": "arun.pamulapati@databricks.com",
             "id": 6132399981223669,
             "is_db_admin": false,
-            "name": "arun.pamulapati@databricks.com",
+            "name": "Arun Pamulapati",
             "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
         },
         "user_id": 6132399981223669,
@@ -110,14 +110,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid ={{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:34:56Z",
+                        "updated_at": "2022-12-14T19:59:03Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -204,14 +204,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid ={{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:34:56Z",
+                        "updated_at": "2022-12-14T19:59:03Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -298,14 +298,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid ={{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:34:56Z",
+                        "updated_at": "2022-12-14T19:59:03Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -394,14 +394,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid ={{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:34:56Z",
+                        "updated_at": "2022-12-14T19:59:03Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -488,14 +488,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid ={{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:34:56Z",
+                        "updated_at": "2022-12-14T19:59:03Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -582,14 +582,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid ={{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:34:56Z",
+                        "updated_at": "2022-12-14T19:59:03Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -1072,14 +1072,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid ={{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
+                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid = {{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-13T17:44:32Z",
+                        "updated_at": "2022-12-14T19:58:31Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -1235,14 +1235,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:30:46Z",
+                        "updated_at": "2022-12-14T19:56:58Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -1352,14 +1352,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:30:46Z",
+                        "updated_at": "2022-12-14T19:56:58Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -1446,14 +1446,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY name",
+                        "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-09-26T00:30:46Z",
+                        "updated_at": "2022-12-14T19:56:58Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -1844,14 +1844,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid ={{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
+                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid = {{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-13T17:44:32Z",
+                        "updated_at": "2022-12-14T19:58:31Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -2242,14 +2242,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid ={{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
+                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid = {{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-13T17:44:32Z",
+                        "updated_at": "2022-12-14T19:58:31Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -2640,14 +2640,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid ={{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
+                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid = {{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-13T17:44:32Z",
+                        "updated_at": "2022-12-14T19:58:31Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -2819,14 +2819,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid={{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category\n  ",
+                        "query": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = {{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:42:51Z",
+                        "updated_at": "2022-12-14T19:55:42Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -2999,26 +2999,26 @@
                                     "value": "GOV-2"
                                 }
                             ],
-                            "schema": "sirens_alpha",
+                            "schema": "security_analysis",
                             "visualization_control_order": [
                                 "workspaceid",
                                 "check_id"
                             ]
                         },
-                        "query": "select\n  sbp.check_id,\n  sbp.check,\n  sbp.recommendation,\n  sc.additional_details,\n  sbp.logic,\n  if(\n    sbp.evaluation_value == \"-1\",\n    \"N/A\",\n    sbp.evaluation_value\n  ) as evaluation_value,\n  regexp_replace(sbp.api,\"<workspace_url>\",aw.deployment_url) as api,\n  sc.check_time\nfrom\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp,\n  security_analysis.account_workspaces aw\nwhere\n  sc.id = sbp.id\n  and sc.run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and sbp.check_id = {{ check_id }}\n  and sc.workspaceid = {{workspaceid}}\n  and aw.workspace_id = sc.workspaceid",
+                        "query": "select\n  sbp.check_id,\n  sbp.check,\n  sbp.recommendation,\n  sc.additional_details,\n  sbp.logic,\n  if(\n    sbp.evaluation_value == \"-1\",\n    \"N/A\",\n    sbp.evaluation_value\n  ) as evaluation_value,\n  regexp_replace(sbp.api,\"<workspace_url>\",aw.deployment_url) as api,\n  sc.check_time\nfrom\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp,\n  security_analysis.account_workspaces aw\nwhere\n  sc.id = sbp.id\n  and sc.run_id = (\n     select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and sbp.check_id = {{ check_id }}\n  and sc.workspaceid = {{workspaceid}}\n  and aw.workspace_id = sc.workspaceid",
                         "run_as_role": null,
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-06T18:33:25Z",
+                        "updated_at": "2022-12-14T19:54:20Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
                     "query_plan": null,
                     "type": "DETAILS",
-                    "updated_at": "2022-10-14T20:01:26Z"
+                    "updated_at": "2022-12-14T19:59:52Z"
                 },
                 "width": 1
             },
@@ -3139,14 +3139,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -3273,14 +3273,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -3407,14 +3407,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -3541,14 +3541,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -3675,14 +3675,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -3809,14 +3809,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -3943,14 +3943,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -4077,14 +4077,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -4211,14 +4211,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -4345,14 +4345,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -4479,14 +4479,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -4613,14 +4613,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -5057,14 +5057,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid ={{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
+                        "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid = {{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-13T17:44:32Z",
+                        "updated_at": "2022-12-14T19:58:31Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -5191,14 +5191,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -5325,14 +5325,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -5459,14 +5459,14 @@
                                 "workspaceid"
                             ]
                         },
-                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
+                        "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
                         "run_as_role": "viewer",
                         "run_as_service_principal_id": null,
                         "schedule": null,
                         "tags": [
                             "SAT"
                         ],
-                        "updated_at": "2022-10-04T20:43:36Z",
+                        "updated_at": "2022-12-14T19:57:45Z",
                         "user_id": 6132399981223669,
                         "version": 1
                     },
@@ -5517,10 +5517,10 @@
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "3ca8fbe8-5f53-4b34-adc3-9c2325ee73f3",
+            "latest_query_data_id": "a9f5e831-86ba-4fc1-a3bf-af58fb038d0c",
             "name": "workspace_ids",
             "options": {
                 "apply_auto_limit": true,
@@ -5543,7 +5543,7 @@
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
             "user_id": 6132399981223669,
@@ -5580,10 +5580,10 @@
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "b66c0fa3-efca-4146-a77d-baa631fd876c",
+            "latest_query_data_id": "c33aadaf-25e7-469c-a5d7-7898a5779717",
             "name": "workspace_stats",
             "options": {
                 "apply_auto_limit": true,
@@ -5607,20 +5607,44 @@
                 ]
             },
             "permission_tier": "CAN_MANAGE",
-            "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid ={{workspaceid}}\nORDER BY name",
-            "query_draft": null,
+            "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
+            "query_draft": {
+                "apply_auto_limit": true,
+                "catalog": "",
+                "draft_text": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
+                "org_id": 1657683783405196,
+                "original_query_text": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Workspace Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid ={{workspaceid}}\nORDER BY name",
+                "parameters": [
+                    {
+                        "$$value": "1657683783405196",
+                        "global": false,
+                        "locals": [],
+                        "name": "workspaceid",
+                        "parentQueryId": "fea54078-2986-4688-932e-17f2b8f7220c",
+                        "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
+                        "title": "workspaceid",
+                        "type": "query",
+                        "urlPrefix": "p_",
+                        "value": "1657683783405196"
+                    }
+                ],
+                "query_id": "fea54078-2986-4688-932e-17f2b8f7220c",
+                "schema": "",
+                "updated_at": "2022-12-14T19:59:02Z",
+                "user_id": 6132399981223669
+            },
             "run_as_role": "viewer",
             "run_as_service_principal_id": null,
             "schedule": null,
             "tags": [
                 "SAT"
             ],
-            "updated_at": "2022-09-26T00:34:56Z",
+            "updated_at": "2022-12-14T19:59:03Z",
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
             "user_id": 6132399981223669,
@@ -5802,10 +5826,10 @@
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "8a5bf64f-cc56-4ed4-94a1-9e5b9120d43f",
+            "latest_query_data_id": "f6037178-f6ff-4d6d-8ffb-f525a3acec1b",
             "name": "category_pillars",
             "options": {
                 "apply_auto_limit": true,
@@ -5841,56 +5865,20 @@
                 ]
             },
             "permission_tier": "CAN_MANAGE",
-            "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid ={{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
-            "query_draft": {
-                "apply_auto_limit": true,
-                "catalog": "",
-                "draft_text": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid ={{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
-                "org_id": 1657683783405196,
-                "original_query_text": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid ={{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
-                "parameters": [
-                    {
-                        "$$value": "Informational",
-                        "global": false,
-                        "locals": [],
-                        "name": "category",
-                        "parentQueryId": "b043e97c-a156-4d91-8a65-30bce3b1ad48",
-                        "pendingValue": "Identity & Access",
-                        "title": "category",
-                        "type": "text",
-                        "urlPrefix": "p_",
-                        "value": "Informational"
-                    },
-                    {
-                        "$$value": "1657683783405196",
-                        "global": false,
-                        "locals": [],
-                        "name": "workspaceid",
-                        "parentQueryId": "b043e97c-a156-4d91-8a65-30bce3b1ad48",
-                        "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
-                        "title": "workspaceid",
-                        "type": "query",
-                        "urlPrefix": "p_",
-                        "value": "1657683783405196"
-                    }
-                ],
-                "query_id": "b043e97c-a156-4d91-8a65-30bce3b1ad48",
-                "schema": "",
-                "updated_at": "2022-10-13T17:44:32Z",
-                "user_id": 6132399981223669
-            },
+            "query": "SELECT\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  score as Status,\n  chk_date as RunDate,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  workspaceid\nFROM\n  (\n    SELECT\n      id,\n      score,\n      chk_date,\n      workspaceid\n    FROM\n      security_analysis.security_checks\n    where\n      run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n  ) SC,\n  security_analysis.security_best_practices BP\nWHERE\n  SC.id = BP.id\n  and BP.category = {{category}}\n  and workspaceid = {{workspaceid}}\nORDER BY\n  Status DESC,\n  ord DESC",
+            "query_draft": null,
             "run_as_role": "viewer",
             "run_as_service_principal_id": null,
             "schedule": null,
             "tags": [
                 "SAT"
             ],
-            "updated_at": "2022-10-13T17:44:32Z",
+            "updated_at": "2022-12-14T19:58:31Z",
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
             "user_id": 6132399981223669,
@@ -6615,10 +6603,10 @@
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "a68e2269-c410-41f8-9c4c-cc02bd69acd5",
+            "latest_query_data_id": "7ab6172e-0cf8-4cba-ad86-e2214d98056d",
             "name": "account_stats",
             "options": {
                 "apply_auto_limit": true,
@@ -6642,20 +6630,44 @@
                 ]
             },
             "permission_tier": "CAN_MANAGE",
-            "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY name",
-            "query_draft": null,
+            "query": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
+            "query_draft": {
+                "apply_auto_limit": true,
+                "catalog": "",
+                "draft_text": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY\n  name",
+                "org_id": 1657683783405196,
+                "original_query_text": "SELECT\n  name,\n  value.value\nFROM\n  security_analysis.account_info\nwhere\n  category = 'Account Stats'\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and workspaceid = {{workspaceid}}\nORDER BY name",
+                "parameters": [
+                    {
+                        "$$value": "1657683783405196",
+                        "global": false,
+                        "locals": [],
+                        "name": "workspaceid",
+                        "parentQueryId": "c7112a9d-0dac-4f3e-94a6-95d9b9716653",
+                        "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
+                        "title": "workspaceid",
+                        "type": "query",
+                        "urlPrefix": "p_",
+                        "value": "1657683783405196"
+                    }
+                ],
+                "query_id": "c7112a9d-0dac-4f3e-94a6-95d9b9716653",
+                "schema": "",
+                "updated_at": "2022-12-14T19:56:57Z",
+                "user_id": 6132399981223669
+            },
             "run_as_role": "viewer",
             "run_as_service_principal_id": null,
             "schedule": null,
             "tags": [
                 "SAT"
             ],
-            "updated_at": "2022-09-26T00:30:46Z",
+            "updated_at": "2022-12-14T19:56:58Z",
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
             "user_id": 6132399981223669,
@@ -7234,23 +7246,23 @@
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
             "latest_execution": {
                 "catalog": null,
                 "data_source_id": "d5878969-c046-49d7-8734-f81281bef428",
                 "error_message": "",
-                "id": "d92ebc42-a06b-4535-bdb0-d6927d87516d",
-                "num_rows": 8,
+                "id": "f7da950a-cdf9-45b4-bc8a-57c2a806c5c3",
+                "num_rows": 9,
                 "query_id": "fdc33af2-0921-4fed-b320-08ed92eb4c18",
-                "query_text": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid=1657683783405196\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category LIMIT 1000\n  ",
-                "runtime": 4.84718,
+                "query_text": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = 1657683783405196\n          and completed = true\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = 1657683783405196\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category LIMIT 1000",
+                "runtime": 5.77278,
                 "schema": "security_analysis",
-                "start_time": "2022-10-13T14:21:29",
+                "start_time": "2022-12-14T19:55:44",
                 "status": 3
             },
-            "latest_query_data_id": "d92ebc42-a06b-4535-bdb0-d6927d87516d",
+            "latest_query_data_id": "f7da950a-cdf9-45b4-bc8a-57c2a806c5c3",
             "name": "summary_stats",
             "options": {
                 "apply_auto_limit": true,
@@ -7275,13 +7287,13 @@
                 ]
             },
             "permission_tier": "CAN_MANAGE",
-            "query": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid={{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category\n  ",
+            "query": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = {{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category",
             "query_draft": {
                 "apply_auto_limit": true,
                 "catalog": "",
-                "draft_text": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid={{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category\n  ",
+                "draft_text": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = {{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category",
                 "org_id": 1657683783405196,
-                "original_query_text": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.check_id = sbp.check_id\n      and run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid={{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category\n  ",
+                "original_query_text": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = (\n        select\n          max(runID)\n        from\n          security_analysis.run_number_table\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = {{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category",
                 "parameters": [
                     {
                         "$$value": "1657683783405196",
@@ -7298,7 +7310,7 @@
                 ],
                 "query_id": "fdc33af2-0921-4fed-b320-08ed92eb4c18",
                 "schema": "security_analysis",
-                "updated_at": "2022-10-04T20:42:44Z",
+                "updated_at": "2022-12-14T19:55:40Z",
                 "user_id": 6132399981223669
             },
             "run_as_role": "viewer",
@@ -7307,12 +7319,12 @@
             "tags": [
                 "SAT"
             ],
-            "updated_at": "2022-10-04T20:42:51Z",
+            "updated_at": "2022-12-14T19:55:42Z",
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
             "user_id": 6132399981223669,
@@ -7836,10 +7848,10 @@
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "c74da5c7-1c4c-4aa6-82a1-6150999c46d8",
+            "latest_query_data_id": "88a2159c-46ee-4a58-8f5a-402a3a48a166",
             "name": "security_check_details",
             "options": {
                 "apply_auto_limit": true,
@@ -7868,20 +7880,20 @@
                         "value": "GOV-2"
                     }
                 ],
-                "schema": "sirens_alpha",
+                "schema": "security_analysis",
                 "visualization_control_order": [
                     "workspaceid",
                     "check_id"
                 ]
             },
             "permission_tier": "CAN_MANAGE",
-            "query": "select\n  sbp.check_id,\n  sbp.check,\n  sbp.recommendation,\n  sc.additional_details,\n  sbp.logic,\n  if(\n    sbp.evaluation_value == \"-1\",\n    \"N/A\",\n    sbp.evaluation_value\n  ) as evaluation_value,\n  regexp_replace(sbp.api,\"<workspace_url>\",aw.deployment_url) as api,\n  sc.check_time\nfrom\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp,\n  security_analysis.account_workspaces aw\nwhere\n  sc.id = sbp.id\n  and sc.run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and sbp.check_id = {{ check_id }}\n  and sc.workspaceid = {{workspaceid}}\n  and aw.workspace_id = sc.workspaceid",
+            "query": "select\n  sbp.check_id,\n  sbp.check,\n  sbp.recommendation,\n  sc.additional_details,\n  sbp.logic,\n  if(\n    sbp.evaluation_value == \"-1\",\n    \"N/A\",\n    sbp.evaluation_value\n  ) as evaluation_value,\n  regexp_replace(sbp.api,\"<workspace_url>\",aw.deployment_url) as api,\n  sc.check_time\nfrom\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp,\n  security_analysis.account_workspaces aw\nwhere\n  sc.id = sbp.id\n  and sc.run_id = (\n     select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and sbp.check_id = {{ check_id }}\n  and sc.workspaceid = {{workspaceid}}\n  and aw.workspace_id = sc.workspaceid",
             "query_draft": {
                 "apply_auto_limit": true,
                 "catalog": "hive_metastore",
-                "draft_text": "select\n  sbp.check_id,\n  sbp.check,\n  sbp.recommendation,\n  sc.additional_details,\n  sbp.logic,\n  if(\n    sbp.evaluation_value == \"-1\",\n    \"N/A\",\n    sbp.evaluation_value\n  ) as evaluation_value,\n  regexp_replace(sbp.api,\"<workspace_url>\",aw.deployment_url) as api,\n  sc.check_time\nfrom\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp,\n  security_analysis.account_workspaces aw\nwhere\n  sc.id = sbp.id\n  and sc.run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and sbp.check_id = {{ check_id }}\n  and sc.workspaceid = {{workspaceid}}\n  and aw.workspace_id = sc.workspaceid",
+                "draft_text": "select\n  sbp.check_id,\n  sbp.check,\n  sbp.recommendation,\n  sc.additional_details,\n  sbp.logic,\n  if(\n    sbp.evaluation_value == \"-1\",\n    \"N/A\",\n    sbp.evaluation_value\n  ) as evaluation_value,\n  regexp_replace(sbp.api,\"<workspace_url>\",aw.deployment_url) as api,\n  sc.check_time\nfrom\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp,\n  security_analysis.account_workspaces aw\nwhere\n  sc.id = sbp.id\n  and sc.run_id = (\n     select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )\n  and sbp.check_id = {{ check_id }}\n  and sc.workspaceid = {{workspaceid}}\n  and aw.workspace_id = sc.workspaceid",
                 "org_id": 1657683783405196,
-                "original_query_text": "select\n  sbp.check_id,\n  sbp.check,\n  \n  if(\n    sbp.evaluation_value == \"-1\",\n    \"N/A\",\n    sbp.evaluation_value\n  ) as evaluation_value,\n  sbp.recommendation,\n  sc.additional_details,\n  sbp.logic,\n  regexp_replace(sbp.api,\"<workspace_url>\",aw.deployment_url) as api,\n  sc.check_time\nfrom\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp,\n  security_analysis.account_workspaces aw\nwhere\n  sc.id = sbp.id\n  and sc.run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and sbp.check_id = {{ check_id }}\n  and sc.workspaceid = {{workspaceid}}\n  and aw.workspace_id = sc.workspaceid",
+                "original_query_text": "select\n  sbp.check_id,\n  sbp.check,\n  sbp.recommendation,\n  sc.additional_details,\n  sbp.logic,\n  if(\n    sbp.evaluation_value == \"-1\",\n    \"N/A\",\n    sbp.evaluation_value\n  ) as evaluation_value,\n  regexp_replace(sbp.api,\"<workspace_url>\",aw.deployment_url) as api,\n  sc.check_time\nfrom\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp,\n  security_analysis.account_workspaces aw\nwhere\n  sc.id = sbp.id\n  and sc.run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )\n  and sbp.check_id = {{ check_id }}\n  and sc.workspaceid = {{workspaceid}}\n  and aw.workspace_id = sc.workspaceid",
                 "parameters": [
                     {
                         "$$value": "1657683783405196",
@@ -7907,8 +7919,8 @@
                     }
                 ],
                 "query_id": "2c62565b-dd1c-4b0b-a200-b6a027997b46",
-                "schema": "sirens_alpha",
-                "updated_at": "2022-10-06T14:22:22Z",
+                "schema": "security_analysis",
+                "updated_at": "2022-12-14T19:54:18Z",
                 "user_id": 6132399981223669
             },
             "run_as_role": null,
@@ -7917,12 +7929,12 @@
             "tags": [
                 "SAT"
             ],
-            "updated_at": "2022-10-06T18:33:25Z",
+            "updated_at": "2022-12-14T19:54:20Z",
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
             "user_id": 6132399981223669,
@@ -7992,7 +8004,7 @@
                     },
                     "query_plan": null,
                     "type": "DETAILS",
-                    "updated_at": "2022-10-14T20:01:26Z"
+                    "updated_at": "2022-12-14T19:59:52Z"
                 },
                 {
                     "created_at": "2022-09-12T21:50:56Z",
@@ -8239,10 +8251,10 @@
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "c028ce2d-066f-494c-be05-c74a4544b6d1",
+            "latest_query_data_id": "f86b69d6-c4a9-47d3-b64c-eafb54fbe392",
             "name": "category_counters",
             "options": {
                 "apply_auto_limit": true,
@@ -8290,66 +8302,20 @@
                 ]
             },
             "permission_tier": "CAN_MANAGE",
-            "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
-            "query_draft": {
-                "apply_auto_limit": true,
-                "catalog": "",
-                "draft_text": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
-                "org_id": 1657683783405196,
-                "original_query_text": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.check_id = sbp.check_id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(runID)\n    from\n      security_analysis.run_number_table\n  )",
-                "parameters": [
-                    {
-                        "$$value": "Low",
-                        "global": false,
-                        "locals": [],
-                        "name": "severity",
-                        "parentQueryId": "6c11756d-132f-4727-92df-2a085ef2a204",
-                        "title": "severity",
-                        "type": "text",
-                        "urlPrefix": "p_",
-                        "value": "Low"
-                    },
-                    {
-                        "$$value": "Identity & Access",
-                        "global": false,
-                        "locals": [],
-                        "name": "category",
-                        "parentQueryId": "6c11756d-132f-4727-92df-2a085ef2a204",
-                        "title": "category",
-                        "type": "text",
-                        "urlPrefix": "p_",
-                        "value": "Identity & Access"
-                    },
-                    {
-                        "$$value": "1657683783405196",
-                        "global": false,
-                        "locals": [],
-                        "name": "workspaceid",
-                        "parentQueryId": "6c11756d-132f-4727-92df-2a085ef2a204",
-                        "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
-                        "title": "Workspace",
-                        "type": "query",
-                        "urlPrefix": "p_",
-                        "value": "1657683783405196"
-                    }
-                ],
-                "query_id": "6c11756d-132f-4727-92df-2a085ef2a204",
-                "schema": "",
-                "updated_at": "2022-10-04T20:43:29Z",
-                "user_id": 6132399981223669
-            },
+            "query": "SELECT\n  count(*) as counter\nFROM\n  security_analysis.security_checks sc,\n  security_analysis.security_best_practices sbp\nwhere\n  sc.id = sbp.id\n  and sbp.severity = {{severity}}\n  and sc.score = 1\n  and sbp.category = {{category}}\n  and sc.workspaceid = {{workspaceid}}\n  and run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n  )",
+            "query_draft": null,
             "run_as_role": "viewer",
             "run_as_service_principal_id": null,
             "schedule": null,
             "tags": [
                 "SAT"
             ],
-            "updated_at": "2022-10-04T20:43:36Z",
+            "updated_at": "2022-12-14T19:57:45Z",
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
                 "is_db_admin": false,
-                "name": "arun.pamulapati@databricks.com",
+                "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
             "user_id": 6132399981223669,
