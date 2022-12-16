@@ -52,6 +52,13 @@ account_id = json_["account_id"]
 
 long_term = (bool(eval(json_["generate_pat_tokens"])))
 
+workspace_id = None
+try:
+    workspace_id = dbutils.widgets.get('workspace_id')
+except Exception:
+    loggr.exception("Exception encountered")
+loggr.info(f"Renewing token for workspace: {workspace_id}")
+
 # COMMAND ----------
 
 def generatePATtoken(deployment_url, tempToken):
@@ -225,7 +232,7 @@ if response.status_code == 200:
     #loggr.info(workspaces)
     for ws in workspaces:
         #loggr.info('workspaceId' in ws['properties']) 
-        if 'workspaceId' in ws['properties'] and (str(ws['properties']['workspaceId'])) != current_workspace:
+        if ( ('workspaceId' in ws['properties']) and (((workspace_id is None) and (str(ws['properties']['workspaceId']) != current_workspace)) or (workspace_id is not None and ((str(ws['properties']['workspaceId'])) == workspace_id))  and (str(ws['properties']['workspaceId']) != current_workspace))) :
             if 'workspaceUrl' in ws['properties']:
                 deployment_url = 'https://'+ws['properties']['workspaceUrl']
                 loggr.info(f" Getting token for Workspace : {deployment_url}")

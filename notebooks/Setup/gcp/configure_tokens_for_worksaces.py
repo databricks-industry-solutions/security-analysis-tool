@@ -46,6 +46,12 @@ ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"_"+current_w
 
 account_id = json_["account_id"] 
 
+workspace_id = None
+try:
+    workspace_id = dbutils.widgets.get('workspace_id')
+except Exception:
+    loggr.exception("Exception encountered")
+loggr.info(f"Renewing token for workspace: {workspace_id}")
 
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
@@ -174,7 +180,7 @@ if response.status_code == 200:
     #generate rest of the workspace tokens and store them in the secret store of the main workspace
     
     for ws in workspaces:
-        if((str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')):
+        if((workspace_id is not None and (str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')) or (workspace_id is not None and ((str(ws['properties']['workspaceId'])) == workspace_id) and (str(ws['workspace_id']) != current_workspace))):
             deployment_url = "https://"+ ws['deployment_name']+'.'+cloud_type+'.databricks.com'
             loggr.info(f" Getting token for Workspace : {deployment_url}")
             token = generateToken(deployment_url)
