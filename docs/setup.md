@@ -175,7 +175,7 @@ Please gather the following information before you start setting up:
              ```
                databricks --profile e2-sat secrets put --scope sat_scope --key client_secret
              ``` 
-          * Un-comment Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 5
+          * Update config in  \<SATProject\>/notebooks/Utils/initialize CMD 5
           * Set the value for the subscription_id
           * Set the value for the tenant_id
           * Set the value for client_id
@@ -206,7 +206,7 @@ Please gather the following information before you start setting up:
              ```
                databricks --profile e2-sat fs cp <key file name>  dbfs:/FileStore/tables/<key file name> --overwrite
              ``` 
-          * Un-comment Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4
+          * Update config in  \<SATProject\>/notebooks/Utils/initialize CMD 4
           * Set the value for the service_account_key_file_path
           * Set the value for impersonate_service_account
           * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this:
