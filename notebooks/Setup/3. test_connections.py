@@ -113,14 +113,14 @@ def renewWorkspaceTokens(workspace_id):
         gcp_status2 = dbutils.notebook.run('../Setup/gcp/configure_tokens_for_worksaces', 3000, {"workspace_id":workspace_id})
         if (gcp_status2 != 'OK'):
             loggr.exception('Error Encountered in GCP Step#2', gcp_status2)
-            dbuilts.notebook.exit()        
+            dbutils.notebook.exit()        
         
     if cloud_type=='azure' and bool(eval(json_['generate_pat_tokens'])) is False :
         #refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
         gcp_status2 = dbutils.notebook.run('../Setup/azure/configure_tokens_for_worksaces', 3000, {"workspace_id":workspace_id})
         if (gcp_status2 != 'OK'):
             loggr.exception('Error Encountered in Azure Step#2', gcp_status2)
-            dbuilts.notebook.exit()
+            dbutils.notebook.exit()
 
 # COMMAND ----------
 

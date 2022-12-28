@@ -261,8 +261,11 @@ def insertNewBatchRun():
 # COMMAND ----------
 
 def notifyworkspaceCompleted(workspaceID, completed):
+  import time
+  ts = time.time()
   runID = spark.sql('select max(runID) from security_analysis.run_number_table').collect()[0][0]
-  spark.sql(f'''INSERT INTO security_analysis.workspace_run_complete VALUES ({workspaceID}, {runID}, {completed})''')
+  spark.sql(f'''INSERT INTO security_analysis.workspace_run_complete (`workspace_id`,`run_id`, `completed`, `check_time`)  VALUES ({workspaceID}, {runID}, {completed}, cast({ts} as timestamp))''')
+
 
 # COMMAND ----------
 
@@ -330,7 +333,9 @@ def notifyworkspaceCompleted(workspaceID, completed):
 # MAGIC CREATE TABLE IF NOT EXISTS security_analysis.workspace_run_complete(
 # MAGIC     workspace_id string,
 # MAGIC     run_id bigint,
-# MAGIC     completed boolean
+# MAGIC     completed boolean,
+# MAGIC     check_time timestamp,
+# MAGIC     chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
 # MAGIC )
 # MAGIC USING DELTA
 
