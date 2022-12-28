@@ -16,6 +16,7 @@ from clientpkgs.scim_client import ScimClient
 from clientpkgs.jobs_client import JobsClient
 from clientpkgs.secrets_client import SecretsClient
 from clientpkgs.accounts_client import AccountsClient
+#from clientpkgs.accounts_client import AzureAccountsClient
 from clientpkgs.job_runs_client import JobRunsClient
 from clientpkgs.pools_client import PoolsClient
 from clientpkgs.ws_settings_client import WSSettingsClient
@@ -26,10 +27,12 @@ from clientpkgs.tokens_client import TokensClient
 from clientpkgs.workspace_client import WorkspaceClient
 #pylint: enable=unused-import
 
+def mainx():
+    test()
+
 def main():
-    '''main - tester program'''
     configParser = configparser.ConfigParser()   
-    configFilePath = '/Users/arun.pamulapati/_dev_stuff/config_gcp.txt'
+    configFilePath = '/Users/ramdas.murali/_dev_stuff/config.txt'
     configParser.read(configFilePath)
     jsonstr = configParser['MEISTERSTUFF']['json']
     workspace_id = json.loads(jsonstr)['workspace_id']
@@ -37,26 +40,49 @@ def main():
 
     sat_db_client = SatDBClient(jsonstr)
     try:
-        is_successful = sat_db_client.test_connection()
+        # is_successful = sat_db_client.test_connection()
 
-        if is_successful:
-            LOGGR.info("Workspace Connection successful!")
-        else:
-            LOGGR.info("Unsuccessful connection. Verify credentials.")
+        # if is_successful:
+        #     LOGGR.info("Workspace Connection successful!")
+        # else:
+        #     LOGGR.info("Unsuccessful connection. Verify credentials.")
 
-        is_successful = sat_db_client.test_connection(master_acct=True)
+        # is_successful = sat_db_client.test_connection(master_acct=True)
 
-        if is_successful:
-            LOGGR.info("Accunts API Connection successful!")
-        else:
-            LOGGR.info("Unsuccessful connection. Verify credentials.")
+        # if is_successful:
+        #     LOGGR.info("Accunts API Connection successful!")
+        # else:
+        #     LOGGR.info("Unsuccessful connection. Verify credentials.")
 
-        origstr = '''{"FirstName":"Ram","LastName":"Murali1#$%$"}'''
-        str_var = pars.simple_sat_fn(origstr, workspace_id)
-        print(str_var)
-        str_var = pars.simple_sat_fn(str_var, workspace_id)
-        print(str_var)
+        # origstr = '''{"FirstName":"Ram","LastName":"Murali1#$%$"}'''
+        # str_var = pars.simple_sat_fn(origstr, workspace_id)
+        # print(str_var)
+        # str_var = pars.simple_sat_fn(str_var, workspace_id)
+        # print(str_var)
 
+        acctClient = AccountsClient(jsonstr)
+        lst = acctClient.get_workspace_list()
+        print(lst)
+
+        lst = acctClient.get_credentials_list()
+        print(lst)
+
+        lst = acctClient.get_network_list()
+        print(lst)
+
+        lst = acctClient.get_storage_list()
+        print(lst)
+
+        lst = acctClient.get_cmk_list()
+        print(lst)
+
+        lst = acctClient.get_logdelivery_list()
+        print(lst)
+
+        lst = acctClient.get_privatelink_info()
+        print(lst)
+
+        return
         # workspaceClient = WorkspaceClient(client_config)
         # notebookList = workspaceClient.get_all_notebooks()
         #notebookList = workspaceClient.get_list_notebooks('/Repos/ramdas.murali+tzar@databricks.com/CSE/gold/workspace_analysis/dev')
@@ -129,6 +155,11 @@ def main():
         # lst = acctClient.get_logdelivery_list()
         # print(lst)
 
+        #Azure
+        acctClient = AzureAccountsClient(jsonstr)
+        lst = acctClient.get_workspace_list()
+        print(lst)
+
         # clusterClient = ClustersClient(client_config)
         # clusterLst = clusterClient.get_cluster_list(alive=False)
         # print(clusterLst)
@@ -170,6 +201,9 @@ def main():
         sys.exit(1)
     except Exception:
         LOGGR.exception("Exception encountered")
+
+
+
 
 
 
