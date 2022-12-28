@@ -91,13 +91,9 @@ cloud_type = getCloudType(hostname)
 # COMMAND ----------
 
 from clientpkgs.accounts_client import AccountsClient
-from clientpkgs.azure_accounts_client import AzureAccountsClient
 
 try:
-    if(cloud_type != "azure"):
-        acct_client = AccountsClient(json_)
-    else:
-        acct_client = AzureAccountsClient(json_)
+    acct_client = AccountsClient(json_)
 except Exception:
     loggr.exception("Exception encountered")
 

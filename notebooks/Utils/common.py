@@ -172,6 +172,12 @@ def readWorkspaceConfigFile():
 
 # COMMAND ----------
 
+def getWorkspaceConfig():
+  df = spark.sql(f'''select * from security_analysis.account_workspaces''')
+  return df
+
+# COMMAND ----------
+
 # Read the best practices file. (security_best_practices.csv)
 # Sice User configs are present in this file, the file is renamed (to security_best_practices_user)
 # This is needed only on bootstrap, subsequetly the database is the master copy of the user configuration

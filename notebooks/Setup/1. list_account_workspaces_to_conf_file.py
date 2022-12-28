@@ -32,16 +32,6 @@ dbutils.notebook.run('../Utils/accounts_bootstrap', 300, {"json_":json.dumps(jso
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC select * from `global_temp`.`acctworkspaces`
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC select properties.*  from `global_temp`.`acctworkspaces`  where properties.workspaceId  is not NULL
-
-# COMMAND ----------
-
 #this logic does not overwrite the previous config file. It just appends new lines so users can
 #easily modify the new lines for new workspaces.
 def generateWorkspaceConfigFile(workspace_prefix):
@@ -61,7 +51,10 @@ def generateWorkspaceConfigFile(workspace_prefix):
             where workspace_status = "RUNNING" {excluded_configured_workspace}'''
   df = spark.sql(spsql)
   if(not df.rdd.isEmpty()):
-    df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.'), lit(cloud_type), lit('.databricks.com'))) 
+    if(cloud_type == 'azure'):
+        df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.azuredatabricks.net'))) 
+    else:
+        df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.'), lit(cloud_type), lit('.databricks.com'))) 
     df = df.withColumn("ws_token", concat(lit(workspace_prefix), lit('_'), col('workspace_id')))   #added with workspace prfeix
     df = df.withColumn("alert_subscriber_user_id", lit(json_['username_for_alerts']))
     df = df.withColumn("sso_enabled", lit(False)) 

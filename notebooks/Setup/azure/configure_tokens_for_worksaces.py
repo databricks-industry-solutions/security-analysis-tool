@@ -31,7 +31,7 @@ loggr.info(f"Current_workspace {current_workspace}")
 
 subscription_id = json_["subscription_id"] 
 client_id = json_["client_id"] 
-client_credential = json_["client_credential"]
+client_credential = json_["client_secret"]
 tenant_id = json_["tenant_id"]
 loggr.info(f"Subscription id {subscription_id},  Client id {client_id} Tenant id {tenant_id}")
 if subscription_id is None or client_id is None or client_credential is None or tenant_id is None:

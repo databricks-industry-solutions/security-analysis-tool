@@ -57,8 +57,8 @@ readBestPracticesConfigsFile()
 
 # COMMAND ----------
 
-dfexist = readWorkspaceConfigFile()
-dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceGlobalTempView('all_workspaces') 
+dfexist = getWorkspaceConfig()
+dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceGlobalTempView('all_workspaces') 
 
 # COMMAND ----------
 
