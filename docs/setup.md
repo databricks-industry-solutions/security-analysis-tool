@@ -323,8 +323,27 @@ Please gather the following information before you start setting up:
    
 </details>
    
+## Update  security_best_practices (Optional) 
+1. Modify security_best_practices
+   * Go to \<SATProject\>/notebooks/Setup/7. update_sat_check_configuration and use this utility to enable/disable a Check, modify Evaluation Value and Alert configuration value for each check. You can update this file any time and any analysis from there on will take these values into consideration. 
+    <img src="./images/upate_security_best_practices.png" width="70%" height="70%">
  
-   
+2. Modify workspace_configs file 
+     * Go to\<SATProject\>/notebooks/Setup/8. update_workspace_configuration and  You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
+     
+     Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
+ 
+     Note: Please avoid  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
+     
+     Update values for each workspace for the manual checks:(    sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled)
+ 
+     * sso_enabled : True if you enabled Single Singn-on for the workspace
+     * scim_enabled: True if you integrated with  SCIM for the workspace
+     * vpc_peering_done: False if you have not peered with another VPC 
+     * object_storage_encypted: True if you encrypted your data buckets
+     * table_access_control_enabled : True if you enabled ACLs so that you can utilize Table ACL clusters that enforce user isolation  
+     <img src="./images/update_workspace_configuration.png" width="70%" height="70%">  
+ 
 ## Usage
  
  (Estimated time to complete these steps: 5 - 10 mins per workspace)  
