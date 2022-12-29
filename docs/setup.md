@@ -323,12 +323,12 @@ Please gather the following information before you start setting up:
    
 </details>
    
-## Update  security_best_practices (Optional) 
-1. Modify security_best_practices
+## Update  configuration files
+1. Modify security_best_practices (Optional) 
    * Go to \<SATProject\>/notebooks/Setup/7. update_sat_check_configuration and use this utility to enable/disable a Check, modify Evaluation Value and Alert configuration value for each check. You can update this file any time and any analysis from there on will take these values into consideration. 
     <img src="./images/upate_security_best_practices.png" width="70%" height="70%">
  
-2. Modify workspace_configs file 
+2. Modify workspace_configs file (Required for manual checks values)
      * Go to\<SATProject\>/notebooks/Setup/8. update_workspace_configuration and  You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
      
      Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
