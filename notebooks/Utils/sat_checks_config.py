@@ -61,7 +61,7 @@ def set_sat_check_config():
                     alert = {alert}
                 WHERE check_id= '{check_id}'
             '''.format(enable=enable, evaluation_value=evaluation_value, alert=alert, check_id = check_id)
-    #print(s_sql)
+    print(s_sql)
     spark.sql(s_sql)
     
     #update user config file (security_best_practices_user.csv)
@@ -121,7 +121,7 @@ def get_workspace_check_config():
 
     dbutils.widgets.dropdown("analysis_enabled", str(analysis_enabled),  ['False','True'], "b. Analysis Enabled")
     dbutils.widgets.dropdown("sso_enabled", str(sso_enabled),  ['False','True'], "c. SSO Enabled")
-    dbutils.widgets.dropdown("scim_enabled", str(analysis_enabled),  ['False','True'], "d. SCIM Enabled")    
+    dbutils.widgets.dropdown("scim_enabled", str(scim_enabled),  ['False','True'], "d. SCIM Enabled")    
     dbutils.widgets.dropdown("vpc_peering_done", str(vpc_peering_done),  ['False','True'], "e. ANY VPC PEERING")
     dbutils.widgets.dropdown("object_storage_encypted", str(vpc_peering_done),  ['False','True'], "f. Object Storage Encypted")
     dbutils.widgets.dropdown("table_access_control_enabled", str(table_access_control_enabled),  ['False','True'], "g. Table Access Control Enabled")
@@ -153,7 +153,7 @@ def set_workspace_check_config():
             '''.format(analysis_enabled=analysis_enabled, sso_enabled=sso_enabled, scim_enabled=scim_enabled, 
                        vpc_peering_done=vpc_peering_done, object_storage_encypted=object_storage_encypted, 
                        table_access_control_enabled=table_access_control_enabled, alert_subscriber_user_id=alert_subscriber_user_id, ws_id = ws_id)
-    #print(s_sql)
+    print(s_sql)
     spark.sql(s_sql)
     
 #Reset widget values to empty

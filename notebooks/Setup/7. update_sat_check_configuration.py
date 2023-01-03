@@ -30,6 +30,8 @@ get_sat_check_config()
 
 #Update Database with user changes to check details
 set_sat_check_config()
+#reset widgets
+get_all_sat_checks()
 
 # COMMAND ----------
 

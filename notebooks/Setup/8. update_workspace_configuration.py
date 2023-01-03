@@ -30,6 +30,8 @@ get_workspace_check_config()
 
 #Updates Database with user changes to workspace level checks
 set_workspace_check_config()
+#reset widgets
+get_all_workspaces()
 
 # COMMAND ----------
 
