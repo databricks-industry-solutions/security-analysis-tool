@@ -181,7 +181,7 @@ def getWorkspaceConfig():
 # Read the best practices file. (security_best_practices.csv)
 # Sice User configs are present in this file, the file is renamed (to security_best_practices_user)
 # This is needed only on bootstrap, subsequetly the database is the master copy of the user configuration
-# Every time the values are altered, the _user file ca be regenerated - but it is more as FYI
+# Every time the values are altered, the _user file can be regenerated - but it is more as FYI
 def readBestPracticesConfigsFile():
   import pandas as pd
   from os.path import exists
@@ -233,7 +233,9 @@ def getSecurityBestPracticeRecord(id, cloud_type):
 def getConfigPath():
   import os
   cwd = os.getcwd().lower()
-  if (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1):
+  if (cwd.rfind('/azure') != -1) or (cwd.rfind('/gcp') != -1):
+    return '../../../configs'  
+  elif (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1):
     return '../../configs'
   elif (cwd.rfind('/notebooks') != -1):
     return '../configs'
@@ -338,6 +340,11 @@ def notifyworkspaceCompleted(workspaceID, completed):
 # MAGIC     chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
 # MAGIC )
 # MAGIC USING DELTA
+
+# COMMAND ----------
+
+#Initialize best practices if not already loaded into database
+readBestPracticesConfigsFile()
 
 # COMMAND ----------
 
