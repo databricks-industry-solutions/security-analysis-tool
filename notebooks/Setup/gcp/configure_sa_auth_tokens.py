@@ -113,6 +113,7 @@ response = requests.get(
   json=None,
   timeout=60
 )
+loggr.info(response)
 
 if response.status_code == 200:
     loggr.info("Workspaces query successful!")
@@ -130,9 +131,16 @@ loggr.info(f"Current workspace URL : {gcp_workspace_url}")
 
 def storeTokenAsSecret(deployment_url, scope, key, PAT_token, token):
     import requests
-    
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    session = requests.Session()
+    retry = Retry(connect=10, backoff_factor=0.5)
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
 
-    response = requests.post(
+    loggr.info(f"Storing secrets on {gcp_workspace_url}")
+    response = session.post(
       '%s/api/2.0/secrets/put' % (deployment_url),
       headers={'Authorization': 'Bearer %s' % PAT_token},
       json={ "scope": scope,
