@@ -6,7 +6,6 @@ import urllib3
 import requests
 from core.logging_utils import LoggingUtils
 from core import parser as pars
-import msal
 
 urllib3.disable_warnings(category = urllib3.exceptions.InsecureRequestWarning)
 
@@ -42,10 +41,6 @@ class SatDBClient:
         self._master_password = configs['masterpwd'].strip()
         #Azure
         self._subscription_id = configs['subscription_id'].strip()
-        self._client_id = configs['client_id'].strip()
-        self._client_secret = configs['client_secret'].strip()
-        self._tenant_id = configs['tenant_id'].strip()
-
     def _update_token_master(self):
         '''update token master in http header'''
         LOGGR.info("in _update_token_master")
@@ -58,8 +53,7 @@ class SatDBClient:
             }
             LOGGR.info(f'GCP self._token {self._token}')
         elif(self._cloud_type == 'azure'):
-            self._url = "https://management.azure.com/subscriptions"
-            self._master_password = self.getAzureTokenWithMSAL('msmgmt')
+            self._url = "https://management.azure.com/subscriptions/"
             self._token = {
                 "Authorization": f"Bearer {self._master_password}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -88,8 +82,6 @@ class SatDBClient:
                 }   
                 LOGGR.info(f'In GCP  self._url {self._url}')
             elif (self._cloud_type == 'azure'):
-                self._raw_token = self.getAzureTokenWithMSAL('dbmgmt')
-
                 self._token = {
                 "Authorization": f"Bearer {self._raw_token}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -323,49 +315,6 @@ class SatDBClient:
         if 'gcp.databricks' in self._raw_url:
             cloudtype='gcp'
         return cloudtype
-
-    def getAzureTokenWithMSAL(self, scopeType):
-        """
-        validate client id and secret from microsoft and google
-        for scopes https://learn.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/app-aad-token#get-azure-ad-tokens-by-using-a-web-browser-and-curl
-        microsoft scope for management api 'https://management.azure.com/.default'
-        databricks scope for rest api '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'
-        """
-        try:
-            if self._cloud_type != 'azure':
-                raise Exception('works only for Azure')
-            scopes=[]
-            if 'msmgmt' in scopeType.lower():
-                scopes = ['https://management.azure.com/.default'] #ms scope 
-            else:
-                scopes = ['2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'] #databricks scope
-
-            app = msal.ConfidentialClientApplication(
-                client_id=self._client_id,
-                client_credential=self._client_secret,
-                authority=f"https://login.microsoftonline.com/{self._tenant_id}",
-            )
-
-            # The pattern to acquire a token looks like this.
-            token = None
-            # Firstly, looks up a token from cache
-            token = app.acquire_token_silent(scopes=scopes, account=None)
-
-            if not token:
-                token = app.acquire_token_for_client(scopes=scopes)
-            
-            if token.get("access_token") is None:
-                print(['no token'])
-            else:
-                return(token.get("access_token"))
-                print(token.get("access_token"))
-
-
-        except Exception as error:
-            print(f"Exception {error}")
-            print(str(error))
-
-
 
 
 

@@ -3,7 +3,7 @@
 #This script follows GCP and Databricks documentation here: https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html
 
 
-read -p "Please enter path to service account key file path (SA-1-key.json):" cred_file
+read -p "Please enter path to service account key file (SA-1-key.json):" cred_file
 cred_file=${cred_file:-SA-1-key.json}
 echo "Authenticating with ${cred_file}."
 ./google-cloud-sdk/bin/gcloud auth login --cred-file=$cred_file  
@@ -33,8 +33,8 @@ fi
 
 echo "Setting profile option to ${profile}."
 
-
 databricks $profile secrets put --scope $sat_scope --key user --string-value $identity_token
 databricks $profile secrets put --scope $sat_scope --key pass --string-value $access_token
 
+echo "Stored GCP tokens in Databricks secrets. These tokens are valid only for 1 hour to make Databricks account API calls"
 

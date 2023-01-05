@@ -1,10 +1,4 @@
 # Databricks notebook source
-dbutils.widgets.text("cred_file_path", "", "a. Service account key file path")
-dbutils.widgets.text("target_principal", "", "b. Impersonation service account")
-dbutils.widgets.text("long_term", "True", "c. Generate Long term PAT tokens")
-
-# COMMAND ----------
-
 # MAGIC %run ../../Includes/install_sat_sdk
 
 # COMMAND ----------
@@ -34,13 +28,12 @@ current_workspace = context['tags']['orgId']
 
 # COMMAND ----------
 
-cred_file_path = dbutils.widgets.get("cred_file_path")
-target_principal = dbutils.widgets.get("target_principal")
-long_term = (bool(eval(dbutils.widgets.get("long_term"))))
+cred_file_path = json_["service_account_key_file_path"] 
+target_principal = json_["impersonate_service_account"]
+long_term = (bool(eval(json_["generate_pat_tokens"])))
 loggr.info(f" Service account key file path {cred_file_path}")
 loggr.info(f" Impersonation service account {target_principal}")
 loggr.info(f" Generate Long term PAT tokens {long_term}")
-
 
 
 if cred_file_path is None or target_principal is None or long_term is None:
@@ -53,6 +46,12 @@ ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"_"+current_w
 
 account_id = json_["account_id"] 
 
+workspace_id = None
+try:
+    workspace_id = dbutils.widgets.get('workspace_id')
+except Exception:
+    loggr.exception("Exception encountered")
+loggr.info(f"Renewing token for workspace: {workspace_id}")
 
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
@@ -77,7 +76,8 @@ def generatePATtoken(deployment_url, tempToken):
     response = requests.post(
       '%s/api/2.0/token/create' % (deployment_url),
       headers={'Authorization': 'Bearer %s' % tempToken},
-      json={ "comment": "This is an SAT token", "lifetime_seconds": 7776000 }
+      json={ "comment": "This is an SAT token", "lifetime_seconds": 7776000 },
+      timeout=600
     )
 
     if response.status_code == 200:
@@ -119,17 +119,25 @@ def generateToken(deployment_url, long_term=False):
 
 # COMMAND ----------
 
-def storeTokenAsSecret(deployment_url, scope, key, PAT_token, token):
+def storeTokenAsSecret(gcp_workspace_url, scope, key, PAT_token, token):
     import requests
-    
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    session = requests.Session()
+    retry = Retry(connect=10, backoff_factor=0.5)
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
 
-    response = requests.post(
-      '%s/api/2.0/secrets/put' % (deployment_url),
+    loggr.info(f"Storing secrets on {gcp_workspace_url}")
+    response = session.post(
+      '%s/api/2.0/secrets/put' % (gcp_workspace_url),
       headers={'Authorization': 'Bearer %s' % PAT_token},
       json={ "scope": scope,
               "key": key,
               "string_value": token 
-           }
+           },
+      timeout=600
     )
 
     if response.status_code == 200:
@@ -146,7 +154,8 @@ import requests
 response = requests.get(
   '%s/api/2.0/accounts/%s/workspaces' % (gcp_accounts_url,account_id),
   headers={'Authorization': 'Bearer %s' % mastername, 'X-Databricks-GCP-SA-Access-Token': '%s' % masterpwd},
-  json=None
+  json=None,
+  timeout=600
 )
 
 if response.status_code == 200:
@@ -168,16 +177,18 @@ import requests
 response = requests.get(
   '%s/api/2.0/accounts/%s/workspaces' % (gcp_accounts_url,account_id),
   headers={'Authorization': 'Bearer %s' % mastername, 'X-Databricks-GCP-SA-Access-Token': '%s' % masterpwd},
-  json=None
+  json=None,
+  timeout=600
 )
 
 if response.status_code == 200:
     loggr.info("Workspaces query successful!")
     workspaces = response.json()
     #generate rest of the workspace tokens and store them in the secret store of the main workspace
-    
+    #Do not renew token for the current workspace as the PAT token is already provided via config
+    #Renew the token for specified workspace or all workspaces based on the workspace_id value
     for ws in workspaces:
-        if((str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')):
+        if((workspace_id is None and (str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')) or (workspace_id is not None and (str(ws['workspace_id']) == workspace_id) and (str(ws['workspace_id']) != current_workspace))):
             deployment_url = "https://"+ ws['deployment_name']+'.'+cloud_type+'.databricks.com'
             loggr.info(f" Getting token for Workspace : {deployment_url}")
             token = generateToken(deployment_url)

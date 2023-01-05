@@ -1,159 +1,63 @@
-'''Helper functions for Azure accounts client module'''
-import re
-import datetime
-import time
-
-def getItem(parentitem, listofnames, noneType=False):
-    """
-    Traverses a hierarchical dict to get a value
-    :param dict parentitem: dictionary object from which to get value
-    :param list listofnames: all the parameter names to traverse to get value in sequence.
-    :return: the value of the child key
-    :rtype: str
-    """
-    localitem = parentitem
-    for l in listofnames:
-        localitem = localitem.get(l)
-        if localitem is None:
-            if noneType:
-                return None
-            else:
-                return ''
-    if localitem == parentitem:
-        if noneType:
-            return None
-        else:
-            return ''
-    return localitem
+'''accounts client module'''
+from core.dbclient import SatDBClient
 
 
-def str2time(strtime):
-    try:
-        format_data = "%Y-%m-%dT%H:%M:%S.%fZ"
-        strtime=strtime[:26] 
-        if strtime[-1] != 'Z':
-            strtime = strtime + 'Z'
-        t = time.mktime(datetime.datetime.strptime(strtime, format_data).timetuple())
-        return t    
-    except Exception as e:
-        print(strtime)
-        raise(e)
+class AzureAccountsClient(SatDBClient):
+    '''accounts helper'''
 
-def remap_workspace_list(subslist):
-    subslistMapped = []
-    for rec in subslist:
-        if getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
-                or getItem(rec, ['properties', 'workspaceId'], True) is None:
-            continue
-        
-        rec['account_id']=''
-        rec['aws_region']=''
-        rec['region']=getItem(rec, ['location'])
-        rec['creation_time']=str2time(getItem(rec, ['properties', 'createdDateTime']))
-        regex = "([\S]+).azuredatabricks.+"
-        dn=re.findall(regex, getItem(rec, ['properties', 'workspaceUrl']))
-        if dn is None or dn is False:
-            rec['deployment_name']=''
-        else:
-            rec['deployment_name']=dn[0]
-        rec['pricing_tier']=getItem(rec, ['sku', 'name'])           
-        rec['workspace_id']=getItem(rec, ['properties', 'workspaceId'])
-        rec['workspace_name']=getItem(rec, ['name'])
-        ps = getItem(rec, ['properties', 'provisioningState'])
-        if ps=='Succeeded':
-            rec['workspace_status']='RUNNING'
-        else:
-            rec['workspace_status']=ps
-        rec['workspace_url']=getItem(rec, ['properties', 'workspaceUrl'])
-        subslistMapped.append(rec)
-    return subslistMapped
+    def get_workspace_list(self):
+        """
+        Returns an array of json objects for workspace
+        """
+        subscriptionid=self._subscription_id
+        workspaces_list = self.get(f"{subscriptionid}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01", master_acct=True).get('value',[])
+        return workspaces_list
 
+    def get_credentials_list(self):
+        """
+        Returns an array of json objects for credentials
+        """
+        accountid=self._account_id
+        credentials_list = self.get(f"/accounts/{accountid}/credentials", master_acct=True).get('elements',[])
+        return credentials_list
 
-def remap_pvtlink_list(subslist):
-    pvtlistMapped = []
-    for rec in subslist:
-        if getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
-                or getItem(rec, ['properties', 'workspaceId'], True) is None:
-            continue
-        pvtlinklist = getItem(rec, ['properties', 'privateEndpointConnections'])
-        if  pvtlinklist is None:
-            continue
-        for pvtlinkitem in pvtlinklist:
-            pvtlink = {}
-            pvtlink['account_id']=getItem(rec, ['properties', 'workspaceId'])
-            pvtlink['private_access_level']='WORKSPACE'
-            pvtlink['private_access_settings_name'] = getItem(pvtlinkitem, ['name'])
-            pn = getItem(rec, ['properties', 'publicNetworkAccess'])
-            if pn != 'Enabled':
-                pn = False
-            else:
-                pn = True
+    def get_storage_list(self):
+        """
+        Returns an array of json objects for storage
+        """
+        accountid=self._account_id
+        storage_list = self.get(f"/accounts/{accountid}/storage-configurations", master_acct=True).get('elements',[])
+        return storage_list
 
-            pvtlink['public_access_enabled']=pn
-            pvtlink['region']=getItem(rec, ['location'])
-            pvtlistMapped.append(pvtlink)
-    return pvtlistMapped
+    def get_network_list(self):
+        """
+        Returns an array of json objects for networks
+        """
+        accountid=self._account_id
+        network_list = self.get(f"/accounts/{accountid}/networks", master_acct=True).get('elements',[])
+        return network_list
 
-def remap_storage_list(subslist):
-    netlistMapped = []
-    for rec in subslist:
-        if getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
-                or getItem(rec, ['properties', 'workspaceId'], True) is None:
-            continue
-        stglink = {}
-        stglink['account_id']=getItem(rec, ['properties', 'workspaceId'])
-        stglink['creation_time']=str2time(getItem(rec, ['properties', 'createdDateTime']))
-        stglink['root_bucket_info']={"bucket_name": getItem(rec, ['properties','parameters', 'storageAccountName', 'value'])}
-        stglink['storage_configuration_id']=getItem(rec, ['properties','parameters', 'storageAccountName', 'value'])
-        stglink['storage_configuration_name']=getItem(rec, ['properties','parameters', 'storageAccountName', 'value'])
-        netlistMapped.append(stglink)
-    return netlistMapped
+    def get_cmk_list(self):
+        """
+        Returns an array of json objects for networks
+        """
+        accountid=self._account_id
+        cmk_list = self.get(f"/accounts/{accountid}/customer-managed-keys", master_acct=True).get('elements',[])
+        return cmk_list
 
+    def get_logdelivery_list(self):
+        """
+        Returns an array of json objects for log delivery
+        """
+        accountid=self._account_id
+        logdeliveryinfo = self.get(f"/accounts/{accountid}/log-delivery", master_acct=True).\
+                get('log_delivery_configurations',[])
+        return logdeliveryinfo
 
-#Test code not used.
-# pip install msal
-import msal
-import sys
-def get_msal_token():
-    """
-    validate client id and secret from microsoft and google
-    """
-    client_id = ''
-    tenant_id = ''
-    org_id = ''
-    client_secret = ''    
-    try:
-        app = msal.ConfidentialClientApplication(
-            client_id=client_id,
-            client_credential=client_secret,
-            authority=f"https://login.microsoftonline.com/{tenant_id}",
-        )
-
-        # call for default scope in order to verify client id and secret.
-        scopes = [ 'https://management.azure.com/.default' ]
-        # The pattern to acquire a token looks like this.
-        token = None
-
-        # Firstly, looks up a token from cache
-        # Since we are looking for token for the current app, NOT for an end user,
-        # notice we give account parameter as None.
-        token = app.acquire_token_silent(scopes=scopes, account=None)
-
-        if not token:
-            token = app.acquire_token_for_client(scopes=scopes)
-        
-        print(token)
-        if token.get("access_token") is None:
-            print(['no token'])
-        else:
-            print(token.get("access_token"))
-
-
-    except Exception as error:
-        print(f"Exception {error}")
-        print(str(error))
-
-
-
-
-
+    def get_privatelink_info(self):
+        """
+        Returns an array of json objects for privatelink
+        """
+        accountid=self._account_id
+        pvtlinkinfo = self.get(f"/accounts/{accountid}/private-access-settings", master_acct=True).get('elements',[])
+        return pvtlinkinfo

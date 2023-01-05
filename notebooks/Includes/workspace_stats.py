@@ -63,7 +63,14 @@ sqlctrl(workspace_id, f'''select * from `global_temp`.`acctworkspaces` where wor
 
 def getAccountRegion(df):
   if(df is not None):
-    return ('AS-2', {'value':df.collect()[0].aws_region}, 'Account Stats')
+    if 'aws_region' in df.collect()[0] and df.collect()[0].aws_region is not None and df.collect()[0].aws_region:
+        return ('AS-2', {'value':df.collect()[0].aws_region}, 'Account Stats')
+    elif 'region' in df.collect()[0] and  df.collect()[0].region is not None and df.collect()[0].region:
+        return ('AS-2', {'value':df.collect()[0].region}, 'Account Stats')
+    elif 'location' in df.collect()[0] and  df.collect()[0].location is not None and df.collect()[0].location:
+        return ('AS-2', {'value':df.collect()[0].location}, 'Account Stats')
+    else: 
+        return ('AS-2', {'value': 0}, 'Account Stats')
   else:
     return ('AS-2', {'value': 0}, 'Account Stats')
 

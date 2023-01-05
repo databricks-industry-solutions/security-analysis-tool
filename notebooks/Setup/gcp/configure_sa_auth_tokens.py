@@ -21,12 +21,6 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-dbutils.widgets.text("cred_file_path", "", "a. Service account key file path")
-dbutils.widgets.text("target_principal", "", "b. Impersonation service account")
-
-
-# COMMAND ----------
-
 import json
 #Get current workspace id
 context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
@@ -34,19 +28,17 @@ current_workspace = context['tags']['orgId']
 
 # COMMAND ----------
 
-cred_file_path = dbutils.widgets.get("cred_file_path")
-target_principal = dbutils.widgets.get("target_principal")
+cred_file_path = json_["service_account_key_file_path"] 
+target_principal = json_["impersonate_service_account"]
 loggr.info(f" Service account key file path {cred_file_path}")
 loggr.info(f" Impersonation service account {target_principal}")
 if cred_file_path is None or target_principal is None:
-    dbutils.notebook.exit("Please set values for : Service account key file path, Impersonation service account, Generate Long term PAT tokens")
+    dbutils.notebook.exit("Please set values for : Service account key file path, Impersonation service account")
 
 workspace_pat_scope = json_['workspace_pat_scope']
 tokenscope = json_['workspace_pat_token_prefix']
 ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"_"+current_workspace)
-#cred_file_path= '/dbfs/FileStore/tables/SA_1_key.json'
-#target_principal='arun-sa-2@fe-dev-sandbox.iam.gserviceaccount.com'
-#ws_pat_token="dapic5a1740b147488a3ceb3c3625310a47f"
+
 
 master_name_scope = json_["master_name_scope"] 
 master_name_key = json_["master_name_key"] 
@@ -61,6 +53,7 @@ account_id = json_["account_id"]
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
 gcp_accounts_url = 'https://accounts.'+cloud_type+'.databricks.com'
+loggr.info(f" GCP account URL: {gcp_accounts_url}")
 
 # COMMAND ----------
 
@@ -117,8 +110,10 @@ import requests
 response = requests.get(
   '%s/api/2.0/accounts/%s/workspaces' % (gcp_accounts_url,account_id),
   headers={'Authorization': 'Bearer %s' % identity_token, 'X-Databricks-GCP-SA-Access-Token': '%s' % access_token},
-  json=None
+  json=None,
+  timeout=60
 )
+loggr.info(response)
 
 if response.status_code == 200:
     loggr.info("Workspaces query successful!")
@@ -136,19 +131,27 @@ loggr.info(f"Current workspace URL : {gcp_workspace_url}")
 
 def storeTokenAsSecret(deployment_url, scope, key, PAT_token, token):
     import requests
-    
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    session = requests.Session()
+    retry = Retry(connect=10, backoff_factor=0.5)
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
 
-    response = requests.post(
+    loggr.info(f"Storing secrets on {gcp_workspace_url}")
+    response = session.post(
       '%s/api/2.0/secrets/put' % (deployment_url),
       headers={'Authorization': 'Bearer %s' % PAT_token},
       json={ "scope": scope,
               "key": key,
               "string_value": token 
-           }
+           },
+      timeout=60
     )
 
     if response.status_code == 200:
-      loggr.info(f"Token is successfuly stored in secrets: {response.json()}!")
+      loggr.info(f"Token is successfuly stored in secrets: {response}!")
     else:
       loggr.info(f"Error storing secrets: {response}")   
 
