@@ -126,7 +126,7 @@ if enabled:
 check_id='35' #Private Link
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')
+workspaceId = db_client._workspace_id
 
 def private_link(df):
   if df is not None and not df.rdd.isEmpty():
@@ -145,7 +145,7 @@ if enabled:
 check_id='36' #BYOVPC
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')
+workspaceId = db_client._workspace_id
 
 def byopc(df):
   if df is not None and not df.rdd.isEmpty():
@@ -165,7 +165,7 @@ if enabled:
 check_id='37' #IP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')
+workspaceId = db_client._workspace_id
 
 def public_access_enabled(df):
   if df is not None and len(df.columns)==0:
@@ -186,7 +186,7 @@ if enabled:
 check_id='28' #VPC Peering
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')   
+workspaceId = db_client._workspace_id
 
 def vpc_peering(df):
   if vpc_peering:
@@ -385,6 +385,7 @@ if enabled:
 check_id='3' #BYOK
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
+workspaceId = db_client._workspace_id
 # Report on workspaces that do not have a byok id associated with them
 def byok_check(df):   
   if df is not None and not df.rdd.isEmpty():
@@ -395,7 +396,6 @@ def byok_check(df):
     return (check_id, 0, {})   
   
 if enabled:
-  workspaceId = spark.conf.get('spark.databricks.clusterUsageTags.clusterOwnerOrgId')
   sqlctrl(workspace_id, f'''SELECT workspace_id
       FROM global_temp.`acctworkspaces`
       WHERE (storage_customer_managed_key_id is null) and workspace_id={workspaceId}''', byok_check)
