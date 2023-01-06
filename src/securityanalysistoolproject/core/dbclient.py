@@ -40,7 +40,12 @@ class SatDBClient:
         self._master_name = configs['mastername'].strip()
         self._master_password = configs['masterpwd'].strip()
         #Azure
-        self._subscription_id = configs['subscription_id'].strip()
+        if 'azure' in self._cloud_type:
+            self._subscription_id = configs['subscription_id'].strip()
+            self._client_id = configs['client_id'].strip()
+            self._client_secret = configs['client_secret'].strip()
+            self._tenant_id = configs['tenant_id'].strip()
+
     def _update_token_master(self):
         '''update token master in http header'''
         LOGGR.info("in _update_token_master")
