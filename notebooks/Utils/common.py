@@ -172,10 +172,16 @@ def readWorkspaceConfigFile():
 
 # COMMAND ----------
 
+def getWorkspaceConfig():
+  df = spark.sql(f'''select * from security_analysis.account_workspaces''')
+  return df
+
+# COMMAND ----------
+
 # Read the best practices file. (security_best_practices.csv)
 # Sice User configs are present in this file, the file is renamed (to security_best_practices_user)
 # This is needed only on bootstrap, subsequetly the database is the master copy of the user configuration
-# Every time the values are altered, the _user file ca be regenerated - but it is more as FYI
+# Every time the values are altered, the _user file can be regenerated - but it is more as FYI
 def readBestPracticesConfigsFile():
   import pandas as pd
   from os.path import exists
@@ -227,7 +233,9 @@ def getSecurityBestPracticeRecord(id, cloud_type):
 def getConfigPath():
   import os
   cwd = os.getcwd().lower()
-  if (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1):
+  if (cwd.rfind('/azure') != -1) or (cwd.rfind('/gcp') != -1):
+    return '../../../configs'  
+  elif (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1):
     return '../../configs'
   elif (cwd.rfind('/notebooks') != -1):
     return '../configs'
@@ -255,8 +263,11 @@ def insertNewBatchRun():
 # COMMAND ----------
 
 def notifyworkspaceCompleted(workspaceID, completed):
+  import time
+  ts = time.time()
   runID = spark.sql('select max(runID) from security_analysis.run_number_table').collect()[0][0]
-  spark.sql(f'''INSERT INTO security_analysis.workspace_run_complete VALUES ({workspaceID}, {runID}, {completed})''')
+  spark.sql(f'''INSERT INTO security_analysis.workspace_run_complete (`workspace_id`,`run_id`, `completed`, `check_time`)  VALUES ({workspaceID}, {runID}, {completed}, cast({ts} as timestamp))''')
+
 
 # COMMAND ----------
 
@@ -324,9 +335,16 @@ def notifyworkspaceCompleted(workspaceID, completed):
 # MAGIC CREATE TABLE IF NOT EXISTS security_analysis.workspace_run_complete(
 # MAGIC     workspace_id string,
 # MAGIC     run_id bigint,
-# MAGIC     completed boolean
+# MAGIC     completed boolean,
+# MAGIC     check_time timestamp,
+# MAGIC     chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
 # MAGIC )
 # MAGIC USING DELTA
+
+# COMMAND ----------
+
+#Initialize best practices if not already loaded into database
+readBestPracticesConfigsFile()
 
 # COMMAND ----------
 

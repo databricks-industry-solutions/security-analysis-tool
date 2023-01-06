@@ -75,6 +75,11 @@ if not is_successful_acct:
 
 # COMMAND ----------
 
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### Accounts
 
@@ -86,6 +91,7 @@ if not is_successful_acct:
 # COMMAND ----------
 
 from clientpkgs.accounts_client import AccountsClient
+
 try:
     acct_client = AccountsClient(json_)
 except Exception:
