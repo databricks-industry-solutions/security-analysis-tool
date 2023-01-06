@@ -1,9 +1,43 @@
-'''accounts client module'''
-from core.dbclient import SatDBClient
+'''Helper functions for Azure accounts client module'''
+import re
+import datetime
+import time
+
+def getItem(parentitem, listofnames, noneType=False):
+    """
+    Traverses a hierarchical dict to get a value
+    :param dict parentitem: dictionary object from which to get value
+    :param list listofnames: all the parameter names to traverse to get value in sequence.
+    :return: the value of the child key
+    :rtype: str
+    """
+    localitem = parentitem
+    for l in listofnames:
+        localitem = localitem.get(l)
+        if localitem is None:
+            if noneType:
+                return None
+            else:
+                return ''
+    if localitem == parentitem:
+        if noneType:
+            return None
+        else:
+            return ''
+    return localitem
 
 
-class AzureAccountsClient(SatDBClient):
-    '''accounts helper'''
+def str2time(strtime):
+    try:
+        format_data = "%Y-%m-%dT%H:%M:%S.%fZ"
+        strtime=strtime[:26] 
+        if strtime[-1] != 'Z':
+            strtime = strtime + 'Z'
+        t = time.mktime(datetime.datetime.strptime(strtime, format_data).timetuple())
+        return t    
+    except Exception as e:
+        print(strtime)
+        raise(e)
 
 def remap_workspace_list(subslist):
     subslistMapped = []
@@ -13,7 +47,7 @@ def remap_workspace_list(subslist):
             continue
         
         rec['account_id']=''
-        rec['aws_region']=getItem(rec, ['location'])
+        rec['aws_region']=''
         rec['region']=getItem(rec, ['location'])
         rec['creation_time']=str2time(getItem(rec, ['properties', 'createdDateTime']))
         regex = "([\S]+).azuredatabricks.+"
@@ -38,18 +72,11 @@ def remap_workspace_list(subslist):
         rec['enableNoPublicIp'] = getItem(rec, ['properties', 'parameters', 'enableNoPublicIp', 'value'])
         rec['prepareEncryption'] = getItem(rec, ['properties', 'parameters', 'prepareEncryption', 'value'])
         rec['relayNamespaceName'] = getItem(rec, ['properties', 'parameters', 'relayNamespaceName', 'value'])
-        rec['requireInfrastructureEncryption'] = getItem(rec, ['properties', 'parameters', 'requireInfrastructureEncryption', 'value'])        
-        
+        rec['requireInfrastructureEncryption'] = getItem(rec, ['properties', 'parameters', 'requireInfrastructureEncryption', 'value'])      
+
         subslistMapped.append(rec)
     return subslistMapped
 
-    def get_credentials_list(self):
-        """
-        Returns an array of json objects for credentials
-        """
-        accountid=self._account_id
-        credentials_list = self.get(f"/accounts/{accountid}/credentials", master_acct=True).get('elements',[])
-        return credentials_list
 
 def remap_pvtlink_list(subslist):
     pvtlistMapped = []
@@ -68,7 +95,6 @@ def remap_pvtlink_list(subslist):
             pvtlink['account_id']=getItem(rec, ['properties', 'workspaceId'])
             pvtlink['private_access_level']='WORKSPACE'
             pvtlink['private_access_settings_name'] = getItem(pvtlinkitem, ['name'])
-            pvtlink['private_access_settings_id'] = getItem(pvtlinkitem, ['id'])
             pn = getItem(rec, ['properties', 'publicNetworkAccess'])
             if pn != 'Enabled':
                 pn = False
@@ -140,36 +166,6 @@ def get_msal_token():
         print(str(error))
 
 
-    def get_network_list(self):
-        """
-        Returns an array of json objects for networks
-        """
-        accountid=self._account_id
-        network_list = self.get(f"/accounts/{accountid}/networks", master_acct=True).get('elements',[])
-        return network_list
 
-    def get_cmk_list(self):
-        """
-        Returns an array of json objects for networks
-        """
-        accountid=self._account_id
-        cmk_list = self.get(f"/accounts/{accountid}/customer-managed-keys", master_acct=True).get('elements',[])
-        return cmk_list
 
-    def get_logdelivery_list(self):
-        """
-        Returns an array of json objects for log delivery
-        """
-        accountid=self._account_id
-        logdeliveryinfo = self.get(f"/accounts/{accountid}/log-delivery", master_acct=True).\
-                get('log_delivery_configurations',[])
-        return logdeliveryinfo
 
-    def get_privatelink_info(self):
-        """
-        Returns an array of json objects for privatelink
-        """
-        accountid=self._account_id
-        pvtlinkinfo = self.get(f"/accounts/{accountid}/private-access-settings", master_acct=True).get('elements',[])
-        return pvtlinkinfo
-        
