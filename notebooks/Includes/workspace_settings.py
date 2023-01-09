@@ -135,4 +135,23 @@ if enabled:
 
 # COMMAND ----------
 
+id = '38'
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def maximumLifetimeNewTokens(df): #Max life time for tokens
+    value = 0
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row. defn}
+    if(value is not None and value !=null and value != "null" and  value.isnumeric() and  int(value) > 0):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="maximumLifetimeNewTokens"''', maximumLifetimeNewTokens)
+
+# COMMAND ----------
+
 print(f"Workspace Settings - {time.time() - start_time} seconds to run")
