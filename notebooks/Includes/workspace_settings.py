@@ -144,7 +144,7 @@ def maximumLifetimeNewTokens(df): #Max life time for tokens
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value is not None and value !=null and value != "null" and  value.isnumeric() and  int(value) > 0):
+    if(value is not None and  value > 0):
         return (id, 0, defn)
     else:
         return (id, 1, defn)

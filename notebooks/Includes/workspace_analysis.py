@@ -182,6 +182,26 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='39' #Secure cluster connectivity - azure
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+workspaceId = db_client._workspace_id
+
+def secure_cluster_connectivity_enabled(df):
+  if df is not None and len(df.columns)==0:
+    return (check_id, 1, {'workspaceId': workspaceId})    
+  if df is not None and not df.rdd.isEmpty():
+    return (check_id, 0, {})
+  else:
+    return (check_id, 1, {'workspaceId': workspaceId})   
+    
+if enabled: 
+  sqlctrl(workspace_id, f'''SELECT workspace_id
+      FROM global_temp.`acctworkspaces`
+      WHERE enableNoPublicIp = true and workspace_id={workspaceId}''', secure_cluster_connectivity_enabled)
+
+# COMMAND ----------
+
 # DBTITLE 1,VPC Peer
 check_id='28' #VPC Peering
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
