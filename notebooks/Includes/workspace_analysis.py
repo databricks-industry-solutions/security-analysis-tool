@@ -328,6 +328,31 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='41' # Check for active tokens that have a lifetime that exceeds the max lifetime set - this happens for the old tokes
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+    
+def token_max_life_rule(df):
+  #Check for count of tokens that expiring in expiry_limit_evaluation_value days from today. 
+  if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
+      df = df.rdd.map(lambda x: (x['created_by_username'], re.sub('[\"\'\\\\]', '_', x['comment']), x['token_id'])).toDF(['created_by_username', 'comment', 'token_id'])            
+      tokenslst = df.collect()
+      tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
+      print(tokens_dict)
+      return (check_id, 1, tokens_dict )
+  else:
+      return (check_id, 0, {})   
+    
+if enabled:
+    # get maxTokenLifetimeDays  and check if it is set 
+    df = spark.sql('select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"')
+    if df.count()>0:        
+        dict_elems = df.collect()[0]
+        expiry_limit_evaluation_value = dict_elems['value']
+    if expiry_limit_evaluation_value is not None and  expiry_limit_evaluation_value != "null" and int(expiry_limit_evaluation_value) > 0:
+        sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value} OR expiry_time = -1''', token_max_life_rule)
+
+# COMMAND ----------
+
 # DBTITLE 1,Admin count
 check_id='27' #Admin Count
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)

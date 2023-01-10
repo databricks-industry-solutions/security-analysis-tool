@@ -49,11 +49,12 @@ status1 = dbutils.notebook.run('./Setup/1. list_account_workspaces_to_conf_file'
 if (status1 != 'OK'):
     loggr.exception('Error Encountered in Step#1', status1)
     dbutils.notebook.exit()
-    
-status2 = dbutils.notebook.run('./Setup/2. generate_secrets_setup_file', 3000)
-if (status2 != 'OK'):
-    loggr.exception('Error Encountered in Step#2', status2)
-    dbutils.notebook.exit()
+
+if cloud_type=='aws':    
+    status2 = dbutils.notebook.run('./Setup/2. generate_secrets_setup_file', 3000)
+    if (status2 != 'OK'):
+        loggr.exception('Error Encountered in Step#2', status2)
+        dbutils.notebook.exit()
     
 status3 = dbutils.notebook.run('./Setup/3. test_connections', 12000)
 if (status3 != 'OK'):

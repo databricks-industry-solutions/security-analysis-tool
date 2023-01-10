@@ -127,20 +127,3 @@ for ws in workspaces:
 
 # MAGIC %sql use security_analysis;
 # MAGIC select * from workspace_run_complete;
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC SELECT *
-# MAGIC         FROM global_temp.`acctworkspaces`
-# MAGIC         
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC select * from global_temp.`acctpvtlink`
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED"

@@ -144,13 +144,32 @@ def maximumLifetimeNewTokens(df): #Max life time for tokens
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value is not None and  value > 0):
+    if(value is not None and value != "null" and int(value) > 0):
         return (id, 0, defn)
     else:
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="maximumLifetimeNewTokens"''', maximumLifetimeNewTokens)
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"''', maximumLifetimeNewTokens)
+
+# COMMAND ----------
+
+id = '40' # Enforce User Isolation
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enforceUserIsolation(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enforceUserIsolation"''', enforceUserIsolation)
 
 # COMMAND ----------
 
