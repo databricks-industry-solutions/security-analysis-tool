@@ -39,7 +39,7 @@ if subscription_id is None or client_id is None or client_credential is None or 
 
 workspace_pat_scope = json_['workspace_pat_scope']
 tokenscope = json_['workspace_pat_token_prefix']
-ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"_"+current_workspace)
+ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"-"+current_workspace)
 
 
 master_name_scope = json_["master_name_scope"] 

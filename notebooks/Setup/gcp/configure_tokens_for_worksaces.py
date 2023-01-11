@@ -42,7 +42,7 @@ if cred_file_path is None or target_principal is None or long_term is None:
 
 workspace_pat_scope = json_['workspace_pat_scope']
 tokenscope = json_['workspace_pat_token_prefix']
-ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"_"+current_workspace)
+ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"-"+current_workspace)
 
 account_id = json_["account_id"] 
 
@@ -197,7 +197,7 @@ if response.status_code == 200:
                 token = generatePATtoken(deployment_url,token)
             
             if token:
-                storeTokenAsSecret(gcp_workspace_url, workspace_pat_scope, tokenscope+"_"+str(ws['workspace_id']), ws_pat_token, token)
+                storeTokenAsSecret(gcp_workspace_url, workspace_pat_scope, tokenscope+"-"+str(ws['workspace_id']), ws_pat_token, token)
 else:
     loggr.info(f"Error querying workspace API. Check account tokens: {response}")   
 
