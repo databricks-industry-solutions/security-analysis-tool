@@ -173,4 +173,23 @@ if enabled:
 
 # COMMAND ----------
 
+id = '43' # Enable Enforce ImdsV2
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableEnforceImdsV2(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableEnforceImdsV2"''', enableEnforceImdsV2)
+
+# COMMAND ----------
+
 print(f"Workspace Settings - {time.time() - start_time} seconds to run")

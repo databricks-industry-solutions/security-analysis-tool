@@ -58,9 +58,12 @@ def generateWorkspaceConfigFile(workspace_prefix):
     else:
         df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.gcp.databricks.com'))) #GCP
         
-    df = df.withColumn("ws_token", concat(lit(workspace_prefix), lit('_'), col('workspace_id')))   #added with workspace prfeix
+    df = df.withColumn("ws_token", concat(lit(workspace_prefix), lit('-'), col('workspace_id')))   #added with workspace prfeix
     df = df.withColumn("alert_subscriber_user_id", lit(json_['username_for_alerts']))
-    df = df.withColumn("sso_enabled", lit(False)) 
+    if(cloud_type == 'azure'):
+        df = df.withColumn("sso_enabled", lit(True))
+    else:
+        df = df.withColumn("sso_enabled", lit(False))
     df = df.withColumn("scim_enabled", lit(False)) 
     df = df.withColumn("vpc_peering_done", lit(False)) 
     df = df.withColumn("object_storage_encypted", lit(False)) 
