@@ -45,6 +45,14 @@ workspaces = workspacesdf.collect()
 #todo: Add parent folder to all SQL assets, expose name in _json (default SAT)
 #create a folder to house all SAT sql artifacts
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+session = requests.Session()
+retry = Retry(connect=10, backoff_factor=0.5)
+adapter = HTTPAdapter(max_retries=retry)
+session.mount('http://', adapter)
+session.mount('https://', adapter)
+
 def create_ws_folder(ws, dir_name):
     #delete tthe WS folder if it exists
     delete_ws_folder(ws, dir_name)
@@ -57,7 +65,7 @@ def create_ws_folder(ws, dir_name):
     target_url = url + "/api/2.0/workspace/mkdirs"
     
     loggr.info(f"Creating {path} using {target_url}")
-    requests.post(target_url, headers=headers, json=body,timeout=60).json()
+    session.post(target_url, headers=headers, json=body,timeout=60).json()
     
     target_url = url + "/api/2.0/workspace/get-status"
     loggr.info(f"Get Status {path} using {target_url}")
@@ -102,7 +110,7 @@ def delete_ws_folder(ws, dir_name):
     target_url = url + "/api/2.0/workspace/delete"
     loggr.info(f"Creating {path} using {target_url}")
     
-    requests.post(target_url, headers=headers, json=body, timeout=60  ).json()
+    session.post(target_url, headers=headers, json=body, timeout=60  ).json()
     loggr.info(f"Dir {dir_name} deleted")
     
 
@@ -143,6 +151,14 @@ for resource in resources:
 # COMMAND ----------
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+session = requests.Session()
+retry = Retry(connect=10, backoff_factor=0.5)
+adapter = HTTPAdapter(max_retries=retry)
+session.mount('http://', adapter)
+session.mount('https://', adapter)
+
 DOMAIN = ws.deployment_url
 TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
 loggr.info(f"Creating alerts on: {DOMAIN}!") 
@@ -170,7 +186,7 @@ for ws_to_load in workspaces:
     if (folder_id is None):
         loggr.info(f"Folder can't be created or found {ws_to_load.workspace_id}") 
         continue    
-    response = requests.post(
+    response = session.post(
               'https://%s/api/2.0/preview/sql/queries' % (DOMAIN),
               headers={'Authorization': 'Bearer %s' % TOKEN},
               json={
@@ -193,7 +209,7 @@ for ws_to_load in workspaces:
         loggr.info(f"Error creating alert query: {(response.json())}")   
 
     if query_id is not None:
-        response = requests.post(
+        response = session.post(
                   'https://%s/api/2.0/preview/sql/alerts' % (DOMAIN),
                   headers={'Authorization': 'Bearer %s' % TOKEN},
                   json={
@@ -235,7 +251,7 @@ for ws_to_load in workspaces:
             user_id = resource["id"]
 
             if user_id is not None:
-                response = requests.post(
+                response = session.post(
                           'https://%s/api/2.0/preview/sql/alerts/%s/subscriptions' % (DOMAIN, alert_id),
                           headers={'Authorization': 'Bearer %s' % TOKEN},
                           json={

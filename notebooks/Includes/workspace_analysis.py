@@ -46,7 +46,7 @@ masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key
 
 if(bool(eval(json_['use_mastercreds'])) is False):
     tokenscope = json_['workspace_pat_scope']
-    tokenkey = f"{json_['workspace_pat_token_prefix']}_{json_['workspace_id']}"
+    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
     token = dbutils.secrets.get(tokenscope, tokenkey)
 else:
     token = ''
@@ -348,7 +348,7 @@ if enabled:
     if df.count()>0:        
         dict_elems = df.collect()[0]
         expiry_limit_evaluation_value = dict_elems['value']
-    if expiry_limit_evaluation_value is not None and  expiry_limit_evaluation_value != "null" and int(expiry_limit_evaluation_value) > 0:
+    if expiry_limit_evaluation_value is not None and  expiry_limit_evaluation_value != "null" and expiry_limit_evaluation_value != "false" and int(expiry_limit_evaluation_value) > 0:
         sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value} OR expiry_time = -1''', token_max_life_rule)
 
 # COMMAND ----------
