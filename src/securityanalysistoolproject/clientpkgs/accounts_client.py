@@ -63,7 +63,9 @@ class AccountsClient(SatDBClient):
         """
         cmk_list = []
         if self._cloud_type == 'azure':
-            pass      
+            if bool(self.subslist) is False:
+                self.subslist = self.get_azure_subscription_list()
+            cmk_list = azfunc.remap_cmk_list(self.subslist)   
         else:           
             accountid=self._account_id
             cmk_list = self.get(f"/accounts/{accountid}/customer-managed-keys", master_acct=True).get('elements',[])

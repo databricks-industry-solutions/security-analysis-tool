@@ -1,6 +1,7 @@
 '''workspace client module'''
 from clientpkgs.scim_client import ScimClient
 from core.dbclient import SatDBClient
+from core.logging_utils import LoggingUtils
 
 class WorkspaceClient(SatDBClient):
     '''workspace client helper'''

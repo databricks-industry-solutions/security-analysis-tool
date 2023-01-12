@@ -16,7 +16,6 @@ from clientpkgs.scim_client import ScimClient
 from clientpkgs.jobs_client import JobsClient
 from clientpkgs.secrets_client import SecretsClient
 from clientpkgs.accounts_client import AccountsClient
-#from clientpkgs.accounts_client import AzureAccountsClient
 from clientpkgs.job_runs_client import JobRunsClient
 from clientpkgs.pools_client import PoolsClient
 from clientpkgs.ws_settings_client import WSSettingsClient
@@ -25,6 +24,7 @@ from clientpkgs.libraries_client import LibrariesClient
 from clientpkgs.ip_access_list import IPAccessClient
 from clientpkgs.tokens_client import TokensClient
 from clientpkgs.workspace_client import WorkspaceClient
+from clientpkgs.azure_accounts_client import get_msal_token
 #pylint: enable=unused-import
 
 def mainx():
@@ -60,6 +60,12 @@ def main():
         # str_var = pars.simple_sat_fn(str_var, workspace_id)
         # print(str_var)
 
+        wsclient = WSSettingsClient(jsonstr)
+        tokensList=wsclient.get_wssettings_list()
+        print(tokensList)
+
+
+        get_msal_token()
         acctClient = AccountsClient(jsonstr)
         lst = acctClient.get_workspace_list()
         print(lst)

@@ -1,44 +1,68 @@
 '''testing'''
 ### Run from terminal with pytest -s
 
-import configparser
+
 import json
 from core.logging_utils import LoggingUtils
 from core import parser as pars
 from core.dbclient import SatDBClient
 import pytest
 from clientpkgs.workspace_client import WorkspaceClient
+from clientpkgs.scim_client import ScimClient
+from clientpkgs.accounts_client import AccountsClient
 
-CONFIGPATH='/Users/ramdas.murali/_dev_stuff/config.txt'
-def test_encryption():
-    configParser = configparser.ConfigParser()   
-    configFilePath = CONFIGPATH
-    configParser.read(configFilePath)
-    jsonstr = configParser['MEISTERSTUFF']['json']
-    json_ = json.loads(jsonstr)
-    workspace_id = json_['workspace_id']
-    LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
+def test_workspace(get_db_client):
     LOGGR = LoggingUtils.get_logger()
 
-    origstr = '''{"FirstName":"Ram","LastName":"Murali1#$%$"}'''
-    str_var = pars.simple_sat_fn(origstr, workspace_id)
-    print(str_var)
-    str_var2 = pars.simple_sat_fn(str_var, workspace_id)
-    assert origstr == str_var2
-
-def test_workspace():
-    configParser = configparser.ConfigParser()   
-    configFilePath = CONFIGPATH
-    configParser.read(configFilePath)
-    jsonstr = configParser['MEISTERSTUFF']['json']
-    json_ = json.loads(jsonstr)
-    #workspace_id = json_['workspace_id']
-    LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
-    LOGGR = LoggingUtils.get_logger()
-
-    sat_db_client = SatDBClient(json_)    
-    workspaceClient = WorkspaceClient(json_)
+    jsonstr = get_db_client 
+    workspaceClient = WorkspaceClient(jsonstr)
     notebookList = workspaceClient.get_all_notebooks()
     notebookListspecific = workspaceClient.get_list_notebooks('/Repos/ramdas.murali+tzar@databricks.com/CSE/gold/workspace_analysis/dev')
     print(notebookList)
     print(notebookListspecific)
+
+
+def test_scim(get_db_client):
+    jsonstr = get_db_client
+    scimClient = ScimClient(jsonstr)
+    groups = scimClient.get_groups()
+    users = scimClient.get_users()
+    spns = scimClient.get_serviceprincipals()
+    print('--groups--')
+    print(groups)
+    print('--users--')
+    print(users)
+    print('--spns--')
+    print(spns)
+
+def test_azure_ws(get_db_client):
+    jsonstr = get_db_client
+    azure_accounts = AccountsClient(jsonstr)
+    wslist = azure_accounts.get_workspace_list()
+    print(wslist)
+
+ 
+def test_azure_storage(get_db_client):
+    jsonstr = get_db_client
+    azure_accounts = AccountsClient(jsonstr)
+    wslist = azure_accounts.get_storage_list()
+    print(wslist)    
+
+def test_azure_network(get_db_client):
+    jsonstr = get_db_client
+    azure_accounts = AccountsClient(jsonstr)
+    wslist = azure_accounts.get_network_list()
+    print(wslist)    
+
+def test_azure_cmk(get_db_client):
+    jsonstr = get_db_client
+    azure_accounts = AccountsClient(jsonstr)
+    wslist = azure_accounts.get_cmk_list()
+    print(wslist)      
+
+
+def test_azure_pvtlink(get_db_client):
+    jsonstr = get_db_client
+    azure_accounts = AccountsClient(jsonstr)
+    wslist = azure_accounts.get_privatelink_info()
+    print(wslist)  
