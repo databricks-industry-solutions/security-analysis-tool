@@ -45,6 +45,10 @@ loggr.info(out)
 
 # COMMAND ----------
 
+
+
+# COMMAND ----------
+
 readBestPracticesConfigsFile()
 
 # COMMAND ----------
@@ -131,4 +135,19 @@ for ws in workspaces:
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select * from `global_temp`.`workspacesettings` where name="enableExportNotebook"
+# MAGIC select * from global_temp.workspacesettings where name="enableExportNotebook"  
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from `global_temp`.`workspacesettings`
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC show tables from global_temp
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from global_temp.serviceprincipals

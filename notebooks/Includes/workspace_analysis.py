@@ -8,7 +8,17 @@ start_time = time.time()
 
 # COMMAND ----------
 
+df = spark.sql('select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"')
+display(df)
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/common
+
+# COMMAND ----------
+
+df = spark.sql('select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"')
+display(df)
 
 # COMMAND ----------
 
@@ -363,7 +373,7 @@ def admin_rule(df):
     adminlist = df.collect()
     adminlist_1 = [i.Admins for i in adminlist]
     adminlist_dict = {"admins" : adminlist_1}
-    print(adminlist_dict)
+    
     return (check_id, 1, adminlist_dict)
   else:
     return (check_id, 0, {})
@@ -371,6 +381,21 @@ def admin_rule(df):
 if enabled:
   sqlctrl(workspace_id, '''select explode(members.display) as Admins 
                from global_temp.groups where displayname="admins"''', admin_rule)
+
+# COMMAND ----------
+
+check_id='42' #Use service principals
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+service_principals_evaluation_value = int(sbp_rec['evaluation_value'])
+def use_service_principals(df):  
+  if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > service_principals_evaluation_value:
+    return (check_id, 0, {'SPs': len(df.collect())})
+  else:
+    return (check_id, 1, {'SPs':'no serviceprincipals found'})
+
+if enabled:
+   sqlctrl(workspace_id, '''select displayName as serviceprincipals 
+               from global_temp.serviceprincipals ''', use_service_principals)
 
 # COMMAND ----------
 
@@ -804,3 +829,7 @@ if enabled:
 # COMMAND ----------
 
 print(f"Workspace Analysis - {time.time() - start_time} seconds to run")
+
+# COMMAND ----------
+
+

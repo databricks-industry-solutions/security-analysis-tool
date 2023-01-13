@@ -283,6 +283,10 @@ bootstrap('users', scim_client.get_users)
 
 # COMMAND ----------
 
+bootstrap('serviceprincipals', scim_client.get_users)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### MLFlow
 
