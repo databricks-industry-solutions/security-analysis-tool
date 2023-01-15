@@ -54,7 +54,7 @@ from core.dbclient import SatDBClient
 mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
 masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
 
-if(bool(eval(json_['use_mastercreds'])) is False):
+if (json_['use_mastercreds']) is False:
     tokenscope = json_['workspace_pat_scope']
     tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
     token = dbutils.secrets.get(tokenscope, tokenkey)
