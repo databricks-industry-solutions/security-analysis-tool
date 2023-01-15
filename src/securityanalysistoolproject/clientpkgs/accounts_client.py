@@ -63,7 +63,9 @@ class AccountsClient(SatDBClient):
         """
         cmk_list = []
         if self._cloud_type == 'azure':
-            pass      
+            if bool(self.subslist) is False:
+                self.subslist = self.get_azure_subscription_list()
+            cmk_list = azfunc.remap_cmk_list(self.subslist)   
         else:           
             accountid=self._account_id
             cmk_list = self.get(f"/accounts/{accountid}/customer-managed-keys", master_acct=True).get('elements',[])
@@ -75,7 +77,9 @@ class AccountsClient(SatDBClient):
         """
         logdeliveryinfo = []
         if self._cloud_type == 'azure':
-            pass      
+            if bool(self.subslist) is False:
+                self.subslist = self.get_azure_subscription_list()
+            logdeliveryinfo = self.get_azure_diagnostic_logs(self.subslist)   
         else:        
             accountid=self._account_id
             logdeliveryinfo = self.get(f"/accounts/{accountid}/log-delivery", master_acct=True).\
@@ -105,7 +109,7 @@ class AccountsClient(SatDBClient):
         subscriptions_list=[]
         if self._cloud_type!='azure':
             return subscriptions_list
-        subscriptions_list = self.get(f"/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01",
+        subscriptions_list = self.get(f"/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01",
                     master_acct=True).get('value', [])     
         return(subscriptions_list)
 
@@ -118,3 +122,34 @@ class AccountsClient(SatDBClient):
             resource_list = self.get(f"{urlFromSubscription}?api-version=2018-04-01",
                     master_acct=True).get('value', [])
         return(resource_list)
+
+    def get_azure_diagnostic_logs(self, subslist):
+        diag_list = []
+        if bool(self.subslist) is False:
+            self.subslist = self.get_azure_subscription_list()
+
+        for rec in self.subslist:
+            if azfunc.getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
+                    or azfunc.getItem(rec, ['properties', 'workspaceId'], True) is None \
+                    or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
+                    or azfunc.getItem(rec, ['id'], True) is None:
+                continue
+            diagresid = azfunc.getItem(rec, ['id'], True)
+
+            diag_subs_list = self.get(f"/{diagresid}/providers/microsoft.insights/diagnosticSettings?api-version=2021-05-01-preview",
+                        master_acct=True).get('value', [])            
+            if bool(diag_subs_list) is False:
+                continue
+
+            diag = {}
+            diag['account_id']=azfunc.getItem(rec, ['properties', 'workspaceId'])
+            diag['workspace_id']=azfunc.getItem(rec, ['properties', 'workspaceId'])        
+            diag['status']="ENABLED"
+            diag['config_name']=azfunc.getItem(diag_subs_list[0], ['name']) #just the first one will do
+            diag['config_id']=azfunc.getItem(diag_subs_list[0], ['id'])
+            diag['location']=azfunc.getItem(diag_subs_list[0], ['location']) #just the first one will do
+            diag['log_type']='AUDIT_LOGS'
+            diag_list.append(diag)
+
+        return diag_list   
+

@@ -47,7 +47,7 @@ def remap_workspace_list(subslist):
             continue
         
         rec['account_id']=''
-        rec['aws_region']=''
+        rec['aws_region']=getItem(rec, ['location'])
         rec['region']=getItem(rec, ['location'])
         rec['creation_time']=str2time(getItem(rec, ['properties', 'createdDateTime']))
         regex = "([\S]+).azuredatabricks.+"
@@ -64,6 +64,13 @@ def remap_workspace_list(subslist):
             rec['workspace_status']='RUNNING'
         else:
             rec['workspace_status']=ps
+        pvtlinklist = getItem(rec, ['properties', 'privateEndpointConnections'])
+        if  pvtlinklist is None:
+            rec['private_access_settings_id']=None
+        else:
+            for pvtlinkitem in pvtlinklist:
+                rec['private_access_settings_id'] = getItem(pvtlinkitem, ['id'])  #only the first one for id purposes
+                break          
         rec['workspace_url']=getItem(rec, ['properties', 'workspaceUrl'])
         rec['network_id']=getItem(rec, ['properties', 'parameters', 'customVirtualNetworkId', 'value'])
         rec['network_id_pvtsubnet']=getItem(rec, ['properties', 'parameters', 'customPrivateSubnetName', 'value'])
@@ -73,7 +80,6 @@ def remap_workspace_list(subslist):
         rec['prepareEncryption'] = getItem(rec, ['properties', 'parameters', 'prepareEncryption', 'value'])
         rec['relayNamespaceName'] = getItem(rec, ['properties', 'parameters', 'relayNamespaceName', 'value'])
         rec['requireInfrastructureEncryption'] = getItem(rec, ['properties', 'parameters', 'requireInfrastructureEncryption', 'value'])      
-
         subslistMapped.append(rec)
     return subslistMapped
 
@@ -92,6 +98,7 @@ def remap_pvtlink_list(subslist):
             continue
         for pvtlinkitem in pvtlinklist:
             pvtlink = {}
+            pvtlink['private_access_settings_id'] = getItem(pvtlinkitem, ['id'])
             pvtlink['account_id']=getItem(rec, ['properties', 'workspaceId'])
             pvtlink['private_access_level']='WORKSPACE'
             pvtlink['private_access_settings_name'] = getItem(pvtlinkitem, ['name'])
@@ -122,6 +129,28 @@ def remap_storage_list(subslist):
     return netlistMapped
 
 
+
+def remap_cmk_list(subslist):
+    cmklistMapped = []
+    for rec in subslist:
+        if getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
+                or getItem(rec, ['properties', 'workspaceId'], True) is None \
+                or getItem(rec, ['properties','parameters', 'encryption'], True) is None:
+            continue
+        cmklink = {}
+        cmklink['account_id']=getItem(rec, ['properties', 'workspaceId'])
+        cmklink['workspace_id']=getItem(rec, ['properties', 'workspaceId'])        
+        cmklink['creation_time']=str2time(getItem(rec, ['properties', 'createdDateTime']))
+        cmklink['customer_managed_key_id']=getItem(rec, ['properties','parameters', 'encryption', 'value', "keyvaulturi"])
+        cmklink['use_cases']=['STORAGE']
+        keyalias = getItem(rec, ['properties','parameters', 'encryption', 'value', "KeyName"])
+        keyarn = getItem(rec, ['properties','parameters', 'encryption', 'value', "keySource"])
+        cmklink['aws_key_info']={"key_alias": keyalias, "key_arn": keyarn}
+        cmklistMapped.append(cmklink)
+    return cmklistMapped
+
+   
+
 #Test code not used.
 # pip install msal
 import msal
@@ -130,9 +159,9 @@ def get_msal_token():
     """
     validate client id and secret from microsoft and google
     """
+
     client_id = ''
     tenant_id = ''
-    org_id = ''
     client_secret = ''    
     try:
         app = msal.ConfidentialClientApplication(
