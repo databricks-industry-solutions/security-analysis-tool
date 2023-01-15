@@ -50,7 +50,7 @@ master_pwd_key = json_["master_pwd_key"]
 
 account_id = json_["account_id"] 
 
-long_term = (bool(eval(json_["generate_pat_tokens"])))
+long_term = json_["generate_pat_tokens"]
 
 workspace_id = None
 try:

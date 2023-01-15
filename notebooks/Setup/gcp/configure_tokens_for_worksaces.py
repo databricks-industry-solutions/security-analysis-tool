@@ -30,7 +30,7 @@ current_workspace = context['tags']['orgId']
 
 cred_file_path = json_["service_account_key_file_path"] 
 target_principal = json_["impersonate_service_account"]
-long_term = (bool(eval(json_["generate_pat_tokens"])))
+long_term = json_["generate_pat_tokens"]
 loggr.info(f" Service account key file path {cred_file_path}")
 loggr.info(f" Impersonation service account {target_principal}")
 loggr.info(f" Generate Long term PAT tokens {long_term}")

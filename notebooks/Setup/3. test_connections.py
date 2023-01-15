@@ -108,19 +108,19 @@ current_workspace = context['tags']['orgId']
 # COMMAND ----------
 
 def renewWorkspaceTokens():
-    if cloud_type=='gcp' and bool(eval(json_['generate_pat_tokens'])) is False :
+    if cloud_type=='gcp' and json_['generate_pat_tokens'] is False :
         #refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
         gcp_status2 = dbutils.notebook.run('../Setup/gcp/configure_tokens_for_worksaces', 3000)
         if (gcp_status2 != 'OK'):
             loggr.exception('Error Encountered in GCP Step#2', gcp_status2)
             dbutils.notebook.exit()        
         
-    if cloud_type=='azure' and bool(eval(json_['generate_pat_tokens'])) is False :
-        #refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
-        gcp_status2 = dbutils.notebook.run('../Setup/azure/configure_tokens_for_worksaces', 3000)
-        if (gcp_status2 != 'OK'):
-            loggr.exception('Error Encountered in Azure Step#2', gcp_status2)
-            dbutils.notebook.exit()
+#     if cloud_type=='azure' and json_['generate_pat_tokens'] is False :
+#         #refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
+#         gcp_status2 = dbutils.notebook.run('../Setup/azure/configure_tokens_for_worksaces', 3000)
+#         if (gcp_status2 != 'OK'):
+#             loggr.exception('Error Encountered in Azure Step#2', gcp_status2)
+#             dbutils.notebook.exit()
 
 # COMMAND ----------
 
@@ -133,7 +133,7 @@ for ws in workspaces:
   
   # Use configured token if use_mastercreds is set to false or the worspace we are testing is the master (current) workspace 
   # We need the current workspace connection tested with the token to configure alerts and dashboard later
-  if((bool(eval(json_['use_mastercreds'])) is False ) or (ws.workspace_id ==current_workspace)):
+  if (json_['use_mastercreds'] is False ) or (ws.workspace_id ==current_workspace):
       tokenscope = json_['workspace_pat_scope']
       tokenkey = ws.ws_token #already has prefix in config file
       token = dbutils.secrets.get(tokenscope, tokenkey)
