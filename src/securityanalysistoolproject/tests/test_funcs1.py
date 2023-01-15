@@ -2,11 +2,9 @@
 ### Run from terminal with pytest -s
 
 
-import json
 from core.logging_utils import LoggingUtils
 from core import parser as pars
 from core.dbclient import SatDBClient
-import pytest
 from clientpkgs.workspace_client import WorkspaceClient
 from clientpkgs.scim_client import ScimClient
 from clientpkgs.accounts_client import AccountsClient
@@ -66,3 +64,10 @@ def test_azure_pvtlink(get_db_client):
     azure_accounts = AccountsClient(jsonstr)
     wslist = azure_accounts.get_privatelink_info()
     print(wslist)  
+
+def test_azure_diag(get_db_client):
+    jsonstr = get_db_client
+    azure_accounts = AccountsClient(jsonstr)
+    diaglist = azure_accounts.get_logdelivery_list()
+    print(len(diaglist))
+    print(diaglist)      

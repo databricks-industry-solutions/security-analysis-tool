@@ -49,11 +49,17 @@ class WSSettingsClient(SatDBClient):
         # pylint: enable=line-too-long
 
         for keyn in ws_keymap:
-            valn = self.get("/preview/workspace-conf?keys="+keyn['name'], version='2.0')
+            valn={}
+            try:
+                valn = self.get("/preview/workspace-conf?keys="+keyn['name'], version='2.0')
+            except Exception as e:
+                #get exceptions like these 'unauthorized to perform ReadAction on /org_admin_conf/jobsListBackendPaginationEnabled'
+                valn[keyn['name']] = None
+
             valins = {}
             valins['name']=keyn['name']
             valins['defn']=keyn['defn']
-            valins['value']=False if valn[keyn['name']] is None else valn[keyn['name']]
+            valins['value']=None if valn[keyn['name']] is None else valn[keyn['name']]
             all_result.append(valins)
         return all_result
 

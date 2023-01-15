@@ -149,6 +149,8 @@ def remap_cmk_list(subslist):
         cmklistMapped.append(cmklink)
     return cmklistMapped
 
+   
+
 #Test code not used.
 # pip install msal
 import msal

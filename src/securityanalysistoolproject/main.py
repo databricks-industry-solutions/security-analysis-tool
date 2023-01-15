@@ -27,8 +27,6 @@ from clientpkgs.workspace_client import WorkspaceClient
 from clientpkgs.azure_accounts_client import get_msal_token
 #pylint: enable=unused-import
 
-def mainx():
-    test()
 
 def main():
     configParser = configparser.ConfigParser()   

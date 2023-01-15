@@ -21,7 +21,7 @@ class SatDBClient:
     Rest API Wrapper for Databricks APIs
     """
     # set of http error codes to throw an exception if hit. Handles client and auth errors
-    http_error_codes = [401]
+    http_error_codes = [401, 403]
 
     def __init__(self, inp_configs):
         self._inp_configs = inp_configs
@@ -37,7 +37,11 @@ class SatDBClient:
         self._cluster_id=configs['clusterid'].strip()
         self._token = ''
         self._raw_token = configs['token'].strip()
-        self._use_mastercreds = pars.str2bool(configs['use_mastercreds'])
+        if isinstance(configs['use_mastercreds'], str):
+            self._use_mastercreds = pars.str2bool(configs['use_mastercreds'])
+        else:
+            self._use_mastercreds = configs['use_mastercreds']
+
         self._master_name = configs['mastername'].strip()
         self._master_password = configs['masterpwd'].strip()
         #Azure
@@ -59,7 +63,7 @@ class SatDBClient:
             }
             LOGGR.info(f'GCP self._token {self._token}')
         elif(self._cloud_type == 'azure'):
-            self._url = "https://management.azure.com/subscriptions"
+            self._url = "https://management.azure.com"
             self._master_password = self.getAzureTokenWithMSAL('msmgmt')
             self._token = {
                 "Authorization": f"Bearer {self._master_password}",
@@ -107,7 +111,7 @@ class SatDBClient:
         if master_acct: #master acct may use a different credential
             self._update_token_master()
             if (self._cloud_type == 'azure'):
-                results = requests.get(f'{self._url}/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
+                results = requests.get(f'{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
                             headers=self._token, timeout=60)
             else:    
                 results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
@@ -147,12 +151,12 @@ class SatDBClient:
             else:
                 raw_results = requests.get(full_endpoint, headers=self._token, timeout=60)
 
-
             http_status_code = raw_results.status_code
             if http_status_code in SatDBClient.http_error_codes:
                 raise Exception(f"Error: GET request failed with code {http_status_code}\n{raw_results.text}")
             results = raw_results.json()
             LOGGR.debug(json.dumps(results, indent=4, sort_keys=True))
+
             if isinstance(results, list):
                 results = {'elements': results}
             results['http_status_code'] = http_status_code
