@@ -131,23 +131,3 @@ for ws in workspaces:
 
 # MAGIC %sql use security_analysis;
 # MAGIC select * from workspace_run_complete;
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC select * from global_temp.workspacesettings where name="enableExportNotebook"  
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC select * from `global_temp`.`workspacesettings`
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC show tables from global_temp
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC select * from global_temp.serviceprincipals

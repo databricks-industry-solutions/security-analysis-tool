@@ -50,7 +50,7 @@ def enableJobViewAcls(df): #Job View Acls
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -68,7 +68,7 @@ def enforceClusterViewAcls(df): #Cluster View Acls
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0,  defn)
     else:
         return (id, 1,  defn)
@@ -86,7 +86,7 @@ def enforceWorkspaceViewAcls(df): #Workspace View Acls
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -106,7 +106,7 @@ def enableProjectTypeInWorkspace(df): #Project Type In Workspace
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn.replace("'", '')}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -125,10 +125,10 @@ def enableResultsDownloading(df): #Results Downloading
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'false'):
-        return (id, 0, defn)
-    else:
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 1, defn)
+    else:
+        return (id, 0, defn)
 
 if enabled:
     sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableResultsDownloading"''', enableResultsDownloading)
@@ -163,7 +163,7 @@ def enforceUserIsolation(df):
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'):
+    if(value == 'true'): 
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -201,10 +201,10 @@ def enableExportNotebook(df):
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'false'):
-        return (id, 0, defn)
-    else:
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 1, defn)
+    else:
+        return (id, 0, defn)
 
 if enabled:
     sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableExportNotebook"''', enableExportNotebook)
@@ -220,10 +220,10 @@ def enableNotebookTableClipboard(df):
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'false'):
-        return (id, 0, defn)
-    else:
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 1, defn)
+    else:
+        return (id, 0, defn)
 
 if enabled:
     sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableNotebookTableClipboard"''', enableNotebookTableClipboard)
@@ -239,7 +239,7 @@ def enableXFrameOptions(df):
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -258,7 +258,7 @@ def enableXContentTypeOptions(df):
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -277,7 +277,7 @@ def enableXXSSProtection(df):
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
