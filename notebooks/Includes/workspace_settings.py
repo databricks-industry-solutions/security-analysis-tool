@@ -306,4 +306,61 @@ if enabled:
 
 # COMMAND ----------
 
+id = '50' # Enable verbose audit logs
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableVerboseAuditLogs(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableVerboseAuditLogs"''', enableVerboseAuditLogs)
+
+# COMMAND ----------
+
+id = '51' # Review and disable FileStore endpoint in Admin Console Workspace settings
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableFileStoreEndpoint(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'false'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableFileStoreEndpoint"''', enableFileStoreEndpoint)
+
+# COMMAND ----------
+
+id = '52' # Enable git versioning for notebooks
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableNotebookGitVersioning(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableNotebookGitVersioning"''', enableNotebookGitVersioning)
+
+# COMMAND ----------
+
 print(f"Workspace Settings - {time.time() - start_time} seconds to run")
