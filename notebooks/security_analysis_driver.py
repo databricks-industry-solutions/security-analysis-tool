@@ -45,10 +45,6 @@ loggr.info(out)
 
 # COMMAND ----------
 
-
-
-# COMMAND ----------
-
 readBestPracticesConfigsFile()
 
 # COMMAND ----------
