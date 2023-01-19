@@ -8,17 +8,7 @@ start_time = time.time()
 
 # COMMAND ----------
 
-df = spark.sql('select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"')
-display(df)
-
-# COMMAND ----------
-
 # MAGIC %run ../Utils/common
-
-# COMMAND ----------
-
-df = spark.sql('select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"')
-display(df)
 
 # COMMAND ----------
 
@@ -472,7 +462,7 @@ def byok_check(df):
 if enabled:
   sqlctrl(workspace_id, f'''SELECT workspace_id
       FROM global_temp.`acctworkspaces`
-      WHERE (storage_customer_managed_key_id is null) and workspace_id={workspaceId}''', byok_check)
+      WHERE (storage_customer_managed_key_id is null and managed_services_customer_managed_key_id is null) and workspace_id={workspaceId}''', byok_check)
 
 # COMMAND ----------
 
@@ -763,6 +753,7 @@ if enabled:
 # DBTITLE 1,Get all audit log delivery configurations. Should be enabled.
 check_id='8' #Log delivery configurations
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+workspaceId = db_client._workspace_id
 
 def log_check(df):
   if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
@@ -775,7 +766,10 @@ def log_check(df):
     return (check_id, 1, {})   
 
 if enabled:   
-    sqlctrl(workspace_id, '''select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED"''', log_check)
+    if cloud_type =='azure':
+        sqlctrl(workspace_id, f'''select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED" and workspace_id ="{workspaceId}"''', log_check)
+    else:    
+        sqlctrl(workspace_id, '''select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED"''', log_check)
 
 # COMMAND ----------
 
