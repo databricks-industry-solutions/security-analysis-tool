@@ -63,13 +63,17 @@ else:
 
 json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
 
+cloud_type = json_['cloud_type']
+workspace_id = json_['workspace_id']
+
+if cloud_type =='azure':
+    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
+
 db_client = SatDBClient(json_)
 
 
 # COMMAND ----------
 
-cloud_type = json_['cloud_type']
-workspace_id = json_['workspace_id']
 
 sso = bool(json_['sso'])
 scim = bool(json_['scim'])

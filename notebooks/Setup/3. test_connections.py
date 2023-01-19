@@ -20,6 +20,10 @@ clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 #dont know workspace token yet.
 json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd, 'url':hostname, 'workspace_id': 'accounts', 'cloud_type': cloud_type, 'clusterid':clusterid})
 
+if cloud_type =='azure':
+    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
+
+
 # COMMAND ----------
 
 from core.logging_utils import LoggingUtils

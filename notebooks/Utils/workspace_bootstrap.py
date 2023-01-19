@@ -41,6 +41,11 @@ loggr.info('-----------------')
 
 # COMMAND ----------
 
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+
+# COMMAND ----------
+
 from core.dbclient import SatDBClient
 
 
@@ -55,6 +60,9 @@ else:
     token = ''
 
 json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+if cloud_type =='azure':
+    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
+
 db_client = SatDBClient(json_)
 
 
