@@ -92,7 +92,7 @@ def modifyWorkspaceConfigFile(input_connection_arr):
           allwsm.sso_enabled,
           allwsm.scim_enabled,
           allwsm.vpc_peering_done,
-          allwsm.object_storage_encypted,
+          allwsm.object_storage_encrypted,
           allwsm.table_access_control_enabled,
           coalesce(incomsm.connection_test, False) as connection_test, 
           allwsm.analysis_enabled 

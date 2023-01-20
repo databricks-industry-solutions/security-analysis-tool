@@ -86,11 +86,11 @@ def processWorkspace(wsrow):
   sso = wsrow.sso_enabled
   scim = wsrow.scim_enabled
   vpc_peering_done = wsrow.vpc_peering_done
-  object_storage_encypted = wsrow.object_storage_encypted  
+  object_storage_encrypted = wsrow.object_storage_encrypted  
   table_access_control_enabled = wsrow.table_access_control_enabled
 
   clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
-  json_.update({"sso":sso, "scim":scim,"object_storage_encryption":object_storage_encypted, "vpc_peering":vpc_peering_done,"table_access_control_enabled":table_access_control_enabled, 'url':hostname, 'workspace_id': workspace_id, 'cloud_type': cloud_type, 'clusterid':clusterid})
+  json_.update({"sso":sso, "scim":scim,"object_storage_encryption":object_storage_encrypted, "vpc_peering":vpc_peering_done,"table_access_control_enabled":table_access_control_enabled, 'url':hostname, 'workspace_id': workspace_id, 'cloud_type': cloud_type, 'clusterid':clusterid})
   loggr.info(json_)
   dbutils.notebook.run('./Utils/workspace_bootstrap', 3000, {"json_":json.dumps(json_)})
   dbutils.notebook.run('./Includes/workspace_analysis', 3000, {"json_":json.dumps(json_)})

@@ -156,7 +156,7 @@ def readWorkspaceConfigFile():
   prefix = getConfigPath()
   
   dfa=pd.DataFrame()
-  schema = 'workspace_id string, deployment_url string, workspace_name string,workspace_status string, ws_token string, alert_subscriber_user_id string, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean'
+  schema = 'workspace_id string, deployment_url string, workspace_name string,workspace_status string, ws_token string, alert_subscriber_user_id string, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encrypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean'
   dfexist = spark.createDataFrame([], schema)
   try:
     dict = {'workspace_id': 'str', 'connection_test': 'bool', 'analysis_enabled': 'bool'} 
@@ -323,7 +323,7 @@ def notifyworkspaceCompleted(workspaceID, completed):
 # MAGIC    sso_enabled boolean, 
 # MAGIC    scim_enabled boolean, 
 # MAGIC    vpc_peering_done boolean, 
-# MAGIC    object_storage_encypted boolean,
+# MAGIC    object_storage_encrypted boolean,
 # MAGIC    table_access_control_enabled boolean
 # MAGIC )
 # MAGIC USING DELTA
