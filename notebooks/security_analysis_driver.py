@@ -67,7 +67,7 @@ workspaces = workspacesdf.collect()
 # COMMAND ----------
 
 def renewWorkspaceTokens(workspace_id):
-    if cloud_type=='gcp' and json_['generate_pat_tokens'] is False :
+    if cloud_type=='gcp':
         #refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
         gcp_status2 = dbutils.notebook.run('./Setup/gcp/configure_tokens_for_worksaces', 3000, {"workspace_id":workspace_id})
         if (gcp_status2 != 'OK'):

@@ -196,7 +196,7 @@ def readBestPracticesConfigsFile():
   userfile = f'{prefix}/security_best_practices_user.csv' #delete this file to get latest 
   file_exists = exists(userfile)
     
-  if(file_exists): #bootstrap has already been done, the DB is the master, do ot overwrite
+  if(file_exists): #bootstrap has already been done, the DB is the master, do not overwrite
     return
     
   schema_list = ['id', 'check_id', 'category', 'check', 'evaluation_value', 'severity', 

@@ -30,14 +30,12 @@ current_workspace = context['tags']['orgId']
 
 cred_file_path = json_["service_account_key_file_path"] 
 target_principal = json_["impersonate_service_account"]
-long_term = json_["generate_pat_tokens"]
 loggr.info(f" Service account key file path {cred_file_path}")
 loggr.info(f" Impersonation service account {target_principal}")
-loggr.info(f" Generate Long term PAT tokens {long_term}")
 
 
-if cred_file_path is None or target_principal is None or long_term is None:
-    dbutils.notebook.exit("Please set values for : Service account key file path, Impersonation service account, Generate Long term PAT tokens")
+if cred_file_path is None or target_principal is None:
+    dbutils.notebook.exit("Please set values for : Service account key file path, Impersonation service account")
 
 
 workspace_pat_scope = json_['workspace_pat_scope']
@@ -69,30 +67,7 @@ gcp_accounts_url = 'https://accounts.'+cloud_type+'.databricks.com'
 
 # COMMAND ----------
 
-def generatePATtoken(deployment_url, tempToken):
-    import requests
-    token_value = None  
-
-    response = requests.post(
-      '%s/api/2.0/token/create' % (deployment_url),
-      headers={'Authorization': 'Bearer %s' % tempToken},
-      json={ "comment": "This is an SAT token", "lifetime_seconds": 7776000 },
-      timeout=600
-    )
-
-    if response.status_code == 200:
-      loggr.info(f"PAT Token is successfuly created!")
-      token_value = response.json()["token_value"] 
-    else:
-      loggr.info(f"Error creating PAT token: {response}")   
-
-
-    return token_value
-
-
-# COMMAND ----------
-
-def generateToken(deployment_url, long_term=False):
+def generateToken(deployment_url):
     from google.oauth2 import service_account
     target_scopes = [deployment_url]
     source_credentials = service_account.Credentials.from_service_account_file(cred_file_path,scopes=target_scopes)
@@ -192,10 +167,6 @@ if response.status_code == 200:
             deployment_url = "https://"+ ws['deployment_name']+'.'+cloud_type+'.databricks.com'
             loggr.info(f" Getting token for Workspace : {deployment_url}")
             token = generateToken(deployment_url)
-            if token and long_term:
-                loggr.info(f" Getting PAT token for Workspace : {deployment_url}")  
-                token = generatePATtoken(deployment_url,token)
-            
             if token:
                 storeTokenAsSecret(gcp_workspace_url, workspace_pat_scope, tokenscope+"-"+str(ws['workspace_id']), ws_pat_token, token)
 else:
