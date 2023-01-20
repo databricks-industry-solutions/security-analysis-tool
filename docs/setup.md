@@ -462,12 +462,18 @@ Please gather the following information before you start setting up:
       for e.g. databricks --profile myprofile fs cp /localdrive/whlfile/dbl_sat_sdk-w.x.y-py3-none-any.whl dbfs:/FileStore/wheels/
       Additionally download the following wheel files and upload it to the dbfs location as above.
       https://pypi.org/project/requests/
+            
       https://pypi.org/project/msal/
+            
       https://pypi.org/project/google-auth/
             
-      Update the notebook, notebooks/utils/initialize with the following 
+      Update the notebook, notebooks/utils/initialize with the following:
+            
       %pip install requests --find-links /dbfs/FileStore/wheels/requests.whl
+            
       %pip install msal --find-links /dbfs/FileStore/wheels/msal.whl
-      %pip install google-auth --find-links /dbfs/FileStore/wheels/google-auth.whl      
+            
+      %pip install google-auth --find-links /dbfs/FileStore/wheels/google-auth.whl 
+            
       %pip install dbl-sat-sdk=={SDK_VERSION} --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-w.x.y-py3-none-any.whl
 
