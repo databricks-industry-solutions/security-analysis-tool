@@ -2,6 +2,11 @@
 
 **Note**: SAT creates a new **security_analysis** databses and Delta tables. 
 
+If you are an existing SAT user please run the following command to reset your Database in your DBSQL SQL Editor
+
+  ``` 
+    drop  database security_analysis cascade
+   ``` 
 **Note**: SAT is a productivity tool to help verify security configurations of Databricks deployments, its not meant to be used as certification or attestation of your deployments. SAT project is regulary updated to improve correctness of checks, add new checks, fix bugs. Please send your feedback and comments to sat@databricks.com.
 
 You will need the following information to set up SAT, we will show you how to gather them in the next section.
