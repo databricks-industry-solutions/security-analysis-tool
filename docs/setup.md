@@ -67,7 +67,7 @@ Please gather the following information before you start setting up:
 
     * Open the \<SATProject\>/notebooks/Includes/install_sat_sdk  and run on the cluster that was created in the Step 2 above. 
     Please make sure there are no errors.
-    If your deployment does not allow PyPI access please see FAQs at the end of this doc to see alternative options. 
+    If your deployment does not allow PyPI access please see the FAQ below at the end of this doc to see alternative options. 
 
 6. Configure secrets
 
@@ -454,5 +454,20 @@ Please gather the following information before you start setting up:
 
       If you don’t see a JSON with a clean listing of workspaces you are likely having a firewall issue that is blocking calls to the accounts console.  Please have your infrastructure team add Databricks accounts.cloud.databricks.com to the allow-list.   
 
+4. Offline install of libraries incase of no PyPI access 
 
-                                                          
+      Download the dbl_sat_sdk version specified in the notebook notebooks/utils/initialize from PyPi
+      https://pypi.org/project/dbl-sat-sdk/
+      Upload the dbl_sat_sdk-w.x.y-py3-none-any.whl to a dbfs location. You can use the databricks-cli as one mechanism to upload.
+      for e.g. databricks --profile myprofile fs cp /localdrive/whlfile/dbl_sat_sdk-w.x.y-py3-none-any.whl dbfs:/FileStore/wheels/
+      Additionally download the following wheel files and upload it to the dbfs location as above.
+      https://pypi.org/project/requests/
+      https://pypi.org/project/msal/
+      https://pypi.org/project/google-auth/
+            
+      Update the notebook, notebooks/utils/initialize with the following 
+      %pip install requests --find-links /dbfs/FileStore/wheels/requests.whl
+      %pip install msal --find-links /dbfs/FileStore/wheels/msal.whl
+      %pip install google-auth --find-links /dbfs/FileStore/wheels/google-auth.whl      
+      %pip install dbl-sat-sdk=={SDK_VERSION} --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-w.x.y-py3-none-any.whl
+
