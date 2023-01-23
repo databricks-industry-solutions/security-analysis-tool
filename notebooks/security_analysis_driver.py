@@ -56,13 +56,16 @@ dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceGlobalTempView('al
 
 # MAGIC %md
 # MAGIC ##### These are the workspaces we will run the analysis on
-# MAGIC ##### Check the workspace_configs.csv and see if analysis_enabled flag is enabled to True if you dont see your workspace
+# MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace
 
 # COMMAND ----------
 
 workspacesdf = spark.sql('select * from `global_temp`.`all_workspaces`')
 display(workspacesdf)
 workspaces = workspacesdf.collect()
+if workspaces is None or len(workspaces) == 0:
+    loggr.info('Workspaes are not configured for analyis, check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. ')
+    #dbutils.notebook.exit("Unsuccessful analysis.")
 
 # COMMAND ----------
 
