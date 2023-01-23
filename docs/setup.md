@@ -317,6 +317,8 @@ Please gather the following information before you start setting up:
 2. Modify workspace_configs file (Required for manual checks values)
      * **Note**:  Limit number of workspaces to be analyzed by SAT to 100. 
      * **Tip**:  You can use this utility to turn on a specific workspace and turn off other workspaces for a specific run.
+     * **Tip**:  You can use this utility to apply your edits to multiple workspaces settings by using "Apply Setting to all workspaces" option.
+     
      * Go to\<SATProject\>/notebooks/Setup/8. update_workspace_configuration and  You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
      
      Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
