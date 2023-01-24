@@ -310,8 +310,11 @@ Please gather the following information before you start setting up:
 </details>
    
 ## Update  configuration files
+            
 1. Modify security_best_practices (Optional) 
    * Go to \<SATProject\>/notebooks/Setup/7. update_sat_check_configuration and use this utility to enable/disable a Check, modify Evaluation Value and Alert configuration value for each check. You can update this file any time and any analysis from there on will take these values into consideration. 
+   * [Configure widget settings](https://docs.databricks.com/notebooks/widgets.html#configure-widget-settings-1) behavior "On Widget Change" for this notebooks to "Do Nothing"         
+            
     <img src="./images/upate_security_best_practices.png" width="70%" height="70%">
  
 2. Modify workspace_configs file (Required for manual checks values)
@@ -320,7 +323,8 @@ Please gather the following information before you start setting up:
      * **Tip**:  You can use this utility to apply your edits to multiple workspaces settings by using "Apply Setting to all workspaces" option.
      
      * Go to\<SATProject\>/notebooks/Setup/8. update_workspace_configuration and  You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
-     
+      * [Configure widget settings](https://docs.databricks.com/notebooks/widgets.html#configure-widget-settings-1) behavior "On Widget Change" for this notebooks to "Do Nothing"   
+            
      Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
  
      Note: Please avoid  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
