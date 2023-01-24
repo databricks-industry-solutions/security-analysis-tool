@@ -2643,7 +2643,7 @@
                     },
                     "query_plan": null,
                     "type": "DETAILS",
-                    "updated_at": "2023-01-23T21:02:47Z"
+                    "updated_at": "2023-01-24T15:28:45Z"
                 },
                 "width": 1
             },
@@ -5579,7 +5579,7 @@
                     },
                     "query_plan": null,
                     "type": "COUNTER",
-                    "updated_at": "2023-01-23T21:02:46Z"
+                    "updated_at": "2023-01-24T15:28:41Z"
                 },
                 "width": 1
             },
@@ -5886,7 +5886,7 @@
                     "title": "Security Configuration Comparison"
                 },
                 "text": "",
-                "updated_at": "2023-01-23T21:21:39Z",
+                "updated_at": "2023-01-24T01:20:12Z",
                 "visualization": {
                     "created_at": "2023-01-20T15:50:59Z",
                     "description": "",
@@ -6195,7 +6195,7 @@
                                 "name": "Run2Date",
                                 "order": 100008,
                                 "preserveWhitespace": false,
-                                "title": "Run2 date",
+                                "title": "Run 2 date",
                                 "type": "datetime",
                                 "useMonospaceFont": false,
                                 "visible": true
@@ -6350,513 +6350,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-23T21:20:55Z"
-                },
-                "width": 1
-            },
-            {
-                "created_at": "2023-01-23T19:25:55Z",
-                "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217",
-                "id": "6eb4c59d-ba28-4a32-a8bf-ab26d0f0fdcf",
-                "options": {
-                    "description": "",
-                    "isHidden": false,
-                    "overrideColors": false,
-                    "parameterMappings": {
-                        "date_range": {
-                            "mapTo": "date_range",
-                            "name": "date_range",
-                            "title": "Date Range",
-                            "type": "widget-level",
-                            "value": null
-                        },
-                        "workspaceid": {
-                            "mapTo": "workspaceid",
-                            "name": "workspaceid",
-                            "title": "",
-                            "type": "dashboard-level",
-                            "value": null
-                        }
-                    },
-                    "position": {
-                        "autoHeight": true,
-                        "col": 0,
-                        "maxSizeX": 6,
-                        "maxSizeY": 1000,
-                        "minSizeX": 2,
-                        "minSizeY": 1,
-                        "row": 82,
-                        "sizeX": 6,
-                        "sizeY": 13
-                    },
-                    "title": "Security Configuration Comparison "
-                },
-                "text": "",
-                "updated_at": "2023-01-23T20:36:21Z",
-                "visualization": {
-                    "created_at": "2023-01-20T15:50:59Z",
-                    "description": "",
-                    "id": "70d43364-f58b-4a1b-998c-be4c0a7e0487",
-                    "name": "Table 1",
-                    "options": {
-                        "columns": [
-                            {
-                                "alignContent": "right",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "number",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "current_score",
-                                "numberFormat": "0",
-                                "order": 100000,
-                                "preserveWhitespace": false,
-                                "title": "current_score",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": false
-                            },
-                            {
-                                "alignContent": "right",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "number",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "previous_score",
-                                "numberFormat": "0",
-                                "order": 100001,
-                                "preserveWhitespace": false,
-                                "title": "previous_score",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": false
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "check_id",
-                                "order": 100002,
-                                "preserveWhitespace": false,
-                                "title": "Check id",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "Check",
-                                "order": 100003,
-                                "preserveWhitespace": false,
-                                "title": "Check",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "cellFormat": {
-                                    "default": {
-                                        "foregroundColor": null
-                                    },
-                                    "rules": [
-                                        {
-                                            "if": {
-                                                "column": "Severity",
-                                                "fn": "=",
-                                                "literal": "High"
-                                            },
-                                            "value": {
-                                                "foregroundColor": "#D60303"
-                                            }
-                                        },
-                                        {
-                                            "if": {
-                                                "column": "Severity",
-                                                "fn": "=",
-                                                "literal": "Medium"
-                                            },
-                                            "value": {
-                                                "foregroundColor": "#BF5102"
-                                            }
-                                        },
-                                        {
-                                            "if": {
-                                                "column": "Severity",
-                                                "fn": "=",
-                                                "literal": "Low"
-                                            },
-                                            "value": {
-                                                "foregroundColor": "#E1D006"
-                                            }
-                                        }
-                                    ]
-                                },
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "Severity",
-                                "order": 100004,
-                                "preserveWhitespace": false,
-                                "title": "Severity",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "center",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "cellFormat": {
-                                    "default": {
-                                        "foregroundColor": null
-                                    },
-                                    "rules": [
-                                        {
-                                            "if": {
-                                                "column": "Run1Status",
-                                                "fn": "=",
-                                                "literal": "0"
-                                            },
-                                            "value": {
-                                                "foregroundColor": "#049235"
-                                            }
-                                        },
-                                        {
-                                            "if": {
-                                                "column": "Run1Status",
-                                                "fn": "=",
-                                                "literal": "1"
-                                            },
-                                            "value": {
-                                                "foregroundColor": "#E92828"
-                                            }
-                                        }
-                                    ]
-                                },
-                                "description": "Your workspace configuration status",
-                                "displayAs": "image",
-                                "highlightLinks": false,
-                                "imageHeight": "20",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "https://hls-eng-data-public.s3.amazonaws.com/img/{{Run1Status}}.png",
-                                "imageWidth": "20",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "Run1Status",
-                                "numberFormat": "0",
-                                "order": 100005,
-                                "preserveWhitespace": false,
-                                "title": "Run 1 status",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "center",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "description": "Your workspace configuration status",
-                                "displayAs": "image",
-                                "highlightLinks": false,
-                                "imageHeight": "20",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "https://hls-eng-data-public.s3.amazonaws.com/img/{{Run2Status}}.png",
-                                "imageWidth": "20",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "Run2Status",
-                                "numberFormat": "0",
-                                "order": 100006,
-                                "preserveWhitespace": false,
-                                "title": "Run 2 status",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "center",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "dateTimeFormat": "YYYY-MM-DD HH:mm:ss",
-                                "displayAs": "datetime",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "Run1Date",
-                                "order": 100007,
-                                "preserveWhitespace": false,
-                                "title": "Run1 date",
-                                "type": "datetime",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "right",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "dateTimeFormat": "YYYY-MM-DD HH:mm:ss",
-                                "displayAs": "datetime",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "Run2Date",
-                                "order": 100008,
-                                "preserveWhitespace": false,
-                                "title": "Run2 date",
-                                "type": "datetime",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": true,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "Recommendation",
-                                "order": 100009,
-                                "preserveWhitespace": false,
-                                "title": "Recommendation",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "right",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "number",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "ord",
-                                "numberFormat": "0",
-                                "order": 100010,
-                                "preserveWhitespace": false,
-                                "title": "ord",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": false
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "workspaceid",
-                                "order": 100011,
-                                "preserveWhitespace": false,
-                                "title": "workspaceid",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": false
-                            }
-                        ],
-                        "condensed": true,
-                        "itemsPerPage": 25,
-                        "version": 2,
-                        "withRowNumber": true
-                    },
-                    "query": {
-                        "can_edit": true,
-                        "created_at": "2023-01-20T15:03:02Z",
-                        "data_source_id": "d5878969-c046-49d7-8734-f81281bef428",
-                        "description": "",
-                        "id": "2c0e5da9-6cb7-44f3-9a95-fcacf69988c8",
-                        "is_draft": false,
-                        "is_safe": true,
-                        "name": "workspace_config_changes",
-                        "options": {
-                            "apply_auto_limit": true,
-                            "catalog": "hive_metastore",
-                            "folder_node_internal_name": "tree/157824886557324",
-                            "folder_node_status": "ACTIVE",
-                            "parameters": [
-                                {
-                                    "$$value": "1657683783405196",
-                                    "global": false,
-                                    "locals": [],
-                                    "name": "workspaceid",
-                                    "parentQueryId": "2c0e5da9-6cb7-44f3-9a95-fcacf69988c8",
-                                    "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
-                                    "title": "workspaceid",
-                                    "type": "query",
-                                    "urlPrefix": "p_",
-                                    "value": "1657683783405196"
-                                },
-                                {
-                                    "$$value": [
-                                        "2023-01-20T05:00:00.000Z",
-                                        "2023-01-23T05:00:00.000Z"
-                                    ],
-                                    "global": false,
-                                    "locals": [],
-                                    "name": "date_range",
-                                    "parentQueryId": "2c0e5da9-6cb7-44f3-9a95-fcacf69988c8",
-                                    "title": "date_range",
-                                    "type": "date-range",
-                                    "urlPrefix": "p_",
-                                    "value": {
-                                        "end": "2023-01-23",
-                                        "start": "2023-01-20"
-                                    }
-                                }
-                            ],
-                            "parent": "folders/2430306471320700",
-                            "schema": "security_analysis",
-                            "visualization_control_order": [
-                                "workspaceid",
-                                "date_range"
-                            ]
-                        },
-                        "query": "SELECT\n  sc1.score as current_score,\n  sc2.score as previous_score,\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  sc1.score as Run1Status,\n  sc2.score as Run2Status,\n  sc1.check_time as Run1Date,\n  sc2.check_time as Run2Date,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  sc1.workspaceid\nFROM\n  security_analysis.security_checks sc1,\n  security_analysis.security_checks sc2,\n  security_analysis.security_best_practices BP\nwhere\n  sc1.workspaceid = {{workspaceid}}\n  and sc2.workspaceid = sc1.workspaceid\n  and sc1.id = sc2.id\n  and sc1.id = BP.id\n  and sc1.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n      and chk_date = '{{date_range.start}}'\n  )\n  and sc2.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n          and chk_date = '{{date_range.end}}'\n      )\n  )\n  \n  order by  sc2.score desc",
-                        "run_as_role": null,
-                        "run_as_service_principal_id": null,
-                        "schedule": null,
-                        "tags": [
-                            "SAT"
-                        ],
-                        "updated_at": "2023-01-23T20:38:36Z",
-                        "user_id": 6132399981223669,
-                        "version": 1
-                    },
-                    "query_plan": null,
-                    "type": "TABLE",
-                    "updated_at": "2023-01-23T21:20:55Z"
+                    "updated_at": "2023-01-24T01:20:11Z"
                 },
                 "width": 1
             }
@@ -7036,7 +6530,7 @@
                 "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "8cdcf677-d510-4e1f-bd60-812810f9078d",
+            "latest_query_data_id": "4697b6b0-5340-4280-814b-9dd95d80a11a",
             "name": "category_pillars",
             "options": {
                 "apply_auto_limit": true,
@@ -7827,7 +7321,7 @@
                 "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "ee95b7dd-f195-4f2f-b510-69bb2ca04790",
+            "latest_query_data_id": "0f18e255-0a39-4863-93fa-28ead27d4e57",
             "name": "account_stats",
             "options": {
                 "apply_auto_limit": true,
@@ -8460,7 +7954,19 @@
                 "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "2eefa07b-9e7e-43d0-9a1c-293c69df605f",
+            "latest_execution": {
+                "catalog": null,
+                "data_source_id": "d5878969-c046-49d7-8734-f81281bef428",
+                "error_message": "",
+                "id": "c86e763c-27b3-4d49-8ec1-fa8b59fc9040",
+                "num_rows": 9,
+                "query_id": "fdc33af2-0921-4fed-b320-08ed92eb4c18",
+                "query_text": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = coalesce (\n        (\n          select\n            max(run_id)\n          from\n            security_analysis.workspace_run_complete\n          where\n            workspace_id = 1657683783405196\n            and completed = true\n            and chk_date = '2023-01-18'\n        ),\n        (\n          select\n            max(run_id)\n          from\n            security_analysis.workspace_run_complete\n          where\n            workspace_id = 1657683783405196\n            and completed = true\n        )\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = 1657683783405196\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category LIMIT 1000",
+                "runtime": 3.24126,
+                "schema": "security_analysis",
+                "start_time": "2023-01-18T21:58:01",
+                "status": 3
+            },
             "name": "summary_stats",
             "options": {
                 "apply_auto_limit": true,
@@ -9039,7 +8545,7 @@
                 "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "e0779f88-8183-4f81-8963-ab68c4ddab37",
+            "latest_query_data_id": "92868152-f8a9-42af-824f-9a3ca012af66",
             "name": "security_check_details",
             "options": {
                 "apply_auto_limit": true,
@@ -9174,7 +8680,7 @@
                     },
                     "query_plan": null,
                     "type": "DETAILS",
-                    "updated_at": "2023-01-23T21:02:47Z"
+                    "updated_at": "2023-01-24T15:28:45Z"
                 },
                 {
                     "created_at": "2022-09-12T21:50:56Z",
@@ -9424,7 +8930,7 @@
                 "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "48cd76b2-06e9-4e78-a7c1-334bb0705266",
+            "latest_query_data_id": "5b03a1fa-13d7-4160-85cf-70e1f3e0dace",
             "name": "category_counters",
             "options": {
                 "apply_auto_limit": true,
@@ -9852,7 +9358,7 @@
                 "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_query_data_id": "aee576dc-2d27-46c5-b398-a8438e97128c",
+            "latest_query_data_id": "58ad753f-ef31-421b-9033-c25495fa789f",
             "name": "analysis_date_time",
             "options": {
                 "apply_auto_limit": true,
@@ -9972,7 +9478,7 @@
                     },
                     "query_plan": null,
                     "type": "COUNTER",
-                    "updated_at": "2023-01-23T21:02:46Z"
+                    "updated_at": "2023-01-24T15:28:41Z"
                 },
                 {
                     "created_at": "2023-01-17T00:57:50Z",
@@ -10824,20 +10330,7 @@
                 "name": "Arun Pamulapati",
                 "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
             },
-            "latest_execution": {
-                "catalog": "hive_metastore",
-                "data_source_id": "d5878969-c046-49d7-8734-f81281bef428",
-                "error_message": "",
-                "id": "83ce9009-1fce-4564-9efa-2b81907007c3",
-                "num_rows": 51,
-                "query_id": "2c0e5da9-6cb7-44f3-9a95-fcacf69988c8",
-                "query_text": "SELECT\n  sc1.score as current_score,\n  sc2.score as previous_score,\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  sc1.score as Run1Status,\n  sc2.score as Run2Status,\n  sc1.check_time as Run1Date,\n  sc2.check_time as Run2Date,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  sc1.workspaceid\nFROM\n  security_analysis.security_checks sc1,\n  security_analysis.security_checks sc2,\n  security_analysis.security_best_practices BP\nwhere\n  sc1.workspaceid = 1657683783405196\n  and sc2.workspaceid = sc1.workspaceid\n  and sc1.id = sc2.id\n  and sc1.id = BP.id\n  and sc1.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = 1657683783405196\n      and completed = true\n      and chk_date = '2023-01-20'\n  )\n  and sc2.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = 1657683783405196\n      and completed = true\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = 1657683783405196\n          and completed = true\n          and chk_date = '2023-01-23'\n      )\n  )\n  \n  order by  sc2.score desc LIMIT 1000",
-                "runtime": 1.00885,
-                "schema": "security_analysis",
-                "start_time": "2023-01-23T20:38:35",
-                "status": 3
-            },
-            "latest_query_data_id": "83ce9009-1fce-4564-9efa-2b81907007c3",
+            "latest_query_data_id": "65b5afd1-1011-4d9c-b0e7-59a9b1a3eb12",
             "name": "workspace_config_changes",
             "options": {
                 "apply_auto_limit": true,
@@ -11252,7 +10745,7 @@
                                 "name": "Run2Date",
                                 "order": 100008,
                                 "preserveWhitespace": false,
-                                "title": "Run2 date",
+                                "title": "Run 2 date",
                                 "type": "datetime",
                                 "useMonospaceFont": false,
                                 "visible": true
@@ -11344,7 +10837,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-23T21:20:55Z"
+                    "updated_at": "2023-01-24T01:20:11Z"
                 },
                 {
                     "created_at": "2023-01-20T15:03:02Z",
