@@ -40,6 +40,10 @@ def handleAnalysisErrors(e):
   strField=''
   if len(vlst)>2 and vlst[0]=='cannot' and vlst[1]=='resolve':
     strField='cannot find field ' + vlst[2] + ' in SQL'
+  elif len(vlst)>8 and vlst[0]=='[unresolved_column.with_suggestion]' and vlst[4]=='function' and vlst[5]=='parameter':
+    strField='cannot find field ' + vlst[8] + ' in SQL'
+  elif len(vlst)>8 and vlst[0]=='[unresolved_column.without_suggestion]' and vlst[4]=='function' and vlst[5]=='parameter':
+    strField='cannot find field ' + vlst[8] + ' in SQL'
   elif len(vlst)>3 and vlst[1]=='such' and vlst[2]=='struct':
     strField='cannot find struct field `' + vlst[4] + '` in SQL'
   elif len(vlst)>2 and 'Did you mean' in v:
@@ -353,4 +357,4 @@ JSONLOCALTESTA='{"account_id": "", "sql_warehouse_id": "", "username_for_alerts"
 
 # COMMAND ----------
 
-JSONLOCALTEST = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68", "username_for_alerts": "sat@regemail", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-8382268443928677.17.azuredatabricks.net", "workspace_id": "8382268443928677", "clusterid": "0105-242242-iw40aiai", "sso": true, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false}'
+JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68", "username_for_alerts": "sat@regemail", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "sso": true, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false,  "cloud_type":"azure"}'

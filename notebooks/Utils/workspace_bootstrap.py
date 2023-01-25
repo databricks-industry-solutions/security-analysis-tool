@@ -65,7 +65,6 @@ if cloud_type =='azure':
 
 db_client = SatDBClient(json_)
 
-
 # COMMAND ----------
 
 is_successful_ws=False
