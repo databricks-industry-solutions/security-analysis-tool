@@ -44,12 +44,13 @@ import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
 
-mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
-
-if cloud_type =='azure':
-    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
+if cloud_type =='azure': # use client secret
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':'dapijedi', 'client_secret': client_secret})
+else: #use master key
+    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+    json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
 
 db_client = SatDBClient(json_)
 

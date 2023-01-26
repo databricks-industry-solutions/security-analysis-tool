@@ -135,4 +135,9 @@ sqlctrl(workspace_id,'''select distinct job_id from `global_temp`.`job_runs` a L
 
 # COMMAND ----------
 
-print(f"Workspace stats - {time.time() - start_time} seconds to run")
+tcomp = time.time() - start_time
+print(f"Workspace stats - {tcomp} seconds to run")
+
+# COMMAND ----------
+
+dbutils.notebook.exit(f'Completed SAT workspace stats in {tcomp} seconds')
