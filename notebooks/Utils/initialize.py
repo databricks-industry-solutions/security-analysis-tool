@@ -30,7 +30,7 @@ import json
 json_ = {
    "account_id":"",
    "sql_warehouse_id":"",
-   "username_for_alerts":"",
+   "username_for_alerts":"user@email",
    "verbosity":"info"
 }
 
