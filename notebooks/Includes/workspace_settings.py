@@ -363,4 +363,9 @@ if enabled:
 
 # COMMAND ----------
 
-print(f"Workspace Settings - {time.time() - start_time} seconds to run")
+tcomp = time.time() - start_time
+print(f"Workspace Settings - {tcomp} seconds to run")
+
+# COMMAND ----------
+
+dbutils.notebook.exit(f'Completed SAT workspace settings in {tcomp} seconds')

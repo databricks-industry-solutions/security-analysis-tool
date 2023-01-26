@@ -95,10 +95,13 @@ def processWorkspace(wsrow):
   clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
   json_.update({"sso":sso, "scim":scim,"object_storage_encryption":object_storage_encrypted, "vpc_peering":vpc_peering_done,"table_access_control_enabled":table_access_control_enabled, 'url':hostname, 'workspace_id': workspace_id, 'cloud_type': cloud_type, 'clusterid':clusterid})
   loggr.info(json_)
-  dbutils.notebook.run('./Utils/workspace_bootstrap', 3000, {"json_":json.dumps(json_)})
-  dbutils.notebook.run('./Includes/workspace_analysis', 3000, {"json_":json.dumps(json_)})
-  dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(json_)})
-  dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(json_)})
+  retstr = dbutils.notebook.run('./Utils/workspace_bootstrap', 3000, {"json_":json.dumps(json_)})
+  if "Completed SAT" not in retstr:
+    raise Exception('Workspace Bootstrap failed. Skipping workspace analysis')
+  else:
+    dbutils.notebook.run('./Includes/workspace_analysis', 3000, {"json_":json.dumps(json_)})
+    dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(json_)})
+    dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(json_)})
 
 
 for ws in workspaces:
@@ -108,7 +111,7 @@ for ws in workspaces:
     notifyworkspaceCompleted(ws.workspace_id, True)
     loggr.info(f"Completed analyzing {ws.workspace_id}!")
   except Exception as e:
-    print(e)
+    loggr.info(e)
     notifyworkspaceCompleted(ws.workspace_id, False)
 
     

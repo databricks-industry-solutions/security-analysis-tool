@@ -41,25 +41,28 @@ loggr = LoggingUtils.get_logger()
 import requests, json, re
 from core.dbclient import SatDBClient
 
-mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+# if (json_['use_mastercreds']) is False:
+#     tokenscope = json_['workspace_pat_scope']
+#     tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
+#     token = dbutils.secrets.get(tokenscope, tokenkey)
+#     json_.update({'token':token})
+# else: #mastercreds is true
+#     token = ''
+#     if cloud_type =='azure': #use client secret
+#         client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+#         json_.update({'token':token, 'client_secret': client_secret})
+#     else: #use master key for all other clouds
+#         mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+#         masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+#         json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
 
-if (json_['use_mastercreds']) is False:
-    tokenscope = json_['workspace_pat_scope']
-    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
-    token = dbutils.secrets.get(tokenscope, tokenkey)
-else:
-    token = ''
-
-json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-
+# db_client = SatDBClient(json_)        
+        
 cloud_type = json_['cloud_type']
 workspace_id = json_['workspace_id']
 
-if cloud_type =='azure':
-    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
 
-db_client = SatDBClient(json_)
+
 
 
 # COMMAND ----------
@@ -130,7 +133,7 @@ if enabled:
 check_id='35' #Private Link
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = db_client._workspace_id
+workspaceId = workspace_id
 
 def private_link(df):
   if df is not None and not df.rdd.isEmpty():
@@ -149,7 +152,7 @@ if enabled:
 check_id='36' #BYOVPC
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = db_client._workspace_id
+workspaceId = workspace_id
 
 def byopc(df):
   if df is not None and not df.rdd.isEmpty():
@@ -169,7 +172,7 @@ if enabled:
 check_id='37' #IP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = db_client._workspace_id
+workspaceId = workspace_id
 
 def public_access_enabled(df):
   if df is not None and len(df.columns)==0:
@@ -189,7 +192,7 @@ if enabled:
 check_id='39' #Secure cluster connectivity - azure
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = db_client._workspace_id
+workspaceId = workspace_id
 
 def secure_cluster_connectivity_enabled(df):
   if df is not None and len(df.columns)==0:
@@ -210,7 +213,7 @@ if enabled:
 check_id='28' #VPC Peering
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = db_client._workspace_id
+workspaceId = workspace_id
 
 def vpc_peering(df):
   if vpc_peering:
@@ -449,7 +452,7 @@ if enabled:
 check_id='3' #BYOK
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-workspaceId = db_client._workspace_id
+workspaceId = workspace_id
 # Report on workspaces that do not have a byok id associated with them
 def byok_check(df):   
   if df is not None and not df.rdd.isEmpty():
@@ -757,7 +760,7 @@ if enabled:
 # DBTITLE 1,Get all audit log delivery configurations. Should be enabled.
 check_id='8' #Log delivery configurations
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-workspaceId = db_client._workspace_id
+workspaceId = workspace_id
 
 def log_check(df):
   if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
@@ -830,8 +833,9 @@ if enabled:
 
 # COMMAND ----------
 
-print(f"Workspace Analysis - {time.time() - start_time} seconds to run")
+tcomp = time.time() - start_time
+print(f"Workspace Analysis - {tcomp} seconds to run")
 
 # COMMAND ----------
 
-
+dbutils.notebook.exit(f'Completed SAT workspace analysis in {tcomp} seconds')

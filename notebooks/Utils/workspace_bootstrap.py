@@ -48,21 +48,22 @@ cloud_type = getCloudType(hostname)
 
 from core.dbclient import SatDBClient
 
-
-mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-
 if (json_['use_mastercreds']) is False:
     tokenscope = json_['workspace_pat_scope']
     tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
     token = dbutils.secrets.get(tokenscope, tokenkey)
-else:
+    json_.update({'token':token})
+else: #mastercreds is true
     token = ''
+    if cloud_type =='azure': #use client secret
+        client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+        json_.update({'token':token, 'client_secret': client_secret})
+    else: #use master key for all other clouds
+        mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+        masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+        json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
 
-json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-if cloud_type =='azure':
-    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
-
+    
 db_client = SatDBClient(json_)
 
 # COMMAND ----------
@@ -84,6 +85,7 @@ except Exception:
 
 # COMMAND ----------
 
+#if is_successful_ws: 
 if not is_successful_ws:
   dbutils.notebook.exit('Unsuccessful Workspace connection. Verify credentials.')
 
@@ -410,4 +412,9 @@ bootstrap('libraries', lib_client.get_libraries_status_list)
 
 # COMMAND ----------
 
-print(f"Workspace Bootstrap - {time.time() - start_time} seconds to run")
+tcomp = time.time() - start_time
+print(f"Workspace Bootstrap - {tcomp} seconds to run")
+
+# COMMAND ----------
+
+dbutils.notebook.exit(f'Completed SAT workspace bootstrap in {tcomp} seconds')
