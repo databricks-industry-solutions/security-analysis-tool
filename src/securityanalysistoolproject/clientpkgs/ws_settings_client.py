@@ -11,11 +11,16 @@ class WSSettingsClient(SatDBClient):
         all_result = []
 
         # pylint: disable=line-too-long
-        ws_keymap = [{"name": "enableJobViewAcls", "defn":"Prevent users from seeing jobs that they do not have access to."},
-            {"name": "enforceClusterViewAcls", "defn":"Prevent users from seeing clusters that they do not have access to."},
+        ws_keymap = [
+            {"name": "enforceUserIsolation", "defn":"Enforce User Isolation requires interactive clusters in your workspace to use an Access Mode except 'No Isolation Shared'"},
             {"name": "enforceWorkspaceViewAcls", "defn":"Prevent users from seeing objects in the workspace file browser that they do not have access to."},
+            {"name": "enforceClusterViewAcls", "defn":"Prevent users from seeing clusters that they do not have access to."},
+            {"name": "enableJobViewAcls", "defn":"Prevent users from seeing jobs that they do not have access to."},
+            {"name": "enableHlsRuntime", "defn":"Databricks Runtime for Genomics"},
             {"name": "enableDcs", "defn":"Databricks Container Services allows users in your workspace to specify a Docker image when creating clusters."},
-            {"name": "enableGp3", "defn":"When enabled, AWS EBS gp3 volumes will be used when adding additional SSD volumes to cluster instances; when disabled, AWS EBS gp2 volumes are used."},
+            {"name": "enableGp3", "defn":"When enabled, AWS EBS gp3 volumes will be used when adding additional SSD volumes to cluster instances; when disabled, AWS EBS gp2 volumes are used"},                        
+            {"name": "enableEnforceImdsV2", "defn":"When enabled, Databricks will launch instances that prevent usages of instance metadata service v1 - only instance metadata service v2 can be used"},
+            {"name": "enableJobsEmailsV2", "defn":"Switch to the new format for jobs emails. The new format provides more information on job and task runs, including the run start time, run duration, clear error messages, and run status"},
             {"name": "enableProjectTypeInWorkspace", "defn":"Enable or disable Repos. You should see a new Repos icon in your workspace's left navigation when this feature is enabled"},
             {"name": "enableWorkspaceFilesystem", "defn":"Enable or disable Files in Repos."},
             {"name": "enableProjectsAllowList", "defn":"Enable or disable restricting commit and push operations in Repos to a configurable allow list. The allow list will be empty by default."},
@@ -37,15 +42,24 @@ class WSSettingsClient(SatDBClient):
             {"name": "heapAnalyticsAdminConsent", "defn":"Allow Databricks to collect usage patterns to better support you and to improve the product"},
             {"name": "storeInteractiveNotebookResultsInCustomerAccount", "defn":"When enabled, all interactive notebook results are stored in the customer account."},
             {"name": "enableVerboseAuditLogs", "defn":"Enable or disable verbose audit logs"},
-            {"name": "enableHlsRuntime", "defn":"Databricks Runtime for Genomics"}]
+            {"name": "enableFileStoreEndpoint", "defn":"Enable or disable FileStore endpoint /files"},
+            {"name": "jobsListBackendPaginationEnabled", "defn":"Enables 10,000 jobs per workspace and streamlined search"},
+            {"name": "maxTokenLifetimeDays", "defn":"Gets the global max token lifetime days"}
+            ]
         # pylint: enable=line-too-long
 
         for keyn in ws_keymap:
-            valn = self.get("/preview/workspace-conf?keys="+keyn['name'], version='2.0')
+            valn={}
+            try:
+                valn = self.get("/preview/workspace-conf?keys="+keyn['name'], version='2.0')
+            except Exception as e:
+                #get exceptions like these 'unauthorized to perform ReadAction on /org_admin_conf/jobsListBackendPaginationEnabled'
+                valn[keyn['name']] = None
+
             valins = {}
             valins['name']=keyn['name']
             valins['defn']=keyn['defn']
-            valins['value']=False if valn[keyn['name']] is None else valn[keyn['name']]
+            valins['value']=None if valn[keyn['name']] is None else valn[keyn['name']]
             all_result.append(valins)
         return all_result
 

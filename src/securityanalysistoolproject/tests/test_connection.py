@@ -8,17 +8,11 @@ from core.dbclient import SatDBClient
 import requests
 import pytest
 
-def test_connection():
-    configParser = configparser.ConfigParser()   
-    configFilePath = '/Users/ramdas.murali/_dev_stuff/config.txt'
-    configParser.read(configFilePath)
-    jsonstr = configParser['MEISTERSTUFF']['json']
-    json_ = json.loads(jsonstr)
-    #workspace_id = json_['workspace_id']
-    LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
+def test_connection(get_db_client):
+
     LOGGR = LoggingUtils.get_logger()
 
-    sat_db_client = SatDBClient(jsonstr)
+    sat_db_client = SatDBClient(get_db_client)
     try:
         is_successful = sat_db_client.test_connection()
 
@@ -42,5 +36,6 @@ def test_connection():
     except Exception:
         pytest.fail('Connection Failed')
         LOGGR.exception("Exception encountered")
+
 
 

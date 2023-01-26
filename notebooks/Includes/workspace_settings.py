@@ -50,7 +50,7 @@ def enableJobViewAcls(df): #Job View Acls
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -68,7 +68,7 @@ def enforceClusterViewAcls(df): #Cluster View Acls
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0,  defn)
     else:
         return (id, 1,  defn)
@@ -86,7 +86,7 @@ def enforceWorkspaceViewAcls(df): #Workspace View Acls
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -106,7 +106,7 @@ def enableProjectTypeInWorkspace(df): #Project Type In Workspace
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn.replace("'", '')}
-    if(value == 'true'):
+    if(value == None or value == 'true'): # if is set or left as default (None)
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -125,13 +125,241 @@ def enableResultsDownloading(df): #Results Downloading
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row. defn}
+    if(value == None or value == 'true'): # if is set or left as default (None)
+        return (id, 1, defn)
+    else:
+        return (id, 0, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableResultsDownloading"''', enableResultsDownloading)
+
+# COMMAND ----------
+
+id = '38'
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def maximumLifetimeNewTokens(df): #Max life time for tokens
+    value = 0
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row. defn}
+    if(value is not None and value != "null" and int(value) > 0):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"''', maximumLifetimeNewTokens)
+
+# COMMAND ----------
+
+id = '40' # Enforce User Isolation
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enforceUserIsolation(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'): 
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enforceUserIsolation"''', enforceUserIsolation)
+
+# COMMAND ----------
+
+id = '43' # Enable Enforce ImdsV2
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableEnforceImdsV2(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
         return (id, 0, defn)
     else:
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableResultsDownloading"''', enableResultsDownloading)
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableEnforceImdsV2"''', enableEnforceImdsV2)
+
+# COMMAND ----------
+
+id = '44' #Notebook export 
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableExportNotebook(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row. defn}
+    if(value == None or value == 'true'): # if is set or left as default (None)
+        return (id, 1, defn)
+    else:
+        return (id, 0, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableExportNotebook"''', enableExportNotebook)
+
+# COMMAND ----------
+
+id = '45' #Notebook Table Clipboard Features
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableNotebookTableClipboard(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row. defn}
+    if(value == None or value == 'true'): # if is set or left as default (None)
+        return (id, 1, defn)
+    else:
+        return (id, 0, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableNotebookTableClipboard"''', enableNotebookTableClipboard)
+
+# COMMAND ----------
+
+id = '46' # Manage third-party iFraming prevention
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableXFrameOptions(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == None or value == 'true'): # if is set or left as default (None)
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enable-X-Frame-Options"''', enableXFrameOptions)
+
+# COMMAND ----------
+
+id = '47' # Manage MIME type sniffing prevention
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableXContentTypeOptions(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == None or value == 'true'): # if is set or left as default (None)
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enable-X-Content-Type-Options"''', enableXContentTypeOptions)
+
+# COMMAND ----------
+
+id = '48' # Manage XSS attack page rendering prevention
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableXXSSProtection(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == None or value == 'true'): # if is set or left as default (None)
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enable-X-XSS-Protection"''', enableXXSSProtection)
+
+# COMMAND ----------
+
+id = '49' # Store Interactive Notebook Results in Customer Account
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def storeInteractiveNotebookResultsInCustomerAccount(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="storeInteractiveNotebookResultsInCustomerAccount"''', storeInteractiveNotebookResultsInCustomerAccount)
+
+# COMMAND ----------
+
+id = '50' # Enable verbose audit logs
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableVerboseAuditLogs(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableVerboseAuditLogs"''', enableVerboseAuditLogs)
+
+# COMMAND ----------
+
+id = '51' # Review and disable FileStore endpoint in Admin Console Workspace settings
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableFileStoreEndpoint(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'false'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableFileStoreEndpoint"''', enableFileStoreEndpoint)
+
+# COMMAND ----------
+
+id = '52' # Enable git versioning for notebooks
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableNotebookGitVersioning(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableNotebookGitVersioning"''', enableNotebookGitVersioning)
 
 # COMMAND ----------
 

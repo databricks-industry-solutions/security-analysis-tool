@@ -41,22 +41,29 @@ loggr.info('-----------------')
 
 # COMMAND ----------
 
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+
+# COMMAND ----------
+
 from core.dbclient import SatDBClient
 
 
 mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
 masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
 
-if(bool(json_['use_mastercreds']) is False):
+if (json_['use_mastercreds']) is False:
     tokenscope = json_['workspace_pat_scope']
-    tokenkey = f"{json_['workspace_pat_token_prefix']}_{json_['workspace_id']}"
+    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
     token = dbutils.secrets.get(tokenscope, tokenkey)
 else:
     token = ''
 
 json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-db_client = SatDBClient(json_)
+if cloud_type =='azure':
+    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
 
+db_client = SatDBClient(json_)
 
 # COMMAND ----------
 
@@ -281,6 +288,10 @@ bootstrap('groups', scim_client.get_groups)
 # COMMAND ----------
 
 bootstrap('users', scim_client.get_users)
+
+# COMMAND ----------
+
+bootstrap('serviceprincipals', scim_client.get_serviceprincipals)
 
 # COMMAND ----------
 

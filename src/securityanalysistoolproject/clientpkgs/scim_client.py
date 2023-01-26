@@ -13,3 +13,9 @@ class ScimClient(SatDBClient):
         '''get list of groups'''
         group_list = self.get("/preview/scim/v2/Groups").get('Resources', [])
         return group_list if group_list else None
+
+
+    def get_serviceprincipals(self):
+        '''get list of spns'''
+        spn_list = self.get("/preview/scim/v2/ServicePrincipals").get('Resources', [])
+        return spn_list if spn_list else None        

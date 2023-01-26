@@ -28,7 +28,18 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
+if cloud_type=='gcp':
+    #refresh account level tokens    
+    gcp_status1 = dbutils.notebook.run('./Setup/gcp/configure_sa_auth_tokens', 3000)
+    if (gcp_status1 != 'OK'):
+        loggr.exception('Error Encountered in GCP Step#1', gcp_status1)
+        dbutils.notebook.exit()
+
+
+# COMMAND ----------
+
 import json
+
 out = dbutils.notebook.run('./Utils/accounts_bootstrap', 300, {"json_":json.dumps(json_)})
 loggr.info(out)
 
@@ -38,20 +49,34 @@ readBestPracticesConfigsFile()
 
 # COMMAND ----------
 
-dfexist = readWorkspaceConfigFile()
-dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceGlobalTempView('all_workspaces') 
+dfexist = getWorkspaceConfig()
+dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceGlobalTempView('all_workspaces') 
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ##### These are the workspaces we will run the analysis on
-# MAGIC ##### Check the workspace_configs.csv and see if analysis_enabled flag is enabled to True if you dont see your workspace
+# MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace
 
 # COMMAND ----------
 
 workspacesdf = spark.sql('select * from `global_temp`.`all_workspaces`')
 display(workspacesdf)
 workspaces = workspacesdf.collect()
+if workspaces is None or len(workspaces) == 0:
+    loggr.info('Workspaes are not configured for analyis, check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. ')
+    #dbutils.notebook.exit("Unsuccessful analysis.")
+
+# COMMAND ----------
+
+def renewWorkspaceTokens(workspace_id):
+    if cloud_type=='gcp':
+        #refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
+        gcp_status2 = dbutils.notebook.run('./Setup/gcp/configure_tokens_for_worksaces', 3000, {"workspace_id":workspace_id})
+        if (gcp_status2 != 'OK'):
+            loggr.exception('Error Encountered in GCP Step#2', gcp_status2)
+            dbutils.notebook.exit()        
+
 
 # COMMAND ----------
 
@@ -64,11 +89,11 @@ def processWorkspace(wsrow):
   sso = wsrow.sso_enabled
   scim = wsrow.scim_enabled
   vpc_peering_done = wsrow.vpc_peering_done
-  object_storage_encypted = wsrow.object_storage_encypted  
+  object_storage_encrypted = wsrow.object_storage_encrypted  
   table_access_control_enabled = wsrow.table_access_control_enabled
 
   clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
-  json_.update({"sso":sso, "scim":scim,"object_storage_encryption":object_storage_encypted, "vpc_peering":vpc_peering_done,"table_access_control_enabled":table_access_control_enabled, 'url':hostname, 'workspace_id': workspace_id, 'cloud_type': cloud_type, 'clusterid':clusterid})
+  json_.update({"sso":sso, "scim":scim,"object_storage_encryption":object_storage_encrypted, "vpc_peering":vpc_peering_done,"table_access_control_enabled":table_access_control_enabled, 'url':hostname, 'workspace_id': workspace_id, 'cloud_type': cloud_type, 'clusterid':clusterid})
   loggr.info(json_)
   dbutils.notebook.run('./Utils/workspace_bootstrap', 3000, {"json_":json.dumps(json_)})
   dbutils.notebook.run('./Includes/workspace_analysis', 3000, {"json_":json.dumps(json_)})
@@ -77,8 +102,15 @@ def processWorkspace(wsrow):
 
 
 for ws in workspaces:
-  processWorkspace(ws)
-  loggr.info(f"Completed analyzing {ws.workspace_id}!")
+  try:
+    renewWorkspaceTokens(ws.workspace_id)
+    processWorkspace(ws)
+    notifyworkspaceCompleted(ws.workspace_id, True)
+    loggr.info(f"Completed analyzing {ws.workspace_id}!")
+  except Exception as e:
+    print(e)
+    notifyworkspaceCompleted(ws.workspace_id, False)
+
     
 
 
@@ -86,3 +118,8 @@ for ws in workspaces:
 
 # MAGIC %sql
 # MAGIC select * from security_analysis.security_checks order by run_id desc, workspaceid asc, check_time asc
+
+# COMMAND ----------
+
+# MAGIC %sql use security_analysis;
+# MAGIC select * from workspace_run_complete;

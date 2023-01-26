@@ -44,22 +44,26 @@ from core.dbclient import SatDBClient
 mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
 masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
 
-if(bool(json_['use_mastercreds']) is False):
+if (json_['use_mastercreds']) is False:
     tokenscope = json_['workspace_pat_scope']
-    tokenkey = f"{json_['workspace_pat_token_prefix']}_{json_['workspace_id']}"
+    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
     token = dbutils.secrets.get(tokenscope, tokenkey)
 else:
     token = ''
 
 json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
 
+cloud_type = json_['cloud_type']
+workspace_id = json_['workspace_id']
+
+if cloud_type =='azure':
+    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
+
 db_client = SatDBClient(json_)
 
 
 # COMMAND ----------
 
-cloud_type = json_['cloud_type']
-workspace_id = json_['workspace_id']
 
 sso = bool(json_['sso'])
 scim = bool(json_['scim'])
@@ -97,7 +101,7 @@ def ssh_public_keys(df):
 if enabled:
   sqlctrl(workspace_id, '''SELECT *
     FROM global_temp.clusters
-    WHERE size(ssh_public_keys) > 0 and (cluster_source='UI' OR cluster_source='API') ''', ssh_public_keys)
+    WHERE size(ssh_public_keys) > 0  and (cluster_source='UI' OR cluster_source='API') ''', ssh_public_keys)
 
 # COMMAND ----------
 
@@ -179,6 +183,26 @@ if enabled:
   sqlctrl(workspace_id, '''SELECT label,list_type, enabled
       FROM global_temp.`ipaccesslist`
       WHERE enabled=true''', public_access_enabled)
+
+# COMMAND ----------
+
+check_id='39' #Secure cluster connectivity - azure
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+workspaceId = db_client._workspace_id
+
+def secure_cluster_connectivity_enabled(df):
+  if df is not None and len(df.columns)==0:
+    return (check_id, 1, {'workspaceId': workspaceId})    
+  if df is not None and not df.rdd.isEmpty():
+    return (check_id, 0, {})
+  else:
+    return (check_id, 1, {'workspaceId': workspaceId})   
+    
+if enabled: 
+  sqlctrl(workspace_id, f'''SELECT workspace_id
+      FROM global_temp.`acctworkspaces`
+      WHERE enableNoPublicIp = true and workspace_id={workspaceId}''', secure_cluster_connectivity_enabled)
 
 # COMMAND ----------
 
@@ -308,6 +332,31 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='41' # Check for active tokens that have a lifetime that exceeds the max lifetime set - this happens for the old tokes
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+    
+def token_max_life_rule(df):
+  #Check for count of tokens that expiring in expiry_limit_evaluation_value days from today. 
+  if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
+      df = df.rdd.map(lambda x: (x['created_by_username'], re.sub('[\"\'\\\\]', '_', x['comment']), x['token_id'])).toDF(['created_by_username', 'comment', 'token_id'])            
+      tokenslst = df.collect()
+      tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
+      print(tokens_dict)
+      return (check_id, 1, tokens_dict )
+  else:
+      return (check_id, 0, {})   
+    
+if enabled:
+    # get maxTokenLifetimeDays  and check if it is set 
+    df = spark.sql('select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"')
+    if df.count()>0:        
+        dict_elems = df.collect()[0]
+        expiry_limit_evaluation_value = dict_elems['value']
+    if expiry_limit_evaluation_value is not None and  expiry_limit_evaluation_value != "null" and expiry_limit_evaluation_value != "false" and int(expiry_limit_evaluation_value) > 0:
+        sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value} OR expiry_time = -1''', token_max_life_rule)
+
+# COMMAND ----------
+
 # DBTITLE 1,Admin count
 check_id='27' #Admin Count
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
@@ -318,7 +367,7 @@ def admin_rule(df):
     adminlist = df.collect()
     adminlist_1 = [i.Admins for i in adminlist]
     adminlist_dict = {"admins" : adminlist_1}
-    print(adminlist_dict)
+    
     return (check_id, 1, adminlist_dict)
   else:
     return (check_id, 0, {})
@@ -326,6 +375,21 @@ def admin_rule(df):
 if enabled:
   sqlctrl(workspace_id, '''select explode(members.display) as Admins 
                from global_temp.groups where displayname="admins"''', admin_rule)
+
+# COMMAND ----------
+
+check_id='42' #Use service principals
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+service_principals_evaluation_value = int(sbp_rec['evaluation_value'])
+def use_service_principals(df):  
+  if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > service_principals_evaluation_value:
+    return (check_id, 0, {'SPs': len(df.collect())})
+  else:
+    return (check_id, 1, {'SPs':'no serviceprincipals found'})
+
+if enabled:
+   sqlctrl(workspace_id, '''select displayName as serviceprincipals 
+               from global_temp.serviceprincipals ''', use_service_principals)
 
 # COMMAND ----------
 
@@ -386,7 +450,6 @@ check_id='3' #BYOK
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 workspaceId = db_client._workspace_id
-
 # Report on workspaces that do not have a byok id associated with them
 def byok_check(df):   
   if df is not None and not df.rdd.isEmpty():
@@ -399,7 +462,7 @@ def byok_check(df):
 if enabled:
   sqlctrl(workspace_id, f'''SELECT workspace_id
       FROM global_temp.`acctworkspaces`
-      WHERE (storage_customer_managed_key_id is null) and workspace_id={workspaceId}''', byok_check)
+      WHERE (storage_customer_managed_key_id is null and managed_services_customer_managed_key_id is null) and workspace_id={workspaceId}''', byok_check)
 
 # COMMAND ----------
 
@@ -448,7 +511,7 @@ def cluster_policy_check(df):
 if enabled:  
     sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name, policy_id
       FROM global_temp.clusters
-      WHERE policy_id is null and (cluster_source='UI' OR cluster_source='API')  ''', cluster_policy_check)
+      WHERE policy_id is null  and (cluster_source='UI' OR cluster_source='API') ''', cluster_policy_check)
 
 # COMMAND ----------
 
@@ -505,7 +568,11 @@ check_id='13' #All Purpose Cluster Log Configuration
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def logconf_check(df):
-  if df is not None and not df.rdd.isEmpty():
+  if df is not None and len(df.columns)==0:
+    cluster_dict = {'clusters' : 'no log conf in any job'}
+    print(cluster_dict)
+    return (check_id, 1, cluster_dict)     
+  elif df is not None and not df.rdd.isEmpty():
     df = df.rdd.map(lambda x: (x['cluster_id'],  re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name'])  
     clusters = df.collect()
     clusters_dict = {'clusters' : [[i.cluster_id, i.cluster_name] for i in clusters]}
@@ -517,7 +584,7 @@ def logconf_check(df):
 if enabled:
     sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name
       FROM global_temp.`clusters`
-      WHERE cluster_log_conf is null and (cluster_source='UI' OR cluster_source='API') ''', logconf_check)
+      WHERE cluster_log_conf is null  and (cluster_source='UI' OR cluster_source='API') ''', logconf_check)
 
 # COMMAND ----------
 
@@ -690,6 +757,7 @@ if enabled:
 # DBTITLE 1,Get all audit log delivery configurations. Should be enabled.
 check_id='8' #Log delivery configurations
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+workspaceId = db_client._workspace_id
 
 def log_check(df):
   if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
@@ -702,7 +770,10 @@ def log_check(df):
     return (check_id, 1, {})   
 
 if enabled:   
-    sqlctrl(workspace_id, '''select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED"''', log_check)
+    if cloud_type =='azure':
+        sqlctrl(workspace_id, f'''select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED" and workspace_id ="{workspaceId}"''', log_check)
+    else:    
+        sqlctrl(workspace_id, '''select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED"''', log_check)
 
 # COMMAND ----------
 
@@ -737,7 +808,7 @@ def versions_check(df):
   return (check_id, 0, {})   
 
 if enabled:    
-  sqlctrl(workspace_id, '''select cluster_id, spark_version from global_temp.`clusters` where spark_version not in (select key from global_temp.`spark_versions`) and (cluster_source='UI' OR cluster_source='API') ''', versions_check)
+  sqlctrl(workspace_id, '''select cluster_id, spark_version from global_temp.`clusters` where spark_version not in (select key from global_temp.`spark_versions`)''', versions_check)
 
 # COMMAND ----------
 
@@ -759,8 +830,8 @@ if enabled:
 
 # COMMAND ----------
 
-# add UC checks for job clusters
+print(f"Workspace Analysis - {time.time() - start_time} seconds to run")
 
 # COMMAND ----------
 
-print(f"Workspace Analysis - {time.time() - start_time} seconds to run")
+

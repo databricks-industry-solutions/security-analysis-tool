@@ -51,13 +51,22 @@ def generateWorkspaceConfigFile(workspace_prefix):
             where workspace_status = "RUNNING" {excluded_configured_workspace}'''
   df = spark.sql(spsql)
   if(not df.rdd.isEmpty()):
-    df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.cloud.databricks.com'))) #AWS
-    df = df.withColumn("ws_token", concat(lit(workspace_prefix), lit('_'), col('workspace_id')))   #added with workspace prfeix
+    if(cloud_type == 'azure'):
+        df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.azuredatabricks.net'))) #Azure
+    elif (cloud_type =='aws'):
+         df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.cloud.databricks.com'))) #AWS
+    else:
+        df = df.withColumn("deployment_url", concat(col('deployment_url'), lit('.gcp.databricks.com'))) #GCP
+        
+    df = df.withColumn("ws_token", concat(lit(workspace_prefix), lit('-'), col('workspace_id')))   #added with workspace prfeix
     df = df.withColumn("alert_subscriber_user_id", lit(json_['username_for_alerts']))
-    df = df.withColumn("sso_enabled", lit(False)) 
+    if(cloud_type == 'azure'):
+        df = df.withColumn("sso_enabled", lit(True))
+    else:
+        df = df.withColumn("sso_enabled", lit(False))
     df = df.withColumn("scim_enabled", lit(False)) 
     df = df.withColumn("vpc_peering_done", lit(False)) 
-    df = df.withColumn("object_storage_encypted", lit(False)) 
+    df = df.withColumn("object_storage_encrypted", lit(False)) 
     df = df.withColumn("table_access_control_enabled", lit(False)) 
     df = df.withColumn("connection_test", lit(False)) 
     df = df.withColumn("analysis_enabled", lit(True)) 
@@ -73,10 +82,11 @@ def generateWorkspaceConfigFile(workspace_prefix):
 # COMMAND ----------
 
 generateWorkspaceConfigFile(json_['workspace_pat_token_prefix'])
+dbutils.notebook.exit('OK')
 
 # COMMAND ----------
 
 # MAGIC %md 
 # MAGIC #### Look in the Configs folder for generated Files
-# MAGIC * ##### Modify workspace_configs.csv. Update the analysis_enabled flag, alert_subscriber_user_id for workspace level alerts subscription, and verify sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled for each workspace.
+# MAGIC * ##### Modify workspace_configs.csv. Update the analysis_enabled flag, alert_subscriber_user_id for workspace level alerts subscription, and verify sso_enabled,scim_enabled,vpc_peering_done,object_storage_encrypted,table_access_control_enabled for each workspace.
 # MAGIC * ##### New workspaces will be added to end of the file

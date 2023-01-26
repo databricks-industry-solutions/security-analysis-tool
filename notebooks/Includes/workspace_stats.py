@@ -63,7 +63,14 @@ sqlctrl(workspace_id, f'''select * from `global_temp`.`acctworkspaces` where wor
 
 def getAccountRegion(df):
   if(df is not None):
-    return ('AS-2', {'value':df.collect()[0].aws_region}, 'Account Stats')
+    if 'aws_region' in df.collect()[0] and df.collect()[0].aws_region is not None and df.collect()[0].aws_region:
+        return ('AS-2', {'value':df.collect()[0].aws_region}, 'Account Stats')
+    elif 'region' in df.collect()[0] and  df.collect()[0].region is not None and df.collect()[0].region:
+        return ('AS-2', {'value':df.collect()[0].region}, 'Account Stats')
+    elif 'location' in df.collect()[0] and  df.collect()[0].location is not None and df.collect()[0].location:
+        return ('AS-2', {'value':df.collect()[0].location}, 'Account Stats')
+    else: 
+        return ('AS-2', {'value': 0}, 'Account Stats')
   else:
     return ('AS-2', {'value': 0}, 'Account Stats')
 
@@ -125,72 +132,6 @@ def num_external_jobs_rule(df):
         return ('WST-2', {'value': 0}, 'Workspace Stats')
 
 sqlctrl(workspace_id,'''select distinct job_id from `global_temp`.`job_runs` a LEFT ANTI JOIN `global_temp`.`jobs` b ON a.job_id==b.job_id''', num_external_jobs_rule, True)
-
-# COMMAND ----------
-
-def num_users_rule(df):
-    if(df is not None):
-        return ('WST-3', {'value':df.count()}, 'Workspace Stats')
-    else:
-        return ('WST-3', {'value': 0}, 'Workspace Stats')
-
-sqlctrl(workspace_id,'''select * from `global_temp`.`users`''', num_users_rule, True)
-
-# COMMAND ----------
-
-def num_groups_rule(df):
-    if(df is not None):
-        return ('WST-4', {'value':df.count()}, 'Workspace Stats')
-    else:
-        return ('WST-4', {'value': 0}, 'Workspace Stats')
-
-sqlctrl(workspace_id,'''select * from `global_temp`.`groups`''', num_groups_rule, True)
-
-# COMMAND ----------
-
-def get_num_databases():
-  dbs = spark.catalog.listDatabases()
-  return len(dbs)
-
-#optimized. hopefully faster.
-def get_num_tables():
-  dbs = spark.catalog.listDatabases()
-  table_count = 0
-  for db in dbs:
-    tables = spark.sql(f'SHOW TABLES IN {db.name}') 
-    #tables = spark.catalog.listTables(db.name)
-    table_count += tables.count()
-  return table_count 
-
-# COMMAND ----------
-
-def num_databases_rule(df):
-    if(get_num_databases() is not None):
-        return ('WST-5', {'value': get_num_databases()}, 'Workspace Stats')
-    else:
-        return ('WST-5',  {'value': 0}, 'Workspace Stats')
-
-sqlctrl(workspace_id,'''select * where 1=1''', num_databases_rule, True)
-
-# COMMAND ----------
-
-def num_tables_rule(df):
-    if(get_num_tables() is not None):
-        return ('WST-6', {'value': get_num_tables()}, 'Workspace Stats')
-    else:
-        return ('WST-6', {'value':'Coming soon'}, 'Workspace Stats')
-
-sqlctrl(workspace_id,'''select * where 1=1''', num_tables_rule, True)
-
-# COMMAND ----------
-
-def num_notebooks_rule(df):
-    if(df is not None):
-        return ('WST-7', {'value':'Coming soon'}, 'Workspace Stats')
-    else:
-        return ('WST-7', {'value':'Coming soon'}, 'Workspace Stats')
-
-sqlctrl(workspace_id,'''select * where 1=1''', num_notebooks_rule, True)
 
 # COMMAND ----------
 

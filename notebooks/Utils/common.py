@@ -40,6 +40,10 @@ def handleAnalysisErrors(e):
   strField=''
   if len(vlst)>2 and vlst[0]=='cannot' and vlst[1]=='resolve':
     strField='cannot find field ' + vlst[2] + ' in SQL'
+  elif len(vlst)>8 and vlst[0]=='[unresolved_column.with_suggestion]' and vlst[4]=='function' and vlst[5]=='parameter':
+    strField='cannot find field ' + vlst[8] + ' in SQL'
+  elif len(vlst)>8 and vlst[0]=='[unresolved_column.without_suggestion]' and vlst[4]=='function' and vlst[5]=='parameter':
+    strField='cannot find field ' + vlst[8] + ' in SQL'
   elif len(vlst)>3 and vlst[1]=='such' and vlst[2]=='struct':
     strField='cannot find struct field `' + vlst[4] + '` in SQL'
   elif len(vlst)>2 and 'Did you mean' in v:
@@ -156,7 +160,7 @@ def readWorkspaceConfigFile():
   prefix = getConfigPath()
   
   dfa=pd.DataFrame()
-  schema = 'workspace_id string, deployment_url string, workspace_name string,workspace_status string, ws_token string, alert_subscriber_user_id string, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean'
+  schema = 'workspace_id string, deployment_url string, workspace_name string,workspace_status string, ws_token string, alert_subscriber_user_id string, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encrypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean'
   dfexist = spark.createDataFrame([], schema)
   try:
     dict = {'workspace_id': 'str', 'connection_test': 'bool', 'analysis_enabled': 'bool'} 
@@ -172,26 +176,48 @@ def readWorkspaceConfigFile():
 
 # COMMAND ----------
 
-#read the best practices file. User configs present in this file, so use the security_best_practices_user
-#to refresh delete this and it will regen however enabled and alerts will be lost.
+def getWorkspaceConfig():
+  df = spark.sql(f'''select * from security_analysis.account_workspaces''')
+  return df
+
+# COMMAND ----------
+
+# Read the best practices file. (security_best_practices.csv)
+# Sice User configs are present in this file, the file is renamed (to security_best_practices_user)
+# This is needed only on bootstrap, subsequetly the database is the master copy of the user configuration
+# Every time the values are altered, the _user file can be regenerated - but it is more as FYI
 def readBestPracticesConfigsFile():
   import pandas as pd
   from os.path import exists
   import shutil
 
+  hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+  cloud_type = getCloudType(hostname)
+  doc_url = cloud_type + '_doc_url'
+
   prefix = getConfigPath()
   origfile = f'{prefix}/security_best_practices.csv'
   userfile = f'{prefix}/security_best_practices_user.csv' #delete this file to get latest 
   file_exists = exists(userfile)
-  if(file_exists is False): #regen file only if not present
-    shutil.copy2(f'{origfile}', f'{userfile}')
-  schema = 'id int, check_id string,category string,check string, evaluation_value string,severity string,recommendation string,doc_url string,aws int,azure int,gcp int,enable int,alert int, logic string, api string'
+    
+  if(file_exists): #bootstrap has already been done, the DB is the master, do not overwrite
+    return
+    
+  schema_list = ['id', 'check_id', 'category', 'check', 'evaluation_value', 'severity', 
+                        'recommendation', 'aws', 'azure', 'gcp', 'enable', 'alert', 'logic', 'api', doc_url]
 
-  security_best_practices_pd = pd.read_csv(userfile, header=0)
-  
-  security_best_practices = spark.createDataFrame(security_best_practices_pd, schema)
+  schema = '''id int, check_id string,category string,check string, evaluation_value string,severity string,
+               recommendation string,aws int,azure int,gcp int,enable int,alert int, logic string, api string,  doc_url string'''
+
+  security_best_practices_pd = pd.read_csv(origfile, header=0, usecols=schema_list).rename(columns = {doc_url:'doc_url'})
+  security_best_practices_pd.to_csv(userfile, encoding='utf-8', index=False)
+    
+  security_best_practices = (spark.createDataFrame(security_best_practices_pd, schema)
+                            .select('id', 'check_id', 'category', 'check', 'evaluation_value', 
+                                    'severity', 'recommendation', 'doc_url', 'aws', 'azure', 'gcp', 'enable', 'alert', 'logic', 'api'))
+    
   security_best_practices.write.format('delta').mode('overwrite').saveAsTable('security_analysis.security_best_practices')
-  display(security_best_practices)
+  display(security_best_practices)  
 
 # COMMAND ----------
 
@@ -211,7 +237,9 @@ def getSecurityBestPracticeRecord(id, cloud_type):
 def getConfigPath():
   import os
   cwd = os.getcwd().lower()
-  if (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1):
+  if (cwd.rfind('/azure') != -1) or (cwd.rfind('/gcp') != -1):
+    return '../../../configs'  
+  elif (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1):
     return '../../configs'
   elif (cwd.rfind('/notebooks') != -1):
     return '../configs'
@@ -234,6 +262,15 @@ def insertNewBatchRun():
   import time
   ts = time.time()
   df = spark.sql(f'insert into security_analysis.run_number_table (check_time) values ({ts})')
+
+
+# COMMAND ----------
+
+def notifyworkspaceCompleted(workspaceID, completed):
+  import time
+  ts = time.time()
+  runID = spark.sql('select max(runID) from security_analysis.run_number_table').collect()[0][0]
+  spark.sql(f'''INSERT INTO security_analysis.workspace_run_complete (`workspace_id`,`run_id`, `completed`, `check_time`)  VALUES ({workspaceID}, {runID}, {completed}, cast({ts} as timestamp))''')
 
 
 # COMMAND ----------
@@ -277,14 +314,6 @@ def insertNewBatchRun():
 
 # COMMAND ----------
 
-# MAGIC %sql -- drop table security_analysis.account_workspaces
-
-# COMMAND ----------
-
-##dbutils.fs.rm('/user/hive/warehouse/security_analysis.db/account_workspaces', True)
-
-# COMMAND ----------
-
 # MAGIC %sql
 # MAGIC CREATE DATABASE IF NOT EXISTS security_analysis;
 # MAGIC CREATE TABLE IF NOT EXISTS security_analysis.account_workspaces (
@@ -298,12 +327,34 @@ def insertNewBatchRun():
 # MAGIC    sso_enabled boolean, 
 # MAGIC    scim_enabled boolean, 
 # MAGIC    vpc_peering_done boolean, 
-# MAGIC    object_storage_encypted boolean,
+# MAGIC    object_storage_encrypted boolean,
 # MAGIC    table_access_control_enabled boolean
 # MAGIC )
 # MAGIC USING DELTA
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC CREATE DATABASE IF NOT EXISTS security_analysis;
+# MAGIC CREATE TABLE IF NOT EXISTS security_analysis.workspace_run_complete(
+# MAGIC     workspace_id string,
+# MAGIC     run_id bigint,
+# MAGIC     completed boolean,
+# MAGIC     check_time timestamp,
+# MAGIC     chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
+# MAGIC )
+# MAGIC USING DELTA
+
+# COMMAND ----------
+
+#Initialize best practices if not already loaded into database
+readBestPracticesConfigsFile()
+
+# COMMAND ----------
+
 #For testing
-JSONLOCALTEST='{"account_id": "", "sql_warehouse_id": "", "username_for_alerts": "sat@youremail.com", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": "true", "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": false, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false}'
+JSONLOCALTESTA='{"account_id": "", "sql_warehouse_id": "", "username_for_alerts": "sat@youremail.com", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": false, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false}'
+
+# COMMAND ----------
+
+JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68", "username_for_alerts": "sat@regemail", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "sso": true, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false,  "cloud_type":"azure"}'

@@ -60,6 +60,7 @@ def generateSecretsConfigFile(url, scope):
 # COMMAND ----------
 
 generateSecretsConfigFile(json_['url'], json_['workspace_pat_scope'])
+dbutils.notebook.exit('OK')
 
 # COMMAND ----------
 

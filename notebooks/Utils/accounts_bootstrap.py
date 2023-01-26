@@ -35,6 +35,11 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+
+# COMMAND ----------
+
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
@@ -42,6 +47,9 @@ from core.dbclient import SatDBClient
 mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
 masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
 json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+
+if cloud_type =='azure':
+    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
 
 db_client = SatDBClient(json_)
 
@@ -86,6 +94,7 @@ if not is_successful_acct:
 # COMMAND ----------
 
 from clientpkgs.accounts_client import AccountsClient
+
 try:
     acct_client = AccountsClient(json_)
 except Exception:

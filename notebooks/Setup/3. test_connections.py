@@ -20,6 +20,10 @@ clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 #dont know workspace token yet.
 json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd, 'url':hostname, 'workspace_id': 'accounts', 'cloud_type': cloud_type, 'clusterid':clusterid})
 
+if cloud_type =='azure':
+    json_.update({'client_secret': dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])})
+
+
 # COMMAND ----------
 
 from core.logging_utils import LoggingUtils
@@ -35,6 +39,7 @@ db_client = SatDBClient(json_)
 
 # COMMAND ----------
 
+#master account connectionn test.
 is_successful_acct=False
 try:
   is_successful_acct = db_client.test_connection(master_acct=True)
@@ -42,11 +47,14 @@ try:
       loggr.info("Account Connection successful!")
   else:
       loggr.info("Unsuccessful account connection. Verify credentials.") 
+      dbutils.notebook.exit("Unsuccessful account connection. Verify credentials.")
 except requests.exceptions.RequestException as e:
   loggr.exception('Unsuccessful connection. Verify credentials.')
   loggr.exception(e)
+  dbutils.notebook.exit("Unsuccessful account connection. Verify credentials.")
 except Exception:
   loggr.exception("Exception encountered")
+  dbutils.notebook.exit("Unsuccessful account connection. Verify credentials.")
 
 # COMMAND ----------
 
@@ -57,6 +65,8 @@ dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceTempView('configur
 
 workspacesdf = spark.sql('select * from `configured_workspaces`')
 display(workspacesdf)
+if workspacesdf.rdd.isEmpty():
+    dbutils.notebook.exit("Workspace list is empty. At least one should be configured for analysis")
 workspaces = workspacesdf.collect()
 
 # COMMAND ----------
@@ -83,7 +93,7 @@ def modifyWorkspaceConfigFile(input_connection_arr):
           allwsm.sso_enabled,
           allwsm.scim_enabled,
           allwsm.vpc_peering_done,
-          allwsm.object_storage_encypted,
+          allwsm.object_storage_encrypted,
           allwsm.table_access_control_enabled,
           coalesce(incomsm.connection_test, False) as connection_test, 
           allwsm.analysis_enabled 
@@ -102,29 +112,20 @@ current_workspace = context['tags']['orgId']
 
 # COMMAND ----------
 
-input_status_arr=[]
-for ws in workspaces:
-  import json
-  mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key']) 
-  
-  # Use configured token if use_mastercreds is set to false or the worspace we are testing is the master (current) workspace 
-  # We need the current workspace connection tested with the token to configure alerts and dashboard later
-  if( (bool(json_['use_mastercreds']) is False ) or (ws.workspace_id ==current_workspace)):
-      tokenscope = json_['workspace_pat_scope']
-      tokenkey = ws.ws_token #already has prefix in config file
-      token = dbutils.secrets.get(tokenscope, tokenkey)
-  else:
-      token = ''
-  
-  json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-  hostname = 'https://' + ws.deployment_url
-  workspace_id = ws.workspace_id
-  clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
-  json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd, 'url':hostname, 'workspace_id': workspace_id,  'clusterid':clusterid})
+def renewWorkspaceTokens():
+  if cloud_type == "gcp":
+    # refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
+    gcp_status2 = dbutils.notebook.run("../Setup/gcp/configure_tokens_for_worksaces", 3000)
+    if gcp_status2 != "OK":
+      loggr.exception("Error Encountered in GCP Step#2", gcp_status2)
+      dbutils.notebook.exit()
 
-  db_client = SatDBClient(json_)
-  
+# COMMAND ----------
+
+def test_connection(jsonarg):
+  db_client = SatDBClient(jsonarg)
+  hostname=jsonarg['url']
+  workspace_id = jsonarg['workspace_id']
   is_successful_ws=False
   try:
     is_successful_ws = db_client.test_connection()
@@ -139,7 +140,55 @@ for ws in workspaces:
     is_successful_ws=False
     loggr.exception("Exception encountered")
   finally:
-    stat_tuple = (ws.workspace_id, is_successful_ws)     
-    input_status_arr.append(stat_tuple)
+    stat_tuple = (workspace_id, is_successful_ws)     
+  return stat_tuple
+
+# COMMAND ----------
+
+input_status_arr=[]
+renewWorkspaceTokens()
+for ws in workspaces:
+  import json
+  mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key']) 
+
+  hostname = 'https://' + ws.deployment_url
+  workspace_id = ws.workspace_id
+  clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+  json_.update({'mastername':mastername, 'masterpwd':masterpwd, 'url':hostname, 'workspace_id': workspace_id,  'clusterid':clusterid})  
+  
+  # if the worspace we are testing is the master (current) workspace, 
+  # We need the current workspace connection tested with the token to configure alerts and dashboard later
+  if ws.workspace_id == current_workspace:
+      tokenscope = json_['workspace_pat_scope']
+      tokenkey = ws.ws_token #already has prefix in config file
+      token = dbutils.secrets.get(tokenscope, tokenkey)
+      json_.update({'token':token})
+      ret_tuple = test_connection(json_)
+      if ret_tuple[1] == False: #connection failed. log and move on.
+        loggr.info(f"\033[1mUnsuccessful {hostname} workspace connection for current workspace using PAT. Verify credentials.\033[0m")
+        input_status_arr.append(ret_tuple)
+        continue # dont run the test again.
       
+  # Use configured token if use_mastercreds is set to false 
+  if json_['use_mastercreds'] is False:
+      tokenscope = json_['workspace_pat_scope']
+      tokenkey = ws.ws_token #already has prefix in config file
+      token = dbutils.secrets.get(tokenscope, tokenkey)
+  else:
+      token = ''
+  
+  json_.update({'token':token})
+  ret_tuple = test_connection(json_)  
+  input_status_arr.append(ret_tuple)
+  loggr.info(f"\033[1m{hostname} workspace connection. Connection Status: {ret_tuple[1]}\033[0m")    
+  
 modifyWorkspaceConfigFile(input_status_arr)
+
+# COMMAND ----------
+
+dbutils.notebook.exit('OK')
+
+# COMMAND ----------
+
+

@@ -6,6 +6,7 @@ import urllib3
 import requests
 from core.logging_utils import LoggingUtils
 from core import parser as pars
+import msal
 
 urllib3.disable_warnings(category = urllib3.exceptions.InsecureRequestWarning)
 
@@ -20,7 +21,7 @@ class SatDBClient:
     Rest API Wrapper for Databricks APIs
     """
     # set of http error codes to throw an exception if hit. Handles client and auth errors
-    http_error_codes = [401]
+    http_error_codes = [401, 403]
 
     def __init__(self, inp_configs):
         self._inp_configs = inp_configs
@@ -36,18 +37,45 @@ class SatDBClient:
         self._cluster_id=configs['clusterid'].strip()
         self._token = ''
         self._raw_token = configs['token'].strip()
-        self._use_mastercreds = pars.str2bool(configs['use_mastercreds'])
+        if isinstance(configs['use_mastercreds'], str):
+            self._use_mastercreds = pars.str2bool(configs['use_mastercreds'])
+        else:
+            self._use_mastercreds = configs['use_mastercreds']
+
         self._master_name = configs['mastername'].strip()
         self._master_password = configs['masterpwd'].strip()
+        #Azure
+        if 'azure' in self._cloud_type:
+            self._subscription_id = configs['subscription_id'].strip()
+            self._client_id = configs['client_id'].strip()
+            self._client_secret = configs['client_secret'].strip()
+            self._tenant_id = configs['tenant_id'].strip()
 
     def _update_token_master(self):
         '''update token master in http header'''
-        user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
-        self._url = "https://accounts.cloud.databricks.com" #url for accounts api
-        self._token = {
-            "Authorization" : f"Basic {user_pass}",
-            "User-Agent": "databricks-sat/0.1.0"
-        }
+        LOGGR.info("in _update_token_master")
+        if(self._cloud_type == 'gcp'):
+            self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
+            self._token = {
+                "Authorization": f"Bearer {self._master_name}",
+                "X-Databricks-GCP-SA-Access-Token": f"{self._master_password}",
+                "User-Agent": "databricks-sat/0.1.0"
+            }
+            LOGGR.info(f'GCP self._token {self._token}')
+        elif(self._cloud_type == 'azure'):
+            self._url = "https://management.azure.com"
+            self._master_password = self.getAzureTokenWithMSAL('msmgmt')
+            self._token = {
+                "Authorization": f"Bearer {self._master_password}",
+                "User-Agent": "databricks-sat/0.1.0"
+            }
+        else:    
+            user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+            self._url = "https://accounts.cloud.databricks.com" #url for accounts api
+            self._token = {
+                "Authorization" : f"Basic {user_pass}",
+                "User-Agent": "databricks-sat/0.1.0"
+            }
 
     def _update_token(self):
         '''update token in http header'''
@@ -58,18 +86,36 @@ class SatDBClient:
                 "User-Agent": "databricks-sat/0.1.0"
             }
         else: # use master creds for workspaces also
-            user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
-            self._token = {
-                "Authorization" : f"Basic {user_pass}",
+            if(self._cloud_type == 'gcp'):
+                self._token = {
+                "Authorization": f"Bearer {self._raw_token}",
                 "User-Agent": "databricks-sat/0.1.0"
-            }
+                }   
+                LOGGR.info(f'In GCP  self._url {self._url}')
+            elif (self._cloud_type == 'azure'):
+                self._raw_token = self.getAzureTokenWithMSAL('dbmgmt')
+
+                self._token = {
+                "Authorization": f"Bearer {self._raw_token}",
+                "User-Agent": "databricks-sat/0.1.0"
+                }      
+            else:    
+                user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+                self._token = {
+                    "Authorization" : f"Basic {user_pass}",
+                    "User-Agent": "databricks-sat/0.1.0"
+                }
 
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
         if master_acct: #master acct may use a different credential
             self._update_token_master()
-            results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
-                        headers=self._token, timeout=60)
+            if (self._cloud_type == 'azure'):
+                results = requests.get(f'{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
+                            headers=self._token, timeout=60)
+            else:    
+                results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
+                            headers=self._token, timeout=60)
         else:
             self._update_token()
             results = requests.get(f'{self._url}/api/2.0/clusters/spark-versions',
@@ -93,8 +139,11 @@ class SatDBClient:
             self._update_token()
 
         while True:
-            full_endpoint = f"{self._url}/api/{version}{endpoint}"
-
+            if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different
+                full_endpoint = f"{self._url}/{endpoint}"
+            else:
+                full_endpoint = f"{self._url}/api/{version}{endpoint}"
+            
             LOGGR.debug(f"Get: {full_endpoint}")
 
             if json_params:
@@ -102,12 +151,12 @@ class SatDBClient:
             else:
                 raw_results = requests.get(full_endpoint, headers=self._token, timeout=60)
 
-
             http_status_code = raw_results.status_code
             if http_status_code in SatDBClient.http_error_codes:
                 raise Exception(f"Error: GET request failed with code {http_status_code}\n{raw_results.text}")
             results = raw_results.json()
             LOGGR.debug(json.dumps(results, indent=4, sort_keys=True))
+
             if isinstance(results, list):
                 results = {'elements': results}
             results['http_status_code'] = http_status_code
@@ -279,6 +328,49 @@ class SatDBClient:
         if 'gcp.databricks' in self._raw_url:
             cloudtype='gcp'
         return cloudtype
+
+    def getAzureTokenWithMSAL(self, scopeType):
+        """
+        validate client id and secret from microsoft and google
+        for scopes https://learn.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/app-aad-token#get-azure-ad-tokens-by-using-a-web-browser-and-curl
+        microsoft scope for management api 'https://management.azure.com/.default'
+        databricks scope for rest api '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'
+        """
+        try:
+            if self._cloud_type != 'azure':
+                raise Exception('works only for Azure')
+            scopes=[]
+            if 'msmgmt' in scopeType.lower():
+                scopes = ['https://management.azure.com/.default'] #ms scope 
+            else:
+                scopes = ['2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'] #databricks scope
+
+            app = msal.ConfidentialClientApplication(
+                client_id=self._client_id,
+                client_credential=self._client_secret,
+                authority=f"https://login.microsoftonline.com/{self._tenant_id}",
+            )
+
+            # The pattern to acquire a token looks like this.
+            token = None
+            # Firstly, looks up a token from cache
+            token = app.acquire_token_silent(scopes=scopes, account=None)
+
+            if not token:
+                token = app.acquire_token_for_client(scopes=scopes)
+            
+            if token.get("access_token") is None:
+                print(['no token'])
+            else:
+                return(token.get("access_token"))
+                print(token.get("access_token"))
+
+
+        except Exception as error:
+            print(f"Exception {error}")
+            print(str(error))
+
+
 
 
 
