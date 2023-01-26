@@ -39,6 +39,7 @@ db_client = SatDBClient(json_)
 
 # COMMAND ----------
 
+#master account connectionn test.
 is_successful_acct=False
 try:
   is_successful_acct = db_client.test_connection(master_acct=True)
@@ -112,40 +113,19 @@ current_workspace = context['tags']['orgId']
 # COMMAND ----------
 
 def renewWorkspaceTokens():
-    if cloud_type=='gcp':
-        #refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
-        gcp_status2 = dbutils.notebook.run('../Setup/gcp/configure_tokens_for_worksaces', 3000)
-        if (gcp_status2 != 'OK'):
-            loggr.exception('Error Encountered in GCP Step#2', gcp_status2)
-            dbutils.notebook.exit()        
-
+  if cloud_type == "gcp":
+    # refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
+    gcp_status2 = dbutils.notebook.run("../Setup/gcp/configure_tokens_for_worksaces", 3000)
+    if gcp_status2 != "OK":
+      loggr.exception("Error Encountered in GCP Step#2", gcp_status2)
+      dbutils.notebook.exit()
 
 # COMMAND ----------
 
-input_status_arr=[]
-renewWorkspaceTokens()
-for ws in workspaces:
-  import json
-  mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key']) 
-  
-  # Use configured token if use_mastercreds is set to false or the worspace we are testing is the master (current) workspace 
-  # We need the current workspace connection tested with the token to configure alerts and dashboard later
-  if (json_['use_mastercreds'] is False ) or (ws.workspace_id ==current_workspace): #<- Arun check logic
-      tokenscope = json_['workspace_pat_scope']
-      tokenkey = ws.ws_token #already has prefix in config file
-      token = dbutils.secrets.get(tokenscope, tokenkey)
-  else:
-      token = ''
-  
-  json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-  hostname = 'https://' + ws.deployment_url
-  workspace_id = ws.workspace_id
-  clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
-  json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd, 'url':hostname, 'workspace_id': workspace_id,  'clusterid':clusterid})
-
-  db_client = SatDBClient(json_)
-  
+def test_connection(jsonarg):
+  db_client = SatDBClient(jsonarg)
+  hostname=jsonarg['url']
+  workspace_id = jsonarg['workspace_id']
   is_successful_ws=False
   try:
     is_successful_ws = db_client.test_connection()
@@ -160,11 +140,55 @@ for ws in workspaces:
     is_successful_ws=False
     loggr.exception("Exception encountered")
   finally:
-    stat_tuple = (ws.workspace_id, is_successful_ws)     
-    input_status_arr.append(stat_tuple)
-    
+    stat_tuple = (workspace_id, is_successful_ws)     
+  return stat_tuple
+
+# COMMAND ----------
+
+input_status_arr=[]
+renewWorkspaceTokens()
+for ws in workspaces:
+  import json
+  mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key']) 
+
+  hostname = 'https://' + ws.deployment_url
+  workspace_id = ws.workspace_id
+  clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+  json_.update({'mastername':mastername, 'masterpwd':masterpwd, 'url':hostname, 'workspace_id': workspace_id,  'clusterid':clusterid})  
+  
+  # if the worspace we are testing is the master (current) workspace, 
+  # We need the current workspace connection tested with the token to configure alerts and dashboard later
+  if ws.workspace_id == current_workspace:
+      tokenscope = json_['workspace_pat_scope']
+      tokenkey = ws.ws_token #already has prefix in config file
+      token = dbutils.secrets.get(tokenscope, tokenkey)
+      json_.update({'token':token})
+      ret_tuple = test_connection(json_)
+      if ret_tuple[1] == False: #connection failed. log and move on.
+        loggr.info(f"\033[1mUnsuccessful {hostname} workspace connection for current workspace using PAT. Verify credentials.\033[0m")
+        input_status_arr.append(ret_tuple)
+        continue # dont run the test again.
+      
+  # Use configured token if use_mastercreds is set to false 
+  if json_['use_mastercreds'] is False:
+      tokenscope = json_['workspace_pat_scope']
+      tokenkey = ws.ws_token #already has prefix in config file
+      token = dbutils.secrets.get(tokenscope, tokenkey)
+  else:
+      token = ''
+  
+  json_.update({'token':token})
+  ret_tuple = test_connection(json_)  
+  input_status_arr.append(ret_tuple)
+  loggr.info(f"\033[1m{hostname} workspace connection. Connection Status: {ret_tuple[1]}\033[0m")    
+  
 modifyWorkspaceConfigFile(input_status_arr)
 
 # COMMAND ----------
 
 dbutils.notebook.exit('OK')
+
+# COMMAND ----------
+
+
