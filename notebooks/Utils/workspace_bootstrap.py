@@ -103,6 +103,7 @@ except Exception:
 # COMMAND ----------
 
 bootstrap('clusters', cluster_client.get_cluster_list, alive=False)
+#this returns job, api and ui clusters
 
 # COMMAND ----------
 
