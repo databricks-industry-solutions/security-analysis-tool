@@ -17,25 +17,24 @@ def test_connection(get_db_client):
         is_successful = sat_db_client.test_connection()
 
         if is_successful:
-            print('connection success')
-            LOGGR.info("Connection successful!")
+            LOGGR.info("Workspace Connection successful!")
         else:
             LOGGR.info("Unsuccessful connection. Verify credentials.")
 
         is_successful = sat_db_client.test_connection(master_acct=True)
 
         if is_successful:
-            LOGGR.info("Connection successful!")
+            LOGGR.info("Account Connection successful!")
         else:
-            pytest.fail('Connection Failed')
+            pytest.fail('Account Connection Failed')
             LOGGR.info("Unsuccessful connection. Verify credentials.")    
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
         pytest.fail('Connection Failed')
-        LOGGR.exception('Unsuccessful connection. Verify credentials.')
+        LOGGR.exception(f'Unsuccessful connection. Verify credentials.{e}')
 
     except Exception:
         pytest.fail('Connection Failed')
-        LOGGR.exception("Exception encountered")
+        LOGGR.exception(f"Exception encountered {e}")
 
 
 
