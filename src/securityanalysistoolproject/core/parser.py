@@ -50,16 +50,28 @@ def parse_input_jsonargs(inp_configs):
     url = url_validation(inp_configs['url'])
     inp_configs.update({'url':url})
     ## validate values are present
-    if inp_configs['account_id'] == '':
-        raise ValueError('Account ID cannot be empty')
-    if inp_configs['clusterid'] == '':
+    if 'azuredatabricks.net' not in inp_configs['url']: #aws and gcp
+        if 'mastername' in inp_configs and inp_configs['mastername'] == '' :
+            raise ValueError('Master name cannot be empty')
+        if 'masterpwd' in inp_configs and inp_configs['masterpwd'] == '' :
+            raise ValueError('Master pwd cannot be empty')
+        if 'account_id' in inp_configs and inp_configs['account_id']== '' :
+            raise ValueError('Account ID cannot be empty')        
+    else: #azure
+        if 'subscription_id' in inp_configs and inp_configs['subscription_id'] == '':
+            raise ValueError('Pass valid Subscription ID')
+        if 'client_id' in inp_configs and inp_configs['client_id'] == '':
+            raise ValueError('Pass valid Client ID')        
+        if 'tenant_id' in inp_configs and inp_configs['tenant_id'] == '':
+            raise ValueError('Pass valid Tenant ID')        
+        if 'client_secret' in inp_configs and inp_configs['client_secret'] == '':
+            raise ValueError('Pass valid Client Secret')                   
+    
+    if ('token' in inp_configs) and (inp_configs['token'] == '') and (inp_configs['use_mastercreds'] is False) :
+            raise ValueError('Pass valid Token')
+    if 'clusterid' in inp_configs and inp_configs['clusterid'] == '':
         raise ValueError('Cluster ID cannot be empty')
-    if inp_configs['mastername'] == '':
-        raise ValueError('Master name cannot be empty')
-    if inp_configs['masterpwd'] == '':
-        raise ValueError('Master pwd cannot be empty')
-    if (inp_configs['token'] == '') and (inp_configs['use_mastercreds'] is False):
-        raise ValueError('Pass valid Token')
+
     return inp_configs
 
 
