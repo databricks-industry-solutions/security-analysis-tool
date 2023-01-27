@@ -10,7 +10,7 @@
 
 ## Introduction
 
-Security Analysis Tool (SAT) analyzes customer's Databricks account and workspace security configurations and provides recommendations that help them follow Databrick's security best practices. When a customer runs SAT, it will compare their workspace configurations against a set of security best practices and delivers a report for their Databricks AWS workspace (Azure, GCP coming soon). These checks identify recommendations to harden Databricks configurations, services, and resources.
+Security Analysis Tool (SAT) analyzes customer's Databricks account and workspace security configurations and provides recommendations that help them follow Databrick's security best practices. When a customer runs SAT, it will compare their workspace configurations against a set of security best practices and delivers a report for their Databricks (AWS, Azure, and GCP) workspaces. These checks identify recommendations to harden Databricks configurations, services, and resources.
 
 Databricks has worked with thousands of customers to securely deploy the Databricks platform, with the appropriate security features that meet their architecture requirements. While many organizations deploy security differently, there are guidelines and features that are commonly used by organizations that need a high level of security. This tool checks for typical security features that are deployed by most high-security organizations, and reviews the largest risks and the risks that customers ask about most often. It will then provide a security configuration reference link to Databricks documentation along with a recommendation. 
 
@@ -42,7 +42,7 @@ The dashboard is broken into the five sections and each pillar is laid out in a 
 * Workspace Security Summary
     * The high-level summary calls out findings by category, categorized by severity.
 * Workspace Stats
-    * This section provides usage statistics around the number of users, groups, databases, tables, and service details like tier and region.
+    * This section provides when the analysis was run, workspace name, and service details like tier and region.
 * Individual Security Category Details
     * A section for each security category that contains:
       * Security section summary details, such as counts of deviations from recommended best practices
@@ -52,6 +52,7 @@ The dashboard is broken into the five sections and each pillar is laid out in a 
     * These are less prescriptive in nature but provide data points that can be scrutinized by data personas to verify thresholds are set correctly for their organization.
 * Additional Finding Details
     * This section provides additional details that help to pinpoint the source of a security deviation, including the logic used to detect them. For example, the 'cluster policy not used' will provide a list of the cluster workloads where the policy is not applied, avoiding a needle-in-a-haystack situation.
+    
 
 ## Detection example
 
@@ -68,6 +69,19 @@ Customers can use the "Additional Details" section to display information on wha
 In the example below, the customer can know more about the “Log delivery” by inputting “GOV-3”. 
 
 ![SAT Insights](./images/additional_details_2.png)
+
+
+## Security Deviation Trend
+This section shows the trend of security best practice deviations over a date range. This helps identify the inflection point where improvements or degradations started to aid the investigation and remediation. For example, the diagram below shows a count of deviations in various categories by run date. The expectation is that over time the height of these bar charts should shrink or, at best, remain the same. If there is a sudden increase, it warrants immediate investigation as it indicates a possible inadvertent human error.
+
+![SAT Insights](./images/security_deviation_trend.png)
+
+## Security Deviation Trend
+This section gives ability to compare two runs side by side along each of the security dimensions. This drill-down option helps pinpoint the checks that have either been rectified or degraded, so that security folks can address them speedily.
+For example, The diagram below shows the individual checks in various categories for each run. The red recatngle in the diagram shows an improvement in “Enforce User Isolation” but degradation in the “Admin Count” best practice. The expectation is that over time the cross marks should chage to tick marks. If it is the opposite, it warrants immediate investigation as it indicates a degradation. An alert also will be triggered incase of detecting detrimental changes to notify via an email. 
+![SAT Insights](./images/security_config_comparison.png)
+
+
 
 ## Configuration and Usage instructions
 Refer to [setup guide](./docs/setup.md)  
