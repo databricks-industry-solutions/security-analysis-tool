@@ -17,23 +17,6 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-if (json_['use_mastercreds']) is False:
-    tokenscope = json_['workspace_pat_scope']
-    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
-    token = dbutils.secrets.get(tokenscope, tokenkey)
-    json_.update({'token':token})
-else: #mastercreds is true
-    token = ''
-    if cloud_type =='azure': #use client secret
-        client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-        json_.update({'token':token, 'client_secret': client_secret})
-    else: #use master key for all other clouds
-        mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-        masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-        json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-
-# COMMAND ----------
-
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
 clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
@@ -43,22 +26,15 @@ clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 #replace values for accounts exec
 token = 'dapijedi'
 if cloud_type =='azure': #use client secret
-    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-    json_.update({'token':token, 'client_secret': client_secret})
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':token, 'client_secret': client_secret})
 else: #use master key for all other clouds
-    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+  mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+  json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
 
 json_.update({'url':hostname, 'workspace_id': 'accounts', 'cloud_type': cloud_type, 'clusterid':clusterid})
 
-
-# COMMAND ----------
-
-# import requests
-# from core.dbclient import SatDBClient
-
-# db_client = SatDBClient(json_)
 
 # COMMAND ----------
 
@@ -95,7 +71,7 @@ def test_connection(jsonarg, accounts_test=False):
 #master account connectionn test.
 ret_tuple = test_connection(json_, True)
 if ret_tuple[1]==False:
-  loggr.info("\033[1mUnsuccessful account connection. Verify credentials.\033[1m") 
+  loggr.info("\033[1mUnsuccessful Account connection. Verify credentials.\033[1m") 
   dbutils.notebook.exit("Unsuccessful account connection. Verify credentials.")
 else:
   loggr.info("\033[1mAccount Connection successful!\033[1m")
@@ -117,12 +93,6 @@ workspaces = workspacesdf.collect()
 # COMMAND ----------
 
 
-
-# COMMAND ----------
-
-arr=[('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', True), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', True), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', True), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', True), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', True), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', True), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False), ('Accounts_Cred', False)]
-
-modifyWorkspaceConfigFile(arr)
 
 # COMMAND ----------
 
@@ -187,37 +157,37 @@ for ws in workspaces:
   clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
   json_.update({'url':hostname, 'workspace_id': workspace_id,  'clusterid':clusterid})  
 
+  token = ''
+  if cloud_type =='azure': #use client secret
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+  else: #lets populate master key for all other clouds(accounts api)
+    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})    
   
   # if the worspace we are testing is the current workspace, 
   # We need the current workspace connection tested with the token to configure alerts and dashboard later
   if ws.workspace_id == current_workspace:
-      tokenscope = json_['workspace_pat_scope']
-      tokenkey = ws.ws_token #already has prefix in config file
-      token = dbutils.secrets.get(tokenscope, tokenkey)
-      json_.update({'token':token})
-      
-      ret_tuple = test_connection(json_, False)
-      if ret_tuple[1] == False: #connection failed. log and move on.
-        loggr.info(f"\033[1mUnsuccessful {hostname} workspace connection for current workspace using PAT. Verify credentials.\033[0m")
-        input_status_arr.append(ret_tuple)
-        continue # dont run the test again. We assume all is well for the current workspace.  
-
-  #for all other non-current workspaces
-  if (json_['use_mastercreds']) is False:
+    loggr.info(f"\033[1mCurrent workspace {ws.workspace_id} detected. Using PAT.\033[0m")
     tokenscope = json_['workspace_pat_scope']
-    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
+    tokenkey = ws.ws_token #already has prefix in config file
     token = dbutils.secrets.get(tokenscope, tokenkey)
     json_.update({'token':token})
-  else: #mastercreds is true
-    token = ''
-    if cloud_type =='azure': #use client secret
-      client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-      json_.update({'token':token, 'client_secret': client_secret})
-    else: #use master key for all other clouds
-      mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-      masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-      json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})  
-
+  #for all other non-current workspaces
+  elif (json_['use_mastercreds']) is False:
+    tokenscope = json_['workspace_pat_scope']
+    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
+    try:
+      token = dbutils.secrets.get(tokenscope, tokenkey)
+    except Exception as e:#pat may not be setup.
+      loggr.info(f"\033[1m {e} - {tokenscope}:{tokenkey}\033[0m")
+      ret_tuple=(ws.workspace_id, False)
+      input_status_arr.append(ret_tuple)
+      loggr.info(f"\033[1m{hostname} workspace connection. Connection Status: {ret_tuple[1]}\033[0m") 
+      continue;
+    json_.update({'token':token})
+    
   ret_tuple = test_connection(json_, False)  
   input_status_arr.append(ret_tuple)
   loggr.info(f"\033[1m{hostname} workspace connection. Connection Status: {ret_tuple[1]}\033[0m")    

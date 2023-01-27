@@ -48,22 +48,21 @@ cloud_type = getCloudType(hostname)
 
 from core.dbclient import SatDBClient
 
+token = ''
+if cloud_type =='azure': #client secret always needed
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':token, 'client_secret': client_secret})
+else: #lets populate master key for all other clouds(accounts api)
+  mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+  json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})   
+    
 if (json_['use_mastercreds']) is False:
     tokenscope = json_['workspace_pat_scope']
     tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
     token = dbutils.secrets.get(tokenscope, tokenkey)
     json_.update({'token':token})
-else: #mastercreds is true
-    token = ''
-    if cloud_type =='azure': #use client secret
-        client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-        json_.update({'token':token, 'client_secret': client_secret})
-    else: #use master key for all other clouds
-        mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-        masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-        json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
 
-    
 db_client = SatDBClient(json_)
 
 # COMMAND ----------

@@ -20,4 +20,9 @@ display(dfexist)
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC select * from security_analysis.account_workspaces
+
+# COMMAND ----------
+
 dbutils.notebook.exit('OK')
