@@ -108,12 +108,12 @@ Please gather the following information before you start setting up:
      <summary>AWS instructions</summary>  
      Create username secret and password secret of administrative user id and password  as  "user" and "pass" under the above "sat_scope" scope using Databricks Secrets CLI 
 
-       *  Create secret for master account username
+       *  Input your Databricks account console admin username to store it in a the secret store
            ```
            databricks --profile e2-sat secrets put --scope sat_scope --key user
            ```
 
-       *  Create secret for master account password
+       *  Input your Databricks account console admin account password to store it in a the secret store
 
            ```
            databricks --profile e2-sat secrets put --scope sat_scope --key pass
@@ -184,9 +184,9 @@ Please gather the following information before you start setting up:
                databricks --profile e2-sat secrets put --scope sat_scope --key client-secret
              ``` 
           * Update config in  \<SATProject\>/notebooks/Utils/initialize CMD 7
-          * Set the value for the subscription_id
-          * Set the value for the tenant_id
-          * Set the value for client_id
+              * Set the value for the subscription_id
+              * Set the value for the tenant_id
+              * Set the value for client_id
           * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 7 should look like this:
 
              ```
@@ -458,8 +458,12 @@ Please gather the following information before you start setting up:
     * Resolution: 
    
       Run this following command in your notebook %sh 
-      curl -X GET -H "Authorization: Basic <base64 of userid:password>" -H "Content-Type: application/json" https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces
+      curl -X GET -H "Authorization: Basic /<base64 of userid:password/>" -H "Content-Type: application/json" https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces
 
+            or
+            
+     %sh curl -u 'user:password' -X GET  “Content-Type: application/json” https://accounts.cloud.databricks.com/api/2.0/accounts/119f3ee2-8c38-4cdb-88e1-81c091c378a2/workspaces       
+            
       If you don’t see a JSON with a clean listing of workspaces you are likely having a firewall issue that is blocking calls to the accounts console.  Please have your infrastructure team add Databricks accounts.cloud.databricks.com to the allow-list.   
 
 4. Offline install of libraries incase of no PyPI access 
