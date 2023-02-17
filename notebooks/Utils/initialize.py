@@ -28,21 +28,21 @@ cloud_type = getCloudType(hostname)
 import json
 
 json_ = {
-   "account_id":"",
-   "sql_warehouse_id":"",
-   "username_for_alerts":"user@email",
+   "account_id":"", dbutils.secrets.get(scope="sat_scope", key="account_console_id"),
+   "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql_warehouse_id"),
+   "username_for_alerts": dbutils.secrets.get(scope="sat_scope", key="user"),
    "verbosity":"info"
 }
 
 # COMMAND ----------
 
 json_.update({
-   "master_name_scope":"sat_scope",
-   "master_name_key":"user",
-   "master_pwd_scope":"sat_scope",
-   "master_pwd_key":"pass",
-   "workspace_pat_scope":"sat_scope",
-   "workspace_pat_token_prefix":"sat-token",
+   "master_name_scope": dbutils.secrets.get(scope="sat_scope", key="master_scope"),
+   "master_name_key": dbutils.secrets.get(scope="sat_scope", key="master_name_key"),
+   "master_pwd_scope": dbutils.secrets.get(scope="sat_scope", key="master_scope"),
+   "master_pwd_key": dbutils.secrets.get(scope="sat_scope", key="master_pwd_key"),
+   "workspace_pat_scope": dbutils.secrets.get(scope="sat_scope", key="master_scope"),
+   "workspace_pat_token_prefix": dbutils.secrets.get(scope="sat_scope", key="pat"),
    "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
    "dashboard_folder":"../../dashboards/",
    "dashboard_tag":"SAT",
