@@ -124,7 +124,7 @@ Please gather the following information before you start setting up:
      <summary>Azure instructions</summary>  
 
       We will be using the instructions in [Get Azure AD tokens for service principals](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/service-prin-aad-token).
-       *  Follow the document above and complete all steps in the "Provision a service principal in Azure portal" as detailed in the document.
+       *  Follow the document above and complete all steps in the "Provision a service principal in Azure portal" only as detailed in the document.
        *  On the application page’s Overview page, in the Essentials section, copy the following values: (You will need this in the step below)
           * Application (client) ID as client_id
           * Directory (tenant) ID tenant_id
@@ -132,6 +132,7 @@ Please gather the following information before you start setting up:
           <img src="./images/azure_sp_essentials.png" width="50%" height="50%">
        *  Notedown the "Display name" as Service Principle name. (You will need this in the step below)
        *  Notedown the Subscription ID as subscription_id from the Subscriptions section of the Azure portal
+       *  Please add the service principle with "Reader" role in Access control (IAM) using Role assignments under your [subscription, Access control (IAM) section] (https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal#step-2-open-the-add-role-assignment-page) 
      
     </details> 
  
