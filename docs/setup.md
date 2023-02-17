@@ -132,8 +132,8 @@ Please gather the following information before you start setting up:
           <img src="./images/azure_sp_essentials.png" width="50%" height="50%">
        *  Notedown the "Display name" as Service Principle name. (You will need this in the step below)
        *  Notedown the Subscription ID as subscription_id from the Subscriptions section of the Azure portal
-       *  Please add the service principle with "Reader" role in Access control (IAM) using Role assignments under your [subscription, Access control (IAM) section] (https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal#step-2-open-the-add-role-assignment-page) 
-     
+       *  Please add the service principle with "Reader" role in Access control (IAM) using Role assignments under your [subscription, Access control (IAM) section](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal#step-2-open-the-add-role-assignment-page) 
+           <img src="./images/azure_role_assignment.png" width="70%" height="70%"> 
     </details> 
  
     <details>
