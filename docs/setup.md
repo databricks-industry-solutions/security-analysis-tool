@@ -22,7 +22,7 @@ We created a companion Security Analysis Tool (SAT) [Setup primer video](https:/
     * **GCP:** Service account key and impersonate-service-account  (To call the account REST APIs)
  3. A Single user job cluster (To run the SAT checks)
  4. Databricks SQL Warehouse  (To run the SQL dashboard)
- 5. Ensure that Databricks Repos is enabled (To access the SAT git)
+ 5. Ensure that Databricks Repos is enabled (To access the SAT git) and [Files in Repo](https://docs.databricks.com/files/workspace.html#configure-support-for-workspace-files) set to DBR 8.4+ or DBR 11.0+ (To allow arbitrary files  in Repo operations)
  6. Pipy access from your workspace (To install the SAT utility library)
  7. PAT token for the SAT primary deployment workspace 
   
