@@ -1,5 +1,5 @@
 resource "databricks_job" "initializer" {
-  name = "Execute Initializer Notebook (one-time)"
+  name = "SAT Initializer Notebook (one-time)"
   new_cluster {
     num_workers   = 5
     spark_version = data.databricks_spark_version.latest_lts.id
@@ -20,7 +20,7 @@ resource "databricks_job" "initializer" {
 }
 
 resource "databricks_job" "driver" {
-  name = "Execute Driver Notebook"
+  name = "SAT Driver Notebook"
   new_cluster {
     num_workers   = 5
     spark_version = data.databricks_spark_version.latest_lts.id
