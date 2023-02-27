@@ -28,9 +28,9 @@ cloud_type = getCloudType(hostname)
 import json
 
 json_ = {
-   "account_id":"",
-   "sql_warehouse_id":"",
-   "username_for_alerts":"user@email",
+   "account_id": dbutils.secrets.get(scope="sat_scope", key="account_console_id"),
+   "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql_warehouse_id"),
+   "username_for_alerts": dbutils.secrets.get(scope="sat_scope", key="user"),
    "verbosity":"info"
 }
 
