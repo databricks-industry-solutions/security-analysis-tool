@@ -9,7 +9,7 @@ If you are an existing SAT user please run the following command to reset your D
    ``` 
 Please make sure you are using - in all secret key names as opposed to _ .   
 
-**Note**: SAT now started rolling Terraform based deployments, if you are on AWS please prefer [Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/TERRAFORM.md) instructions than this setup.  Azure TF support is coming soon. 
+**Note**: SAT now started rolling Terraform based deployments, if you are on AWS please prefer [Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/aws/TERRAFORM_AWS.md) instructions than this setup.  Azure TF support is coming soon. 
 
 **Note**: SAT is a productivity tool to help verify security configurations of Databricks deployments, its not meant to be used as certification or attestation of your deployments. SAT project is regulary updated to improve correctness of checks, add new checks, fix bugs. Please send your feedback and comments to sat@databricks.com.
 
