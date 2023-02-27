@@ -159,8 +159,7 @@ Please gather the following information before you start setting up:
      * Set the value for the account_id 
      * Set the value for the sql_warehouse_id
      * Set the value for user_email_for_alerts
-     * databricks secrets scope/key names to pick the secrets from the steps above.
- 
+    
 
        ```
        databricks --profile e2-sat secrets put --scope sat_scope --key sat-token-<workspace_id> 
@@ -182,7 +181,7 @@ Please gather the following information before you start setting up:
      * Set the value for the account_id 
      * Set the value for the sql_warehouse_id
      * Set the value for username_for_alerts
-     * databricks secrets scope/key names to pick the secrets from the steps above.
+     * Databricks secrets scope/key names to pick the secrets from the steps above.
 
      * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are using the secrets (Required for TF deployments):
          ```
@@ -194,7 +193,7 @@ Please gather the following information before you start setting up:
               }
 
         ```        
-      * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are NOT using secrets:
+      * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are NOT using Terrafrom deployment and the secrets are not configured:
     
         ```
               {
