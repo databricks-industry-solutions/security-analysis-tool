@@ -5,12 +5,14 @@ Step 1: [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/
 Step 2: [Install Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on local machine
 
 Step 3: Git Clone Repo
-
-```git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git```
-
+  ``` 
+    git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+   ``` 
 Step 4: Change Directories
 
-```cd security-analysis-tool/terraform/<cloud>/```
+  ```
+    cd security-analysis-tool/terraform/<cloud>/
+   ``` 
 
 Step 5: Set values in template.tfvars file
 
@@ -30,7 +32,9 @@ Step 6: Terraform [Init](https://developer.hashicorp.com/terraform/cli/commands/
 
 The terraform init command initializes a working directory containing configuration files and installs plugins for required providers.
 
-```terraform init -var-file="template.tfvars"```
+  ```
+    terraform init -var-file="template.tfvars"
+  ```
 
 Step 7: Terraform [Plan](https://developer.hashicorp.com/terraform/cli/commands/plan)
 
@@ -40,13 +44,19 @@ The terraform plan command creates an execution plan, which lets you preview the
 * Compares the current configuration to the prior state and noting any differences.
 * Proposes a set of change actions that should, if applied, make the remote objects match the configuration.
 
-```terraform plan -var-file="template.tfvars"```
+
+
+  ```
+    terraform plan -var-file="template.tfvars"
+  ```
 
 Step 8: Terraform [Apply](https://developer.hashicorp.com/terraform/cli/commands/apply)
 
 The terraform apply command executes the actions proposed in a Terraform plan.
 
-```terraform apply -var-file="template.tfvars"```
+  ```
+    terraform apply -var-file="template.tfvars"
+  ```
 
 Step 9: Run Jobs
 
