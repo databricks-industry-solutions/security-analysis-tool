@@ -2,9 +2,15 @@ resource "databricks_secret_scope" "sat" {
   name = "sat_scope"
 }
 
-resource "databricks_secret" "user" {
+resource "databricks_secret" "user-email" {
   key          = "user-email-for-alerts"
   string_value = data.databricks_current_user.me.user_name
+  scope        = databricks_secret_scope.sat.id
+}
+
+resource "databricks_secret" "user" {
+  key          = "user"
+  string_value = var.account_user
   scope        = databricks_secret_scope.sat.id
 }
 
