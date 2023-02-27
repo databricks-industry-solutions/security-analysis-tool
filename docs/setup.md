@@ -9,6 +9,8 @@ If you are an existing SAT user please run the following command to reset your D
    ``` 
 Please make sure you are using - in all secret key names as opposed to _ .   
 
+**Note**: SAT now started rolling Terraform based deployments, if you are on AWS please prefer [Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/TERRAFORM.md) instructions than this setup.  Azure TF support is coming soon. 
+
 **Note**: SAT is a productivity tool to help verify security configurations of Databricks deployments, its not meant to be used as certification or attestation of your deployments. SAT project is regulary updated to improve correctness of checks, add new checks, fix bugs. Please send your feedback and comments to sat@databricks.com.
 
 You will need the following information to set up SAT, we will show you how to gather them in the next section.
@@ -153,11 +155,28 @@ Please gather the following information before you start setting up:
        You can find your workspace id by following the instructions [here](https://docs.databricks.com/workspace/workspace-details.html)
 
        You can create a PAT token by following the instructions [here](https://docs.databricks.com/dev-tools/api/latest/authentication.html#generate-a-personal-access-token). Please pay attention to _ and - , scopes use _ and keys must use - .
-
+     * Set the value for the workspace_id 
+     * Set the value for the account_id 
+     * Set the value for the sql_warehouse_id
+     * Set the value for user_email_for_alerts
+     * databricks secrets scope/key names to pick the secrets from the steps above.
+ 
 
        ```
        databricks --profile e2-sat secrets put --scope sat_scope --key sat-token-<workspace_id> 
        ``` 
+  
+       ```
+       databricks --profile e2-sat secrets put --scope sat_scope --key account-console-id
+       ```  
+        
+       ```
+       databricks --profile e2-sat secrets put --scope sat_scope --key sql-warehouse-id
+       ```  
+      
+       ```
+       databricks --profile e2-sat secrets put --scope sat_scope --key user-email-for-alerts
+       ```  
 
    * In your environment where you imported SAT project from git (Refer to Step 4 in Prerequisites) Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
      * Set the value for the account_id 
@@ -165,13 +184,23 @@ Please gather the following information before you start setting up:
      * Set the value for username_for_alerts
      * databricks secrets scope/key names to pick the secrets from the steps above.
 
-     * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this:
+     * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are using the secrets (Required for TF deployments):
+         ```
+              {
+                 "account_id": dbutils.secrets.get(scope="sat_scope", key="account-console-id"),   
+                 "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id"),
+                 "username_for_alerts": dbutils.secrets.get(scope="sat_scope", key="user-email-for-alerts"),
+                 "verbosity":"info"
+              }
 
+        ```        
+      * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are NOT using secrets:
+    
         ```
               {
-                 "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- update this value
-                 "sql_warehouse_id":"4d9fef7de2b9995c",     <- update this value
-                 "username_for_alerts":"john.doe@org.com", <- update this value with a valid Databricks user id
+                 "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- replace with the actual account_id value
+                 "sql_warehouse_id":"4d9fef7de2b9995c",     <- replace with the actual sql_warehouse_id value
+                 "username_for_alerts":"john.doe@org.com", <- replace with a valid Databricks user id
                  "verbosity":"info"
               }
 
