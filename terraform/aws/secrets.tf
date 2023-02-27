@@ -3,8 +3,8 @@ resource "databricks_secret_scope" "sat" {
 }
 
 resource "databricks_secret" "user" {
-  key          = "user"
-  string_value = var.account_user
+  key          = "user-email-for-alerts"
+  string_value = data.databricks_current_user.me.user_name
   scope        = databricks_secret_scope.sat.id
 }
 
@@ -21,13 +21,13 @@ resource "databricks_secret" "pat" {
 }
 
 resource "databricks_secret" "account_console_id" {
-  key          = "account_console_id"
+  key          = "account-console-id"
   string_value = var.account_console_id
   scope        = databricks_secret_scope.sat.id
 }
 
 resource "databricks_secret" "sql_warehouse_id" {
-  key          = "sql_warehouse_id"
+  key          = "sql-warehouse-id"
   string_value = databricks_sql_endpoint.this.id
   scope        = databricks_secret_scope.sat.id
 }
