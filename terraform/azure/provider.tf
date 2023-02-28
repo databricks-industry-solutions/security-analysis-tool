@@ -5,6 +5,6 @@ terraform {
 }
 
 provider "databricks" {
-  host       = "https://adb-5571068294043718.18.azuredatabricks.net"
+  host       = var.databricks_url
   auth_type  = "azure-cli"
 }
