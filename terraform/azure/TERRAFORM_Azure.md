@@ -26,9 +26,22 @@ Further Documentation for some of the variables:
 
 [workspace_PAT](https://docs.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
 
+[Azure Specific variables](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md#prerequisites) and navigate to the Azure section
+
+Step 6: Set up [Azure CLI credentials](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli#sign-in-interactively) for the provider block in provider.tf
+
+The Azure CLI's default authentication method for logins uses a web browser and access token to sign in.
+
+Run the login command and sign in with your account credentials in the browser. 
+
+  ```
+    az login
+  ```
+
+
 ## Run Terraform
 
-Step 6: Terraform [Init](https://developer.hashicorp.com/terraform/cli/commands/init)
+Step 7: Terraform [Init](https://developer.hashicorp.com/terraform/cli/commands/init)
 
 The terraform init command initializes a working directory containing configuration files and installs plugins for required providers.
 
@@ -36,21 +49,19 @@ The terraform init command initializes a working directory containing configurat
     terraform init -var-file="template.tfvars"
   ```
 
-Step 7: Terraform [Plan](https://developer.hashicorp.com/terraform/cli/commands/plan)
+Step 8: Terraform [Plan](https://developer.hashicorp.com/terraform/cli/commands/plan)
 
 The terraform plan command creates an execution plan, which lets you preview the changes that Terraform plans to make to your infrastructure. By default, when Terraform creates a plan it:
 
-* Reads the current state of any already-existing remote objects to make sure that the Terraform state is up-to-date.
-* Compares the current configuration to the prior state and noting any differences.
-* Proposes a set of change actions that should, if applied, make the remote objects match the configuration.
-
-
+  * Reads the current state of any already-existing remote objects to make sure that the Terraform state is up-to-date.
+  * Compares the current configuration to the prior state and noting any differences.
+  * Proposes a set of change actions that should, if applied, make the remote objects match the configuration.
 
   ```
     terraform plan -var-file="template.tfvars"
   ```
 
-Step 8: Terraform [Apply](https://developer.hashicorp.com/terraform/cli/commands/apply)
+Step 9: Terraform [Apply](https://developer.hashicorp.com/terraform/cli/commands/apply)
 
 The terraform apply command executes the actions proposed in a Terraform plan.
 
@@ -58,11 +69,11 @@ The terraform apply command executes the actions proposed in a Terraform plan.
     terraform apply -var-file="template.tfvars"
   ```
 
-Step 9: Run Jobs
+Step 10: Run Jobs
 
 You now have two jobs (SAT Initializer Notebook & SAT Driver Notebook). Run SAT Initializer Notebook and when it completes run SAT Driver Notebook; SAT Initializer Notebook should only be run once (although you can run it multiple times, it only needs to be run successfully one time), and SAT Driver Notebook can be run periodically (its scheduled to run once every Monday, Wednesday, and Friday). 
 
-Step 10: SAT Dashboard
+Step 11: SAT Dashboard
 
 Go to the SQL persona, select the Dashboard icon in the left menu and then select the SAT Dashboard. Once the dashboard loads pick the Workspace from the dropdown and refresh the dashboard
 
