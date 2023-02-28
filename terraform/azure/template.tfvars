@@ -8,14 +8,15 @@ account_console_id = ""
 
 ### AWS Specific Variables
 
-account_user = ""
-account_pass = ""
+#account_user = ""
+#account_pass = ""
 
 ### Azure Specific Variables
 
-#client_id = ""
-#tenant_id = ""
-#client_secret = ""
-#subscription_id = ""
+client_id = ""
+tenant_id = ""
+client_secret = ""
+subscription_id = ""
+
 
 
