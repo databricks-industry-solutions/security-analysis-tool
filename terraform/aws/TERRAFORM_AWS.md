@@ -40,11 +40,9 @@ Step 7: Terraform [Plan](https://developer.hashicorp.com/terraform/cli/commands/
 
 The terraform plan command creates an execution plan, which lets you preview the changes that Terraform plans to make to your infrastructure. By default, when Terraform creates a plan it:
 
-* Reads the current state of any already-existing remote objects to make sure that the Terraform state is up-to-date.
-* Compares the current configuration to the prior state and noting any differences.
-* Proposes a set of change actions that should, if applied, make the remote objects match the configuration.
-
-
+  * Reads the current state of any already-existing remote objects to make sure that the Terraform state is up-to-date.
+  * Compares the current configuration to the prior state and noting any differences.
+  * Proposes a set of change actions that should, if applied, make the remote objects match the configuration.
 
   ```
     terraform plan -var-file="template.tfvars"
