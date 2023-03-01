@@ -142,8 +142,8 @@ Please gather the following information before you start setting up:
     <details>
      <summary>GCP instructions</summary>  
 
-      We will be using the instructions in [Authenticate to workspace or account APIs with a Google ID token](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html).
-       *  Follow the document above and complete all steps in the [Step 1](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts) as detailed in the document.
+      We will be using the instructions in [Authenticate to workspace or account APIs with a Google ID token](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id.html).
+       *  Follow the document above and complete all steps in the [Step 1](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id.html#step-1-create-two-service-accounts) as detailed in the document.
        *  Notedown the name and location of service account key json file. (You will need this in the step below)
        *  Notedown the impersonate-service-account email address. (You will need this in the step below)
      
