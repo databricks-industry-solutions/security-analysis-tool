@@ -20,11 +20,11 @@ Using any editor set the values in the template.tfvars file. The descriptions of
 
 Further Documentation for some of the variables:
 
-[workspace_id](https://docs.databricks.com/workspace/workspace-details.html#workspace-instance-names-urls-and-ids)
+[workspace_id](https://learn.microsoft.com/en-us/azure/databricks/workspace/workspace-details#--workspace-instance-names-urls-and-ids)
 
-[account_console_id](https://docs.databricks.com/administration-guide/account-settings/index.html#locate-your-account-id)
+[account_console_id](https://learn.microsoft.com/en-us/azure/databricks/administration-guide/account-settings/#locate-your-account-id)
 
-[workspace_PAT](https://docs.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
+[workspace_PAT](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth#--azure-databricks-personal-access-tokens)
 
 [Azure Specific variables](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md#prerequisites) and navigate to the Azure section
 
