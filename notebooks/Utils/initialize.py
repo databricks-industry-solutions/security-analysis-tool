@@ -28,20 +28,20 @@ cloud_type = getCloudType(hostname)
 import json
 
 json_ = {
-   "account_id": dbutils.secrets.get(scope="sat_scope_ai", key="account-console-id"),
-   "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope_ai", key="sql-warehouse-id"),
-   "username_for_alerts": dbutils.secrets.get(scope="sat_scope_ai", key="user-email-for-alerts"),
+   "account_id": dbutils.secrets.get(scope="sat_scope", key="account-console-id"),
+   "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id"),
+   "username_for_alerts": dbutils.secrets.get(scope="sat_scope", key="user-email-for-alerts"),
    "verbosity":"info"
 }
 
 # COMMAND ----------
 
 json_.update({
-   "master_name_scope":"sat_scope_ai",
+   "master_name_scope":"sat_scope",
    "master_name_key":"user",
-   "master_pwd_scope":"sat_scope_ai",
+   "master_pwd_scope":"sat_scope",
    "master_pwd_key":"pass",
-   "workspace_pat_scope":"sat_scope_ai",
+   "workspace_pat_scope":"sat_scope",
    "workspace_pat_token_prefix":"sat-token",
    "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
    "dashboard_folder":"../../dashboards/",
@@ -55,8 +55,8 @@ json_.update({
 # DBTITLE 1,GCP configurations 
 if cloud_type == 'gcp':
     json_.update({
-       "service_account_key_file_path": dbutils.secrets.get(scope="sat_scope_ai", key="dbfs-path-to-json"),
-       "impersonate_service_account": dbutils.secrets.get(scope="sat_scope_ai", key="impersonate-service-account"),
+       "service_account_key_file_path": dbutils.secrets.get(scope="sat_scope", key="dbfs-path-to-json"),
+       "impersonate_service_account": dbutils.secrets.get(scope="sat_scope", key="impersonate-service-account"),
        "use_mastercreds":False
     })
 
