@@ -9,9 +9,13 @@ If you are an existing SAT user please run the following command to reset your D
    ``` 
 Please make sure you are using - in all secret key names as opposed to _ .   
 
-**Note**: SAT now started rolling Terraform based deployments, if you are on AWS please prefer [Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/aws/TERRAFORM_AWS.md) instructions than this setup.  Azure TF support is coming soon. 
+**Note**: SAT can be setup as Terraform based deployment, if you use Terrafrom please please prefer instructions: 
+* [SAT AWS Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/aws/TERRAFORM_AWS.md) 
+* [SAT Azure Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/azure/TERRAFORM_Azure.md) 
+* [SAT GCP Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/gcp/TERRAFORM_GCP.md) 
 
 **Note**: SAT is a productivity tool to help verify security configurations of Databricks deployments, its not meant to be used as certification or attestation of your deployments. SAT project is regulary updated to improve correctness of checks, add new checks, fix bugs. Please send your feedback and comments to sat@databricks.com.
+
 
 You will need the following information to set up SAT, we will show you how to gather them in the next section.
 
@@ -193,7 +197,7 @@ Please gather the following information before you start setting up:
               }
 
         ```        
-      * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are NOT using Terrafrom deployment and the secrets are not configured:
+      * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are NOT using Terrafrom deployment and the secrets are not configured (backward compatibility):
     
         ```
               {
@@ -247,7 +251,7 @@ Please gather the following information before you start setting up:
 
              ``` 
   
-          * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 7 should look like this if you are NOT using Terrafrom deployment and the secrets are not configured:
+          * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 7 should look like this if you are NOT using Terrafrom deployment and the secrets are not configured (backward compatibility):
 
              ```
                    json_.update({
@@ -274,19 +278,39 @@ Please gather the following information before you start setting up:
              ```
                databricks --profile e2-sat fs cp <key file name>  dbfs:/FileStore/tables/<key file name> --overwrite
              ``` 
-          * Update config in  \<SATProject\>/notebooks/Utils/initialize CMD 4
-          * Set the value for the service_account_key_file_path
-          * Set the value for impersonate_service_account
-          * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 6 should look like this:
+          * Setup the service account key json file in a secret as dbfs-path-to-json with above value: dbfs:/FileStore/tables/<key file name>
+  
+             ```
+               databricks --profile e2-sat secrets put --scope sat_scope --key dbfs-path-to-json
+             ``` 
+          * Setup the impersonate-service-account email address in a secret as impersonate-service-account
+  
+             ```
+               databricks --profile e2-sat secrets put --scope sat_scope --key impersonate-service-account
+             ``` 
+        
+          * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 6 should look like this if you are using the secrets (Required for TF deployments):
+            
 
              ```
+                   #GCP configurations 
+                     json_.update({
+                         "service_account_key_file_path": dbutils.secrets.get(scope="sat_scope_arun", key="dbfs-path-to-json"),
+                         "impersonate_service_account": dbutils.secrets.get(scope="sat_scope_arun", key="impersonate-service-account"),
+                         "use_mastercreds":False
+                      })
+
+             ``` 
+         * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 7 should look like this if you are NOT using Terrafrom deployment and the secrets are not configured (backward compatibility):        
+            ```
                    #GCP configurations 
                       json_.update({
                          "service_account_key_file_path":"/dbfs/FileStore/tables/SA_1_key.json",    <- update this value
                          "impersonate_service_account":"xyz-sa-2@project.iam.gserviceaccount.com",  <- update this value
                          "use_mastercreds":False <- don't update this value                                  
                       })
-             ``` 
+             ```                            
+                           
            *  Follow the instructions in Step 4 of [Authenticate to workspace or account APIs with a Google ID token]([https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-4-add-the-service-account-as-a-workspace-or-account-user)) as detailed in the document for each workspce you would like to analyze and the account to add your main service account (SA-2).
 
            <img src="./images/gcp_service_account_workspaces_api.png" width="70%" height="70%">
