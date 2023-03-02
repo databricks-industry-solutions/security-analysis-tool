@@ -8,8 +8,8 @@ account_console_id = ""
 
 ### AWS Specific Variables
 
-account_user = ""
-account_pass = ""
+#account_user = ""
+#account_pass = ""
 
 ### Azure Specific Variables
 
@@ -20,6 +20,6 @@ account_pass = ""
 
 ### GCP Specific Variables
 
-#local_path_to_json = ""
-#json_file_name = ""
-#impersonate_service_account = ""
+local_path_to_json = ""
+json_file_name = ""
+impersonate_service_account = ""

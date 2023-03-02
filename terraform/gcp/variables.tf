@@ -1,9 +1,9 @@
 variable "databricks_url" {
-  description = "Should look like https://<workspace>.cloud.databricks.com"
+  description = "Should look like https://<workspace>.gcp.databricks.com"
 }
 
 variable "workspace_id" {
-  description = "Should be the string of numbers in the workspace URL arg (e.g. https://<workspace>.cloud.databricks.com/?o=1234567890123456)"
+  description = "Should be the string of numbers in the workspace URL arg (e.g. https://<workspace>.gcp.databricks.com/?o=1234567890123456)"
 }
 
 variable "workspace_PAT" {
@@ -25,12 +25,12 @@ variable "sqlw_id" {
 
 ### AWS Specific Variables
 
-variable "account_user" {
-  description = "Account Console Username"
-}
-variable "account_pass" {
-  description = "Account Console Password"
-}
+#variable "account_user" {
+#  description = "Account Console Username"
+#}
+#variable "account_pass" {
+#  description = "Account Console Password"
+#}
 
 ### Azure Specific Variables
 
@@ -52,19 +52,19 @@ variable "account_pass" {
 
 ### GCP Specific Variables
 
-#variable "dbfs_path_prefix" {
-#  description = "Path to the JSON on DBFS"
-#  default = "/dbfs/FileStore/tables/"
-#}
-#
-#variable "local_path_to_json" {
-#  description = "Path to the JSON on your local machine not including the file name (e.g. /Users/first.last/Downloads/)"
-#}
-#
-#variable "json_file_name" {
-#  description = "Service Account Key File name (e.g. SA_1_key.json)"
-#}
-#
-#variable "impersonate_service_account" {
-#  description = "Impersonate Service Account String (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
-#}
+variable "dbfs_path_prefix" {
+  description = "Path to the JSON on DBFS"
+  default = "/dbfs/FileStore/tables/"
+}
+
+variable "local_path_to_json" {
+  description = "Path to the JSON on your local machine not including the file name (e.g. /Users/first.last/Downloads/)"
+}
+
+variable "json_file_name" {
+  description = "Service Account Key File name (e.g. SA_1_key.json)"
+}
+
+variable "impersonate_service_account" {
+  description = "Impersonate Service Account String (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
+}

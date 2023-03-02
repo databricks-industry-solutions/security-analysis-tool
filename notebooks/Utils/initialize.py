@@ -55,8 +55,8 @@ json_.update({
 # DBTITLE 1,GCP configurations 
 if cloud_type == 'gcp':
     json_.update({
-       "service_account_key_file_path":"/dbfs/FileStore/tables/SA_1_key.json",
-       "impersonate_service_account":"arun-sa-2@fe-dev-sandbox.iam.gserviceaccount.com",
+       "service_account_key_file_path": dbutils.secrets.get(scope="sat_scope", key="dbfs-path-to-json"),
+       "impersonate_service_account": dbutils.secrets.get(scope="sat_scope", key="impersonate-service-account"),
        "use_mastercreds":False
     })
 
