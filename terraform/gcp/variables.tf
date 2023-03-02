@@ -1,9 +1,9 @@
 variable "databricks_url" {
-  description = "Should look like https://<workspace>.azuredatabricks.net"
+  description = "Should look like https://<workspace>.gcp.databricks.com"
 }
 
 variable "workspace_id" {
-  description = "Should be the string of numbers in the workspace URL arg (e.g. https://<workspace>.azuredatabricks.net/?o=1234567890123456)"
+  description = "Should be the string of numbers in the workspace URL arg (e.g. https://<workspace>.gcp.databricks.com/?o=1234567890123456)"
 }
 
 variable "workspace_PAT" {
