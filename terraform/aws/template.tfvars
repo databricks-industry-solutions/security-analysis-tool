@@ -18,4 +18,8 @@ account_pass = ""
 #client_secret = ""
 #subscription_id = ""
 
+### GCP Specific Variables
 
+#local_path_to_json = ""
+#json_file_name = ""
+#impersonate_service_account = ""
