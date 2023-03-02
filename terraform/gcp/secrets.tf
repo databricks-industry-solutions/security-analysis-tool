@@ -1,5 +1,5 @@
 resource "databricks_secret_scope" "sat" {
-  name = "sat_scope_ai"
+  name = "sat_scope"
 }
 
 resource "databricks_secret" "user-email" {
