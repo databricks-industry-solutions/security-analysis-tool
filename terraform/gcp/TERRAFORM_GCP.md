@@ -26,7 +26,7 @@ Further Documentation for some of the variables:
 
 [workspace_PAT](https://docs.gcp.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
 
-[GCP Specific variables](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md#prerequisites) and navigate to the GCP section
+[GCP Specific variables](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md#authentication-information) and navigate to the GCP section
 
 ## Run Terraform
 
