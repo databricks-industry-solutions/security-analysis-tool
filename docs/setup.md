@@ -108,7 +108,7 @@ Please gather the following information before you start setting up:
 
      For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
 
-  * Authentication information:
+  * [Authentication information](#authentication_information):
   
     <details>
      <summary>AWS instructions</summary>  
@@ -187,7 +187,7 @@ Please gather the following information before you start setting up:
      * Set the value for username_for_alerts
      * Databricks secrets scope/key names to pick the secrets from the steps above.
 
-     * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are using the secrets (Required for TF deployments):
+     * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are using the secrets (Required for TF deployments), no need to edit the cell:
          ```
               {
                  "account_id": dbutils.secrets.get(scope="sat_scope", key="account-console-id"),   
@@ -236,7 +236,7 @@ Please gather the following information before you start setting up:
                databricks --profile e2-sat secrets put --scope sat_scope --key client-secret
              ``` 
       
-         * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 7 should look like this if you are using the secrets (Required for TF deployments):
+         * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 7 should look like this if you are using the secrets (Required for TF deployments), no need to edit the cell:
 
              ```
                   if cloud_type == 'azure':
@@ -289,7 +289,7 @@ Please gather the following information before you start setting up:
                databricks --profile e2-sat secrets put --scope sat_scope --key impersonate-service-account
              ``` 
         
-          * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 6 should look like this if you are using the secrets (Required for TF deployments):
+          * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 6 should look like this if you are using the secrets (Required for TF deployments), no need to edit the cell:
             
 
              ```
