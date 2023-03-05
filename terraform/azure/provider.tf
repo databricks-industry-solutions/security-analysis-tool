@@ -5,6 +5,6 @@ terraform {
 }
 
 provider "databricks" {
-  host       = var.databricks_url
-  auth_type  = "azure-cli"
+  host      = var.databricks_url
+  auth_type = "azure-cli"
 }
