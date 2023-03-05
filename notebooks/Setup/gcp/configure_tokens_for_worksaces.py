@@ -3,7 +3,7 @@
 
 # COMMAND ----------
 
-pip install --upgrade google-auth
+pip install --upgrade google-auth  gcsfs
 
 # COMMAND ----------
 
@@ -69,8 +69,16 @@ gcp_accounts_url = 'https://accounts.'+cloud_type+'.databricks.com'
 
 def generateToken(deployment_url):
     from google.oauth2 import service_account
+    import gcsfs
+    import json 
     target_scopes = [deployment_url]
-    source_credentials = service_account.Credentials.from_service_account_file(cred_file_path,scopes=target_scopes)
+    # Reading gcs files with gcsfs
+    gcs_file_system = gcsfs.GCSFileSystem(project="gcp_project_name")
+    gcs_json_path = cred_file_path
+    with gcs_file_system.open(gcs_json_path) as f:
+      json_dict = json.load(f)
+      key = json.dumps(json_dict) 
+    source_credentials = service_account.Credentials.from_service_account_info(json_dict,scopes=target_scopes)
     from google.auth import impersonated_credentials
     from google.auth.transport.requests import AuthorizedSession
 
