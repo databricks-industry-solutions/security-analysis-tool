@@ -277,9 +277,9 @@ Please gather the following information before you start setting up:
  
           * Upload the service account key json file, adjust \<key file name\> 
              ```
-               databricks --profile e2-sat fs cp <key file name>  dbfs:/FileStore/tables/<key file name> --overwrite
+               databricks --profile e2-sat fs cp <key file name>  <key filen> --overwrite
              ``` 
-          * Setup the service account key json file in a secret as dbfs-path-to-json with above value: dbfs:/FileStore/tables/<key file name>
+          * Setup the service account key json file in a secret as dbfs-path-to-json with above value: <key file>
   
              ```
                databricks --profile e2-sat secrets put --scope sat_scope --key dbfs-path-to-json
@@ -306,7 +306,7 @@ Please gather the following information before you start setting up:
             ```
                    #GCP configurations 
                       json_.update({
-                         "service_account_key_file_path":"/dbfs/FileStore/tables/SA_1_key.json",    <- update this value
+                         "service_account_key_file_path":"path/SA_1_key.json",    <- update this value
                          "impersonate_service_account":"xyz-sa-2@project.iam.gserviceaccount.com",  <- update this value
                          "use_mastercreds":False <- don't update this value                                  
                       })
