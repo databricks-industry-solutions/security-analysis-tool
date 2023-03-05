@@ -5,18 +5,20 @@ Step 1: [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/
 Step 2: [Install Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on local machine
 
 Step 3: Git Clone Repo
-  ``` 
-    git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
-   ``` 
+
+```sh
+git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+```
+
 Step 4: Change Directories
 
-  ```
-    cd security-analysis-tool/terraform/<cloud>/
-   ``` 
+```sh
+cd security-analysis-tool/terraform/<cloud>/
+```
 
-Step 5: Set values in template.tfvars file
+Step 5: Set values in ``teraform.tfvars`` file
 
-Using any editor set the values in the template.tfvars file. The descriptions of all the variables are located in the variables.tf file. Once the variables are set you are ready to run Terraform.
+Using any editor set the values in the ``teraform.tfvars`` file. The descriptions of all the variables are located in the `variables.tf` file. Once the variables are set you are ready to run Terraform.
 
 Further Documentation for some of the variables:
 
@@ -26,7 +28,7 @@ Further Documentation for some of the variables:
 
 [workspace_PAT](https://docs.gcp.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
 
-[GCP Specific variables](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md#authentication-information) and navigate to the GCP section
+[GCP Specific variables](../../docs/setup.md#authentication-information) and navigate to the GCP section
 
 ## Run Terraform
 
@@ -34,33 +36,33 @@ Step 6: Terraform [Init](https://developer.hashicorp.com/terraform/cli/commands/
 
 The terraform init command initializes a working directory containing configuration files and installs plugins for required providers.
 
-  ```
-    terraform init -var-file="template.tfvars"
-  ```
+```sh
+terraform init
+```
 
 Step 7: Terraform [Plan](https://developer.hashicorp.com/terraform/cli/commands/plan)
 
 The terraform plan command creates an execution plan, which lets you preview the changes that Terraform plans to make to your infrastructure. By default, when Terraform creates a plan it:
 
-  * Reads the current state of any already-existing remote objects to make sure that the Terraform state is up-to-date.
-  * Compares the current configuration to the prior state and noting any differences.
-  * Proposes a set of change actions that should, if applied, make the remote objects match the configuration.
+* Reads the current state of any already-existing remote objects to make sure that the Terraform state is up-to-date.
+* Compares the current configuration to the prior state and noting any differences.
+* Proposes a set of change actions that should, if applied, make the remote objects match the configuration.
 
-  ```
-    terraform plan -var-file="template.tfvars"
-  ```
+```sh
+terraform plan
+```
 
 Step 8: Terraform [Apply](https://developer.hashicorp.com/terraform/cli/commands/apply)
 
 The terraform apply command executes the actions proposed in a Terraform plan.
 
-  ```
-    terraform apply -var-file="template.tfvars"
-  ```
+```sh
+terraform apply
+```
 
 Step 9: Run Jobs
 
-You now have two jobs (SAT Initializer Notebook & SAT Driver Notebook). Run SAT Initializer Notebook and when it completes run SAT Driver Notebook; SAT Initializer Notebook should only be run once (although you can run it multiple times, it only needs to be run successfully one time), and SAT Driver Notebook can be run periodically (its scheduled to run once every Monday, Wednesday, and Friday). 
+You now have two jobs ("SAT Initializer Notebook" & "SAT Driver Notebook"). Run "SAT Initializer Notebook" and when it completes run "SAT Driver Notebook". "SAT Initializer Notebook" should only be run once (although you can run it multiple times, it only needs to be run successfully one time), and "SAT Driver Notebook" can be run periodically (its scheduled to run once every Monday, Wednesday, and Friday).
 
 Step 10: SAT Dashboard
 
@@ -74,6 +76,6 @@ Supplemental Documentation:
 
 Additional Considerations:
 
-Your jobs may fail if there was a pre-existing secret scope named sat_scope when you run terraform apply. To remedy this, you will need to change the name of your secret scope in secrets.tf, re-run terraform apply, and then navigate to /Repos/<your_email_address>/security-analysis-tool.git/notebooks/Utils/initialize and change the secret scope name in  6 places (3 times in CMD 4 and 3 times in CMD 5). You then can re-run your failed jobs.
+Your jobs may fail if there was a pre-existing secret scope named `sat_scope` when you run `terraform apply`. To remedy this, you will need to change the name of your secret scope in `secrets.tf`, re-run terraform apply, and then navigate to `/Repos/<your_email_address>/security-analysis-tool.git/notebooks/Utils/initialize` and change the secret scope name in  6 places (3 times in CMD 4 and 3 times in CMD 5). You then can re-run your failed jobs.
 
 Congratulations!!! [Please review the setup documentation for the instructions on usage, FAQs and general understanding of SAT setup](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md)

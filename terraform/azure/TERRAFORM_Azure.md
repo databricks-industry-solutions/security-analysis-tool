@@ -5,18 +5,20 @@ Step 1: [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/
 Step 2: [Install Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on local machine
 
 Step 3: Git Clone Repo
-  ``` 
-    git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
-   ``` 
+
+```sh
+git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+``` 
+
 Step 4: Change Directories
 
-  ```
-    cd security-analysis-tool/terraform/<cloud>/
-   ``` 
+```sh
+cd security-analysis-tool/terraform/<cloud>/
+``` 
 
-Step 5: Set values in template.tfvars file
+Step 5: Set values in `teraform.tfvars` file
 
-Using any editor set the values in the template.tfvars file. The descriptions of all the variables are located in the variables.tf file. Once the variables are set you are ready to run Terraform.
+Using any editor set the values in the `teraform.tfvars` file. The descriptions of all the variables are located in the `variables.tf` file. Once the variables are set you are ready to run Terraform.
 
 Further Documentation for some of the variables:
 
@@ -24,20 +26,18 @@ Further Documentation for some of the variables:
 
 [account_console_id](https://learn.microsoft.com/en-us/azure/databricks/administration-guide/account-settings/#locate-your-account-id)
 
-[workspace_PAT](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth#--azure-databricks-personal-access-tokens)
-
 [Azure Specific variables](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md#authentication-information) and navigate to the Azure section
 Note: Please notice the instruction in the above link about adding the service principle with "Reader" role into the subscription level via Access control (IAM) using Role assignments under your subscription, Access control (IAM) section
 
-Step 6: Set up [Azure CLI credentials](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli#sign-in-interactively) for the provider block in provider.tf
+Step 6: Set up [Azure CLI credentials](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli#sign-in-interactively) for the provider block in `provider.tf`
 
 The Azure CLI's default authentication method for logins uses a web browser and access token to sign in.
 
 Run the login command and sign in with your account credentials in the browser. 
 
-  ```
-    az login
-  ```
+```sh
+az login
+```
 
 
 ## Run Terraform
@@ -46,9 +46,9 @@ Step 7: Terraform [Init](https://developer.hashicorp.com/terraform/cli/commands/
 
 The terraform init command initializes a working directory containing configuration files and installs plugins for required providers.
 
-  ```
-    terraform init -var-file="template.tfvars"
-  ```
+```sh
+terraform init
+```
 
 Step 8: Terraform [Plan](https://developer.hashicorp.com/terraform/cli/commands/plan)
 
@@ -58,21 +58,21 @@ The terraform plan command creates an execution plan, which lets you preview the
   * Compares the current configuration to the prior state and noting any differences.
   * Proposes a set of change actions that should, if applied, make the remote objects match the configuration.
 
-  ```
-    terraform plan -var-file="template.tfvars"
-  ```
+```sh
+terraform plan
+```
 
 Step 9: Terraform [Apply](https://developer.hashicorp.com/terraform/cli/commands/apply)
 
 The terraform apply command executes the actions proposed in a Terraform plan.
 
-  ```
-    terraform apply -var-file="template.tfvars"
-  ```
+```sh
+terraform apply
+```
 
 Step 10: Run Jobs
 
-You now have two jobs (SAT Initializer Notebook & SAT Driver Notebook). Run SAT Initializer Notebook and when it completes run SAT Driver Notebook; SAT Initializer Notebook should only be run once (although you can run it multiple times, it only needs to be run successfully one time), and SAT Driver Notebook can be run periodically (its scheduled to run once every Monday, Wednesday, and Friday). 
+You now have two jobs ("SAT Initializer Notebook" & "SAT Driver Notebook"). Run "SAT Initializer Notebook" and when it completes run "SAT Driver Notebook". "SAT Initializer Notebook" should only be run once (although you can run it multiple times, it only needs to be run successfully one time), and "SAT Driver Notebook" can be run periodically (its scheduled to run once every Monday, Wednesday, and Friday). 
 
 Step 11: SAT Dashboard
 
