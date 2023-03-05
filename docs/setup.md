@@ -275,14 +275,14 @@ Please gather the following information before you start setting up:
           <details>
            <summary>GCP instructions</summary>  
  
-          * Upload the service account key json file, adjust \<key file name\> 
+          * [Upload the service account key json file](https://docs.gcp.databricks.com/storage/gcs.html), adjust \<key file name\> 
              ```
                databricks --profile e2-sat fs cp <key file name>  <key filen> --overwrite
              ``` 
-          * Setup the service account key json file in a secret as dbfs-path-to-json with above value: <key file>
+          * Setup the service account key json file in a secret as gs-path-to-json with above value: <key file>
   
              ```
-               databricks --profile e2-sat secrets put --scope sat_scope --key dbfs-path-to-json
+               databricks --profile e2-sat secrets put --scope sat_scope --key gs-path-to-json
              ``` 
           * Setup the impersonate-service-account email address in a secret as impersonate-service-account
   
@@ -296,7 +296,7 @@ Please gather the following information before you start setting up:
              ```
                    #GCP configurations 
                      json_.update({
-                         "service_account_key_file_path": dbutils.secrets.get(scope="sat_scope_arun", key="dbfs-path-to-json"),
+                         "service_account_key_file_path": dbutils.secrets.get(scope="sat_scope_arun", key="gs-path-to-json"),
                          "impersonate_service_account": dbutils.secrets.get(scope="sat_scope_arun", key="impersonate-service-account"),
                          "use_mastercreds":False
                       })
