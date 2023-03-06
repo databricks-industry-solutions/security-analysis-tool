@@ -15,7 +15,7 @@ resource "databricks_token" "pat" {
 
 resource "databricks_secret" "pat" {
   key          = "sat-token-${var.workspace_id}"
-  string_value = data.pat.token_value
+  string_value = databricks_token.pat.token_value
   scope        = databricks_secret_scope.sat.id
 }
 
