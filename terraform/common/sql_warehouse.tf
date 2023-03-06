@@ -7,7 +7,7 @@ resource "databricks_sql_endpoint" "new" {
   tags {
     custom_tags {
       key   = "owner"
-      value = data.databricks_current_user.me.user_name
+      value = data.databricks_current_user.me.alphanumeric
     }
   }
 }
