@@ -20,6 +20,5 @@ account_console_id = ""
 
 ### GCP Specific Variables
 
-gs-path-to-json = ""
-json_file_name = ""
+gs_path_to_json = ""
 impersonate_service_account = ""
