@@ -20,6 +20,5 @@ account_pass = ""
 
 ### GCP Specific Variables
 
-#local_path_to_json = ""
-#json_file_name = ""
+#gs_path_to_json = ""
 #impersonate_service_account = ""
