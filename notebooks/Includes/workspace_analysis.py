@@ -35,7 +35,6 @@ import logging
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
-
 # COMMAND ----------
 
 import requests, json, re
@@ -60,10 +59,7 @@ from core.dbclient import SatDBClient
         
 cloud_type = json_['cloud_type']
 workspace_id = json_['workspace_id']
-
-
-
-
+workspaceId = workspace_id
 
 # COMMAND ----------
 
@@ -102,9 +98,14 @@ def ssh_public_keys(df):
     return (check_id, 0, {})   
 
 if enabled:
-  sqlctrl(workspace_id, '''SELECT *
-    FROM global_temp.clusters
-    WHERE size(ssh_public_keys) > 0  and (cluster_source='UI' OR cluster_source='API') ''', ssh_public_keys)
+    tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    sql=f'''
+          SELECT * 
+          FROM {tbl_name} 
+          WHERE size(ssh_public_keys) > 0  AND 
+            (cluster_source='UI' OR cluster_source='API') AND workspace_id = "{workspaceId}" 
+    '''
+    sqlctrl(workspace_id, sql, ssh_public_keys)
 
 # COMMAND ----------
 
@@ -125,7 +126,13 @@ def ssh_public_keysjob(df):
     return (check_id, 0, {})    
 
 if enabled:
-  sqlctrl(workspace_id, '''select job_id from `global_temp`.`jobs` where settings.new_cluster.ssh_public_keys is not null ''', ssh_public_keysjob)
+    tbl_name = 'global_temp.jobs' + '_' + workspace_id
+    sql =f'''
+      SELECT job_id 
+      FROM  {tbl_name}
+      WHERE settings.new_cluster.ssh_public_keys is not null AND workspace_id = "{workspaceId}" 
+    '''
+    sqlctrl(workspace_id, sql, ssh_public_keys)
 
 # COMMAND ----------
 
@@ -142,9 +149,13 @@ def private_link(df):
     return (check_id, 1, {'workspaceId' : workspaceId})     
 
 if enabled:
-  sqlctrl(workspace_id, f'''SELECT *
-        FROM global_temp.`acctworkspaces`
-        WHERE private_access_settings_id is not null AND workspace_id = "{workspaceId}"''', private_link) 
+    tbl_name = 'global_temp.acctworkspaces' 
+    sql = f'''
+        SELECT *
+        FROM {tbl_name}
+        WHERE private_access_settings_id is not null AND workspace_id = "{workspaceId}"
+    ''' 
+    sqlctrl(workspace_id, sql, private_link) 
 
 # COMMAND ----------
 
@@ -161,10 +172,13 @@ def byopc(df):
     return (check_id, 1,  {'workspaceId': workspaceId})  
 
 if enabled:
-  sql = f'''SELECT *
-      FROM global_temp.`acctworkspaces`
-      WHERE network_id is not null AND workspace_id = {workspaceId}'''
-  sqlctrl(workspace_id, sql, byopc)
+    tbl_name = 'global_temp.acctworkspaces' 
+    sql = f'''
+        SELECT *
+        FROM {tbl_name}
+        WHERE network_id is not null AND workspace_id ="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, byopc)
 
 # COMMAND ----------
 
@@ -183,9 +197,13 @@ def public_access_enabled(df):
     return (check_id, 1, {'workspaceId': workspaceId})   
     
 if enabled: 
-  sqlctrl(workspace_id, '''SELECT label,list_type, enabled
-      FROM global_temp.`ipaccesslist`
-      WHERE enabled=true''', public_access_enabled)
+    tbl_name = 'global_temp.ipaccesslist' + '_' + workspace_id
+    sql=f'''
+      SELECT label,list_type, enabled
+      FROM {tbl_name}
+      WHERE enabled=true
+    '''
+    sqlctrl(workspace_id, sql, public_access_enabled)
 
 # COMMAND ----------
 
@@ -203,9 +221,13 @@ def secure_cluster_connectivity_enabled(df):
     return (check_id, 1, {'workspaceId': workspaceId})   
     
 if enabled: 
-  sqlctrl(workspace_id, f'''SELECT workspace_id
-      FROM global_temp.`acctworkspaces`
-      WHERE enableNoPublicIp = true and workspace_id={workspaceId}''', secure_cluster_connectivity_enabled)
+    tbl_name = 'global_temp.acctworkspaces' + '_' + workspace_id
+    sql = f'''
+          SELECT workspace_id
+          FROM {tbl_name}
+          WHERE enableNoPublicIp = true and workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, secure_cluster_connectivity_enabled)
 
 # COMMAND ----------
 
@@ -312,7 +334,14 @@ def token_rule(df):
       return (check_id, 0, {})   
     
 if enabled:
-  sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value}) OR expiry_time = -1''', token_rule)
+    tbl_name = 'global_temp.tokens' + '_' + workspace_id
+    sql = f'''
+            SELECT `comment`, `created_by_username`, `token_id` 
+            FROM {tbl_name} 
+              WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value}) OR 
+                  expiry_time = -1 AND workspace_id = "{workspaceId}" 
+    '''
+    sqlctrl(workspace_id, sql, token_rule)
 
 # COMMAND ----------
 
@@ -331,7 +360,14 @@ def token_rule(df):
       return (check_id, 0, {})   
     
 if enabled:
-  sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) <= {expiry_limit_evaluation_value}) and expiry_time != -1''', token_rule)
+    tbl_name = 'global_temp.tokens' + '_' + workspace_id
+    sql = f'''
+        SELECT `comment`, `created_by_username`, `token_id` 
+        FROM {tbl_name} 
+        WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) <= {expiry_limit_evaluation_value}) AND 
+            expiry_time != -1 AND workspace_id = "{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, token_rule)
 
 # COMMAND ----------
 
@@ -348,15 +384,29 @@ def token_max_life_rule(df):
       return (check_id, 1, tokens_dict )
   else:
       return (check_id, 0, {})   
-    
+
+
 if enabled:
     # get maxTokenLifetimeDays  and check if it is set 
-    df = spark.sql('select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"')
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+            SELECT * 
+            FROM {tbl_name} 
+            WHERE name="maxTokenLifetimeDays"
+    '''
+    df = spark.sql(sql)
     if df.count()>0:        
         dict_elems = df.collect()[0]
         expiry_limit_evaluation_value = dict_elems['value']
-    if expiry_limit_evaluation_value is not None and  expiry_limit_evaluation_value != "null" and expiry_limit_evaluation_value != "false" and int(expiry_limit_evaluation_value) > 0:
-        sqlctrl(workspace_id, f'''SELECT `comment`, `created_by_username`, `token_id` FROM `global_temp`.`tokens` WHERE datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value} OR expiry_time = -1''', token_max_life_rule)
+    if expiry_limit_evaluation_value is not None and expiry_limit_evaluation_value != "null" and  expiry_limit_evaluation_value != "false" and int(expiry_limit_evaluation_value) > 0:
+        tbl_name = 'global_temp.tokens' + '_' + workspace_id
+        sql = f'''
+            SELECT `comment`, `created_by_username`, `token_id` 
+            FROM {tbl_name} 
+            WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value} OR 
+                expiry_time = -1) AND workspace_id="{workspaceId}"
+        '''
+        sqlctrl(workspace_id, sql, token_max_life_rule)
 
 # COMMAND ----------
 
@@ -376,8 +426,13 @@ def admin_rule(df):
     return (check_id, 0, {})
 
 if enabled:
-  sqlctrl(workspace_id, '''select explode(members.display) as Admins 
-               from global_temp.groups where displayname="admins"''', admin_rule)
+    tbl_name = 'global_temp.groups' + '_' + workspace_id
+    sql = f'''
+        SELECT explode(members.display) as Admins 
+        FROM {tbl_name} 
+        WHERE displayname="admins" AND workspace_id = "{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, admin_rule)
 
 # COMMAND ----------
 
@@ -391,8 +446,12 @@ def use_service_principals(df):
     return (check_id, 1, {'SPs':'no serviceprincipals found'})
 
 if enabled:
-   sqlctrl(workspace_id, '''select displayName as serviceprincipals 
-               from global_temp.serviceprincipals ''', use_service_principals)
+    tbl_name = 'global_temp.serviceprincipals' + '_' + workspace_id
+    sql=f'''
+         SELECT displayName as serviceprincipals 
+         FROM global_temp.serviceprincipals WHERE workspace_id = "{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, use_service_principals)
 
 # COMMAND ----------
 
@@ -418,7 +477,13 @@ def secrets_rule(df):
     return (check_id, 1, {})   
 
 if enabled:
-  sqlctrl(workspace_id, '''select count(*) from `global_temp`.`secretslist`''', secrets_rule)
+    tbl_name = 'global_temp.secretslist' + '_' + workspace_id
+    sql = f'''
+               SELECT count(*) 
+               FROM {tbl_name}
+               WHERE workspace_id = "{workspaceId}"
+    ''' 
+    sqlctrl(workspace_id,sql, secrets_rule)
 
 # COMMAND ----------
 
@@ -442,9 +507,14 @@ def local_disk_encryption(df):
     return (check_id, 0, {})   
   
 if enabled:
-  sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name
-    FROM global_temp.clusters
-    WHERE enable_local_disk_encryption=False and (cluster_source='UI' OR cluster_source='API') ''', local_disk_encryption)
+    tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    sql = f'''
+        SELECT cluster_id, cluster_name
+        FROM {tbl_name}
+        WHERE enable_local_disk_encryption=False and (cluster_source='UI' OR cluster_source='API') AND
+            workspace_id = "{workspaceId}"
+        '''
+    sqlctrl(workspace_id, sql, local_disk_encryption)
 
 # COMMAND ----------
 
@@ -463,9 +533,13 @@ def byok_check(df):
     return (check_id, 0, {})   
   
 if enabled:
-  sqlctrl(workspace_id, f'''SELECT workspace_id
-      FROM global_temp.`acctworkspaces`
-      WHERE (storage_customer_managed_key_id is null and managed_services_customer_managed_key_id is null) and workspace_id={workspaceId}''', byok_check)
+    tbl_name = 'global_temp.acctworkspaces' + '_' + workspace_id
+    sql = f'''
+        SELECT workspace_id
+          FROM global_temp.`acctworkspaces`
+          WHERE (storage_customer_managed_key_id is null and managed_services_customer_managed_key_id is null) and workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, byok_check)
 
 # COMMAND ----------
 
@@ -512,9 +586,13 @@ def cluster_policy_check(df):
     return (check_id, 0,  {})   
   
 if enabled:  
-    sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name, policy_id
-      FROM global_temp.clusters
-      WHERE policy_id is null  and (cluster_source='UI' OR cluster_source='API') ''', cluster_policy_check)
+    tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    sql = f'''
+        SELECT cluster_id, cluster_name, policy_id
+        FROM {tbl_name}
+        WHERE policy_id is null  and (cluster_source='UI' OR cluster_source='API') AND workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, cluster_policy_check)
 
 # COMMAND ----------
 
@@ -538,9 +616,13 @@ def ctags_check(df):
     return (check_id, 0, {})   
   
 if enabled: 
-  sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name
-      FROM global_temp.`clusters`
-      WHERE custom_tags is null and (cluster_source='UI' OR cluster_source='API') ''', ctags_check)
+    tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    sql = f'''
+        SELECT cluster_id, cluster_name
+          FROM {tbl_name}
+          WHERE custom_tags is null and (cluster_source='UI' OR cluster_source='API') AND workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, ctags_check)
 
 # COMMAND ----------
 
@@ -560,9 +642,13 @@ def ctags_checkjobs(df):
   
 
 if enabled:  
-   sqlctrl(workspace_id, '''SELECT job_id
-      FROM global_temp.`jobs`
-      WHERE settings.new_cluster.custom_tags is null''', ctags_checkjobs)
+    tbl_name = 'global_temp.jobs' + '_' + workspace_id
+    sql = f'''
+        SELECT job_id
+          FROM {tbl_name}
+          WHERE settings.new_cluster.custom_tags is null AND workspace_id="{workspaceId}"
+      '''
+    sqlctrl(workspace_id, sql, ctags_checkjobs)
 
 # COMMAND ----------
 
@@ -585,9 +671,13 @@ def logconf_check(df):
     return (check_id, 0, {})   
   
 if enabled:
-    sqlctrl(workspace_id, '''SELECT cluster_id, cluster_name
-      FROM global_temp.`clusters`
-      WHERE cluster_log_conf is null  and (cluster_source='UI' OR cluster_source='API') ''', logconf_check)
+    tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    sql=f'''
+      SELECT cluster_id, cluster_name
+      FROM {tbl_name}
+      WHERE cluster_log_conf is null  and (cluster_source='UI' OR cluster_source='API') AND workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, logconf_check)
 
 # COMMAND ----------
 
@@ -609,8 +699,14 @@ def logconf_check_job(df):
   else:
     return (check_id, 0, {})   
   
-if enabled:   
-  sqlctrl(workspace_id, '''select job_id from global_temp.jobs where settings.new_cluster.cluster_log_conf is null''', logconf_check_job)
+if enabled:  
+    tbl_name = 'global_temp.jobs' + '_' + workspace_id
+    sql = f'''
+        SELECT job_id 
+        FROM {tbl_name} 
+        WHERE settings.new_cluster.cluster_log_conf is null AND workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, logconf_check_job)
 
 # COMMAND ----------
 
@@ -628,8 +724,13 @@ def dbfs_check(df):
     return (check_id, 0, {})   
   
 if enabled:    
-  sqlctrl(workspace_id, '''SELECT path
-      FROM global_temp.`dbfssettingsdirs`''', dbfs_check)
+    tbl_name = 'global_temp.dbfssettingsdirs' + '_' + workspace_id
+    sql = f'''
+        SELECT path
+          FROM {tbl_name}
+          WHERE workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, dbfs_check)
 
 # COMMAND ----------
 
@@ -647,9 +748,14 @@ def dbfs_mnt_check(df):
   else:
     return (check_id, 0, {})   
   
-if enabled:      
-  sqlctrl(workspace_id, '''SELECT path
-      FROM global_temp.`dbfssettingsmounts`''', dbfs_mnt_check)
+if enabled:     
+    tbl_name = 'global_temp.dbfssettingsdirs' + '_' + workspace_id
+    sql =f'''
+        SELECT path
+        FROM {tbl_name}
+          WHERE workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, dbfs_mnt_check)
 
 # COMMAND ----------
 
@@ -666,10 +772,14 @@ def initscr_check(df):
   else:
     return (check_id,0, {})   
   
-if enabled:       
-  sqlctrl(workspace_id, '''SELECT name, created_by, enabled
-      FROM `global_temp`.`globalscripts`''', initscr_check)
-
+if enabled:   
+    tbl_name = 'global_temp.globalscripts' + '_' + workspace_id
+    sql = f'''
+        SELECT name, created_by, enabled
+          FROM {tbl_name}
+          WHERE workspace_id="{workspaceId}"
+    ''' 
+    sqlctrl(workspace_id, sql, initscr_check)
 
 # COMMAND ----------
 
@@ -687,10 +797,14 @@ def pool_check(df):
   else:
     return (check_id, 0, {}) 
   
-if enabled:       
-    sqlctrl(workspace_id, '''SELECT instance_pool_name, instance_pool_id
-      FROM `global_temp`.`pools` where custom_tags is null''', pool_check)
-
+if enabled:
+    tbl_name = 'global_temp.pools' + '_' + workspace_id
+    sql = f'''
+        SELECT instance_pool_name, instance_pool_id
+          FROM {tbl_name} 
+            where custom_tags is null AND workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, pool_check)
 
 # COMMAND ----------
 
@@ -707,10 +821,14 @@ def mcr_check(df):
   else:
     return (check_id, 0, {})   
   
-if enabled:         
-    sqlctrl(workspace_id, f'''SELECT job_id, settings.max_concurrent_runs
-      FROM `global_temp`.`jobs` where settings.max_concurrent_runs >= {max_concurrent_runs_evaluation_value}''', mcr_check)
-
+if enabled:  
+    tbl_name = 'global_temp.jobs' + '_' + workspace_id
+    sql = f'''
+        SELECT job_id, settings.max_concurrent_runs
+        FROM {tbl_name}
+        WHERE settings.max_concurrent_runs >= {max_concurrent_runs_evaluation_value} AND workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, mcr_check)
 
 # COMMAND ----------
 
@@ -727,11 +845,15 @@ def lib_check(df):
   else:
     return (check_id, 0, {})   
   
-if enabled:          
-  sqlctrl(workspace_id, '''select * from
-    (select cluster_id, explode(library_statuses.is_library_for_all_clusters) as glob_lib from `global_temp`.`libraries`)a
-    where glob_lib=true''', lib_check)
-
+if enabled:
+    tbl_name = 'global_temp.libraries' + '_' + workspace_id
+    sql = f'''
+        SELECT * 
+        FROM
+            (SELECT cluster_id, explode(library_statuses.is_library_for_all_clusters) as glob_lib FROM {tbl_name})a
+        WHERE glob_lib=true AND workspace_id="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, lib_check) 
 
 # COMMAND ----------
 
@@ -750,10 +872,16 @@ def cc_check(df):
     return (check_id, 0, {})   
   
 if enabled:  
-  sqlctrl(workspace_id, '''select userName, perm from 
-     (select userName, explode(entitlements.value) as perm  from `global_temp`.`users` ) a
-     where perm in ('allow-cluster-create', 'allow-instance-pool-create')''', cc_check)
-
+    tbl_name = 'global_temp.users' + '_' + workspace_id
+    sql=f'''
+        SELECT userName, perm 
+        FROM 
+         (SELECT userName, explode(entitlements.value) as perm  
+          FROM {tbl_name} 
+          WHERE workspace_id="{workspaceId}") a
+        WHERE perm in ('allow-cluster-create', 'allow-instance-pool-create')     
+    '''
+    sqlctrl(workspace_id, sql, cc_check)
 
 # COMMAND ----------
 
@@ -773,10 +901,13 @@ def log_check(df):
     return (check_id, 1, {})   
 
 if enabled:   
-    if cloud_type =='azure':
-        sqlctrl(workspace_id, f'''select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED" and workspace_id ="{workspaceId}"''', log_check)
-    else:    
-        sqlctrl(workspace_id, '''select config_name, config_id from  `global_temp`.`acctlogdelivery` where log_type="AUDIT_LOGS" and status="ENABLED"''', log_check)
+    tbl_name = 'global_temp.acctlogdelivery' + '_' + workspace_id
+    sql=f'''
+        SELECT config_name, config_id from  
+        FROM {tbl_name} 
+        WHERE log_type="AUDIT_LOGS" and status="ENABLED" and workspace_id ="{workspaceId}"
+        '''
+    sqlctrl(workspace_id, sql, log_check)
 
 # COMMAND ----------
 
@@ -794,7 +925,16 @@ def time_check(df):
   return (check_id, 0, {})   
 
 if enabled:   
-  sqlctrl(workspace_id, '''select cluster_id, current_time, last_restart, datediff(current_time,last_restart) as diff from (select cluster_id,cluster_name,start_time,last_restarted_time, greatest(start_time,last_restarted_time) as last_start, to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000), "yyyy-MM-dd hh:mm:ss") as last_restart , current_timestamp() as current_time from global_temp.clusters where state="RUNNING" and (cluster_source='UI' OR cluster_source='API')) ''', time_check)
+    tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    sql=f'''
+        SELECT cluster_id, current_time, last_restart, datediff(current_time,last_restart) as diff 
+        FROM (SELECT cluster_id,cluster_name,start_time,last_restarted_time, greatest(start_time,last_restarted_time) as last_start,   
+                to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000), "yyyy-MM-dd hh:mm:ss") as last_restart , current_timestamp() as 
+                current_time 
+              FROM {tbl_name} 
+              WHERE state="RUNNING" and (cluster_source='UI' OR cluster_source='API') and workspace_id ="{workspaceId}") 
+    '''
+    sqlctrl(workspace_id, sql, time_check)
 
 # COMMAND ----------
 
@@ -811,7 +951,12 @@ def versions_check(df):
   return (check_id, 0, {})   
 
 if enabled:    
-  sqlctrl(workspace_id, '''select cluster_id, spark_version from global_temp.`clusters` where spark_version not in (select key from global_temp.`spark_versions`)''', versions_check)
+    tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    sql=f'''SELECT cluster_id, spark_version 
+          FROM {tbl_name}
+          WHERE spark_version not in (select key from global_temp.`spark_versions`) and workspace_id ="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, versions_check)
 
 # COMMAND ----------
 
@@ -829,7 +974,15 @@ def uc_check(df):
   return (check_id, 0, {})   
 
 if enabled:    
-  sqlctrl(workspace_id, '''select cluster_id, cluster_name, data_security_mode from global_temp.clusters where (cluster_source='UI' OR cluster_source='API') and (data_security_mode not in ('USER_ISOLATION', 'SINGLE_USER') or data_security_mode is null)''', uc_check)
+    tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    sql=f'''
+        SELECT cluster_id, cluster_name, data_security_mode 
+        FROM {tbl_name} 
+        WHERE (cluster_source='UI' OR cluster_source='API') 
+            and (data_security_mode not in ('USER_ISOLATION', 'SINGLE_USER') or data_security_mode is null)
+            and workspace_id ="{workspaceId}"
+    '''
+    sqlctrl(workspace_id, sql, uc_check)
 
 # COMMAND ----------
 
