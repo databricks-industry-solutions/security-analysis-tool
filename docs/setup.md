@@ -148,9 +148,10 @@ Please gather the following information before you start setting up:
        <summary>GCP instructions</summary>  
 
         We will be using the instructions in [Authenticate to workspace or account APIs with a Google ID token](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id.html).
-         *  Follow the document above and complete all steps in the [Step 1](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id.html#step-1-create-two-service-accounts) as detailed in the document.
-         *  Notedown the name and location of service account key json file. (You will need this in the step below)
-         *  Notedown the impersonate-service-account email address. (You will need this in the step below)
+        
+        *  Follow the document above and complete all steps in the [Step 1](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id.html#step-1-create-two-service-accounts) as detailed in the document.
+        *  Notedown the name and location of service account key json file. (You will need this in the steps below)
+        *  Notedown the impersonate-service-account email address. (You will need this in the step below)
 
       </details>  
  
@@ -275,10 +276,10 @@ Please gather the following information before you start setting up:
           <details>
            <summary>GCP instructions</summary>  
  
-          * [Upload the service account key json file](https://docs.gcp.databricks.com/storage/gcs.html), adjust \<key file name\> 
-             ```
-               databricks --profile e2-sat fs cp <key file name>  <key filen> --overwrite
-             ``` 
+          * Upload the service account key json file to your [GCS bucket](https://docs.gcp.databricks.com/storage/gcs.html) from the [Authentication information](#authentication-information) above. Make sure to use the impersonate-service-account email address that you used above for the service account on the bucket, copy the "gsutil URI" ("File path to this resource in Cloud Storage") path.
+            
+            <img src="./images/gs_path_to_json.png" width="70%" height="70%">
+            
           * Setup the service account key json file in a secret as gs-path-to-json with above value: <key file>
   
              ```
@@ -306,25 +307,32 @@ Please gather the following information before you start setting up:
             ```
                    #GCP configurations 
                       json_.update({
-                         "service_account_key_file_path":"path/SA_1_key.json",    <- update this value
+                         "service_account_key_file_path":"gs://sat_dev/key/SA-1-key.json",    <- update this value
                          "impersonate_service_account":"xyz-sa-2@project.iam.gserviceaccount.com",  <- update this value
                          "use_mastercreds":False <- don't update this value                                  
                       })
              ```                            
                            
-           *  Follow the instructions in Step 4 of [Authenticate to workspace or account APIs with a Google ID token]([https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-4-add-the-service-account-as-a-workspace-or-account-user)) as detailed in the document for each workspce you would like to analyze and the account to add your main service account (SA-2).
+          *  Follow the instructions in Step 4 of [Authenticate to workspace or account APIs with a Google ID token]([https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-4-add-the-service-account-as-a-workspace-or-account-user)) as detailed in the document for each workspce you would like to analyze and the account to add your main service account (SA-2).
 
            <img src="./images/gcp_service_account_workspaces_api.png" width="70%" height="70%">
 
            <img src="./images/gcp_service_account_acounts_api.png" width="70%" height="70%">
+                           
+          *  Make sure the cluster you configured to run the analysis has ability to read the "service account key json file" by adding the Google service account under the "Advanced Options" of the cluster to the "Google Service Account" value you noted.       
+                           
+           <img src="./images/gs-path-to-json_sa.png" width="70%" height="70%">   
+                           
           </details>
- 
+                           
+          
+           
 ## Setup option 1 (Simple and recommended method)
                                                            
   (Estimated time to complete these steps: 15 - 30 mins, varies by number of workspaces in the account)  
  This method uses admin/service principle credentials (configured in the Step 6 of Prerequisites section) to call workspace APIs.   
                                                            
- Make sure both SAT job cluster (Refer to Prerequisites Step 2 ) and Warehouse (Refer to Prerequisites Step 3) are running.                                                                   
+ Make sure both SAT job cluster (Refer to Prerequisites Step 2 ) and Warehouse (Refer to Prerequisites Step 3) are running.                                                                    
 <details>
   <summary>Setup instructions</summary>                                                                          
  Following is the one time easy setup to get your workspaces setup with the SAT:
