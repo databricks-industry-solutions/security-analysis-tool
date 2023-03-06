@@ -20,6 +20,6 @@ account_console_id = ""
 
 ### GCP Specific Variables
 
-local_path_to_json = ""
+gs-path-to-json = ""
 json_file_name = ""
 impersonate_service_account = ""
