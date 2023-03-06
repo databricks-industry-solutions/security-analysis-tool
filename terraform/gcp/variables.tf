@@ -52,13 +52,9 @@ variable "sqlw_id" {
 
 ### GCP Specific Variables
 
-variable "gs-path-to-json" {
+variable "gs_path_to_json" {
   description = "File path to this resource in Cloud Storage"
-  default = "gs://<bucket>/<folder>/"
-}
-
-variable "json_file_name" {
-  description = "Service Account Key File name (e.g. SA_1_key.json)"
+  default = "gs://<bucket>/<folder>/<file>.json"
 }
 
 variable "impersonate_service_account" {
