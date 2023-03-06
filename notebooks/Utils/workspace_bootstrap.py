@@ -43,6 +43,7 @@ loggr.info('-----------------')
 
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
+workspace_id = json_['workspace_id']
 
 # COMMAND ----------
 
@@ -103,12 +104,12 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('clusters', cluster_client.get_cluster_list, alive=False)
+bootstrap('clusters'+ '_' + workspace_id, cluster_client.get_cluster_list, alive=False)
 #this returns job, api and ui clusters
 
 # COMMAND ----------
 
-bootstrap('spark_versions', cluster_client.get_spark_versions)
+bootstrap('spark_versions'+ '_' + workspace_id, cluster_client.get_spark_versions)
 
 # COMMAND ----------
 
@@ -125,7 +126,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('endpoints', db_sql_client.get_sqlendpoint_list)
+bootstrap('endpoints' + '_' + workspace_id, db_sql_client.get_sqlendpoint_list)
 
 # COMMAND ----------
 
@@ -142,7 +143,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('ipaccesslist', ip_access_client.get_ipaccess_list)
+bootstrap('ipaccesslist'+ '_' + workspace_id, ip_access_client.get_ipaccess_list)
 
 # COMMAND ----------
 
@@ -161,11 +162,11 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('jobs', jobs_client.get_jobs_list)
+bootstrap('jobs'+ '_' + workspace_id, jobs_client.get_jobs_list)
 
 # COMMAND ----------
 
-bootstrap('job_runs', job_runs_client.get_jobruns_list)
+bootstrap('job_runs'+ '_' + workspace_id, job_runs_client.get_jobruns_list)
 
 # COMMAND ----------
 
@@ -182,7 +183,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('policies', policies_client.get_policies_list)
+bootstrap('policies'+ '_' + workspace_id, policies_client.get_policies_list)
 
 # COMMAND ----------
 
@@ -199,7 +200,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('pools', pools_client.get_pools_list)
+bootstrap('pools'+ '_' + workspace_id, pools_client.get_pools_list)
 
 # COMMAND ----------
 
@@ -216,7 +217,7 @@ except:
 
 # COMMAND ----------
 
-bootstrap('repos', repos_client.get_repos_list)
+bootstrap('repos'+ '_' + workspace_id, repos_client.get_repos_list)
 
 # COMMAND ----------
 
@@ -233,7 +234,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('tokens', tokens_client.get_tokens_list)
+bootstrap('tokens'+ '_' + workspace_id, tokens_client.get_tokens_list)
 
 # COMMAND ----------
 
@@ -255,7 +256,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('secretscope', secrets_client.get_secret_scopes_list)
+bootstrap('secretscope'+ '_' + workspace_id, secrets_client.get_secret_scopes_list)
 
 # COMMAND ----------
 
@@ -264,10 +265,12 @@ bootstrap('secretscope', secrets_client.get_secret_scopes_list)
 
 # COMMAND ----------
 
-df = spark.sql('select * from `global_temp`.`secretscope`')
+tbl_name = 'global_temp.secretscope' + '_' + workspace_id
+sql = f'''select * from {tbl_name} '''
+df = spark.sql(sql)
 #vList = df.rdd.map(lambda x: x['name']).collect()
 vList=df.collect()
-bootstrap('secretslist', secrets_client.get_secrets, scope_list=vList)
+bootstrap('secretslist'+ '_' + workspace_id, secrets_client.get_secrets, scope_list=vList)
 
 # COMMAND ----------
 
@@ -284,15 +287,15 @@ except:
 
 # COMMAND ----------
 
-bootstrap('groups', scim_client.get_groups)
+bootstrap('groups'+ '_' + workspace_id, scim_client.get_groups)
 
 # COMMAND ----------
 
-bootstrap('users', scim_client.get_users)
+bootstrap('users'+ '_' + workspace_id, scim_client.get_users)
 
 # COMMAND ----------
 
-bootstrap('serviceprincipals', scim_client.get_serviceprincipals)
+bootstrap('serviceprincipals'+ '_' + workspace_id, scim_client.get_serviceprincipals)
 
 # COMMAND ----------
 
@@ -310,11 +313,11 @@ except:
 
 # COMMAND ----------
 
-bootstrap('mlflowexperiments', mlflow_client.get_experiments_list)
+bootstrap('mlflowexperiments'+ '_' + workspace_id, mlflow_client.get_experiments_list)
 
 # COMMAND ----------
 
-bootstrap('mlflowmodels', mlflow_client.get_registered_models)
+bootstrap('mlflowmodels'+ '_' + workspace_id, mlflow_client.get_registered_models)
 
 # COMMAND ----------
 
@@ -331,7 +334,7 @@ except:
 
 # COMMAND ----------
 
-bootstrap('workspacesettings', ws_client.get_wssettings_list)
+bootstrap('workspacesettings'+ '_' + workspace_id, ws_client.get_wssettings_list)
 
 # COMMAND ----------
 
@@ -348,11 +351,11 @@ except:
 
 # COMMAND ----------
 
-bootstrap('dbfssettingsdirs', db_client.get_dbfs_directories, path='/user/hive/warehouse/')
+bootstrap('dbfssettingsdirs'+ '_' + workspace_id, db_client.get_dbfs_directories, path='/user/hive/warehouse/')
 
 # COMMAND ----------
 
-bootstrap('dbfssettingsmounts', db_client.get_dbfs_mounts)
+bootstrap('dbfssettingsmounts'+ '_' + workspace_id, db_client.get_dbfs_mounts)
 
 # COMMAND ----------
 
@@ -370,7 +373,7 @@ except:
 
 # COMMAND ----------
 
-bootstrap('globalscripts', init_scripts_client.get_allglobalinitscripts_list)
+bootstrap('globalscripts'+ '_' + workspace_id, init_scripts_client.get_allglobalinitscripts_list)
 
 # COMMAND ----------
 
@@ -388,7 +391,7 @@ except:
 
 # COMMAND ----------
 
-bootstrap('libraries', lib_client.get_libraries_status_list)
+bootstrap('libraries'+ '_' + workspace_id, lib_client.get_libraries_status_list)
 
 # COMMAND ----------
 
