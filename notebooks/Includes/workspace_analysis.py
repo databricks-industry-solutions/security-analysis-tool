@@ -221,7 +221,7 @@ def secure_cluster_connectivity_enabled(df):
         return (check_id, 1, {'workspaceId': workspaceId})   
     
 if enabled: 
-    tbl_name = 'global_temp.acctworkspaces' + '_' + workspace_id
+    tbl_name = 'global_temp.acctworkspaces' 
     sql = f'''
           SELECT workspace_id
           FROM {tbl_name}
@@ -452,7 +452,8 @@ if enabled:
     tbl_name = 'global_temp.serviceprincipals' + '_' + workspace_id
     sql=f'''
          SELECT displayName as serviceprincipals 
-         FROM global_temp.serviceprincipals WHERE workspace_id = "{workspaceId}"
+         FROM {tbl_name} 
+         WHERE workspace_id = "{workspaceId}"
     '''
     sqlctrl(workspace_id, sql, use_service_principals)
 
@@ -534,12 +535,12 @@ def byok_check(df):
         return (check_id, 1, ws_dict)
     else:
         return (check_id, 0, {})   
-  
+
 if enabled:
-    tbl_name = 'global_temp.acctworkspaces' + '_' + workspace_id
+    tbl_name = 'global_temp.acctworkspaces' 
     sql = f'''
         SELECT workspace_id
-          FROM global_temp.`acctworkspaces`
+          FROM {tbl_name}
           WHERE (storage_customer_managed_key_id is null and managed_services_customer_managed_key_id is null) and workspace_id="{workspaceId}"
     '''
     sqlctrl(workspace_id, sql, byok_check)
@@ -913,7 +914,7 @@ def log_check(df):
         return (check_id, 1, {})   
 
 if enabled:   
-    tbl_name = 'global_temp.acctlogdelivery' + '_' + workspace_id
+    tbl_name = 'global_temp.acctlogdelivery' 
     sql=f'''
         SELECT config_name, config_id from  
         FROM {tbl_name} 
@@ -964,9 +965,10 @@ def versions_check(df):
 
 if enabled:    
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
+    tbl_name_inner = global_temp.spark_versions' + '_' + workspace_id
     sql=f'''SELECT cluster_id, spark_version 
           FROM {tbl_name}
-          WHERE spark_version not in (select key from global_temp.`spark_versions`) and workspace_id ="{workspaceId}"
+          WHERE spark_version not in (select key from {tbl_name_inner}) and workspace_id ="{workspaceId}"
     '''
     sqlctrl(workspace_id, sql, versions_check)
 
