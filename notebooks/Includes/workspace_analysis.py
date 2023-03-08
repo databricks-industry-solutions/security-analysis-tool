@@ -88,14 +88,14 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 #ssh_public_keys
 def ssh_public_keys(df):
-  if df is not None and not df.rdd.isEmpty():
-    df = df.rdd.map(lambda x: (x['cluster_id'], re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name'])  
-    clusters = df.collect()
-    cluster_dict = {i.cluster_id:i.cluster_name for i in clusters}
-    print(cluster_dict)
-    return (check_id, 1, cluster_dict)
-  else:
-    return (check_id, 0, {})   
+    if df is not None and not df.rdd.isEmpty():
+        df = df.rdd.map(lambda x: (x['cluster_id'], re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name'])  
+        clusters = df.collect()
+        cluster_dict = {i.cluster_id:i.cluster_name for i in clusters}
+        print(cluster_dict)
+        return (check_id, 1, cluster_dict)
+    else:
+        return (check_id, 0, {})   
 
 if enabled:
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
@@ -115,15 +115,15 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 #ssh_public_keys
 def ssh_public_keysjob(df):
-  if df is not None and len(df.columns)==0:
-    return (check_id, 0, {'ssh':'no clusters have ssh public key'})
-  elif df is not None and not df.rdd.isEmpty():
-    jobcluster = df.collect()
-    jobcluster_dict = {i.job_id:"ssh_key_present" for i in jobcluster}    
-    print(jobcluster_dict)
-    return (check_id, 1, jobcluster_dict)
-  else:
-    return (check_id, 0, {})    
+    if df is not None and len(df.columns)==0:
+        return (check_id, 0, {'ssh':'no clusters have ssh public key'})
+    elif df is not None and not df.rdd.isEmpty():
+        jobcluster = df.collect()
+        jobcluster_dict = {i.job_id:"ssh_key_present" for i in jobcluster}    
+        print(jobcluster_dict)
+        return (check_id, 1, jobcluster_dict)
+    else:
+        return (check_id, 0, {})    
 
 if enabled:
     tbl_name = 'global_temp.jobs' + '_' + workspace_id
@@ -143,10 +143,10 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 workspaceId = workspace_id
 
 def private_link(df):
-  if df is not None and not df.rdd.isEmpty():
-    return (check_id, 0, {})
-  else:
-    return (check_id, 1, {'workspaceId' : workspaceId})     
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {})
+    else:
+        return (check_id, 1, {'workspaceId' : workspaceId})     
 
 if enabled:
     tbl_name = 'global_temp.acctworkspaces' 
@@ -166,10 +166,10 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 workspaceId = workspace_id
 
 def byopc(df):
-  if df is not None and not df.rdd.isEmpty():
-    return (check_id, 0, {})
-  else:
-    return (check_id, 1,  {'workspaceId': workspaceId})  
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {})
+    else:
+        return (check_id, 1,  {'workspaceId': workspaceId})  
 
 if enabled:
     tbl_name = 'global_temp.acctworkspaces' 
@@ -189,12 +189,12 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 workspaceId = workspace_id
 
 def public_access_enabled(df):
-  if df is not None and len(df.columns)==0:
-    return (check_id, 1, {'workspaceId': workspaceId})    
-  if df is not None and not df.rdd.isEmpty():
-    return (check_id, 0, {})
-  else:
-    return (check_id, 1, {'workspaceId': workspaceId})   
+    if df is not None and len(df.columns)==0:
+        return (check_id, 1, {'workspaceId': workspaceId})    
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {})
+    else:
+        return (check_id, 1, {'workspaceId': workspaceId})   
     
 if enabled: 
     tbl_name = 'global_temp.ipaccesslist' + '_' + workspace_id
@@ -213,12 +213,12 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 workspaceId = workspace_id
 
 def secure_cluster_connectivity_enabled(df):
-  if df is not None and len(df.columns)==0:
-    return (check_id, 1, {'workspaceId': workspaceId})    
-  if df is not None and not df.rdd.isEmpty():
-    return (check_id, 0, {})
-  else:
-    return (check_id, 1, {'workspaceId': workspaceId})   
+    if df is not None and len(df.columns)==0:
+        return (check_id, 1, {'workspaceId': workspaceId})    
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {})
+    else:
+        return (check_id, 1, {'workspaceId': workspaceId})   
     
 if enabled: 
     tbl_name = 'global_temp.acctworkspaces' + '_' + workspace_id
@@ -238,12 +238,13 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 workspaceId = workspace_id
 
 def vpc_peering(df):
-  if vpc_peering:
-    return (check_id, 0,  {})
-  else:
-    return (check_id, 1, {'workspaceId': workspaceId})
-  
-#The 1=1 logic is intentional to get the human input as an answer for this check 
+    if vpc_peering:
+        return (check_id, 0,  {})
+    else:
+        return (check_id, 1, {'workspaceId': workspaceId})
+
+    
+# The 1=1 logic is intentional to get the human input as an answer for this check 
 if enabled:  
     sqlctrl(workspace_id, '''select * where 1=1''', vpc_peering) 
 
@@ -263,14 +264,15 @@ check_id='18' #SSO
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def sso_rule(df):
-  if sso:
-      return (check_id, 0, {})
-  else:
-      return (check_id, 1, {'workspaceId': workspaceId})
+    if sso:
+        return (check_id, 0, {})
+    else:
+        return (check_id, 1, {'workspaceId': workspaceId})
     
-#The 1=1 logic is intentional to get the human input as an answer for this check
+
+    #The 1=1 logic is intentional to get the human input as an answer for this check
 if enabled:
-   sqlctrl(workspace_id, '''select * where 1=1''', sso_rule) 
+    sqlctrl(workspace_id, '''select * where 1=1''', sso_rule) 
 
 # COMMAND ----------
 
@@ -283,6 +285,7 @@ def scim_rule(df):
         return (check_id, 0,  {})
     else:
         return (check_id, 1, {'workspaceId': workspaceId})
+
 #The 1=1 logic is intentional to get the human input as an answer for this check
 if enabled:
    sqlctrl(workspace_id, '''select * where 1=1''', scim_rule) 
@@ -294,14 +297,14 @@ check_id='20' #Table Access Control
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def rbac_rule(df):
-  if table_access_control:
-      return (check_id, 0,  {})
-  else:
-      return (check_id, 1, {'workspaceId': workspaceId})
+    if table_access_control:
+        return (check_id, 0,  {})
+    else:
+        return (check_id, 1, {'workspaceId': workspaceId})
 
 #The 1=1 logic is intentional to get the human input as an answer for this check
 if enabled:
-   sqlctrl(workspace_id, '''select * where 1=1''', rbac_rule) 
+    sqlctrl(workspace_id, '''select * where 1=1''', rbac_rule) 
 
 # COMMAND ----------
 
@@ -323,15 +326,15 @@ check_id='21' #PAT Token with no lifetime limit
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 expiry_limit_evaluation_value = int(sbp_rec['evaluation_value'])
 def token_rule(df):
-  #Check for count of tokens that are either set to expire in over 90 days from today or set to never expire. 
-  if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
-      df = df.rdd.map(lambda x: (x['created_by_username'], re.sub('[\"\'\\\\]', '_', x['comment']), x['token_id'])).toDF(['created_by_username', 'comment', 'token_id'])            
-      tokenslst = df.collect()
-      tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
-      print(tokens_dict)
-      return (check_id, 1, tokens_dict )
-  else:
-      return (check_id, 0, {})   
+    #Check for count of tokens that are either set to expire in over 90 days from today or set to never expire. 
+    if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
+        df = df.rdd.map(lambda x: (x['created_by_username'], re.sub('[\"\'\\\\]', '_', x['comment']), x['token_id'])).toDF(['created_by_username', 'comment', 'token_id'])            
+        tokenslst = df.collect()
+        tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
+        print(tokens_dict)
+        return (check_id, 1, tokens_dict )
+    else:
+        return (check_id, 0, {})   
     
 if enabled:
     tbl_name = 'global_temp.tokens' + '_' + workspace_id
@@ -349,15 +352,15 @@ check_id='7' # PAT Tokens About to Expire
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 expiry_limit_evaluation_value = int(sbp_rec['evaluation_value'])
 def token_rule(df):
-  #Check for count of tokens that expiring in expiry_limit_evaluation_value days from today. 
-  if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
-      df = df.rdd.map(lambda x: (x['created_by_username'], re.sub('[\"\'\\\\]', '_', x['comment']), x['token_id'])).toDF(['created_by_username', 'comment', 'token_id'])            
-      tokenslst = df.collect()
-      tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
-      print(tokens_dict)
-      return (check_id, 1, tokens_dict )
-  else:
-      return (check_id, 0, {})   
+    #Check for count of tokens that expiring in expiry_limit_evaluation_value days from today. 
+    if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
+        df = df.rdd.map(lambda x: (x['created_by_username'], re.sub('[\"\'\\\\]', '_', x['comment']), x['token_id'])).toDF(['created_by_username', 'comment', 'token_id'])            
+        tokenslst = df.collect()
+        tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
+        print(tokens_dict)
+        return (check_id, 1, tokens_dict )
+    else:
+        return (check_id, 0, {})   
     
 if enabled:
     tbl_name = 'global_temp.tokens' + '_' + workspace_id
@@ -375,15 +378,15 @@ check_id='41' # Check for active tokens that have a lifetime that exceeds the ma
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
     
 def token_max_life_rule(df):
-  #Check for count of tokens that expiring in expiry_limit_evaluation_value days from today. 
-  if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
-      df = df.rdd.map(lambda x: (x['created_by_username'], re.sub('[\"\'\\\\]', '_', x['comment']), x['token_id'])).toDF(['created_by_username', 'comment', 'token_id'])            
-      tokenslst = df.collect()
-      tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
-      print(tokens_dict)
-      return (check_id, 1, tokens_dict )
-  else:
-      return (check_id, 0, {})   
+    #Check for count of tokens that expiring in expiry_limit_evaluation_value days from today. 
+    if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
+        df = df.rdd.map(lambda x: (x['created_by_username'], re.sub('[\"\'\\\\]', '_', x['comment']), x['token_id'])).toDF(['created_by_username', 'comment', 'token_id'])            
+        tokenslst = df.collect()
+        tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
+        print(tokens_dict)
+        return (check_id, 1, tokens_dict )
+    else:
+        return (check_id, 0, {})   
 
 
 if enabled:
@@ -415,15 +418,15 @@ check_id='27' #Admin Count
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 admin_count_evaluation_value = int(sbp_rec['evaluation_value'])
 def admin_rule(df):  
-  if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > admin_count_evaluation_value:
-    df = df.rdd.map(lambda x: (re.sub('[\"\'\\\\]', '_', x['Admins']),)).toDF(['Admins'])           
-    adminlist = df.collect()
-    adminlist_1 = [i.Admins for i in adminlist]
-    adminlist_dict = {"admins" : adminlist_1}
+    if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > admin_count_evaluation_value:
+        df = df.rdd.map(lambda x: (re.sub('[\"\'\\\\]', '_', x['Admins']),)).toDF(['Admins'])           
+        adminlist = df.collect()
+        adminlist_1 = [i.Admins for i in adminlist]
+        adminlist_dict = {"admins" : adminlist_1}
     
-    return (check_id, 1, adminlist_dict)
-  else:
-    return (check_id, 0, {})
+        return (check_id, 1, adminlist_dict)
+    else:
+        return (check_id, 0, {})
 
 if enabled:
     tbl_name = 'global_temp.groups' + '_' + workspace_id
@@ -440,10 +443,10 @@ check_id='42' #Use service principals
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 service_principals_evaluation_value = int(sbp_rec['evaluation_value'])
 def use_service_principals(df):  
-  if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > service_principals_evaluation_value:
-    return (check_id, 0, {'SPs': len(df.collect())})
-  else:
-    return (check_id, 1, {'SPs':'no serviceprincipals found'})
+    if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > service_principals_evaluation_value:
+        return (check_id, 0, {'SPs': len(df.collect())})
+    else:
+        return (check_id, 1, {'SPs':'no serviceprincipals found'})
 
 if enabled:
     tbl_name = 'global_temp.serviceprincipals' + '_' + workspace_id
@@ -468,13 +471,13 @@ check_id='1' #Secrets Management
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 secrets_count_evaluation_value = int(sbp_rec['evaluation_value'])
 def secrets_rule(df):
-  if df is not None and not df.rdd.isEmpty() and df.collect()[0][0] >= secrets_count_evaluation_value:
-    num_secrets = df.collect()[0][0]
-    secrets_dict = {'num_secrets' : num_secrets}
-    print(secrets_dict)
-    return (check_id, 0, secrets_dict )
-  else:
-    return (check_id, 1, {})   
+    if df is not None and not df.rdd.isEmpty() and df.collect()[0][0] >= secrets_count_evaluation_value:
+        num_secrets = df.collect()[0][0]
+        secrets_dict = {'num_secrets' : num_secrets}
+        print(secrets_dict)
+        return (check_id, 0, secrets_dict )
+    else:
+        return (check_id, 1, {})   
 
 if enabled:
     tbl_name = 'global_temp.secretslist' + '_' + workspace_id
@@ -492,19 +495,19 @@ check_id='2' #Cluster Encryption
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def local_disk_encryption(df):
-  if df is not None and len(df.columns)==0:
-    cluster_dict = {'clusters' : 'all_interactive_clusters'}
-    print(cluster_dict)
-    return (check_id, 1, cluster_dict) 
-  elif df is not None and not df.rdd.isEmpty():
-    df = df.rdd.map(lambda x: (x[0], re.sub('[\"\'\\\\]', '_', x[1]))).toDF(['cluster_id', 'cluster_name']) 
-    clusters = df.collect()
-    clusterslst = [[i.cluster_id,i.cluster_name] for i in clusters]
-    clusters_dict = {"clusters" : clusterslst}
-    print(clusters_dict)
-    return (check_id, 1, clusters_dict)
-  else:
-    return (check_id, 0, {})   
+    if df is not None and len(df.columns)==0:
+        cluster_dict = {'clusters' : 'all_interactive_clusters'}
+        print(cluster_dict)
+        return (check_id, 1, cluster_dict) 
+    elif df is not None and not df.rdd.isEmpty():
+        df = df.rdd.map(lambda x: (x[0], re.sub('[\"\'\\\\]', '_', x[1]))).toDF(['cluster_id', 'cluster_name']) 
+        clusters = df.collect()
+        clusterslst = [[i.cluster_id,i.cluster_name] for i in clusters]
+        clusters_dict = {"clusters" : clusterslst}
+        print(clusters_dict)
+        return (check_id, 1, clusters_dict)
+    else:
+        return (check_id, 0, {})   
   
 if enabled:
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
@@ -525,12 +528,12 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 workspaceId = workspace_id
 # Report on workspaces that do not have a byok id associated with them
 def byok_check(df):   
-  if df is not None and not df.rdd.isEmpty():
-    ws = df.collect()
-    ws_dict = {'workspaces' : ws}
-    return (check_id, 1, ws_dict)
-  else:
-    return (check_id, 0, {})   
+    if df is not None and not df.rdd.isEmpty():
+        ws = df.collect()
+        ws_dict = {'workspaces' : ws}
+        return (check_id, 1, ws_dict)
+    else:
+        return (check_id, 0, {})   
   
 if enabled:
     tbl_name = 'global_temp.acctworkspaces' + '_' + workspace_id
@@ -549,14 +552,14 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 # Report on Clusters that do not have a byok id associated with them
 def object_storage_encryption_rule(df):
-  if object_storage_encryption:
-    return (check_id, 0, {})
-  else:
-    return (check_id, 1, {'workspaceId': workspaceId})
+    if object_storage_encryption:
+        return (check_id, 0, {})
+    else:
+        return (check_id, 1, {'workspaceId': workspaceId})
 
 #The 1=1 logic is intentional to get the human/manual input as an answer for this check
 if enabled:  
-  sqlctrl(workspace_id, '''select * where 1=1''', object_storage_encryption_rule)
+    sqlctrl(workspace_id, '''select * where 1=1''', object_storage_encryption_rule)
 
 # COMMAND ----------
 
@@ -573,17 +576,17 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 # Report on Clusters that do not have a policy id associated with them
 def cluster_policy_check(df):
-  if df is not None and len(df.columns)==0:
-    cluster_dict = {'clusters' : 'all_interactive_clusters'}
-    print(cluster_dict)
-    return (check_id, 1, cluster_dict)    
-  elif df is not None and not df.rdd.isEmpty():
-    df = df.rdd.map(lambda x: (x['cluster_id'], re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name'])     
-    clusters = df.collect()
-    cluster_dict = {'clusters' : clusters}
-    return (check_id, 1, cluster_dict)
-  else:
-    return (check_id, 0,  {})   
+    if df is not None and len(df.columns)==0:
+        cluster_dict = {'clusters' : 'all_interactive_clusters'}
+        print(cluster_dict)
+        return (check_id, 1, cluster_dict)    
+    elif df is not None and not df.rdd.isEmpty():
+        df = df.rdd.map(lambda x: (x['cluster_id'], re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name'])     
+        clusters = df.collect()
+        cluster_dict = {'clusters' : clusters}
+        return (check_id, 1, cluster_dict)
+    else:
+        return (check_id, 0,  {})   
   
 if enabled:  
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
@@ -606,15 +609,16 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def ctags_check(df):
   
-  if df is not None and not df.rdd.isEmpty() :
-    df = df.rdd.map(lambda x: (x['cluster_id'],  re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name']) 
-    clusters = df.collect()
-    clusters_dict = {'clusters' : [[i.cluster_id, i.cluster_name] for i in clusters]}
-    print(clusters_dict)
-    return (check_id, 1, clusters_dict)
-  else:
-    return (check_id, 0, {})   
-  
+    if df is not None and not df.rdd.isEmpty() :
+        df = df.rdd.map(lambda x: (x['cluster_id'],  re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name']) 
+        clusters = df.collect()
+        clusters_dict = {'clusters' : [[i.cluster_id, i.cluster_name] for i in clusters]}
+        print(clusters_dict)
+        return (check_id, 1, clusters_dict)
+    else:
+        return (check_id, 0, {})   
+ 
+
 if enabled: 
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
     sql = f'''
@@ -632,13 +636,13 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def ctags_checkjobs(df):
   
-  if df is not None and not df.rdd.isEmpty():
-    jobclusters = df.collect()
-    jobclusters_dict = {'clusters' : [i.job_id for i in jobclusters]}
-    print(jobclusters_dict)
-    return (check_id, 1, jobclusters_dict)
-  else:
-    return (check_id, 0, {})   
+    if df is not None and not df.rdd.isEmpty():
+        jobclusters = df.collect()
+        jobclusters_dict = {'clusters' : [i.job_id for i in jobclusters]}
+        print(jobclusters_dict)
+        return (check_id, 1, jobclusters_dict)
+    else:
+        return (check_id, 0, {})   
   
 
 if enabled:  
@@ -657,19 +661,19 @@ check_id='13' #All Purpose Cluster Log Configuration
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def logconf_check(df):
-  if df is not None and len(df.columns)==0:
-    cluster_dict = {'clusters' : 'no log conf in any job'}
-    print(cluster_dict)
-    return (check_id, 1, cluster_dict)     
-  elif df is not None and not df.rdd.isEmpty():
-    df = df.rdd.map(lambda x: (x['cluster_id'],  re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name'])  
-    clusters = df.collect()
-    clusters_dict = {'clusters' : [[i.cluster_id, i.cluster_name] for i in clusters]}
-    print(clusters_dict)
-    return (check_id, 1, clusters_dict)
-  else:
-    return (check_id, 0, {})   
-  
+    if df is not None and len(df.columns)==0:
+        cluster_dict = {'clusters' : 'no log conf in any job'}
+        print(cluster_dict)
+        return (check_id, 1, cluster_dict)     
+    elif df is not None and not df.rdd.isEmpty():
+        df = df.rdd.map(lambda x: (x['cluster_id'],  re.sub('[\"\'\\\\]', '_', x['cluster_name']))).toDF(['cluster_id', 'cluster_name'])  
+        clusters = df.collect()
+        clusters_dict = {'clusters' : [[i.cluster_id, i.cluster_name] for i in clusters]}
+        print(clusters_dict)
+        return (check_id, 1, clusters_dict)
+    else:
+        return (check_id, 0, {})   
+    
 if enabled:
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
     sql=f'''
@@ -687,18 +691,19 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def logconf_check_job(df):
   
-  if df is not None and len(df.columns)==0:
-    cluster_dict = {'clusters' : 'no log conf in any job'}
-    print(cluster_dict)
-    return (check_id, 1, cluster_dict)    
-  elif df is not None and not df.rdd.isEmpty():
-    jobclusters = df.collect()
-    jobclusters_dict = {'jobs' : [i.job_id for i in jobclusters]}
-    print(jobclusters_dict)
-    return (check_id, 1, jobclusters_dict)
-  else:
-    return (check_id, 0, {})   
-  
+    if df is not None and len(df.columns)==0:
+        cluster_dict = {'clusters' : 'no log conf in any job'}
+        print(cluster_dict)
+        return (check_id, 1, cluster_dict)    
+    elif df is not None and not df.rdd.isEmpty():
+        jobclusters = df.collect()
+        jobclusters_dict = {'jobs' : [i.job_id for i in jobclusters]}
+        print(jobclusters_dict)
+        return (check_id, 1, jobclusters_dict)
+    else:
+        return (check_id, 0, {})   
+
+    
 if enabled:  
     tbl_name = 'global_temp.jobs' + '_' + workspace_id
     sql = f'''
@@ -716,13 +721,14 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 dbfs_warehouses_evaluation_value = int(sbp_rec['evaluation_value'])
 def dbfs_check(df):
   
-  if df is not None and not df.rdd.isEmpty() and len(df.collect()) > dbfs_warehouses_evaluation_value:
-    paths = df.collect()
-    paths_dict = {'clusters' : [i.path for i in paths]}
-    return (check_id, 1, paths_dict)
-  else:
-    return (check_id, 0, {})   
-  
+    if df is not None and not df.rdd.isEmpty() and len(df.collect()) > dbfs_warehouses_evaluation_value:
+        paths = df.collect()
+        paths_dict = {'clusters' : [i.path for i in paths]}
+        return (check_id, 1, paths_dict)
+    else:
+        return (check_id, 0, {})   
+
+    
 if enabled:    
     tbl_name = 'global_temp.dbfssettingsdirs' + '_' + workspace_id
     sql = f'''
@@ -740,14 +746,15 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 dbfs_fuse_mnt_evaluation_value = int(sbp_rec['evaluation_value'])
 def dbfs_mnt_check(df):
   
-  if df is not None and not df.rdd.isEmpty() and len(df.collect())>=dbfs_fuse_mnt_evaluation_value:
-    mounts = df.collect()
-    mounts_dict = {'mnts' : [i.path for i in mounts]}
-    print(mounts_dict)
-    return (check_id, 1, mounts_dict)
-  else:
-    return (check_id, 0, {})   
-  
+    if df is not None and not df.rdd.isEmpty() and len(df.collect())>=dbfs_fuse_mnt_evaluation_value:
+        mounts = df.collect()
+        mounts_dict = {'mnts' : [i.path for i in mounts]}
+        print(mounts_dict)
+        return (check_id, 1, mounts_dict)
+    else:
+        return (check_id, 0, {})   
+
+    
 if enabled:     
     tbl_name = 'global_temp.dbfssettingsdirs' + '_' + workspace_id
     sql =f'''
@@ -764,14 +771,15 @@ check_id='26' #Global libraries
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def initscr_check(df):
-  if df is not None and not df.rdd.isEmpty():   
-    iscript = df.collect()
-    iscripts_dict = {'scripts' : [[i.name, i.created_by, i.enabled] for i in iscript]}
-    print(iscripts_dict)
-    return (check_id,1, iscripts_dict)
-  else:
-    return (check_id,0, {})   
-  
+    if df is not None and not df.rdd.isEmpty():   
+        iscript = df.collect()
+        iscripts_dict = {'scripts' : [[i.name, i.created_by, i.enabled] for i in iscript]}
+        print(iscripts_dict)
+        return (check_id,1, iscripts_dict)
+    else:
+        return (check_id,0, {})   
+
+    
 if enabled:   
     tbl_name = 'global_temp.globalscripts' + '_' + workspace_id
     sql = f'''
@@ -788,15 +796,16 @@ check_id='22' #Instance Pool Custom Tag
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def pool_check(df):
-  if df is not None and not df.rdd.isEmpty():
-    df = df.rdd.map(lambda x: (re.sub('[\"\'\\\\]', '_', x[0]), x[1])).toDF(['instance_pool_name', 'instance_pool_id'])     
-    ipool = df.collect()
-    ipool_dict = {'instancepools' : [[i.instance_pool_name, i.instance_pool_id] for i in ipool]}
-    print(ipool_dict)
-    return (check_id, 1,  ipool_dict)  
-  else:
-    return (check_id, 0, {}) 
-  
+    if df is not None and not df.rdd.isEmpty():
+        df = df.rdd.map(lambda x: (re.sub('[\"\'\\\\]', '_', x[0]), x[1])).toDF(['instance_pool_name', 'instance_pool_id'])     
+        ipool = df.collect()
+        ipool_dict = {'instancepools' : [[i.instance_pool_name, i.instance_pool_id] for i in ipool]}
+        print(ipool_dict)
+        return (check_id, 1,  ipool_dict)  
+    else:
+        return (check_id, 0, {}) 
+
+    
 if enabled:
     tbl_name = 'global_temp.pools' + '_' + workspace_id
     sql = f'''
@@ -813,14 +822,15 @@ check_id='23' #Max concurrent runs
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 max_concurrent_runs_evaluation_value = int(sbp_rec['evaluation_value'])
 def mcr_check(df):
-  if df is not None and not df.rdd.isEmpty():
-    mcr = df.collect()
-    mcr_dict = {'maxruns' : [[i.job_id, i.max_concurrent_runs] for i in mcr]}
-    print(mcr_dict)
-    return (check_id, 1, mcr_dict)
-  else:
-    return (check_id, 0, {})   
-  
+    if df is not None and not df.rdd.isEmpty():
+        mcr = df.collect()
+        mcr_dict = {'maxruns' : [[i.job_id, i.max_concurrent_runs] for i in mcr]}
+        print(mcr_dict)
+        return (check_id, 1, mcr_dict)
+    else:
+        return (check_id, 0, {})   
+
+    
 if enabled:  
     tbl_name = 'global_temp.jobs' + '_' + workspace_id
     sql = f'''
@@ -838,13 +848,14 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 # https://docs.databricks.com/release-notes/runtime/7.0.html#deprecations-and-removals. Global libraries does not work DBR > 7
 def lib_check(df):
-  if df is not None and not df.rdd.isEmpty():
-    libc = df.collect()
-    libc_dict = {'globlib' : [i.cluster_id for i in libc]}
-    return (check_id, 1, libc_dict)
-  else:
-    return (check_id, 0, {})   
-  
+    if df is not None and not df.rdd.isEmpty():
+        libc = df.collect()
+        libc_dict = {'globlib' : [i.cluster_id for i in libc]}
+        return (check_id, 1, libc_dict)
+    else:
+        return (check_id, 0, {})   
+
+    
 if enabled:
     tbl_name = 'global_temp.libraries' + '_' + workspace_id
     sql = f'''
@@ -863,14 +874,15 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 max_cluster_create_count_evaluation_value = int(sbp_rec['evaluation_value'])
 # Report on Clusters that do not have a policy id associated with them
 def cc_check(df):
-  if df is not None and not df.rdd.isEmpty() and len(df.collect())>max_cluster_create_count_evaluation_value:
-    libc = df.collect()
-    libc_dict = {'clus_create' : [[i.userName, i.perm] for i in libc]}
-    print(libc_dict)
-    return (check_id, 1, libc_dict)
-  else:
-    return (check_id, 0, {})   
-  
+    if df is not None and not df.rdd.isEmpty() and len(df.collect())>max_cluster_create_count_evaluation_value:
+        libc = df.collect()
+        libc_dict = {'clus_create' : [[i.userName, i.perm] for i in libc]}
+        print(libc_dict)
+        return (check_id, 1, libc_dict)
+    else:
+        return (check_id, 0, {})   
+
+    
 if enabled:  
     tbl_name = 'global_temp.users' + '_' + workspace_id
     sql=f'''
@@ -891,14 +903,14 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 workspaceId = workspace_id
 
 def log_check(df):
-  if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
-    df = df.rdd.map(lambda x: ( re.sub('[\"\'\\\\]', '_',x[0]), x[1])).toDF(['config_name', 'config_id'])        
-    logc = df.collect()
-    logc_dict = {'audit_logs' : [[i.config_name, i.config_id] for i in logc]}
-    print(logc_dict)
-    return (check_id, 0, logc_dict)
-  else:
-    return (check_id, 1, {})   
+    if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
+        df = df.rdd.map(lambda x: ( re.sub('[\"\'\\\\]', '_',x[0]), x[1])).toDF(['config_name', 'config_id'])        
+        logc = df.collect()
+        logc_dict = {'audit_logs' : [[i.config_name, i.config_id] for i in logc]}
+        print(logc_dict)
+        return (check_id, 0, logc_dict)
+    else:
+        return (check_id, 1, {})   
 
 if enabled:   
     tbl_name = 'global_temp.acctlogdelivery' + '_' + workspace_id
@@ -916,13 +928,13 @@ check_id='9' #Long running clusters
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 days_since_restart_evaluation_value = int(sbp_rec['evaluation_value'])
 def time_check(df):
-  if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
-    timlst = df.collect()
-    timlst_dict = {irow.cluster_id:irow.diff for irow in timlst if irow.diff is not None and irow.diff > days_since_restart_evaluation_value} #adjust TIME in minutes
-    print(timlst_dict)
-    if (len(timlst_dict)) > 0:
-      return (check_id, 1, timlst_dict)
-  return (check_id, 0, {})   
+    if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
+        timlst = df.collect()
+        timlst_dict = {irow.cluster_id:irow.diff for irow in timlst if irow.diff is not None and irow.diff > days_since_restart_evaluation_value} #adjust TIME in minutes
+        print(timlst_dict)
+        if (len(timlst_dict)) > 0:
+            return (check_id, 1, timlst_dict)
+    return (check_id, 0, {})   
 
 if enabled:   
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
@@ -943,12 +955,12 @@ check_id='10' #Deprecated runtime versions
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def versions_check(df):
-  if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
-    verlst = df.collect()
-    verlst_dict = {irow.cluster_id:irow.spark_version for irow in verlst} 
-    print(verlst_dict)
-    return (check_id, 1, verlst_dict)
-  return (check_id, 0, {})   
+    if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
+        verlst = df.collect()
+        verlst_dict = {irow.cluster_id:irow.spark_version for irow in verlst} 
+        print(verlst_dict)
+        return (check_id, 1, verlst_dict)
+    return (check_id, 0, {})   
 
 if enabled:    
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
@@ -965,13 +977,13 @@ check_id='17' #UC enabled clusters
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_check(df):
-  if df is not None and not df.rdd.isEmpty():
-    df = df.rdd.map(lambda x: (x[0],  re.sub('[\"\'\\\\]', '_',x[1]), x[2])).toDF(['cluster_id', 'cluster_name', 'data_security_mode'])        
-    uclst = df.collect()
-    uclst_dict = {i.cluster_id : [i.cluster_name, i.data_security_mode] for i in uclst}
+    if df is not None and not df.rdd.isEmpty():
+        df = df.rdd.map(lambda x: (x[0],  re.sub('[\"\'\\\\]', '_',x[1]), x[2])).toDF(['cluster_id', 'cluster_name', 'data_security_mode'])        
+        uclst = df.collect()
+        uclst_dict = {i.cluster_id : [i.cluster_name, i.data_security_mode] for i in uclst}
     
-    return (check_id, 1, uclst_dict)
-  return (check_id, 0, {})   
+        return (check_id, 1, uclst_dict)
+    return (check_id, 0, {})   
 
 if enabled:    
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
