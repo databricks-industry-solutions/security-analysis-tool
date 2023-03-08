@@ -82,28 +82,29 @@ def renewWorkspaceTokens(workspace_id):
 
 insertNewBatchRun() #common batch number for each run
 def processWorkspace(wsrow):
-  import json
-  hostname = 'https://' + wsrow.deployment_url
-  cloud_type = getCloudType(hostname)
-  workspace_id = wsrow.workspace_id
-  sso = wsrow.sso_enabled
-  scim = wsrow.scim_enabled
-  vpc_peering_done = wsrow.vpc_peering_done
-  object_storage_encrypted = wsrow.object_storage_encrypted  
-  table_access_control_enabled = wsrow.table_access_control_enabled
+    import json
+    hostname = 'https://' + wsrow.deployment_url
+    cloud_type = getCloudType(hostname)
+    workspace_id = wsrow.workspace_id
+    sso = wsrow.sso_enabled
+    scim = wsrow.scim_enabled
+    vpc_peering_done = wsrow.vpc_peering_done
+    object_storage_encrypted = wsrow.object_storage_encrypted  
+    table_access_control_enabled = wsrow.table_access_control_enabled
 
-  clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
-  json_.update({"sso":sso, "scim":scim,"object_storage_encryption":object_storage_encrypted, "vpc_peering":vpc_peering_done,"table_access_control_enabled":table_access_control_enabled, 'url':hostname, 'workspace_id': workspace_id, 'cloud_type': cloud_type, 'clusterid':clusterid})
-  loggr.info(json_)
-  retstr = dbutils.notebook.run('./Utils/workspace_bootstrap', 3000, {"json_":json.dumps(json_)})
-  if "Completed SAT" not in retstr:
-    raise Exception('Workspace Bootstrap failed. Skipping workspace analysis')
-  else:
-    dbutils.notebook.run('./Includes/workspace_analysis', 3000, {"json_":json.dumps(json_)})
-    dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(json_)})
-    dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(json_)})
+    clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+    ws_json = dict(json_)
+    ws_json.update({"sso":sso, "scim":scim,"object_storage_encryption":object_storage_encrypted, "vpc_peering":vpc_peering_done,"table_access_control_enabled":table_access_control_enabled, 'url':hostname, 'workspace_id': workspace_id, 'cloud_type': cloud_type, 'clusterid':clusterid})
+    loggr.info(ws_json)
+    retstr = dbutils.notebook.run('./Utils/workspace_bootstrap', 3000, {"json_":json.dumps(ws_json)})
+    if "Completed SAT" not in retstr:
+        raise Exception('Workspace Bootstrap failed. Skipping workspace analysis')
+    else:
+        dbutils.notebook.run('./Includes/workspace_analysis', 3000, {"json_":json.dumps(ws_json)})
+        dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(ws_json)})
+        dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(ws_json)})
 
-'''
+''' TODO - OLD way - Keeping it for comparison sake in case we need to revert - Delete once fullll testing is done
 for ws in workspaces:
   try:
     renewWorkspaceTokens(ws.workspace_id)
