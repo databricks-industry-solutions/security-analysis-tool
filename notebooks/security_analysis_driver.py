@@ -126,14 +126,12 @@ def combine(ws):
     notifyworkspaceCompleted(ws.workspace_id, True)
 
 with ThreadPoolExecutor(max_workers=4) as executor:
-  for ws in workspaces:
     try:
-        result = executor.submit(combine, ws)
-        loggr.info(f"{result.result()}")
-        loggr.info(f"Completed analyzing {ws.workspace_id}!")
+        result = executor.map(combine, workspaces)
+        for r in result:
+            print(r)
     except Exception as e:
         loggr.info(e)
-        notifyworkspaceCompleted(ws.workspace_id, False)
 
 # COMMAND ----------
 

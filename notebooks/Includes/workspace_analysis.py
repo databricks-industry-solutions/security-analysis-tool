@@ -965,7 +965,7 @@ def versions_check(df):
 
 if enabled:    
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
-    tbl_name_inner = global_temp.spark_versions' + '_' + workspace_id
+    tbl_name_inner = 'global_temp.spark_versions' + '_' + workspace_id
     sql=f'''SELECT cluster_id, spark_version 
           FROM {tbl_name}
           WHERE spark_version not in (select key from {tbl_name_inner}) and workspace_id ="{workspaceId}"
