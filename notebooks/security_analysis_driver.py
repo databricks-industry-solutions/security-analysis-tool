@@ -104,18 +104,6 @@ def processWorkspace(wsrow):
         dbutils.notebook.run('./Includes/workspace_stats', 1000, {"json_":json.dumps(ws_json)})
         dbutils.notebook.run('./Includes/workspace_settings', 3000, {"json_":json.dumps(ws_json)})
 
-''' TODO - OLD way - Keeping it for comparison sake in case we need to revert - Delete once fullll testing is done
-for ws in workspaces:
-  try:
-    renewWorkspaceTokens(ws.workspace_id)
-    processWorkspace(ws)
-    notifyworkspaceCompleted(ws.workspace_id, True)
-    loggr.info(f"Completed analyzing {ws.workspace_id}!")
-  except Exception as e:
-    loggr.info(e)
-    notifyworkspaceCompleted(ws.workspace_id, False)
-'''
-
 # COMMAND ----------
 
 from concurrent.futures import ThreadPoolExecutor

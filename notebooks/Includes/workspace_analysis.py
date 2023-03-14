@@ -342,7 +342,7 @@ if enabled:
             SELECT `comment`, `created_by_username`, `token_id` 
             FROM {tbl_name} 
               WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value}) OR 
-                  expiry_time = -1 AND workspace_id = "{workspaceId}" 
+                  expiry_time = -1 
     '''
     sqlctrl(workspace_id, sql, token_rule)
 
@@ -368,7 +368,7 @@ if enabled:
         SELECT `comment`, `created_by_username`, `token_id` 
         FROM {tbl_name} 
         WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) <= {expiry_limit_evaluation_value}) AND 
-            expiry_time != -1 AND workspace_id = "{workspaceId}"
+            expiry_time != -1 
     '''
     sqlctrl(workspace_id, sql, token_rule)
 
@@ -407,7 +407,7 @@ if enabled:
             SELECT `comment`, `created_by_username`, `token_id` 
             FROM {tbl_name} 
             WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value} OR 
-                expiry_time = -1) AND workspace_id="{workspaceId}"
+                expiry_time = -1) 
         '''
         sqlctrl(workspace_id, sql, token_max_life_rule)
 
@@ -433,7 +433,7 @@ if enabled:
     sql = f'''
         SELECT explode(members.display) as Admins 
         FROM {tbl_name} 
-        WHERE displayname="admins" AND workspace_id = "{workspaceId}"
+        WHERE displayname="admins" 
     '''
     sqlctrl(workspace_id, sql, admin_rule)
 
@@ -453,7 +453,6 @@ if enabled:
     sql=f'''
          SELECT displayName as serviceprincipals 
          FROM {tbl_name} 
-         WHERE workspace_id = "{workspaceId}"
     '''
     sqlctrl(workspace_id, sql, use_service_principals)
 
@@ -485,7 +484,7 @@ if enabled:
     sql = f'''
                SELECT count(*) 
                FROM {tbl_name}
-               WHERE workspace_id = "{workspaceId}"
+               
     ''' 
     sqlctrl(workspace_id,sql, secrets_rule)
 
@@ -625,7 +624,7 @@ if enabled:
     sql = f'''
         SELECT cluster_id, cluster_name
           FROM {tbl_name}
-          WHERE custom_tags is null and (cluster_source='UI' OR cluster_source='API') AND workspace_id="{workspaceId}"
+          WHERE custom_tags is null and (cluster_source='UI' OR cluster_source='API') 
     '''
     sqlctrl(workspace_id, sql, ctags_check)
 
@@ -651,7 +650,7 @@ if enabled:
     sql = f'''
         SELECT job_id
           FROM {tbl_name}
-          WHERE settings.new_cluster.custom_tags is null AND workspace_id="{workspaceId}"
+          WHERE settings.new_cluster.custom_tags is null 
       '''
     sqlctrl(workspace_id, sql, ctags_checkjobs)
 
@@ -680,7 +679,7 @@ if enabled:
     sql=f'''
       SELECT cluster_id, cluster_name
       FROM {tbl_name}
-      WHERE cluster_log_conf is null  and (cluster_source='UI' OR cluster_source='API') AND workspace_id="{workspaceId}"
+      WHERE cluster_log_conf is null  and (cluster_source='UI' OR cluster_source='API') 
     '''
     sqlctrl(workspace_id, sql, logconf_check)
 
@@ -735,7 +734,6 @@ if enabled:
     sql = f'''
         SELECT path
           FROM {tbl_name}
-          WHERE workspace_id="{workspaceId}"
     '''
     sqlctrl(workspace_id, sql, dbfs_check)
 
@@ -761,7 +759,6 @@ if enabled:
     sql =f'''
         SELECT path
         FROM {tbl_name}
-          WHERE workspace_id="{workspaceId}"
     '''
     sqlctrl(workspace_id, sql, dbfs_mnt_check)
 
@@ -786,7 +783,6 @@ if enabled:
     sql = f'''
         SELECT name, created_by, enabled
           FROM {tbl_name}
-          WHERE workspace_id="{workspaceId}"
     ''' 
     sqlctrl(workspace_id, sql, initscr_check)
 
@@ -812,7 +808,7 @@ if enabled:
     sql = f'''
         SELECT instance_pool_name, instance_pool_id
           FROM {tbl_name} 
-            where custom_tags is null AND workspace_id="{workspaceId}"
+            where custom_tags is null 
     '''
     sqlctrl(workspace_id, sql, pool_check)
 
@@ -837,7 +833,7 @@ if enabled:
     sql = f'''
         SELECT job_id, settings.max_concurrent_runs
         FROM {tbl_name}
-        WHERE settings.max_concurrent_runs >= {max_concurrent_runs_evaluation_value} AND workspace_id="{workspaceId}"
+        WHERE settings.max_concurrent_runs >= {max_concurrent_runs_evaluation_value} 
     '''
     sqlctrl(workspace_id, sql, mcr_check)
 
@@ -863,7 +859,7 @@ if enabled:
         SELECT * 
         FROM
             (SELECT cluster_id, explode(library_statuses.is_library_for_all_clusters) as glob_lib FROM {tbl_name})a
-        WHERE glob_lib=true AND workspace_id="{workspaceId}"
+        WHERE glob_lib=true 
     '''
     sqlctrl(workspace_id, sql, lib_check) 
 
@@ -891,7 +887,7 @@ if enabled:
         FROM 
          (SELECT userName, explode(entitlements.value) as perm  
           FROM {tbl_name} 
-          WHERE workspace_id="{workspaceId}") a
+         ) a
         WHERE perm in ('allow-cluster-create', 'allow-instance-pool-create')     
     '''
     sqlctrl(workspace_id, sql, cc_check)
@@ -918,7 +914,7 @@ if enabled:
     sql=f'''
         SELECT config_name, config_id from  
         FROM {tbl_name} 
-        WHERE log_type="AUDIT_LOGS" and status="ENABLED" and workspace_id ="{workspaceId}"
+        WHERE log_type="AUDIT_LOGS" and status="ENABLED" 
         '''
     sqlctrl(workspace_id, sql, log_check)
 
@@ -945,7 +941,7 @@ if enabled:
                 to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000), "yyyy-MM-dd hh:mm:ss") as last_restart , current_timestamp() as 
                 current_time 
               FROM {tbl_name} 
-              WHERE state="RUNNING" and (cluster_source='UI' OR cluster_source='API') and workspace_id ="{workspaceId}") 
+              WHERE state="RUNNING" and (cluster_source='UI' OR cluster_source='API') ) 
     '''
     sqlctrl(workspace_id, sql, time_check)
 
@@ -968,7 +964,7 @@ if enabled:
     tbl_name_inner = 'global_temp.spark_versions' + '_' + workspace_id
     sql=f'''SELECT cluster_id, spark_version 
           FROM {tbl_name}
-          WHERE spark_version not in (select key from {tbl_name_inner}) and workspace_id ="{workspaceId}"
+          WHERE spark_version not in (select key from {tbl_name_inner}) 
     '''
     sqlctrl(workspace_id, sql, versions_check)
 
@@ -994,7 +990,7 @@ if enabled:
         FROM {tbl_name} 
         WHERE (cluster_source='UI' OR cluster_source='API') 
             and (data_security_mode not in ('USER_ISOLATION', 'SINGLE_USER') or data_security_mode is null)
-            and workspace_id ="{workspaceId}"
+            
     '''
     sqlctrl(workspace_id, sql, uc_check)
 

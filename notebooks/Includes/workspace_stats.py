@@ -123,7 +123,7 @@ def num_defined_jobs_rule(df):
 
 tbl_name = 'global_temp.jobs' + '_' + workspace_id
 sql = f'''
-    SELECT * FROM {tbl_name} where workspace_id = "{workspace_id}"
+    SELECT * FROM {tbl_name} 
 '''
 sqlctrl(workspace_id,sql, num_defined_jobs_rule, True)
 
@@ -141,7 +141,6 @@ sql = f'''
     SELECT distinct job_id from FROM {tbl_name_runs} a 
     LEFT ANTI JOIN {tbl_name} b
     ON a.job_id==b.job_id
-    where workspace_id = "{workspace_id}"
 '''
 sqlctrl(workspace_id, sql, num_external_jobs_rule, True)
 

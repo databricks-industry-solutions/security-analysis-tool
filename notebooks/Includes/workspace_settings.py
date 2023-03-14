@@ -58,7 +58,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableJobViewAcls"
+        WHERE name="enableJobViewAcls"
     '''
     sqlctrl(workspace_id, sql, enableJobViewAcls)
 
@@ -81,7 +81,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enforceClusterViewAcls"
+        WHERE name="enforceClusterViewAcls"
     '''
     sqlctrl(workspace_id, sql, enforceClusterViewAcls)
 
@@ -105,7 +105,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enforceWorkspaceViewAcls"
+        WHERE name="enforceWorkspaceViewAcls"
     '''
     sqlctrl(workspace_id, sql, enforceWorkspaceViewAcls)
 
@@ -130,7 +130,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableProjectTypeInWorkspace"
+        WHERE name="enableProjectTypeInWorkspace"
     '''
     sqlctrl(workspace_id, sql, enableProjectTypeInWorkspace)
 
@@ -154,7 +154,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableResultsDownloading"
+        WHERE name="enableResultsDownloading"
     '''
     sqlctrl(workspace_id, sql, enableResultsDownloading)
 
@@ -178,7 +178,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="maxTokenLifetimeDays"
+        WHERE name="maxTokenLifetimeDays"
     '''
     sqlctrl(workspace_id, sql, maximumLifetimeNewTokens)
 
@@ -202,7 +202,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enforceUserIsolation"
+        WHERE name="enforceUserIsolation"
     '''
     sqlctrl(workspace_id, sql, enforceUserIsolation)
 
@@ -226,7 +226,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableEnforceImdsV2"
+        WHERE name="enableEnforceImdsV2"
     '''
     sqlctrl(workspace_id, sql, enableEnforceImdsV2)
 
@@ -250,7 +250,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableExportNotebook"
+        WHERE name="enableExportNotebook"
     '''
     sqlctrl(workspace_id, sql, enableExportNotebook)
 
@@ -274,7 +274,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableNotebookTableClipboard"
+        WHERE name="enableNotebookTableClipboard"
     '''
     sqlctrl(workspace_id, sql, enableNotebookTableClipboard)
 
@@ -298,7 +298,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enable-X-Frame-Options"
+        WHERE name="enable-X-Frame-Options"
     '''
     sqlctrl(workspace_id, sql, enableXFrameOptions)
 
@@ -322,7 +322,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enable-X-Content-Type-Options"
+        WHERE name="enable-X-Content-Type-Options"
     '''
     sqlctrl(workspace_id, sql, enableXContentTypeOptions)
 
@@ -346,7 +346,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings'+ '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enable-X-XSS-Protection"
+        WHERE name="enable-X-XSS-Protection"
     '''
     sqlctrl(workspace_id, sql, enableXXSSProtection)
 
@@ -370,7 +370,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings'+ '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="storeInteractiveNotebookResultsInCustomerAccount"
+        WHERE name="storeInteractiveNotebookResultsInCustomerAccount"
     '''
     sqlctrl(workspace_id, sql, storeInteractiveNotebookResultsInCustomerAccount)
 
@@ -394,7 +394,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableVerboseAuditLogs"
+        WHERE name="enableVerboseAuditLogs"
     '''
     sqlctrl(workspace_id, sql, enableVerboseAuditLogs)
 
@@ -418,7 +418,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableFileStoreEndpoint"
+        WHERE name="enableFileStoreEndpoint"
     '''
     sqlctrl(workspace_id, sql, enableFileStoreEndpoint)
 
