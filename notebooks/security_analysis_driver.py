@@ -25,6 +25,7 @@ import logging
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
+use_parallel_runs = json_.get("use_parallel_runs", False)
 
 # COMMAND ----------
 
@@ -113,13 +114,26 @@ def combine(ws):
     processWorkspace(ws)
     notifyworkspaceCompleted(ws.workspace_id, True)
 
-with ThreadPoolExecutor(max_workers=4) as executor:
-    try:
-        result = executor.map(combine, workspaces)
-        for r in result:
-            print(r)
-    except Exception as e:
-        loggr.info(e)
+if use_parallel_runs == True:
+    loggr.info("Runing in parallel")
+    for ws in workspaces:
+        try:
+            renewWorkspaceTokens(ws.workspace_id)
+            processWorkspace(ws)
+            notifyworkspaceCompleted(ws.workspace_id, True)
+            loggr.info(f"Completed analyzing {ws.workspace_id}!")
+        except Exception as e:
+            loggr.info(e)
+            notifyworkspaceCompleted(ws.workspace_id, False)
+else:  
+    loggr.info("Runing in sequence")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        try:
+            result = executor.map(combine, workspaces)
+            for r in result:
+                print(r)
+        except Exception as e:
+            loggr.info(e)
 
 # COMMAND ----------
 
