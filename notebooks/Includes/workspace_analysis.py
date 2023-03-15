@@ -514,8 +514,7 @@ if enabled:
     sql = f'''
         SELECT cluster_id, cluster_name
         FROM {tbl_name}
-        WHERE enable_local_disk_encryption=False and (cluster_source='UI' OR cluster_source='API') AND
-            workspace_id = "{workspaceId}"
+        WHERE enable_local_disk_encryption=False and (cluster_source='UI' OR cluster_source='API') 
         '''
     sqlctrl(workspace_id, sql, local_disk_encryption)
 
