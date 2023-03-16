@@ -143,4 +143,4 @@ else:
 # COMMAND ----------
 
 # MAGIC %sql use security_analysis;
-# MAGIC select * from workspace_run_complete;
+# MAGIC select * from workspace_run_complete order by run_id desc;

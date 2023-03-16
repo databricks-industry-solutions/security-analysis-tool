@@ -975,9 +975,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_check(df):
     if df is not None and not df.rdd.isEmpty():
-        df = df.rdd.map(lambda x: (x[0],  re.sub('[\"\'\\\\]', '_',x[1]), x[2])).toDF(['cluster_id', 'cluster_name', 'data_security_mode'])        
+        df = df.rdd.map(lambda x: (x[0],  re.sub('[\"\'\\\\]', '_',x[1]))).toDF(['cluster_id', 'cluster_name'])        
         uclst = df.collect()
-        uclst_dict = {i.cluster_id : [i.cluster_name, i.data_security_mode] for i in uclst}
+        uclst_dict = {i.cluster_id : [i.cluster_name] for i in uclst}
     
         return (check_id, 1, uclst_dict)
     return (check_id, 0, {})   
@@ -985,7 +985,7 @@ def uc_check(df):
 if enabled:    
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
     sql=f'''
-        SELECT cluster_id, cluster_name, data_security_mode 
+        SELECT cluster_id, cluster_name 
         FROM {tbl_name} 
         WHERE (cluster_source='UI' OR cluster_source='API') 
             and (data_security_mode not in ('USER_ISOLATION', 'SINGLE_USER') or data_security_mode is null)
