@@ -115,7 +115,7 @@ def combine(ws):
     notifyworkspaceCompleted(ws.workspace_id, True)
 
 if use_parallel_runs == True:
-    loggr.info("Runing in parallel")
+    loggr.info("Running in parallel")
     for ws in workspaces:
         try:
             renewWorkspaceTokens(ws.workspace_id)
@@ -126,7 +126,7 @@ if use_parallel_runs == True:
             loggr.info(e)
             notifyworkspaceCompleted(ws.workspace_id, False)
 else:  
-    loggr.info("Runing in sequence")
+    loggr.info("Running in sequence")
     with ThreadPoolExecutor(max_workers=4) as executor:
         try:
             result = executor.map(combine, workspaces)
