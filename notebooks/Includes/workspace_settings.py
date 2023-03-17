@@ -55,7 +55,12 @@ def enableJobViewAcls(df): #Job View Acls
     else:
         return (id, 1, defn)
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableJobViewAcls"''', enableJobViewAcls)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableJobViewAcls"
+    '''
+    sqlctrl(workspace_id, sql, enableJobViewAcls)
 
 # COMMAND ----------
 
@@ -73,7 +78,12 @@ def enforceClusterViewAcls(df): #Cluster View Acls
     else:
         return (id, 1,  defn)
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enforceClusterViewAcls"''', enforceClusterViewAcls)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enforceClusterViewAcls"
+    '''
+    sqlctrl(workspace_id, sql, enforceClusterViewAcls)
 
 # COMMAND ----------
 
@@ -92,7 +102,12 @@ def enforceWorkspaceViewAcls(df): #Workspace View Acls
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enforceWorkspaceViewAcls"''', enforceWorkspaceViewAcls)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enforceWorkspaceViewAcls"
+    '''
+    sqlctrl(workspace_id, sql, enforceWorkspaceViewAcls)
 
 # COMMAND ----------
 
@@ -112,7 +127,12 @@ def enableProjectTypeInWorkspace(df): #Project Type In Workspace
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableProjectTypeInWorkspace"''', enableProjectTypeInWorkspace)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableProjectTypeInWorkspace"
+    '''
+    sqlctrl(workspace_id, sql, enableProjectTypeInWorkspace)
 
 # COMMAND ----------
 
@@ -131,7 +151,12 @@ def enableResultsDownloading(df): #Results Downloading
         return (id, 0, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableResultsDownloading"''', enableResultsDownloading)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableResultsDownloading"
+    '''
+    sqlctrl(workspace_id, sql, enableResultsDownloading)
 
 # COMMAND ----------
 
@@ -150,7 +175,12 @@ def maximumLifetimeNewTokens(df): #Max life time for tokens
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="maxTokenLifetimeDays"''', maximumLifetimeNewTokens)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="maxTokenLifetimeDays"
+    '''
+    sqlctrl(workspace_id, sql, maximumLifetimeNewTokens)
 
 # COMMAND ----------
 
@@ -169,7 +199,12 @@ def enforceUserIsolation(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enforceUserIsolation"''', enforceUserIsolation)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enforceUserIsolation"
+    '''
+    sqlctrl(workspace_id, sql, enforceUserIsolation)
 
 # COMMAND ----------
 
@@ -188,7 +223,12 @@ def enableEnforceImdsV2(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableEnforceImdsV2"''', enableEnforceImdsV2)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableEnforceImdsV2"
+    '''
+    sqlctrl(workspace_id, sql, enableEnforceImdsV2)
 
 # COMMAND ----------
 
@@ -207,7 +247,12 @@ def enableExportNotebook(df):
         return (id, 0, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableExportNotebook"''', enableExportNotebook)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableExportNotebook"
+    '''
+    sqlctrl(workspace_id, sql, enableExportNotebook)
 
 # COMMAND ----------
 
@@ -226,7 +271,12 @@ def enableNotebookTableClipboard(df):
         return (id, 0, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableNotebookTableClipboard"''', enableNotebookTableClipboard)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableNotebookTableClipboard"
+    '''
+    sqlctrl(workspace_id, sql, enableNotebookTableClipboard)
 
 # COMMAND ----------
 
@@ -245,7 +295,12 @@ def enableXFrameOptions(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enable-X-Frame-Options"''', enableXFrameOptions)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enable-X-Frame-Options"
+    '''
+    sqlctrl(workspace_id, sql, enableXFrameOptions)
 
 # COMMAND ----------
 
@@ -264,7 +319,12 @@ def enableXContentTypeOptions(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enable-X-Content-Type-Options"''', enableXContentTypeOptions)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enable-X-Content-Type-Options"
+    '''
+    sqlctrl(workspace_id, sql, enableXContentTypeOptions)
 
 # COMMAND ----------
 
@@ -283,7 +343,12 @@ def enableXXSSProtection(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enable-X-XSS-Protection"''', enableXXSSProtection)
+    tbl_name = 'global_temp.workspacesettings'+ '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enable-X-XSS-Protection"
+    '''
+    sqlctrl(workspace_id, sql, enableXXSSProtection)
 
 # COMMAND ----------
 
@@ -302,7 +367,12 @@ def storeInteractiveNotebookResultsInCustomerAccount(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="storeInteractiveNotebookResultsInCustomerAccount"''', storeInteractiveNotebookResultsInCustomerAccount)
+    tbl_name = 'global_temp.workspacesettings'+ '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="storeInteractiveNotebookResultsInCustomerAccount"
+    '''
+    sqlctrl(workspace_id, sql, storeInteractiveNotebookResultsInCustomerAccount)
 
 # COMMAND ----------
 
@@ -321,7 +391,12 @@ def enableVerboseAuditLogs(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableVerboseAuditLogs"''', enableVerboseAuditLogs)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableVerboseAuditLogs"
+    '''
+    sqlctrl(workspace_id, sql, enableVerboseAuditLogs)
 
 # COMMAND ----------
 
@@ -340,7 +415,12 @@ def enableFileStoreEndpoint(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableFileStoreEndpoint"''', enableFileStoreEndpoint)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableFileStoreEndpoint"
+    '''
+    sqlctrl(workspace_id, sql, enableFileStoreEndpoint)
 
 # COMMAND ----------
 
@@ -359,7 +439,12 @@ def enableNotebookGitVersioning(df):
         return (id, 1, defn)
 
 if enabled:
-    sqlctrl(workspace_id, '''select * from `global_temp`.`workspacesettings` where name="enableNotebookGitVersioning"''', enableNotebookGitVersioning)
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE workspace_id = "{workspace_id}" AND name="enableNotebookGitVersioning"
+    '''
+    sqlctrl(workspace_id, sql, enableNotebookGitVersioning)
 
 # COMMAND ----------
 
