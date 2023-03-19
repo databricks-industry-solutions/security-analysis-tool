@@ -117,15 +117,31 @@ bootstrap('spark_versions', cluster_client.get_spark_versions)
 
 # COMMAND ----------
 
-from clientpkgs.db_sql_client import DBSqlClient
+from clientpkgs.dbsql_client import DBSQLClient
 try:
-    db_sql_client = DBSqlClient(json_)
+    db_sql_client =  DBSQLClient(json_)
 except Exception:
     loggr.exception("Exception encountered")
 
 # COMMAND ----------
 
 bootstrap('endpoints', db_sql_client.get_sqlendpoint_list)
+
+# COMMAND ----------
+
+bootstrap('dbsql_alerts', db_sql_client.get_alerts_list)
+
+# COMMAND ----------
+
+bootstrap('dbsql_warehouselist', db_sql_client.get_sql_warehouse_list)
+
+# COMMAND ----------
+
+bootstrap('dbsql_warehouselistv2', db_sql_client.get_sql_warehouse_listv2)
+
+# COMMAND ----------
+
+bootstrap('dbsql_workspaceconfig', db_sql_client.get_sql_workspace_config)
 
 # COMMAND ----------
 
@@ -389,6 +405,51 @@ except:
 # COMMAND ----------
 
 bootstrap('libraries', lib_client.get_libraries_status_list)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Unity Catalog
+
+# COMMAND ----------
+
+from clientpkgs.unity_catalog_client import UnityCatalogClient
+try:
+    uc_client = UnityCatalogClient(json_)
+except:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+bootstrap('unitycatalogmsv1', uc_client.get_metastore_list)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogmsv2', uc_client.get_workspace_metastore_assignments)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogexternallocations', uc_client.get_external_locations)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogcredentials', uc_client.get_credentials)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogshares', uc_client.get_list_shares)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogshareproviders', uc_client.get_sharing_providers_list)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogsharerecipients', uc_client.get_sharing_recepients_list)
+
+# COMMAND ----------
+
+ bootstrap('unitycatalogcatlist', uc_client.get_catalogs_list)
 
 # COMMAND ----------
 
