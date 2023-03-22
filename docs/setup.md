@@ -132,7 +132,7 @@ Please gather the following information before you start setting up:
       <details>
        <summary>Azure instructions</summary>  
 
-        We will be using the instructions in [Get Azure AD tokens for service principals](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/service-prin-aad-token).
+      We will be using the instructions in [Get Azure AD tokens for service principals](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/service-prin-aad-token).
        *  Follow the document above and complete all steps in the "Provision a service principal in Azure portal" only as detailed in the document.
        *  On the application page’s Overview page, in the Essentials section, copy the following values: (You will need this in the step below)
           * Application (client) ID as client_id
