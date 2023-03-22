@@ -27,6 +27,7 @@ Further Documentation for some of the variables:
 [workspace_PAT](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth#--azure-databricks-personal-access-tokens)
 
 [Azure Specific variables](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md#authentication-information) and navigate to the Azure section
+Note: Please notice the instruction in the above link about adding the service principle with "Reader" role into the subscription level via Access control (IAM) using Role assignments under your subscription, Access control (IAM) section
 
 Step 6: Set up [Azure CLI credentials](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli#sign-in-interactively) for the provider block in provider.tf
 
