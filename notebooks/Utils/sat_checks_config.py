@@ -105,7 +105,7 @@ params = {'Analysis Enabled': 'analysis_enabled',
 #SET & GET SAT check configurations for the workspace
 def get_workspace_check_config():
     workspace = dbutils.widgets.get("workspaces")
-    ws_id = workspace.split('_')[1]
+    ws_id = workspace.split('_')[-1]
 
     s_sql = '''
                 SELECT analysis_enabled, sso_enabled, scim_enabled, vpc_peering_done, object_storage_encrypted, 
@@ -147,7 +147,7 @@ def set_workspace_check_config():
     alert_subscriber_user_id = dbutils.widgets.get("alert_subscriber_user_id")
     apply_setting_to_all_ws_enabled = dbutils.widgets.get("apply_setting_to_all_ws_enabled")
     
-    ws_id = workspace.split('_')[1]
+    ws_id = workspace.split('_')[-1]
     
     if apply_setting_to_all_ws_enabled == '':
         s_sql = '''

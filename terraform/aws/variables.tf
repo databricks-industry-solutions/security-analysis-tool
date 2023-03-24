@@ -52,17 +52,9 @@ variable "account_pass" {
 
 ### GCP Specific Variables
 
-#variable "dbfs_path_prefix" {
-#  description = "Path to the JSON on DBFS"
-#  default = "/dbfs/FileStore/tables/"
-#}
-#
-#variable "local_path_to_json" {
-#  description = "Path to the JSON on your local machine not including the file name (e.g. /Users/first.last/Downloads/)"
-#}
-#
-#variable "json_file_name" {
-#  description = "Service Account Key File name (e.g. SA_1_key.json)"
+#variable "gs_path_to_json" {
+#  description = "File path to this resource in Cloud Storage"
+#  default = "gs://<bucket>/<folder>/<file>.json"
 #}
 #
 #variable "impersonate_service_account" {

@@ -68,9 +68,9 @@ resource "databricks_secret" "sql_warehouse_id" {
 
 ### GCP Specific Secrets
 
-resource "databricks_secret" "dbfs-path-to-json" {
-  key          = "dbfs-path-to-json"
-  string_value = format("%s%s", var.dbfs_path_prefix, var.json_file_name)
+resource "databricks_secret" "gs-path-to-json" {
+  key          = "gs-path-to-json"
+  string_value = var.gs_path_to_json
   scope        = databricks_secret_scope.sat.id
 }
 

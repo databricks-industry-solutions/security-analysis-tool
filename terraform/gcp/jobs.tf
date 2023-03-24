@@ -5,6 +5,9 @@ resource "databricks_job" "initializer" {
     spark_version = data.databricks_spark_version.latest_lts.id
     node_type_id  = data.databricks_node_type.smallest.id
     runtime_engine = "PHOTON"
+    gcp_attributes {
+      google_service_account = var.impersonate_service_account
+    }
   }
 
   library {
@@ -26,6 +29,9 @@ resource "databricks_job" "driver" {
     spark_version = data.databricks_spark_version.latest_lts.id
     node_type_id  = data.databricks_node_type.smallest.id
     runtime_engine = "PHOTON"
+    gcp_attributes {
+      google_service_account = var.impersonate_service_account
+    }
   }
 
   library {

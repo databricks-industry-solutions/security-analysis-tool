@@ -121,7 +121,11 @@ def num_defined_jobs_rule(df):
     else:
         return ('WST-1', 0, 'OK', {'value': 0}, 'Workspace Stats')
 
-sqlctrl(workspace_id,'''select * from `global_temp`.`jobs`''', num_defined_jobs_rule, True)
+tbl_name = 'global_temp.jobs' + '_' + workspace_id
+sql = f'''
+    SELECT * FROM {tbl_name} 
+'''
+sqlctrl(workspace_id,sql, num_defined_jobs_rule, True)
 
 # COMMAND ----------
 
@@ -131,7 +135,14 @@ def num_external_jobs_rule(df):
     else:
         return ('WST-2', {'value': 0}, 'Workspace Stats')
 
-sqlctrl(workspace_id,'''select distinct job_id from `global_temp`.`job_runs` a LEFT ANTI JOIN `global_temp`.`jobs` b ON a.job_id==b.job_id''', num_external_jobs_rule, True)
+tbl_name = 'global_temp.jobs' + '_' + workspace_id
+tbl_name_runs = 'global_temp.job_runs' + '_' + workspace_id
+sql = f'''
+    SELECT distinct job_id from FROM {tbl_name_runs} a 
+    LEFT ANTI JOIN {tbl_name} b
+    ON a.job_id==b.job_id
+'''
+sqlctrl(workspace_id, sql, num_external_jobs_rule, True)
 
 # COMMAND ----------
 

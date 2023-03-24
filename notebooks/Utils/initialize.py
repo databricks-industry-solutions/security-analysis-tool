@@ -46,7 +46,8 @@ json_.update({
    "dashboard_id":"317f4809-8d9d-4956-a79a-6eee51412217",
    "dashboard_folder":"../../dashboards/",
    "dashboard_tag":"SAT",
-   "use_mastercreds":True
+   "use_mastercreds":True,
+   "use_parallel_runs":True
 })
 
 
@@ -55,7 +56,7 @@ json_.update({
 # DBTITLE 1,GCP configurations 
 if cloud_type == 'gcp':
     json_.update({
-       "service_account_key_file_path": dbutils.secrets.get(scope="sat_scope", key="dbfs-path-to-json"),
+       "service_account_key_file_path": dbutils.secrets.get(scope="sat_scope", key="gs-path-to-json"),
        "impersonate_service_account": dbutils.secrets.get(scope="sat_scope", key="impersonate-service-account"),
        "use_mastercreds":False
     })
