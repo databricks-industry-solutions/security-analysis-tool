@@ -995,6 +995,28 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='53' #	GOV-16 Workspace Unity Catalog metastore assignment
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def uc_metasore_check(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {i.metastore_id : [i.workspace_id] for i in uc_metasore}
+        return (check_id, 0, uc_metasore_dict )
+    else:
+        return (check_id, 1, {})   
+if enabled:    
+    tbl_name = 'global_temp.unitycatalogmsv2' + '_' + workspace_id
+    sql=f'''
+        SELECT metastore_id,workspace_id
+        FROM {tbl_name} 
+        WHERE workspace_id="{workspaceId}"
+            
+    '''
+    sqlctrl(workspace_id, sql, uc_metasore_check)
+
+# COMMAND ----------
+
 tcomp = time.time() - start_time
 print(f"Workspace Analysis - {tcomp} seconds to run")
 

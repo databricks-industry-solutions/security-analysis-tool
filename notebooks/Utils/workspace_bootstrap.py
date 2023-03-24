@@ -130,19 +130,19 @@ bootstrap('endpoints' + '_' + workspace_id, db_sql_client.get_sqlendpoint_list)
 
 # COMMAND ----------
 
-bootstrap('dbsql_alerts', db_sql_client.get_alerts_list)
+bootstrap('dbsql_alerts' + '_' + workspace_id, db_sql_client.get_alerts_list)
 
 # COMMAND ----------
 
-bootstrap('dbsql_warehouselist', db_sql_client.get_sql_warehouse_list)
+bootstrap('dbsql_warehouselist' + '_' + workspace_id, db_sql_client.get_sql_warehouse_list)
 
 # COMMAND ----------
 
-bootstrap('dbsql_warehouselistv2', db_sql_client.get_sql_warehouse_listv2)
+bootstrap('dbsql_warehouselistv2' + '_' + workspace_id, db_sql_client.get_sql_warehouse_listv2)
 
 # COMMAND ----------
 
-bootstrap('dbsql_workspaceconfig', db_sql_client.get_sql_workspace_config)
+bootstrap('dbsql_workspaceconfig' + '_' + workspace_id, db_sql_client.get_sql_workspace_config)
 
 # COMMAND ----------
 
@@ -424,35 +424,35 @@ except:
 
 # COMMAND ----------
 
-bootstrap('unitycatalogmsv1', uc_client.get_metastore_list)
+bootstrap('unitycatalogmsv1' + '_' + workspace_id, uc_client.get_metastore_list)
 
 # COMMAND ----------
 
-bootstrap('unitycatalogmsv2', uc_client.get_workspace_metastore_assignments)
+bootstrap('unitycatalogmsv2' + '_' + workspace_id, uc_client.get_workspace_metastore_assignments)
 
 # COMMAND ----------
 
-bootstrap('unitycatalogexternallocations', uc_client.get_external_locations)
+bootstrap('unitycatalogexternallocations' + '_' + workspace_id, uc_client.get_external_locations)
 
 # COMMAND ----------
 
-bootstrap('unitycatalogcredentials', uc_client.get_credentials)
+bootstrap('unitycatalogcredentials' + '_' + workspace_id, uc_client.get_credentials)
 
 # COMMAND ----------
 
-bootstrap('unitycatalogshares', uc_client.get_list_shares)
+bootstrap('unitycatalogshares' + '_' + workspace_id, uc_client.get_list_shares)
 
 # COMMAND ----------
 
-bootstrap('unitycatalogshareproviders', uc_client.get_sharing_providers_list)
+bootstrap('unitycatalogshareproviders' + '_' + workspace_id, uc_client.get_sharing_providers_list)
 
 # COMMAND ----------
 
-bootstrap('unitycatalogsharerecipients', uc_client.get_sharing_recepients_list)
+bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_sharing_recepients_list)
 
 # COMMAND ----------
 
- bootstrap('unitycatalogcatlist', uc_client.get_catalogs_list)
+ bootstrap('unitycatalogcatlist' + '_' + workspace_id, uc_client.get_catalogs_list)
 
 # COMMAND ----------
 
