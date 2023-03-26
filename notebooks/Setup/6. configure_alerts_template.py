@@ -236,40 +236,6 @@ for ws_to_load in workspaces:
     else:
         loggr.info(f"Error creating alert: {(response.json())}")  
 
-    if alert_id is not None:
-        response = requests.get(
-                      'https://%s/api/2.0/preview/scim/v2/Users?filter=userName+eq+%s' % (DOMAIN,ws_to_load.alert_subscriber_user_id),
-                      headers={'Authorization': 'Bearer %s' % TOKEN},
-                      json=None,
-                      timeout=60
-                    )
-
-    result = json.loads(response.text)
-    if result['totalResults'] != 0 :
-        resources = result['Resources']
-        for resource in resources:
-            user_id = resource["id"]
-
-            if user_id is not None:
-                response = session.post(
-                          'https://%s/api/2.0/preview/sql/alerts/%s/subscriptions' % (DOMAIN, alert_id),
-                          headers={'Authorization': 'Bearer %s' % TOKEN},
-                          json={
-                              "alert_id":alert_id,
-                              "user_id":user_id
-                            },
-                          timeout=60  
-                        )
-
-                if response.status_code == 200:
-                    loggr.info(f"Alert subscription is successfuly associated to user {response.json()['user']}!")
-                else:
-                    loggr.info(f"Error creating alert subscription: {(response.json())}")
-                    dbutils.notebook.exit("Error creating alert subscription")
-            else: 
-                loggr.info(f"User not found with login : {ws_to_load.alert_subscriber_user_id}")
-                dbutils.notebook.exit("Error creating alert subscription, Configured user not found " + user_id )
-
 # COMMAND ----------
 
 dbutils.notebook.exit('OK')
