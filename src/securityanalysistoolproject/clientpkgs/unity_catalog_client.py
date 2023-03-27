@@ -130,8 +130,6 @@ class UnityCatalogClient(SatDBClient):
             return []
         return metastores
     
-
-
     def get_credentials(self):
         """
         Returns list of credentials
@@ -140,6 +138,22 @@ class UnityCatalogClient(SatDBClient):
         credentialslist = self.get("/unity-catalog/storage-credentials", version='2.1').get('storage_credentials', [])
         return credentialslist
     
-
+    def get_grants_effective_permissions(self, securable_type, full_name):
+        """
+        Returns effective permissions for securable type
+        :param securable_type like METASTORE, CATALOG, SCHEMA
+        :param full_name like metastore guid
+        """
+        # fetch all schemaslist
+        permslist = self.get(f"/unity-catalog/permissions/{securable_type}/{full_name}", version='2.1').get('privilege_assignments', [])
+        return permslist    
     
-   
+    def get_grants_permissions(self, securable_type, full_name):
+        """
+        Returns permissions for securable type
+        :param securable_type like METASTORE, CATALOG, SCHEMA
+        :param full_name like metastore guid
+        """
+        # fetch all schemaslist
+        permslist = self.get("/unity-catalog/effective-permissions/{securable_type}/{full_name}", version='2.1').get('privilege_assignments', [])
+        return permslist    
