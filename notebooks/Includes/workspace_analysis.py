@@ -1206,8 +1206,9 @@ def metastore_delta_sharing_permissions(df):
 if enabled:    
     tbl_name = 'global_temp.metastorepermissions' + '_' + workspace_id
     sql=f'''
-        SELECT metastore_name,principal,explode(privileges) as privilege  
-        FROM {tbl_name}  
+        SELECT * FROM (SELECT metastore_name,principal,explode(privileges) as privilege  
+        FROM {tbl_name} )
+        WHERE privilege= "CREATE_RECIPIENT" OR  privilege="CREATE_SHARE"
     '''
     sqlctrl(workspace_id, sql, metastore_delta_sharing_permissions)
 
