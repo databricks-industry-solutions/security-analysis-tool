@@ -998,7 +998,7 @@ if enabled:
 check_id='53' #	GOV-16 Workspace Unity Catalog metastore assignment
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-def uc_metasore_check(df):
+def uc_metasore_assignment(df):
     if df is not None and not df.rdd.isEmpty():
         uc_metasore = df.collect()
         uc_metasore_dict = {i.metastore_id : [i.workspace_id] for i in uc_metasore}
@@ -1013,7 +1013,181 @@ if enabled:
         WHERE workspace_id="{workspaceId}"
             
     '''
-    sqlctrl(workspace_id, sql, uc_metasore_check)
+    sqlctrl(workspace_id, sql, uc_metasore_assignment)
+
+# COMMAND ----------
+
+check_id='54' #	GOV-17 Lifetime of metastore delta sharing recipient token set less than 90 days
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def uc_metasore_token(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {i.name : [i.delta_sharing_recipient_token_lifetime_in_seconds] for i in uc_metasore}
+        return (check_id, 1, uc_metasore_dict )
+    else:
+        return (check_id, 0, {})   
+if enabled:    
+    tbl_name = 'global_temp.unitycatalogmsv1' + '_' + workspace_id
+    sql=f'''
+        SELECT name, delta_sharing_recipient_token_lifetime_in_seconds
+        FROM {tbl_name} 
+        WHERE delta_sharing_scope ="INTERNAL_AND_EXTERNAL" AND delta_sharing_recipient_token_lifetime_in_seconds < 7776000
+    '''
+    sqlctrl(workspace_id, sql, uc_metasore_token)
+    
+
+# COMMAND ----------
+
+check_id='55' #	GOV-18  Check if there are any token based sharing without IP access lists ip_access_list
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def uc_delta_share_ip_accesslist(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {i.name : [i.owner] for i in uc_metasore}
+        return (check_id, 1, uc_metasore_dict )
+    else:
+        return (check_id, 0, {})   
+if enabled:    
+    tbl_name = 'global_temp.unitycatalogsharerecipients' + '_' + workspace_id
+    sql=f'''
+        SELECT name, owner
+        FROM {tbl_name} 
+        where authentication_type = 'TOKEN' and ip_access_list is NULL
+    '''
+    sqlctrl(workspace_id, sql, uc_delta_share_ip_accesslist)
+    
+
+# COMMAND ----------
+
+check_id='56' #	GOV-19  Check if Delta sharing Token Expiration
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def uc_delta_share_expiration_time(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {i.name : [i.owner] for i in uc_metasore}
+        return (check_id, 1, uc_metasore_dict )
+    else:
+        return (check_id, 0, {})   
+if enabled:    
+    tbl_name = 'global_temp.unitycatalogsharerecipients' + '_' + workspace_id
+    sql=f'''
+        SELECT tokens.* FROM (select explode(tokens) as tokens, full_name, owner
+        FROM {tbl_name} 
+        WHERE authentication_type = 'TOKEN')   WHERE tokens.expiration_time is NULL 
+    '''
+    sqlctrl(workspace_id, sql, uc_delta_share_expiration_time)
+ 
+
+# COMMAND ----------
+
+check_id='57' #	GOV-20  Check Use of Metastore
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def uc_metastore(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {i.name : [i.owner] for i in uc_metasore}
+        return (check_id, 0, uc_metasore_dict )
+    else:
+        return (check_id, 1, {})   
+if enabled:    
+    tbl_name = 'global_temp.unitycatalogmsv1' + '_' + workspace_id
+    sql=f'''
+        SELECT name,owner
+        FROM {tbl_name} 
+        WHERE securable_type = 'METASTORE'
+    '''
+    sqlctrl(workspace_id, sql, uc_metastore)
+ 
+
+# COMMAND ----------
+
+check_id='58' #	GOV-21  Check Metastore Admin is also the creator
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def uc_metastore_owner(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {i.name : [i.owner, i.created_by] for i in uc_metasore}
+        return (check_id, 1, uc_metasore_dict )
+    else:
+        return (check_id, 0, {})   
+if enabled:    
+    tbl_name = 'global_temp.unitycatalogmsv1' + '_' + workspace_id
+    sql=f'''
+        SELECT name,owner,created_by
+        FROM {tbl_name} 
+        WHERE securable_type = 'METASTORE' and owner == created_by
+    '''
+    sqlctrl(workspace_id, sql, uc_metastore_owner)
+ 
+
+# COMMAND ----------
+
+check_id='59' #	GOV-22  Check Metastore Storage Credentials
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def uc_metastore_storage_creds(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {i.name : [i.owner, i.created_by] for i in uc_metasore}
+        return (check_id, 1, uc_metasore_dict )
+    else:
+        return (check_id, 0, {})   
+if enabled:    
+    tbl_name = 'global_temp.unitycatalogcredentials' + '_' + workspace_id
+    sql=f'''
+        SELECT name,owner,created_by
+        FROM {tbl_name} 
+        WHERE securable_type = "STORAGE_CREDENTIAL" 
+    '''
+    sqlctrl(workspace_id, sql, uc_metastore_storage_creds)
+ 
+
+# COMMAND ----------
+
+check_id='60' #	GOV-23  Check UC enabled Data warehouses
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def uc_dws(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {i.name : [i.creator_name] for i in uc_metasore}
+        return (check_id, 1, uc_metasore_dict )
+    else:
+        return (check_id, 0, {})   
+if enabled:    
+    tbl_name = 'global_temp.dbsql_warehouselistv2' + '_' + workspace_id
+    sql=f'''
+        SELECT warehouse.name as name , warehouse.creator_name as creator_name  from (select explode(warehouses) as warehouse  
+        FROM {tbl_name} ) 
+        where warehouse.disable_uc = true
+    '''
+    sqlctrl(workspace_id, sql, uc_dws)
+ 
+
+# COMMAND ----------
+
+check_id='61' #	INFO-17  Check Serverless Compute enabled
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def dbsql_enable_serverless_compute(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'enable_serverless_compute':'Serverless Compute enabled'} )
+    else:
+        return (check_id, 1, {'enable_serverless_compute':'Serverless Compute not enabled'})   
+if enabled:    
+    tbl_name = 'global_temp.dbsql_workspaceconfig' + '_' + workspace_id
+    sql=f'''
+        SELECT enable_serverless_compute FROM
+        FROM {tbl_name} 
+        WHERE enable_serverless_compute = true
+    '''
+    sqlctrl(workspace_id, sql, dbsql_enable_serverless_compute)
+ 
 
 # COMMAND ----------
 
