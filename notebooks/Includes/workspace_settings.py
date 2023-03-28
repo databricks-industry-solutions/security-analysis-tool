@@ -433,7 +433,7 @@ def enableNotebookGitVersioning(df):
     for row in df.rdd.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'):
+    if(value == None or value == 'true'):
         return (id, 0, defn)
     else:
         return (id, 1, defn)
@@ -442,7 +442,7 @@ if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
-        WHERE workspace_id = "{workspace_id}" AND name="enableNotebookGitVersioning"
+        WHERE name="enableNotebookGitVersioning"
     '''
     sqlctrl(workspace_id, sql, enableNotebookGitVersioning)
 
