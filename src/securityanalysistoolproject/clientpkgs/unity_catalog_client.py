@@ -116,7 +116,7 @@ class UnityCatalogClient(SatDBClient):
         metastoresumlist.append(json.loads(json.dumps(metastoresumjson)))
         return metastoresumlist    
     
-    #Have to be an account admin
+    #Has to be an account admin to run this api
     def get_metastore_list(self):
         """
         Returns list of workspace metastore 
@@ -157,3 +157,19 @@ class UnityCatalogClient(SatDBClient):
         # fetch all schemaslist
         permslist = self.get("/unity-catalog/effective-permissions/{securable_type}/{full_name}", version='2.1').get('privilege_assignments', [])
         return permslist    
+    
+    #the user should have account admin privileges
+    def get_grants_effective_permissions_ext(self):
+        arrperms=[]
+        arrlist = self.get_metastore_list()
+        for meta in arrlist:
+            metastore_id = meta['metastore_id']
+            effperms = self.get_grants_effective_permissions('METASTORE', metastore_id)
+            for effpermselem in effperms:
+                effpermselem['metastore_id'] = meta['metastore_id']
+                effpermselem['metastore_name'] = meta['name']
+            arrperms.extend(effperms)
+        jsonarr = json.dumps(arrperms)
+        return arrperms
+
+            
