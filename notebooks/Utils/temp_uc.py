@@ -174,3 +174,22 @@
 # MAGIC      FROM `global_temp`.`dbsql_warehouselistv2_1657683783405196`)   where warehouse.disable_uc = true
 # MAGIC         
 # MAGIC --select warehouse.name as name , warehouse.creator_name as creator_name  from (select explode(warehouses) as warehouse from `global_temp`.`dbsql_warehouselistv2_1657683783405196`) where warehouse.disable_uc = true;  
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC Select metastore_name,principal, explode(privileges) as privilege, * from `global_temp`.`metastorepermissions_1657683783405196`
+
+# COMMAND ----------
+
+df = spark.sql("Select metastore_name,principal, explode(privileges) as privilege, * from `global_temp`.`metastorepermissions_1657683783405196`")
+display(df)
+
+# COMMAND ----------
+
+uc_metasore= df.collect()
+uc_metasore_dict = {num: [row.metastore_name,row.principal, row.privilege] for num,row in enumerate(uc_metasore)}
+
+# COMMAND ----------
+
+display(uc_metasore_dict)

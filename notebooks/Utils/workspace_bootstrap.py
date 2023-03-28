@@ -456,6 +456,10 @@ bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_shar
 
 # COMMAND ----------
 
+ bootstrap('metastorepermissions' + '_' + workspace_id, uc_client.get_grants_effective_permissions_ext)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### Workspace
 

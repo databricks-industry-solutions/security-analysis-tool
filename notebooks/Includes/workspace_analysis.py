@@ -903,6 +903,7 @@ def log_check(df):
         df = df.rdd.map(lambda x: ( re.sub('[\"\'\\\\]', '_',x[0]), x[1])).toDF(['config_name', 'config_id'])        
         logc = df.collect()
         logc_dict = {'audit_logs' : [[i.config_name, i.config_id] for i in logc]}
+        
         print(logc_dict)
         return (check_id, 0, logc_dict)
     else:
@@ -1023,7 +1024,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def uc_metasore_token(df):
     if df is not None and not df.rdd.isEmpty():
         uc_metasore = df.collect()
-        uc_metasore_dict = {i.name : [i.delta_sharing_recipient_token_lifetime_in_seconds] for i in uc_metasore}
+        uc_metasore_dict = {num: [row.name,row.delta_sharing_recipient_token_lifetime_in_seconds] for num,row in enumerate(uc_metasore)}
         return (check_id, 1, uc_metasore_dict )
     else:
         return (check_id, 0, {})   
@@ -1045,7 +1046,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def uc_delta_share_ip_accesslist(df):
     if df is not None and not df.rdd.isEmpty():
         uc_metasore = df.collect()
-        uc_metasore_dict = {i.name : [i.owner] for i in uc_metasore}
+        uc_metasore_dict = {num: [row.name,row.owner] for num,row in enumerate(uc_metasore)}
         return (check_id, 1, uc_metasore_dict )
     else:
         return (check_id, 0, {})   
@@ -1067,7 +1068,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def uc_delta_share_expiration_time(df):
     if df is not None and not df.rdd.isEmpty():
         uc_metasore = df.collect()
-        uc_metasore_dict = {i.name : [i.owner] for i in uc_metasore}
+        uc_metasore_dict = {num: [row.name,row.owner] for num,row in enumerate(uc_metasore)}
         return (check_id, 1, uc_metasore_dict )
     else:
         return (check_id, 0, {})   
@@ -1133,7 +1134,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def uc_metastore_storage_creds(df):
     if df is not None and not df.rdd.isEmpty():
         uc_metasore = df.collect()
-        uc_metasore_dict = {i.name : [i.owner, i.created_by] for i in uc_metasore}
+        uc_metasore_dict = {num: [row.name,row.owner, row.created_by] for num,row in enumerate(uc_metasore)}
         return (check_id, 1, uc_metasore_dict )
     else:
         return (check_id, 0, {})   
@@ -1156,6 +1157,7 @@ def uc_dws(df):
     if df is not None and not df.rdd.isEmpty():
         uc_metasore = df.collect()
         uc_metasore_dict = {i.name : [i.creator_name] for i in uc_metasore}
+        
         return (check_id, 1, uc_metasore_dict )
     else:
         return (check_id, 0, {})   
@@ -1188,6 +1190,26 @@ if enabled:
     '''
     sqlctrl(workspace_id, sql, dbsql_enable_serverless_compute)
  
+
+# COMMAND ----------
+
+check_id='62' #	INFO-18  Check Delta Sharing CREATE_RECIPIENT and CREATE_SHARE permissions
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def metastore_delta_sharing_permissions(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_metasore = df.collect()
+        uc_metasore_dict = {num: [row.metastore_name,row.principal, row.privilege] for num,row in enumerate(uc_metasore)}
+        return (check_id, 0, uc_metasore_dict ) # intentionally kept the score to 0 as its not a pass or fail. Its more of FYI
+    else:
+        return (check_id, 0, {})   # intentionally kept the score to 0 as its not a pass or fail. Its more of FYI
+if enabled:    
+    tbl_name = 'global_temp.metastorepermissions' + '_' + workspace_id
+    sql=f'''
+        SELECT metastore_name,principal,explode(privileges) as privilege  
+        FROM {tbl_name}  
+    '''
+    sqlctrl(workspace_id, sql, metastore_delta_sharing_permissions)
 
 # COMMAND ----------
 
