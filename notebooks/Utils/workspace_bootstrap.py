@@ -118,15 +118,31 @@ bootstrap('spark_versions'+ '_' + workspace_id, cluster_client.get_spark_version
 
 # COMMAND ----------
 
-from clientpkgs.db_sql_client import DBSqlClient
+from clientpkgs.dbsql_client import DBSQLClient
 try:
-    db_sql_client = DBSqlClient(json_)
+    db_sql_client =  DBSQLClient(json_)
 except Exception:
     loggr.exception("Exception encountered")
 
 # COMMAND ----------
 
 bootstrap('endpoints' + '_' + workspace_id, db_sql_client.get_sqlendpoint_list)
+
+# COMMAND ----------
+
+bootstrap('dbsql_alerts' + '_' + workspace_id, db_sql_client.get_alerts_list)
+
+# COMMAND ----------
+
+bootstrap('dbsql_warehouselist' + '_' + workspace_id, db_sql_client.get_sql_warehouse_list)
+
+# COMMAND ----------
+
+bootstrap('dbsql_warehouselistv2' + '_' + workspace_id, db_sql_client.get_sql_warehouse_listv2)
+
+# COMMAND ----------
+
+bootstrap('dbsql_workspaceconfig' + '_' + workspace_id, db_sql_client.get_sql_workspace_config)
 
 # COMMAND ----------
 
@@ -392,6 +408,55 @@ except:
 # COMMAND ----------
 
 bootstrap('libraries'+ '_' + workspace_id, lib_client.get_libraries_status_list)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Unity Catalog
+
+# COMMAND ----------
+
+from clientpkgs.unity_catalog_client import UnityCatalogClient
+try:
+    uc_client = UnityCatalogClient(json_)
+except:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+bootstrap('unitycatalogmsv1' + '_' + workspace_id, uc_client.get_metastore_list)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogmsv2' + '_' + workspace_id, uc_client.get_workspace_metastore_assignments)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogexternallocations' + '_' + workspace_id, uc_client.get_external_locations)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogcredentials' + '_' + workspace_id, uc_client.get_credentials)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogshares' + '_' + workspace_id, uc_client.get_list_shares)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogshareproviders' + '_' + workspace_id, uc_client.get_sharing_providers_list)
+
+# COMMAND ----------
+
+bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_sharing_recepients_list)
+
+# COMMAND ----------
+
+ bootstrap('unitycatalogcatlist' + '_' + workspace_id, uc_client.get_catalogs_list)
+
+# COMMAND ----------
+
+ bootstrap('metastorepermissions' + '_' + workspace_id, uc_client.get_grants_effective_permissions_ext)
 
 # COMMAND ----------
 

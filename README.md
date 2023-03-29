@@ -57,7 +57,7 @@ The dashboard is broken into the five sections and each pillar is laid out in a 
 
 ## Detection example
 
-Security Analysis Tool (SAT) analyzes 37 best practices, with more on the way. In the example below, the SAT scan highlights one finding that surfaces a potential risk, and one that meets Databricks' best practices. The Deprecated runtime versions check is red indicating that there are runtimes that are deprecated. Workloads on unsupported runtime versions may continue to run, but they receive no Databricks support or fixes. The Remediation column in the screenshot describes the risk and links to the documentation of the Databricks runtime versions that are currently supported. 
+Security Analysis Tool (SAT) analyzes 60 best practices, with more on the way. In the example below, the SAT scan highlights one finding that surfaces a potential risk, and one that meets Databricks' best practices. The Deprecated runtime versions check is red indicating that there are runtimes that are deprecated. Workloads on unsupported runtime versions may continue to run, but they receive no Databricks support or fixes. The Remediation column in the screenshot describes the risk and links to the documentation of the Databricks runtime versions that are currently supported. 
 
 On the other hand, the Log delivery check is green, confirming that the workspace follows Databricks security best practices. Run these checks regularly to comprehensively view Databricks account workspace security and ensure continuous improvement.
 

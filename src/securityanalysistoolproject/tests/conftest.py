@@ -13,6 +13,7 @@ def get_db_client():
     configParser.read(configFilePath)
     jsonstr = configParser['MEISTERSTUFF']['json']
     json_ = json.loads(jsonstr)
+
     #workspace_id = json_['workspace_id']
     LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
     LOGGR = LoggingUtils.get_logger()

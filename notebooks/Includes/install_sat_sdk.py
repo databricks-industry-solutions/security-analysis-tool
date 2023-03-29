@@ -1,5 +1,5 @@
 # Databricks notebook source
-SDK_VERSION='0.1.23'
+SDK_VERSION='0.1.25'
 
 # COMMAND ----------
 
