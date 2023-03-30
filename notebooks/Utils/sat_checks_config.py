@@ -100,8 +100,7 @@ params = {'Analysis Enabled': 'analysis_enabled',
                   'SCIM Enabled': 'scim_enabled', 
                   'ANY VPC PEERING': 'vpc_peering_done', 
                   'Object Storage Encrypted': 'object_storage_encrypted', 
-                  'Table Access Control Enabled':'table_access_control_enabled', 
-                  'Alert Subscriber User Id': 'alert_subscriber_user_id'}
+                  'Table Access Control Enabled':'table_access_control_enabled'}
 #SET & GET SAT check configurations for the workspace
 def get_workspace_check_config():
     workspace = dbutils.widgets.get("workspaces")
@@ -109,7 +108,7 @@ def get_workspace_check_config():
 
     s_sql = '''
                 SELECT analysis_enabled, sso_enabled, scim_enabled, vpc_peering_done, object_storage_encrypted, 
-                table_access_control_enabled, alert_subscriber_user_id
+                table_access_control_enabled
                 FROM security_analysis.account_workspaces
                 WHERE workspace_id= '{ws_id}'
             '''.format(ws_id = ws_id)
@@ -123,7 +122,7 @@ def get_workspace_check_config():
     vpc_peering_done = check['vpc_peering_done'][0]
     object_storage_encrypted = check['object_storage_encrypted'][0]
     table_access_control_enabled = check['table_access_control_enabled'][0]
-    alert_subscriber_user_id = check['alert_subscriber_user_id'][0]
+   
 
     dbutils.widgets.dropdown("analysis_enabled", str(analysis_enabled),  ['False','True'], "b. Analysis Enabled")
     dbutils.widgets.dropdown("sso_enabled", str(sso_enabled),  ['False','True'], "c. SSO Enabled")
@@ -131,8 +130,7 @@ def get_workspace_check_config():
     dbutils.widgets.dropdown("vpc_peering_done", str(vpc_peering_done),  ['False','True'], "e. ANY VPC PEERING")
     dbutils.widgets.dropdown("object_storage_encrypted", str(object_storage_encrypted),  ['False','True'], "f. Object Storage Encrypted")
     dbutils.widgets.dropdown("table_access_control_enabled", str(table_access_control_enabled),  ['False','True'], "g. Table Access Control Enabled")
-    dbutils.widgets.text("alert_subscriber_user_id", str(alert_subscriber_user_id), "h. Alert Subscriber User Id")
-    dbutils.widgets.multiselect("apply_setting_to_all_ws_enabled", "",  ['','Analysis Enabled', 'SSO Enabled', 'SCIM Enabled', 'ANY VPC PEERING', 'Object Storage Encrypted', 'Table Access Control Enabled', 'Alert Subscriber User Id'], "i. Apply Setting to all workspaces")
+    dbutils.widgets.multiselect("apply_setting_to_all_ws_enabled", "",  ['','Analysis Enabled', 'SSO Enabled', 'SCIM Enabled', 'ANY VPC PEERING', 'Object Storage Encrypted', 'Table Access Control Enabled'], "i. Apply Setting to all workspaces")
     
     
 def set_workspace_check_config():
@@ -144,7 +142,6 @@ def set_workspace_check_config():
     vpc_peering_done = dbutils.widgets.get("vpc_peering_done").lower()
     object_storage_encrypted = dbutils.widgets.get("object_storage_encrypted").lower()
     table_access_control_enabled = dbutils.widgets.get("table_access_control_enabled").lower()
-    alert_subscriber_user_id = dbutils.widgets.get("alert_subscriber_user_id")
     apply_setting_to_all_ws_enabled = dbutils.widgets.get("apply_setting_to_all_ws_enabled")
     
     ws_id = workspace.split('_')[-1]
@@ -157,12 +154,11 @@ def set_workspace_check_config():
                         scim_enabled = {scim_enabled},
                         vpc_peering_done = {vpc_peering_done},
                         object_storage_encrypted = {object_storage_encrypted},
-                        table_access_control_enabled = {table_access_control_enabled},
-                        alert_subscriber_user_id = '{alert_subscriber_user_id}'
+                        table_access_control_enabled = {table_access_control_enabled}
                     WHERE workspace_id= '{ws_id}'
                 '''.format(analysis_enabled=analysis_enabled, sso_enabled=sso_enabled, scim_enabled=scim_enabled, 
                            vpc_peering_done=vpc_peering_done, object_storage_encrypted=object_storage_encrypted, 
-                           table_access_control_enabled=table_access_control_enabled, alert_subscriber_user_id=alert_subscriber_user_id, ws_id = ws_id)
+                           table_access_control_enabled=table_access_control_enabled, ws_id = ws_id)
         print(s_sql)
         spark.sql(s_sql)
     else:
@@ -173,10 +169,7 @@ def set_workspace_check_config():
                 val = params[param]
                 if first_param == True:
                     s_sql = s_sql + ","
-                if param == 'Alert Subscriber User Id':
-                    s_sql = s_sql + val + "='" + eval(params[param]) + "'"
-                else:
-                    s_sql = s_sql + val + "=" + eval(params[param])
+                s_sql = s_sql + val + "=" + eval(params[param])
                 first_param=True
         print(s_sql)
         spark.sql(s_sql)

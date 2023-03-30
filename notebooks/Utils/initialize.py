@@ -13,7 +13,6 @@ cloud_type = getCloudType(hostname)
 # MAGIC ##### Modify JSON values
 # MAGIC * **account_id** Account ID. Can get this from the accounts console
 # MAGIC * **sql_warehouse_id** SQL Warehouse ID to import dashboard
-# MAGIC * **username_for_alerts** A valid Databricks username to receive alerts 
 # MAGIC * **verbosity** (optional). debug, info, warning, error, critical
 # MAGIC * **master_name_scope** Secret Scope for Account Name
 # MAGIC * **master_name_key** Secret Key for Account Name
@@ -30,7 +29,6 @@ import json
 json_ = {
    "account_id": dbutils.secrets.get(scope="sat_scope", key="account-console-id"),
    "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id"),
-   "username_for_alerts": dbutils.secrets.get(scope="sat_scope", key="user-email-for-alerts"),
    "verbosity":"info"
 }
 

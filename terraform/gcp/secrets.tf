@@ -2,12 +2,6 @@ resource "databricks_secret_scope" "sat" {
   name = "sat_scope"
 }
 
-resource "databricks_secret" "user-email" {
-  key          = "user-email-for-alerts"
-  string_value = data.databricks_current_user.me.user_name
-  scope        = databricks_secret_scope.sat.id
-}
-
 resource "databricks_secret" "pat" {
   key          = "sat-token-${var.workspace_id}"
   string_value = var.workspace_PAT

@@ -114,7 +114,6 @@ def modifyWorkspaceConfigFile(input_connection_arr):
           allwsm.workspace_name,
           allwsm.workspace_status,
           allwsm.ws_token,
-          allwsm.alert_subscriber_user_id,
           allwsm.sso_enabled,
           allwsm.scim_enabled,
           allwsm.vpc_peering_done,
