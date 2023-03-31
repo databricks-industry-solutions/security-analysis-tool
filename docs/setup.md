@@ -2,14 +2,14 @@
 
 **Note**: SAT creates a new **security_analysis** databses and Delta tables. 
 
-If you are an existing SAT user please run the following command to reset your Database in your DBSQL SQL Editor.
+If you are an existing SAT user please run the following command to reset your Database in your DBSQL SQL Editor. 
 
   ``` 
     drop  database security_analysis cascade
    ``` 
-Please make sure you are using - in all secret key names as opposed to _ .   
+Please make sure you are using char - in all secret key names as opposed to char _ .   
 
-**Note**: SAT can be setup as Terraform based deployment, if you use Terrafrom please please prefer instructions: 
+**Note**: SAT can be setup as Terraform based deployment, if you use Terrafrom in your organization please please prefer Terrafrom instructions: 
 * [SAT AWS Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/aws/TERRAFORM_AWS.md) 
 * [SAT Azure Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/azure/TERRAFORM_Azure.md) 
 * [SAT GCP Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/gcp/TERRAFORM_GCP.md) 
@@ -170,7 +170,6 @@ Please gather the following information before you start setting up:
      * Set the PAT token value for the workspace_id 
      * Set the value for the account_id 
      * Set the value for the sql_warehouse_id
-     * Set the value for user_email_for_alerts
     
 
        ```
@@ -184,23 +183,18 @@ Please gather the following information before you start setting up:
        ```
        databricks --profile e2-sat secrets put --scope sat_scope --key sql-warehouse-id
        ```  
-      
-       ```
-       databricks --profile e2-sat secrets put --scope sat_scope --key user-email-for-alerts
-       ```  
+    
 
    * In your environment where you imported SAT project from git (Refer to Step 4 in Prerequisites) Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
      * Set the value for the account_id 
      * Set the value for the sql_warehouse_id
-     * Set the value for username_for_alerts
      * Databricks secrets scope/key names to pick the secrets from the steps above.
 
      * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 4 should look like this if you are using the secrets (Required for TF deployments), no need to edit the cell:
          ```
               {
                  "account_id": dbutils.secrets.get(scope="sat_scope", key="account-console-id"),   
-                 "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id"),
-                 "username_for_alerts": dbutils.secrets.get(scope="sat_scope", key="user-email-for-alerts"),
+                 "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id")
                  "verbosity":"info"
               }
 
@@ -211,7 +205,6 @@ Please gather the following information before you start setting up:
               {
                  "account_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",  <- replace with the actual account_id value
                  "sql_warehouse_id":"4d9fef7de2b9995c",     <- replace with the actual sql_warehouse_id value
-                 "username_for_alerts":"john.doe@org.com", <- replace with a valid Databricks user id
                  "verbosity":"info"
               }
 
@@ -423,10 +416,7 @@ Please gather the following information before you start setting up:
      
      * Go to\<SATProject\>/notebooks/Setup/8. update_workspace_configuration and  You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
       * [Configure widget settings](https://docs.databricks.com/notebooks/widgets.html#configure-widget-settings-1) behavior "On Widget Change" for this notebooks to "Do Nothing"   
-            
-     Set alert_subscriber_user_id to a valid user login email address to receive alerts by workspace
- 
-     Note: Please avoid  “+” character in the alert_subscriber_user_id values due to a limitation with the alerts API. 
+     
      
      Update values for each workspace for the manual checks:(    sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled)
  
@@ -468,8 +458,8 @@ Please gather the following information before you start setting up:
    <img src="../images/sat_dashboard_partial.png" width="50%" height="50%">   
     
 3.  Activate Alerts 
-  * Goto Alerts and find the alert(s) created by SAT tag and adjust the schedule to your needs. 
-
+  * Goto Alerts and find the alert(s) created by SAT tag and adjust the schedule to your needs. You can add more recpients to alerts by configuring  [notification destinations](https://docs.databricks.com/sql/admin/notification-destinations.html).
+     
 
       <img src="./images/alerts_1.png" width="50%" height="50%">   
  
@@ -561,7 +551,7 @@ Please gather the following information before you start setting up:
             
      %sh curl -u 'user:password' -X GET  “Content-Type: application/json” https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces       
             
-      If you don’t see a JSON with a clean listing of workspaces you are likely having a firewall issue that is blocking calls to the accounts console.  Please have your infrastructure team add Databricks accounts.cloud.databricks.com to the allow-list.   
+      If you don’t see a JSON with a clean listing of workspaces you are likely having a firewall issue that is blocking calls to the accounts console.  Please have your infrastructure team add Databricks accounts.cloud.databricks.com to the allow-list.   Please see that the private IPv4 address from NAT gateway to the IP allow list. 
 
 4. Offline install of libraries incase of no PyPI access 
 
