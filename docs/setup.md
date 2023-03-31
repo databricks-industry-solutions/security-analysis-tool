@@ -19,7 +19,7 @@ Please make sure you are using char - in all secret key names as opposed to char
 
 You will need the following information to set up SAT, we will show you how to gather them in the next section.
 
-We created a companion Security Analysis Tool (SAT) [Setup primer video](https://www.youtube.com/watch?v=kLSc3UHKL40) and a [Deployment checklist sheet](./SAT%20Deployment%20Checklist.xlsx) to help prepare for the SAT setup. 
+We created a companion Security Analysis Tool (SAT) [Setup primer video](https://www.youtube.com/watch?v=kLSc3UHKL40) and a [Deployment checklist sheet](./) to help prepare for the SAT setup. 
 
  1. Databricks Account ID 
  2. A Single user cluster  (To run the SAT checks)
