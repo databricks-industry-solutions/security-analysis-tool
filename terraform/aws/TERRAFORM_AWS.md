@@ -74,4 +74,4 @@ Additional Considerations:
 
 Your jobs may fail if there was a pre-existing secret scope named sat_scope when you run terraform apply. To remedy this, you will need to change the name of your secret scope in secrets.tf, re-run terraform apply, and then navigate to /Repos/<your_email_address>/security-analysis-tool.git/notebooks/Utils/initialize and change the secret scope name in  6 places (3 times in CMD 4 and 3 times in CMD 5). You then can re-run your failed jobs.
 
-Congratulations!!! [Please review the setup documentation for the instructions on usage, FAQs and general understanding of SAT setup](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md
+Congratulations!!! [Please review the setup documentation for the instructions on usage, FAQs and general understanding of SAT setup](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md)
