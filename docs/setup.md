@@ -515,8 +515,9 @@ Please gather the following information before you start setting up:
     
     You should see the SAT project in your workspace. 
 2. Can SAT make modifications to my workspaces and account?
-      
-    No. SAT is meant to be a readonly analysis tool, it does not make changes to your workspace or account configurations. 
+     
+            
+     No. SAT is meant to be a readonly analysis tool, it does not make changes to your workspace or account configurations. 
             
 ## Troubleshooting
    
