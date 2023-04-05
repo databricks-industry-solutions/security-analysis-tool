@@ -514,7 +514,9 @@ Please gather the following information before you start setting up:
       <img src="./images/add_repo_5.png" width="50%" height="50%"> 
     
     You should see the SAT project in your workspace. 
-    
+2. Can SAT make modifications to my workspaces and account?
+      No. SAT is meant to be a readonly analysis tool, it does not make changes to your workspace or account configurations. 
+            
 ## Troubleshooting
    
 1. Incorrectly configured secrets
