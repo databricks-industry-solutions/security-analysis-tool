@@ -30,7 +30,7 @@ class JobsClient(SatDBClient):
             for job in res.get('jobs', []):
                 jobid = job.get('job_id')
                 # only replaces "real" MULTI_TASK jobs, as they contain the task definitions.
-                if jobsbyid[jobid].get('format') == 'MULTI_TASK':
+                if jobsbyid[jobid].get('settings').get('format') == 'MULTI_TASK':
                     jobsbyid[jobid] = job
         return jobsbyid.values()
 
