@@ -458,9 +458,9 @@ def enableDeprecatedGlobalInitScripts(df):
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
-        return (id, 0, defn)
-    else:
         return (id, 1, defn)
+    else:
+        return (id, 0, defn)
 
 if enabled:
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
@@ -468,7 +468,7 @@ if enabled:
         SELECT * FROM {tbl_name} 
         WHERE name="enableDeprecatedGlobalInitScripts"
     '''
-    sqlctrl(workspace_id, sql, enableNotebookGitVersioning)
+    sqlctrl(workspace_id, sql, enableDeprecatedGlobalInitScripts)
 
 # COMMAND ----------
 
