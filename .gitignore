@@ -9,7 +9,7 @@
 /configs/setupsecrets.sh
 /configs/workspace_configs.csv
 /configs/security_best_practices_user.csv
-
+.databricks/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
