@@ -31,11 +31,11 @@ variable "sqlw_id" {
 ### GCP Specific Variables
 
 variable "gs_path_to_json" {
-  description = "File path to this resource in Cloud Storage"
-  default     = "gs://<bucket>/<folder>/<file>.json"
+  type        = string
+  description = "File path to this resource in Cloud Storage (as gs://<bucket>/<folder>/<file>.json)"
 }
 
 variable "impersonate_service_account" {
-  description = "Impersonate Service Account String (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
   type        = string
+  description = "Impersonate Service Account String (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
 }

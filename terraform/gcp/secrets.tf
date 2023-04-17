@@ -3,7 +3,7 @@
 resource "databricks_secret" "gs-path-to-json" {
   key          = "gs-path-to-json"
   string_value = var.gs_path_to_json
-  scope        = databricks_secret_scope.sat.id
+  scope        = module.common.secret_scope_id
 }
 
 resource "databricks_secret" "impersonate-service-account" {
