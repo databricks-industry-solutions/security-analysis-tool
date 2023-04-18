@@ -25,7 +25,7 @@ import logging
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
-use_parallel_runs = json_.get("use_parallel_runs", False)
+use_parallel_runs = False #json_.get("use_parallel_runs", False)
 
 # COMMAND ----------
 

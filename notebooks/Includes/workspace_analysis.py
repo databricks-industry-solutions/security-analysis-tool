@@ -655,6 +655,38 @@ if enabled:
 
 # COMMAND ----------
 
+# DBTITLE 1,Job Notebook paths GOV-24
+check_id='63' #Job Notebook paths
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+import re
+
+def notebook_paths_checkjobs(df, url, workspace_id):
+    if df is not None and not df.rdd.isEmpty():
+        from pyspark.sql.functions import col, coalesce, explode_outer, lit, concat
+        df = df.withColumn("tasks", explode_outer("tasks")).select(concat(lit("https://"),lit(url),lit("/?#job/"),col("job_id")).alias("jobUrl"), col("name").alias("jobName"), coalesce(col("notebook_path"), col("tasks.notebook_task.notebook_path")).alias("notebook")).where(col("notebook").isNotNull()).collect()
+        jobs = []
+        for r in df:
+          jobs.append([r.notebook, r.jobName, r.jobUrl])
+        r = re.compile("/Users/.*@.*")
+        failed_notebooks = [n for n in jobs if r.match(n[0])]        
+        if failed_notebooks:
+          return (check_id, 1, {'failed_notebooks' : failed_notebooks})
+        else:
+          return (check_id, 0, {})
+    else:
+        return (check_id, 0, {})
+  
+
+if enabled:  
+    tbl_name = 'global_temp.jobs' + '_' + workspace_id
+    sql = f'''
+        SELECT settings.notebook_task.notebook_path, settings.tasks, job_id, settings.name
+          FROM {tbl_name}
+      '''
+    sqlctrl(workspace_id, sql, notebook_paths_checkjobs, url=json_["url"])
+
+# COMMAND ----------
+
 # DBTITLE 1,AllPurpose Cluster Log Conf
 check_id='13' #All Purpose Cluster Log Configuration
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)

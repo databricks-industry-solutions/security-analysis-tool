@@ -54,7 +54,7 @@ def handleAnalysisErrors(e):
 
 # COMMAND ----------
 
-def sqlctrl(workspace_id, sqlstr, funcrule, info=False): #lambda 
+def sqlctrl(workspace_id, sqlstr, funcrule, info=False, url=""): #lambda 
     """Executes sql, tests the result with the function and write results to control table
     :param sqlstr sql to execute
     :param funcrule rule to execute to check if violation passed or failed
@@ -74,15 +74,17 @@ def sqlctrl(workspace_id, sqlstr, funcrule, info=False): #lambda
             if info:
                 name,value,category = funcrule(df)
                 insertIntoInfoTable(workspace_id, name, value,category) 
-            else:    
-                ctrlname,ctrlscore,additional_details = funcrule(df)
+            else:
+                if funcrule.__name__ == "notebook_paths_checkjobs":
+                  ctrlname,ctrlscore,additional_details = funcrule(df,url,workspace_id)
+                else: 
+                  ctrlname,ctrlscore,additional_details = funcrule(df)
                 if len(additional_details) ==0 and ctrlscore ==0:
                     additional_details = {'message':'No deviations from the security best practices found for this check'}
                 
                 insertIntoControlTable(workspace_id, ctrlname, ctrlscore, additional_details) 
     except Exception as e:
         loggr.exception(e)
-
 
 # COMMAND ----------
 

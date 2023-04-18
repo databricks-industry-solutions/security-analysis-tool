@@ -34,8 +34,6 @@ if cloud_type=='gcp':
         loggr.exception('Error Encountered in GCP Step#1', gcp_status1)
         dbuilts.notebook.exit()
 
-
-
 # COMMAND ----------
 
 
