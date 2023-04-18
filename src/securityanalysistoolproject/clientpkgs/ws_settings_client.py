@@ -44,7 +44,8 @@ class WSSettingsClient(SatDBClient):
             {"name": "enableVerboseAuditLogs", "defn":"Enable or disable verbose audit logs"},
             {"name": "enableFileStoreEndpoint", "defn":"Enable or disable FileStore endpoint /files"},
             {"name": "jobsListBackendPaginationEnabled", "defn":"Enables 10,000 jobs per workspace and streamlined search"},
-            {"name": "maxTokenLifetimeDays", "defn":"Gets the global max token lifetime days"}
+            {"name": "maxTokenLifetimeDays", "defn":"Gets the global max token lifetime days"},
+            {"name": "enableDeprecatedGlobalInitScripts", "defn":"Enable Deprecated Global Scripts"}            
             ]
         # pylint: enable=line-too-long
 
