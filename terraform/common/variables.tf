@@ -1,16 +1,10 @@
-variable "databricks_url" {
-  description = "Should look like https://<workspace>.azuredatabricks.net"
+variable "account_console_id" {
   type        = string
+  description = "Databricks Account ID"
 }
 
 variable "workspace_id" {
   description = "Should be the string of numbers in the workspace URL arg (e.g. https://<workspace>.azuredatabricks.net/?o=1234567890123456)"
-  type        = string
-}
-
-variable "account_console_id" {
-  description = "Databricks Account Console ID"
-  type        = string
 }
 
 variable "sqlw_id" {
@@ -23,24 +17,20 @@ variable "sqlw_id" {
   default = "new"
 }
 
-### Azure Specific Variables
-
-variable "client_id" {
-  description = "Service Principal Application (client) ID"
+variable "secret_scope_name" {
+  description = "Name of secret scope for SAT secrets"
   type        = string
+  default     = "sat_scope"
 }
 
-variable "tenant_id" {
-  description = "The Directory (tenant) ID for the application registered in Azure AD"
+variable "notification_email" {
   type        = string
+  description = "Optional user email for notifications. If not specified, current user's email will be used"
+  default     = ""
 }
 
-variable "subscription_id" {
-  description = "Azure subscriptionId"
+variable "gcp_impersonate_service_account" {
   type        = string
-}
-
-variable "client_secret" {
-  description = "SP Secret"
-  type        = string
+  description = "GCP Service Account to impersonate (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
+  default     = ""
 }
