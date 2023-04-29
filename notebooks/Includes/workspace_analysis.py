@@ -310,13 +310,13 @@ if enabled:
 
 # MAGIC %md
 # MAGIC ## Token Management (IA-4)
-# MAGIC 
+# MAGIC
 # MAGIC ### Best Practice
 # MAGIC Customers can use the token management API or UI controls to enable or disable personal access tokens (PATs), limit the users who are allowed to use PATs or their max lifetime, and list and manage existing PATs. Highly-secure customers will typically provision a max token lifetime for a workspace. 
-# MAGIC 
+# MAGIC
 # MAGIC ### Documentation
 # MAGIC ([AWS](https://docs.databricks.com/administration-guide/access-control/tokens.html)) ([Azure](https://docs.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/authentication))
-# MAGIC 
+# MAGIC
 # MAGIC  
 
 # COMMAND ----------
@@ -787,6 +787,30 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='64' #Init Scripts on DBFS
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def initscr_on_dbfs(df):
+    df = df.rdd.map(lambda x: (x['is_dir'],  re.sub('[\"\'\\\\]', '_', x['path']))).toDF(['is_dir', 'path']) 
+    if df is not None and not df.rdd.isEmpty():   
+        iscript = df.collect()
+        iscripts_dict = {'scripts' : [[i.path, i.is_dir] for i in iscript]}
+        print(iscripts_dict)
+        return (check_id,1, iscripts_dict)
+    else:
+        return (check_id,0, {})   
+
+    
+if enabled:   
+    tbl_name = 'global_temp.legacyinitscripts' + '_' + workspace_id
+    sql = f'''
+        SELECT path, is_dir
+          FROM {tbl_name}
+    ''' 
+    sqlctrl(workspace_id, sql, initscr_on_dbfs)
+
+# COMMAND ----------
+
 # DBTITLE 1,Instance pools - Custom tags
 check_id='22' #Instance Pool Custom Tag
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
@@ -953,8 +977,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def versions_check(df):
     if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
+        df = df.rdd.map(lambda x: (x['cluster_id'], x['spark_version'], re.sub('[\"\'\\\\]', '_',x['cluster_name']))).toDF(['cluster_id', 'spark_version','cluster_name'])  
         verlst = df.collect()
-        verlst_dict = {irow.cluster_id:irow.spark_version for irow in verlst} 
+        verlst_dict = {irow.cluster_id: "cluster_name:"+irow.cluster_name+" version:"+irow.spark_version for irow in verlst} 
         print(verlst_dict)
         return (check_id, 1, verlst_dict)
     return (check_id, 0, {})   
@@ -962,7 +987,7 @@ def versions_check(df):
 if enabled:    
     tbl_name = 'global_temp.clusters' + '_' + workspace_id
     tbl_name_inner = 'global_temp.spark_versions' + '_' + workspace_id
-    sql=f'''SELECT cluster_id, spark_version 
+    sql=f'''SELECT cluster_id, cluster_name, spark_version 
           FROM {tbl_name}
           WHERE spark_version not in (select key from {tbl_name_inner}) 
     '''
