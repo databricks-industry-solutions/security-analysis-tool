@@ -791,8 +791,8 @@ check_id='64' #Init Scripts on DBFS
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def initscr_on_dbfs(df):
-    df = df.rdd.map(lambda x: (x['is_dir'],  re.sub('[\"\'\\\\]', '_', x['path']))).toDF(['is_dir', 'path']) 
     if df is not None and not df.rdd.isEmpty():   
+        df = df.rdd.map(lambda x: (x['is_dir'],  re.sub('[\"\'\\\\]', '_', x['path']))).toDF(['is_dir', 'path']) 
         iscript = df.collect()
         iscripts_dict = {'scripts' : [[i.path, i.is_dir] for i in iscript]}
         print(iscripts_dict)
