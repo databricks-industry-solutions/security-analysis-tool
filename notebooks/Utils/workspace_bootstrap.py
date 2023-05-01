@@ -376,7 +376,7 @@ bootstrap('dbfssettingsmounts'+ '_' + workspace_id, db_client.get_dbfs_mounts)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ##### Global Init Scripts
 
 # COMMAND ----------
@@ -390,6 +390,10 @@ except:
 # COMMAND ----------
 
 bootstrap('globalscripts'+ '_' + workspace_id, init_scripts_client.get_allglobalinitscripts_list)
+
+# COMMAND ----------
+
+bootstrap('legacyinitscripts'+ '_' + workspace_id, db_client.get_dbfs_directories, path='/databricks/init/')
 
 # COMMAND ----------
 
