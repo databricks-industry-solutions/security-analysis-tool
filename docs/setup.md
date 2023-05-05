@@ -25,7 +25,7 @@ We created a companion Security Analysis Tool (SAT) [Setup primer video for AWS]
  2. A Single user cluster  (To run the SAT checks)
  3. Databricks SQL Warehouse  (To run the SQL dashboard)
  4. Ensure that Databricks Repos is enabled (To access the SAT git) and [Files in Repo](https://docs.databricks.com/files/workspace.html#configure-support-for-workspace-files) set to DBR 8.4+ or DBR 11.0+ (To allow arbitrary files  in Repo operations)
- 5. Pipy access from your workspace (To install the SAT utility library)
+ 5. Pypi access from your workspace (To install the SAT utility library)
  6. Create secrets scopes (To store configuration values)
  7. Authentication information:
     * **AWS:** Administrative user id and password  (To call the account REST APIs)
