@@ -32,7 +32,7 @@ if cloud_type=='gcp':
     gcp_status1 = dbutils.notebook.run('./Setup/gcp/configure_sa_auth_tokens', 3000)
     if (gcp_status1 != 'OK'):
         loggr.exception('Error Encountered in GCP Step#1', gcp_status1)
-        dbuilts.notebook.exit()
+        dbutils.notebook.exit()
 
 
 
