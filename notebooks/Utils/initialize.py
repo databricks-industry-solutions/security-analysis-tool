@@ -73,3 +73,12 @@ if cloud_type == 'azure':
        "use_mastercreds":True
     })
 
+# DBTITLE 1,AWS configurations
+if cloud_type == 'aws':
+    sp_auth = {
+      "use_sp_auth": dbutils.secrets.get(scope="sat_scope", key="use_sp_auth") == 'true'
+    }
+    if sp_auth['use_sp_auth']:
+        sp_auth['client_id'] = dbutils.secrets.get(scope="sat_scope", key="client_id")
+        sp_auth['client_secret'] = dbutils.secrets.get(scope="sat_scope", key="client_secret")
+    json_.update(sp_auth)
