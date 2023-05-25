@@ -83,7 +83,7 @@ class SatDBClient:
                 client_secret = self._configs['client_secret'].strip()
                 oauth = self._get_oauth_token(client_id, client_secret)
                 self._token['Authorization'] = f"Bearer {oauth}"
-                print(self._token)
+                LOGGR.info(self._token)
 
     def _update_token(self):
         '''update token in http header'''
