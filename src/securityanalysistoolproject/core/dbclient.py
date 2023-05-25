@@ -55,7 +55,7 @@ class SatDBClient:
 
     def _update_token_master(self):
         '''update token master in http header'''
-        LOGGR.info("in _update_token_master")
+        LOGGR.info("in _update_token_master new")
         if(self._cloud_type == 'gcp'):
             self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
             self._token = {
