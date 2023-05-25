@@ -73,6 +73,9 @@ if cloud_type == 'azure':
        "use_mastercreds":True
     })
 
+
+# COMMAND ----------
+
 # DBTITLE 1,AWS configurations
 if cloud_type == 'aws':
     sp_auth = {
