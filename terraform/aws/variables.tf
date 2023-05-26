@@ -49,11 +49,11 @@ variable "use_sp_auth" {
 variable "client_id" {
   description = "Service Principal Application (client) ID"
   type = string
-  default = null
+  default = "value"
 }
 
 variable "client_secret" {
   description = "SP Secret"
   type = string
-  default = null
+  default = "value"
 }
