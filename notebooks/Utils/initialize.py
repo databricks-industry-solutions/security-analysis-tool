@@ -79,7 +79,7 @@ if cloud_type == 'azure':
 # DBTITLE 1,AWS configurations
 if cloud_type == 'aws':
     sp_auth = {
-      "use_sp_auth": dbutils.secrets.get(scope="sat_scope", key="use_sp_auth") == 'true'
+      "use_sp_auth": dbutils.secrets.get(scope="sat_scope", key="use_sp_auth").lower() == 'true'
     }
     if sp_auth['use_sp_auth']:
         sp_auth['client_id'] = dbutils.secrets.get(scope="sat_scope", key="client_id")
