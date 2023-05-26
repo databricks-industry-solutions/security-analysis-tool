@@ -78,7 +78,7 @@ class SatDBClient:
                 "Authorization" : f"Basic {user_pass}",
                 "User-Agent": "databricks-sat/0.1.0"
             }
-            if (self._configs['use_sp_auth']):
+            if (self._configs['use_sp_auth']): # Service Principal authentication flow
                 client_id = self._configs['client_id'].strip()
                 client_secret = self._configs['client_secret'].strip()
                 oauth = self._get_oauth_token(client_id, client_secret)
@@ -114,6 +114,7 @@ class SatDBClient:
                 }
 
     def _get_oauth_token(self, client_id, client_secret):
+        '''generates OAuth token for Service Principal authentication flow'''
         response = requests.post(
             f'{self._url}/oidc/accounts/{self._account_id}/v1/token',
             auth=(client_id, client_secret),
