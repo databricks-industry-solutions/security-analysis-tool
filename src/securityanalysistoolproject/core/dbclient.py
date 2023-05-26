@@ -113,10 +113,14 @@ class SatDBClient:
                     "User-Agent": "databricks-sat/0.1.0"
                 }
 
-    def _get_oauth_token(self, id, secret):
+    def _get_oauth_token(self, client_id, client_secret):
         response = requests.post(
             f'{self._url}/oidc/accounts/{self._account_id}/v1/token',
-            auth=(id, secret)
+            auth=(client_id, client_secret),
+            data = {
+                "grant_type": "client_credentials",
+                "scope": "all-apis"
+            }
         )
         if response.status_code == 200:
             return response.json()['access_token']
