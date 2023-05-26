@@ -39,3 +39,21 @@ variable "account_pass" {
   description = "Account Console Password"
   type        = string
 }
+
+variable "use_sp_auth" {
+  description = "Authenticate with Service Principal OAuth tokens instead of user and password"
+  type = bool
+  default = false
+}
+
+variable "client_id" {
+  description = "Service Principal Application (client) ID"
+  type = string
+  default = null
+}
+
+variable "client_secret" {
+  description = "SP Secret"
+  type = string
+  default = null
+}
