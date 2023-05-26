@@ -115,6 +115,11 @@ Please gather the following information before you start setting up:
   
       <details>
        <summary>AWS instructions</summary>  
+
+       You can either authenticate with username and password or using Service Principals credentials.
+       
+       **Authenticate with Username and Password (default)**
+       
        Create username secret and password secret of administrative user id and password  as  "user" and "pass" under the above "sat_scope" scope using Databricks Secrets CLI 
 
        *  Input your Databricks account console admin username to store it in a the secret store
@@ -127,26 +132,27 @@ Please gather the following information before you start setting up:
            ```
            databricks --profile e2-sat secrets put --scope sat_scope --key pass
            ```    
-       You can choose to authenticate using Service Principals instead of using a username and password. To do this, you need to create a Service Principal and generate a Secret for it. [Follow steps 1 to 3 in this documentation](https://docs.databricks.com/dev-tools/authentication-oauth.html#:~:text=To%20create%20an%20OAuth%20secret%20for%20a%20service,the%20same%20as%20the%20service%20principal%E2%80%99s%20application%20ID)
+       
+       **Authenticate using a Service Principal**
 
-       Once you finish:
-
-       *  Input `true` or `false` to use the Service Principal Authentication Flow
+       Create a Service Principal and generate a secret for it. Follow steps 1 to 3 in [this documentation](https://docs.databricks.com/dev-tools/authentication-oauth.html#:~:text=To%20create%20an%20OAuth%20secret%20for%20a%20service,the%20same%20as%20the%20service%20principal%E2%80%99s%20application%20ID)
+       
+       1. Set the use_sp_auth to `true` in order to use the Service Principal Authentication Flow
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key use_sp_auth
+           databricks --profile e2-sat secrets put --scope sat_scope --key use_sp_auth --string-value true
            ```
        
-       *  Input your Databricks Service Principal Client ID to store it in a the secret store
+       2. Store your Databricks Service Principal Client ID in the secret store:
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key client_id
+           databricks --profile e2-sat secrets put --scope sat_scope --key client_id --string-value <client_id>
            ```
 
-       *  Input your Databricks Service Principal Secret to store it in a the secret store
+       3. Store your Databricks Service Principal Secret in the secret store:
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key client_secret
+           databricks --profile e2-sat secrets put --scope sat_scope --key client_secret  --string-value <client_secret>
            ```
       </details>
 
