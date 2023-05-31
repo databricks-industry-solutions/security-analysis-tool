@@ -194,7 +194,83 @@ for ws_to_load in workspaces:
                         "name": "sat_alert_"+ws_to_load.workspace_id,
                         "description": "",
                         "parent":"folders/"+str(folder_id),
-                        "query": "(\n  SELECT\n    concat(\n      \"<br> <b>Configured Alert: Check name:</b> \",\n      sbp.check_id,\n      \", <b>Check:</b>\",\n      sbp.check,\n      \" in workspace:\",\n      sc.workspaceid,\n      \", <b>Recommendation:</b>\",\n      sbp.recommendation,\n      \"</br>\"\n    ) as message,\n    count(*) as total\n  FROM\n    security_analysis.security_checks sc,\n    security_analysis.security_best_practices sbp\n  WHERE\n    sbp.id = sc.id\n    and sc.workspaceid = "+ws_to_load.workspace_id+" \n    and sbp.alert = 1\n    and sc.score = 1\n    and run_id = (\n      select\n        max(run_id)\n      from\n        security_analysis.workspace_run_complete\n      where\n        workspace_id = "+ws_to_load.workspace_id+" \n        and completed = true\n    )\n  GROUP BY\n    1\n  ORDER BY\n    total DESC\n)\nUNION\n  (\n    SELECT\n      concat(\n        \"<br> <b>Detrimental Alert: Check name:</b> \",\n        sbp.check_id,\n        \", <b>Check:</b>\",\n        sbp.check,\n        \" in workspace:\",\n        sc1.workspaceid,\n        \", <b>Recommendation:</b>\",\n        sbp.recommendation,\n        \"</br>\"\n      ) as message,\n      count(*) as total\n    FROM\n      security_analysis.security_checks sc1,\n      security_analysis.security_checks sc2,\n      security_analysis.security_best_practices sbp\n    where\n      sc1.workspaceid = "+ws_to_load.workspace_id+" \n      and sc2.workspaceid = sc1.workspaceid\n      and sc1.id = sc2.id\n      and sc1.id = sbp.id\n      and sc1.score > sc2.score\n      and sc1.run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = "+ws_to_load.workspace_id+" \n          and completed = true\n      )\n      and sc2.run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = "+ws_to_load.workspace_id+" \n          and completed = true\n          and run_id = (\n            select\n              max(run_id)\n            from\n              security_analysis.workspace_run_complete\n            where\n              workspace_id = "+ws_to_load.workspace_id+" \n              and completed = true\n              and run_id < (\n                select\n                  max(run_id)\n                from\n                  security_analysis.workspace_run_complete\n                where\n                  workspace_id = "+ws_to_load.workspace_id+"\n                  and completed = true\n              )\n          )\n      )\n    GROUP BY\n      1\n    ORDER BY\n      total DESC\n  )"
+                        "query": """
+                                    WITH prev_run(run_id, previous_run_id ) AS (
+                                    SELECT
+                                        run_id,
+                                        LAG(run_id) OVER(
+                                        ORDER BY
+                                            run_id
+                                        ) as previous_run_id
+                                    FROM
+                                        security_analysis.workspace_run_complete
+                                    where
+                                        workspace_id = """+ws_to_load.workspace_id+"""
+                                        and completed = true
+                                        ORDER BY run_id desc
+                                    limit 1
+                                    )
+                                    (
+                                    SELECT
+                                        concat(
+                                        "<br> <b>Configured Alert: Check name:</b> ",
+                                        sbp.check_id,
+                                        ", <b>Check:</b>",
+                                        sbp.check,
+                                        " in workspace:",
+                                        sc.workspaceid,
+                                        ", <b>Recommendation:</b>",
+                                        sbp.recommendation,
+                                        "</br>"
+                                        ) as message,
+                                        count(*) as total
+                                    FROM
+                                        security_analysis.security_checks sc,
+                                        security_analysis.security_best_practices sbp
+                                    WHERE
+                                        sbp.id = sc.id
+                                        and sc.workspaceid = """+ws_to_load.workspace_id+""" 
+                                        and sbp.alert = 1
+                                        and sc.score = 1
+                                        and run_id = (SELECT run_id from prev_run)
+                                    GROUP BY
+                                        1
+                                    ORDER BY
+                                        total DESC
+                                    )
+                                    UNION
+                                    (
+                                        SELECT
+                                        concat(
+                                            "<br> <b>Detrimental Alert: Check name:</b> ",
+                                            sbp.check_id,
+                                            ", <b>Check:</b>",
+                                            sbp.check,
+                                            " in workspace:",
+                                            sc1.workspaceid,
+                                            ", <b>Recommendation:</b>",
+                                            sbp.recommendation,
+                                            "</br>"
+                                        ) as message,
+                                        count(*) as total
+                                        FROM
+                                        security_analysis.security_checks sc1,
+                                        security_analysis.security_checks sc2,
+                                        security_analysis.security_best_practices sbp
+                                        where
+                                        sc1.workspaceid = """+ws_to_load.workspace_id+""" 
+                                        and sc2.workspaceid = sc1.workspaceid
+                                        and sc1.id = sc2.id
+                                        and sc1.id = sbp.id
+                                        and sc1.score > sc2.score
+                                        and sc1.run_id = (SELECT run_id from prev_run)
+                                        and sc2.run_id = (SELECT previous_run_id from prev_run)
+                                        GROUP BY
+                                        1
+                                        ORDER BY
+                                        total DESC
+                                    )
+                                    """
                   
                    
 
