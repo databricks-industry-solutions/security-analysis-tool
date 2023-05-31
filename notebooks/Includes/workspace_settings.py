@@ -472,6 +472,30 @@ if enabled:
 
 # COMMAND ----------
 
+id = '65' # Legacy Global Init Scripts
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableDeprecatedClusterNamedInitScripts(df): 
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.rdd.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 1, defn)
+    else:
+        return (id, 0, defn)
+
+if enabled:
+    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name} 
+        WHERE name="enableDeprecatedClusterNamedInitScripts"
+    '''
+    sqlctrl(workspace_id, sql, enableDeprecatedClusterNamedInitScripts)
+
+# COMMAND ----------
+
 tcomp = time.time() - start_time
 print(f"Workspace Settings - {tcomp} seconds to run")
 
