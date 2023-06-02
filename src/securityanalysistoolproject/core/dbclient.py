@@ -78,6 +78,11 @@ class SatDBClient:
                 "Authorization" : f"Basic {user_pass}",
                 "User-Agent": "databricks-sat/0.1.0"
             }
+            if (self._configs['use_sp_auth']): # Service Principal authentication flow
+                client_id = self._configs['client_id'].strip()
+                client_secret = self._configs['client_secret'].strip()
+                oauth = self._get_oauth_token(client_id, client_secret)
+                self._token['Authorization'] = f'Bearer {oauth}'
 
     def _update_token(self):
         '''update token in http header'''
@@ -108,6 +113,20 @@ class SatDBClient:
                     "User-Agent": "databricks-sat/0.1.0"
                 }
 
+    def _get_oauth_token(self, client_id, client_secret):
+        '''generates OAuth token for Service Principal authentication flow'''
+        response = requests.post(
+            f'{self._url}/oidc/accounts/{self._account_id}/v1/token',
+            auth=(client_id, client_secret),
+            data = {
+                "grant_type": "client_credentials",
+                "scope": "all-apis"
+            }
+        )
+        if response.status_code == 200:
+            return response.json()['access_token']
+        return None
+    
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
         if master_acct: #master acct may use a different credential
