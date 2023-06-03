@@ -81,8 +81,12 @@ class SatDBClient:
             if (self._configs['use_sp_auth']): # Service Principal authentication flow
                 client_id = self._configs['client_id'].strip()
                 client_secret = self._configs['client_secret'].strip()
-                oauth = self._get_oauth_token(client_id, client_secret)
-                self._token['Authorization'] = f'Bearer {oauth}'
+                oauth = self._get_account_oauth_token(client_id, client_secret)
+                #self._token['Authorization'] = f'Bearer {oauth}'
+                self._token = {
+                "Authorization": f"Bearer {oauth}",
+                "User-Agent": "databricks-sat/0.1.0"
+                } 
 
     def _update_token(self):
         '''update token in http header'''
@@ -112,8 +116,18 @@ class SatDBClient:
                     "Authorization" : f"Basic {user_pass}",
                     "User-Agent": "databricks-sat/0.1.0"
                 }
-
-    def _get_oauth_token(self, client_id, client_secret):
+                
+                if (self._configs['use_sp_auth']): # Service Principal authentication flow
+                    client_id = self._configs['client_id'].strip()
+                    client_secret = self._configs['client_secret'].strip()
+                    oauth = self._get_workspace_oauth_token(client_id, client_secret)
+                    self._token = {
+                    "Authorization": f"Bearer {oauth}",
+                    "User-Agent": "databricks-sat/0.1.0"
+                    } 
+        return None
+    
+    def _get_account_oauth_token(self, client_id, client_secret):
         '''generates OAuth token for Service Principal authentication flow'''
         response = requests.post(
             f'{self._url}/oidc/accounts/{self._account_id}/v1/token',
@@ -126,6 +140,20 @@ class SatDBClient:
         if response.status_code == 200:
             return response.json()['access_token']
         return None
+    def _get_workspace_oauth_token(self, client_id, client_secret):
+        '''generates OAuth token for Service Principal authentication flow'''
+        response = requests.post(
+            f'{self._url}/oidc/v1/token',
+            auth=(client_id, client_secret),
+            data = {
+                "grant_type": "client_credentials",
+                "scope": "all-apis"
+            }
+        )
+        if response.status_code == 200:
+            return response.json()['access_token']
+        return None
+    
     
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
@@ -423,3 +451,4 @@ class SatDBClient:
     #     for elem in items:
     #         to_return.append(F(elem))
     #     return to_return
+
