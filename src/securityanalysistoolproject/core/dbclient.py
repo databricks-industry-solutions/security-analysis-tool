@@ -49,9 +49,15 @@ class SatDBClient:
             self._client_id = configs['client_id'].strip()
             self._client_secret = configs['client_secret'].strip()
             self._tenant_id = configs['tenant_id'].strip()
-        else: #aws gcp
+        elseif 'gcp' in self.get_cloud_type: #gcp
             self._master_name = configs['mastername'].strip()
             self._master_password = configs['masterpwd'].strip()
+        elseif 'aws' in self.get_cloud_type: #aws
+            self._master_name = configs['mastername'].strip()
+            self._master_password = configs['masterpwd'].strip()
+            self._use_sp_auth = configs['use_sp_auth'].strip()
+            self._client_id = configs['client_id'].strip()
+            self._client_secret = configs['client_secret'].strip()   
 
     def _update_token_master(self):
         '''update token master in http header'''
@@ -78,11 +84,8 @@ class SatDBClient:
                 "Authorization" : f"Basic {user_pass}",
                 "User-Agent": "databricks-sat/0.1.0"
             }
-            if (self._configs['use_sp_auth']): # Service Principal authentication flow
-                client_id = self._configs['client_id'].strip()
-                client_secret = self._configs['client_secret'].strip()
-                oauth = self._get_account_oauth_token(client_id, client_secret)
-                #self._token['Authorization'] = f'Bearer {oauth}'
+            if (self._use_sp_auth): # Service Principal authentication flow
+                oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
                 self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -117,43 +120,14 @@ class SatDBClient:
                     "User-Agent": "databricks-sat/0.1.0"
                 }
                 
-                if (self._configs['use_sp_auth']): # Service Principal authentication flow
-                    client_id = self._configs['client_id'].strip()
-                    client_secret = self._configs['client_secret'].strip()
-                    oauth = self._get_workspace_oauth_token(client_id, client_secret)
+                if self._use_sp_auth: # Service Principal authentication flow
+                    oauth = self.getAWSTokenwithOAuth(False, self._client_id, self._client_secret)
                     self._token = {
                     "Authorization": f"Bearer {oauth}",
                     "User-Agent": "databricks-sat/0.1.0"
                     } 
         return None
-    
-    def _get_account_oauth_token(self, client_id, client_secret):
-        '''generates OAuth token for Service Principal authentication flow'''
-        response = requests.post(
-            f'{self._url}/oidc/accounts/{self._account_id}/v1/token',
-            auth=(client_id, client_secret),
-            data = {
-                "grant_type": "client_credentials",
-                "scope": "all-apis"
-            }
-        )
-        if response.status_code == 200:
-            return response.json()['access_token']
-        return None
-    def _get_workspace_oauth_token(self, client_id, client_secret):
-        '''generates OAuth token for Service Principal authentication flow'''
-        response = requests.post(
-            f'{self._url}/oidc/v1/token',
-            auth=(client_id, client_secret),
-            data = {
-                "grant_type": "client_credentials",
-                "scope": "all-apis"
-            }
-        )
-        if response.status_code == 200:
-            return response.json()['access_token']
-        return None
-    
+   
     
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
@@ -420,7 +394,33 @@ class SatDBClient:
             print(str(error))
 
 
-
+    def getAWSTokenwithOAuth(self, baccount, client_id, client_secret):
+        '''generates OAuth token for Service Principal authentication flow'''
+        '''baccount if generating for account. False for workspace'''
+        response = None
+        if baccount is True:
+            response = requests.post(
+                f'{self._url}/oidc/accounts/{self._account_id}/v1/token',
+                auth=(client_id, client_secret),
+                data = {
+                    "grant_type": "client_credentials",
+                    "scope": "all-apis"
+                }
+            )
+        else #workspace
+            response = requests.post(
+            f'{self._url}/oidc/v1/token',
+            auth=(client_id, client_secret),
+            data = {
+                "grant_type": "client_credentials",
+                "scope": "all-apis"
+            }
+        )
+        if response is not None and response.status_code == 200:
+            return response.json()['access_token']
+        if response is not None and response.status_code == 200:
+            return response.json()['access_token']
+        return None
 
 
     # @staticmethod
