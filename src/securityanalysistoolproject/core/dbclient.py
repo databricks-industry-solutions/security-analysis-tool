@@ -49,10 +49,10 @@ class SatDBClient:
             self._client_id = configs['client_id'].strip()
             self._client_secret = configs['client_secret'].strip()
             self._tenant_id = configs['tenant_id'].strip()
-        elseif 'gcp' in self.get_cloud_type: #gcp
+        elif 'gcp' in self._cloud_type: #gcp
             self._master_name = configs['mastername'].strip()
             self._master_password = configs['masterpwd'].strip()
-        elseif 'aws' in self.get_cloud_type: #aws
+        elif 'aws' in self._cloud_type: #aws
             self._master_name = configs['mastername'].strip()
             self._master_password = configs['masterpwd'].strip()
             self._use_sp_auth = configs['use_sp_auth'].strip()
@@ -407,7 +407,7 @@ class SatDBClient:
                     "scope": "all-apis"
                 }
             )
-        else #workspace
+        else: #workspace
             response = requests.post(
             f'{self._url}/oidc/v1/token',
             auth=(client_id, client_secret),
