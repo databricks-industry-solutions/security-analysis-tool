@@ -97,7 +97,7 @@ class SatDBClient:
     def _update_token(self):
         '''update token in http header'''
         self._url=self._raw_url #accounts api uses a different url
-        if self._use_sp_auth is True:# Service Principal authentication flow
+        if self._cloud_type == 'aws' and self._use_sp_auth is True:# AWS Service Principal authentication flow
             LOGGR.info("OAuth flow for workspace")
             oauth = self.getAWSTokenwithOAuth(False, self._client_id, self._client_secret)
             self._token = {
