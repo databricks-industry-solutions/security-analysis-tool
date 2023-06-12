@@ -53,10 +53,16 @@ token = ''
 if cloud_type =='azure': #client secret always needed
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
   json_.update({'token':token, 'client_secret': client_secret})
-else: #lets populate master key for all other clouds(accounts api)
-  mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-  masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-  json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})   
+elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+    mastername = ' '
+    masterpwd = ' ' # we still need to send empty user/pwd.
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+else: #lets populate master key for accounts api
+    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
     
 if (json_['use_mastercreds']) is False:
     tokenscope = json_['workspace_pat_scope']
