@@ -388,22 +388,7 @@ Please gather the following information before you start setting up:
    
    
 2. Generate secrets setup file (AWS only. Not recommended for Azure and GCP)
-  Note: You can skip this step and go to step 4, if you would like to use admin credentials (configured in the Step 6 of Prerequisites section) to call workspace APIs.
- 
-   * Change \<SATProject\>/notebooks/Utils/initialize value of from  "use_mastercreds":"true" to "use_mastercreds":"false"
-   * Run the \<SATProject\>/notebooks/Setup/2.generate_secrets_setup_file notebook.  Setup your PAT tokens for each of the workspaces under the "master_name_scope” 
-
-    <img src="./images/setup_secrets.png" width="70%" height="70%">
-
-    We generated a template file: \<SATProject\>/configs/setupsecrets.sh to make this easy for you with 
-    [curl](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl), 
-    copy and paste and run the commands from the file with your PAT token values. 
-    You will need to [setup .netrc file](https://docs.databricks.com/dev-tools/api/latest/authentication.html#store-tokens-in-a-netrc-file-and-use-them-in-curl) to use this method
-
-   Example:
-
-    curl --netrc --request POST 'https://oregon.cloud.databricks.com/api/2.0/secrets/put' -d '{"scope":"
- sat_scope", "key":"sat_token_1657683783405197", "string_value":"<dapi...>"}' 
+   Deprecated as AWS Service principles are encouraged inplace of workspace PATs. 
    
    
 3. Test API Connections    
