@@ -34,8 +34,6 @@ elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):
     mastername =' ' # this will not be present when using SPs
     masterpwd = ' '  # we still need to send empty user/pwd.
     json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
-    print(json_)
-    print("In sp account_bootstrap")
 else: #lets populate master key for accounts api
     mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
     masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
