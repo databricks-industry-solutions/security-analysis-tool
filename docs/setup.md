@@ -140,19 +140,19 @@ Please gather the following information before you start setting up:
        1. Set the use_sp_auth to `true` in order to use the Service Principal Authentication Flow
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key use_sp_auth --string-value true
+           databricks --profile e2-sat secrets put --scope sat_scope --key use-sp-auth --string-value true
            ```
        
        2. Store your Databricks Service Principal Client ID in the secret store:
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key client_id --string-value <client_id>
+           databricks --profile e2-sat secrets put --scope sat_scope --key client-id --string-value <client_id>
            ```
 
        3. Store your Databricks Service Principal Secret in the secret store:
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key client_secret  --string-value <client_secret>
+           databricks --profile e2-sat secrets put --scope sat_scope --key client-secret  --string-value <client_secret>
            ```
       </details>
 
