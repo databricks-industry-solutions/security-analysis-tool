@@ -1,4 +1,4 @@
-'''parser module'''
+'''parser module for json'''
 import json
 import re
 from itertools import cycle
@@ -14,7 +14,12 @@ def set_defaults(args):
         args.update({'url':''})
     if 'verbosity' not in args.keys():
         args.update({'verbosity':'info'})
-
+    if 'client_id' not in args.keys():
+        args.update({'client_id':''})
+    if 'client_secret' not in args.keys():
+        args.update({'client_secret':''})
+    if 'use_sp_auth' not in args.keys():
+        args.update({'use_sp_auth':False})
 
 def url_validation(url):
     '''validate url patterns'''

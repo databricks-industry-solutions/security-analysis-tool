@@ -79,16 +79,15 @@ if cloud_type == 'azure':
 # DBTITLE 1,AWS configurations
 if cloud_type == 'aws':
     sp_auth = {
-       "use_sp_auth": False,
-       "client_id": None,
-       "client_secret": None
+       "use_sp_auth": 'False',
+       "client_id": '',
+       "client_secret_key": "client-secret"
     }
     try:
-      use_sp_auth = dbutils.secrets.get(scope="sat_scope", key="use_sp_auth").lower() == 'true'
+      use_sp_auth = dbutils.secrets.get(scope="sat_scope", key="use-sp-auth").lower() == 'true'
       if use_sp_auth:
-         sp_auth['use_sp_auth'] = use_sp_auth
-         sp_auth['client_id'] = dbutils.secrets.get(scope="sat_scope", key="client_id")
-         sp_auth['client_secret'] = dbutils.secrets.get(scope="sat_scope", key="client_secret")
+         sp_auth['use_sp_auth'] = 'True'
+         sp_auth['client_id'] = dbutils.secrets.get(scope="sat_scope", key="client-id")
     except:
        pass
     json_.update(sp_auth)

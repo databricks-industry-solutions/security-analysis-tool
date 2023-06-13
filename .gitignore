@@ -10,6 +10,7 @@
 /configs/workspace_configs.csv
 /configs/security_best_practices_user.csv
 .databricks/
+.vscode/settings.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

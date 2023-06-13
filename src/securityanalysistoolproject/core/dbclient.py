@@ -49,9 +49,16 @@ class SatDBClient:
             self._client_id = configs['client_id'].strip()
             self._client_secret = configs['client_secret'].strip()
             self._tenant_id = configs['tenant_id'].strip()
-        else: #aws gcp
+        elif 'gcp' in self._cloud_type: #gcp
             self._master_name = configs['mastername'].strip()
             self._master_password = configs['masterpwd'].strip()
+        elif 'aws' in self._cloud_type: #aws
+            self._master_name = configs['mastername'].strip()
+            self._master_password = configs['masterpwd'].strip()
+            self._use_sp_auth = pars.str2bool(configs['use_sp_auth'])
+            self._client_id = configs['client_id'].strip()
+            self._client_secret = configs['client_secret'].strip()   
+
 
     def _update_token_master(self):
         '''update token master in http header'''
@@ -71,23 +78,33 @@ class SatDBClient:
                 "Authorization": f"Bearer {self._master_password}",
                 "User-Agent": "databricks-sat/0.1.0"
             }
-        else:    
-            user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+        else:     #AWS
             self._url = "https://accounts.cloud.databricks.com" #url for accounts api
-            self._token = {
-                "Authorization" : f"Basic {user_pass}",
-                "User-Agent": "databricks-sat/0.1.0"
-            }
-            if (self._configs['use_sp_auth']): # Service Principal authentication flow
-                client_id = self._configs['client_id'].strip()
-                client_secret = self._configs['client_secret'].strip()
-                oauth = self._get_oauth_token(client_id, client_secret)
-                self._token['Authorization'] = f'Bearer {oauth}'
+            if (self._use_sp_auth): # Service Principal authentication flow
+                oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
+                self._token = {
+                    "Authorization": f"Bearer {oauth}",
+                    "User-Agent": "databricks-sat/0.1.0"
+                } 
+            else:
+                LOGGR.info('OAuth flow for master')
+                user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+                self._token = {
+                    "Authorization" : f"Basic {user_pass}",
+                    "User-Agent": "databricks-sat/0.1.0"
+                }
 
     def _update_token(self):
         '''update token in http header'''
         self._url=self._raw_url #accounts api uses a different url
-        if self._use_mastercreds is False:
+        if self._cloud_type == 'aws' and self._use_sp_auth is True:# AWS Service Principal authentication flow
+            LOGGR.info("OAuth flow for workspace")
+            oauth = self.getAWSTokenwithOAuth(False, self._client_id, self._client_secret)
+            self._token = {
+                "Authorization": f"Bearer {oauth}",
+                "User-Agent": "databricks-sat/0.1.0"
+            } 
+        elif self._use_mastercreds is False:
             self._token = {
                 "Authorization": f"Bearer {self._raw_token}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -112,20 +129,8 @@ class SatDBClient:
                     "Authorization" : f"Basic {user_pass}",
                     "User-Agent": "databricks-sat/0.1.0"
                 }
-
-    def _get_oauth_token(self, client_id, client_secret):
-        '''generates OAuth token for Service Principal authentication flow'''
-        response = requests.post(
-            f'{self._url}/oidc/accounts/{self._account_id}/v1/token',
-            auth=(client_id, client_secret),
-            data = {
-                "grant_type": "client_credentials",
-                "scope": "all-apis"
-            }
-        )
-        if response.status_code == 200:
-            return response.json()['access_token']
         return None
+   
     
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
@@ -392,7 +397,31 @@ class SatDBClient:
             print(str(error))
 
 
+    def getAWSTokenwithOAuth(self, baccount, client_id, client_secret):
+        '''generates OAuth token for Service Principal authentication flow'''
+        '''baccount if generating for account. False for workspace'''
+        response = None
+        user_pass = (self._client_id,self._client_secret)
+        oidc_token = {
+            "User-Agent": "databricks-sat/0.1.0"
+        }
+        json_params = {
+            "grant_type": "client_credentials",
+            "scope": "all-apis"
+        }
+              
+        if baccount is True:
+            full_endpoint = f"https://accounts.cloud.databricks.com/oidc/accounts/{self._account_id}/v1/token" #url for accounts api  
+        else: #workspace
+            full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
+        response = requests.post(full_endpoint, headers=oidc_token,
+                                    auth=user_pass, data=json_params, timeout=60)  
+
+        if response is not None and response.status_code == 200:
+            return response.json()['access_token']
+        LOGGR.debug(json.dumps(response.json()))
+        return None
 
 
     # @staticmethod
@@ -423,3 +452,4 @@ class SatDBClient:
     #     for elem in items:
     #         to_return.append(F(elem))
     #     return to_return
+
