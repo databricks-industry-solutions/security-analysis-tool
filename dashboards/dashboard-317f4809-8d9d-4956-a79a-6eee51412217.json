@@ -26,12 +26,11 @@
         "user": {
             "email": "arun.pamulapati@databricks.com",
             "id": 6132399981223669,
-            "is_db_admin": false,
-            "name": "Arun Pamulapati",
-            "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+            "name": "Arun Pamulapati"
         },
         "user_id": 6132399981223669,
         "version": 21,
+        "warehouse_id": "3f0c53cc69ad14fc",
         "widgets": [
             {
                 "created_at": "2022-07-20T14:41:30Z",
@@ -52,8 +51,8 @@
                         "sizeY": 3
                     }
                 },
-                "text": "# Network Security\n* NPIP  \n* BYOVPC (Or BYO Vnet or Vnet Injection)\n* VPC (or VNET) Peering  \n* IP Access Lists",
-                "updated_at": "2023-01-20T19:43:29Z",
+                "text": "# Network security\n* Secure cluster connectivity (on Azure, NoPublicIP)\n* Customer-managed VPC (or VNet injection)\n* VPC (or VNet) peering  \n* IP access lists",
+                "updated_at": "2023-06-22T18:44:47Z",
                 "width": 1
             },
             {
@@ -75,8 +74,8 @@
                         "sizeY": 3
                     }
                 },
-                "text": "# Identity & Access\n* SSO\n* SCIM\n* RBAC\n* Token Management",
-                "updated_at": "2023-01-20T19:43:56Z",
+                "text": "# Identity & Access\n* Single sign-on (AWS only, Azure and GCP always enabled)\n* SCIM for user provisioning\n* Role-based access control\n* Token management",
+                "updated_at": "2023-06-22T18:46:59Z",
                 "width": 1
             },
             {
@@ -98,8 +97,8 @@
                         "sizeY": 3
                     }
                 },
-                "text": "# Governance\n* Cluster Policy\n* Audit Logs\n* Global Init Script\n* Mounts",
-                "updated_at": "2023-01-20T19:43:56Z",
+                "text": "# Governance\n* Cluster policy\n* Audit logs (diagnostic logs on Azure)\n* Init script\n* DBFS mounts",
+                "updated_at": "2023-06-22T18:50:16Z",
                 "width": 1
             },
             {
@@ -121,8 +120,8 @@
                         "sizeY": 3
                     }
                 },
-                "text": "# Data Protection\n* Secrets Management\n* Cluster Encryption\n* BYOK\n* Storage Encryption\n* Data Exfiltration Protections\n",
-                "updated_at": "2023-01-23T15:19:13Z",
+                "text": "# Data protection\n* Secrets management\n* Encryption\n* Data exfiltration protections\n",
+                "updated_at": "2023-06-22T18:48:58Z",
                 "width": 1
             },
             {
@@ -144,7 +143,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -167,10 +166,10 @@
                         "sizeX": 6,
                         "sizeY": 7
                     },
-                    "title": "Network Security Summary"
+                    "title": "Network security summary"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T17:33:09Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:17Z",
                     "description": "",
@@ -540,7 +539,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-23T19:16:17Z"
+                    "updated_at": "2023-07-07T15:11:11Z"
                 },
                 "width": 1
             },
@@ -625,7 +624,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -651,7 +650,7 @@
                     "title": "Region"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:02Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:24Z",
                     "description": "",
@@ -763,7 +762,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -789,7 +788,7 @@
                     "title": "Workspace"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:02Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:22Z",
                     "description": "",
@@ -878,7 +877,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -901,10 +900,10 @@
                         "sizeX": 1,
                         "sizeY": 3
                     },
-                    "title": "Pricing Tier"
+                    "title": "Pricing tier"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:02Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:22Z",
                     "description": "",
@@ -1000,7 +999,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -1023,10 +1022,10 @@
                         "sizeX": 6,
                         "sizeY": 6
                     },
-                    "title": "Identity & Access Summary"
+                    "title": "Identity & Access summary"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:17Z",
                     "description": "",
@@ -1396,7 +1395,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-23T19:16:17Z"
+                    "updated_at": "2023-07-07T15:11:11Z"
                 },
                 "width": 1
             },
@@ -1419,7 +1418,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -1442,10 +1441,10 @@
                         "sizeX": 6,
                         "sizeY": 8
                     },
-                    "title": "Governance Summary"
+                    "title": "Governance summary"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:11:38Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:17Z",
                     "description": "",
@@ -1815,7 +1814,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-23T19:16:17Z"
+                    "updated_at": "2023-07-07T15:11:11Z"
                 },
                 "width": 1
             },
@@ -1838,7 +1837,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -1861,10 +1860,10 @@
                         "sizeX": 6,
                         "sizeY": 6
                     },
-                    "title": "Data Protection Summary"
+                    "title": "Data Protection summary"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:11:24Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:17Z",
                     "description": "",
@@ -2234,7 +2233,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-23T19:16:17Z"
+                    "updated_at": "2023-07-07T15:11:11Z"
                 },
                 "width": 1
             },
@@ -2250,7 +2249,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -2276,14 +2275,14 @@
                     "title": "Summary"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:02Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:26Z",
                     "description": "",
                     "id": "b94f0f26-5e39-4836-98c0-09c74c97f57d",
                     "name": "Bar",
                     "options": {
-                        "alignYAxesAtZero": false,
+                        "alignYAxesAtZero": true,
                         "coefficient": 1,
                         "columnConfigurationMap": {
                             "series": {
@@ -2366,7 +2365,7 @@
                         "yAxis": [
                             {
                                 "title": {
-                                    "text": "Count of Deviation Checks by Severity"
+                                    "text": "Count of deviations by severity"
                                 },
                                 "type": "-"
                             },
@@ -2460,7 +2459,7 @@
                         ]
                     },
                     "type": "CHART",
-                    "updated_at": "2023-01-23T18:44:21Z"
+                    "updated_at": "2023-07-07T15:08:10Z"
                 },
                 "width": 1
             },
@@ -2476,14 +2475,14 @@
                         "check_id": {
                             "mapTo": "check_id",
                             "name": "check_id",
-                            "title": "Check ID",
+                            "title": "Check id",
                             "type": "widget-level",
                             "value": null
                         },
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -2506,10 +2505,10 @@
                         "sizeX": 6,
                         "sizeY": 10
                     },
-                    "title": "Additional Details"
+                    "title": "Additional details"
                 },
                 "text": "",
-                "updated_at": "2023-01-30T15:20:54Z",
+                "updated_at": "2023-07-07T18:44:53Z",
                 "visualization": {
                     "created_at": "2022-09-13T16:41:15Z",
                     "description": "",
@@ -2643,7 +2642,7 @@
                     },
                     "query_plan": null,
                     "type": "DETAILS",
-                    "updated_at": "2023-01-30T15:28:28Z"
+                    "updated_at": "2023-07-07T17:41:01Z"
                 },
                 "width": 1
             },
@@ -2666,7 +2665,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -2699,7 +2698,7 @@
                     "title": "High"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:17:02Z",
                     "description": "",
@@ -2821,7 +2820,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -2854,7 +2853,7 @@
                     "title": "Medium"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:25:49Z",
                     "description": "",
@@ -2976,7 +2975,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -3009,7 +3008,7 @@
                     "title": "Low"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:26:25Z",
                     "description": "",
@@ -3131,7 +3130,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -3164,7 +3163,7 @@
                     "title": "High"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:02Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:30:27Z",
                     "description": "",
@@ -3286,7 +3285,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -3319,7 +3318,7 @@
                     "title": "Medium"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:02Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:30:54Z",
                     "description": "",
@@ -3441,7 +3440,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -3474,7 +3473,7 @@
                     "title": "Low"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:02Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:31:24Z",
                     "description": "",
@@ -3596,7 +3595,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -3629,7 +3628,7 @@
                     "title": "High"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:41:10Z",
                     "description": "",
@@ -3751,7 +3750,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -3784,7 +3783,7 @@
                     "title": "Medium"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:41:46Z",
                     "description": "",
@@ -3906,7 +3905,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -3939,7 +3938,7 @@
                     "title": "Low"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:42:12Z",
                     "description": "",
@@ -4061,7 +4060,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -4094,7 +4093,7 @@
                     "title": "High"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:47:48Z",
                     "description": "",
@@ -4216,7 +4215,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -4249,7 +4248,7 @@
                     "title": "Medium"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:48:32Z",
                     "description": "",
@@ -4371,7 +4370,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -4404,7 +4403,7 @@
                     "title": "Low"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-26T16:48:48Z",
                     "description": "",
@@ -4549,8 +4548,8 @@
                         "sizeY": 3
                     }
                 },
-                "text": "# Informational\n* Admin counts\n* ACLs\n* User Privileges\n* Library and Repo usage \n",
-                "updated_at": "2023-01-20T19:43:56Z",
+                "text": "# Informational\n* Admin counts\n* ACLs\n* User privileges\n* Library and repo usage \n",
+                "updated_at": "2023-06-22T18:50:52Z",
                 "width": 1
             },
             {
@@ -4572,7 +4571,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -4595,10 +4594,10 @@
                         "sizeX": 6,
                         "sizeY": 13
                     },
-                    "title": "Informational Summary"
+                    "title": "Informational summary"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:12:52Z",
                 "visualization": {
                     "created_at": "2022-07-20T14:41:17Z",
                     "description": "",
@@ -4968,7 +4967,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-23T19:16:17Z"
+                    "updated_at": "2023-07-07T15:11:11Z"
                 },
                 "width": 1
             },
@@ -4991,7 +4990,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -5024,7 +5023,7 @@
                     "title": "High"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-27T22:14:29Z",
                     "description": "",
@@ -5146,7 +5145,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -5179,7 +5178,7 @@
                     "title": "Medium"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-27T22:15:01Z",
                     "description": "",
@@ -5301,7 +5300,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -5334,7 +5333,7 @@
                     "title": "Low"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:03Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2022-09-27T22:15:21Z",
                     "description": "",
@@ -5472,7 +5471,7 @@
                         "date_param": {
                             "mapTo": "date_param",
                             "name": "date_param",
-                            "title": "Analysis Date ",
+                            "title": "Analysis date ",
                             "type": "dashboard-level",
                             "value": null
                         },
@@ -5495,10 +5494,10 @@
                         "sizeX": 2,
                         "sizeY": 3
                     },
-                    "title": "Analysis Date"
+                    "title": "Analysis date"
                 },
                 "text": "",
-                "updated_at": "2023-01-27T20:01:02Z",
+                "updated_at": "2023-07-07T15:10:04Z",
                 "visualization": {
                     "created_at": "2023-01-20T14:45:45Z",
                     "description": "",
@@ -5579,7 +5578,7 @@
                     },
                     "query_plan": null,
                     "type": "COUNTER",
-                    "updated_at": "2023-01-30T15:28:27Z"
+                    "updated_at": "2023-07-07T17:41:01Z"
                 },
                 "width": 1
             },
@@ -5618,10 +5617,10 @@
                         "sizeX": 6,
                         "sizeY": 14
                     },
-                    "title": "Security Configuration Comparison"
+                    "title": "Security configuration comparison"
                 },
                 "text": "",
-                "updated_at": "2023-01-30T15:17:05Z",
+                "updated_at": "2023-07-07T15:20:57Z",
                 "visualization": {
                     "created_at": "2023-01-20T15:50:59Z",
                     "description": "",
@@ -6090,265 +6089,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-30T15:29:01Z"
-                },
-                "width": 1
-            },
-            {
-                "created_at": "2023-01-30T15:16:46Z",
-                "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217",
-                "id": "194c62f8-fdff-4de1-b749-e50096687876",
-                "options": {
-                    "description": "",
-                    "isHidden": false,
-                    "overrideColors": false,
-                    "parameterMappings": {
-                        "date_range": {
-                            "mapTo": "date_range",
-                            "name": "date_range",
-                            "title": "Date Range",
-                            "type": "widget-level",
-                            "value": null
-                        },
-                        "workspaceid": {
-                            "mapTo": "workspaceid",
-                            "name": "workspaceid",
-                            "title": "",
-                            "type": "dashboard-level",
-                            "value": null
-                        }
-                    },
-                    "position": {
-                        "autoHeight": false,
-                        "col": 0,
-                        "maxSizeX": 6,
-                        "maxSizeY": 1000,
-                        "minSizeX": 1,
-                        "minSizeY": 5,
-                        "row": 73,
-                        "sizeX": 6,
-                        "sizeY": 10
-                    },
-                    "title": "Security Deviation Trend"
-                },
-                "text": "",
-                "updated_at": "2023-01-30T15:20:04Z",
-                "visualization": {
-                    "created_at": "2023-01-27T20:17:53Z",
-                    "description": "",
-                    "id": "72753d28-3eba-4419-942d-8a707d49c417",
-                    "name": "Bar",
-                    "options": {
-                        "alignYAxesAtZero": true,
-                        "coefficient": 1,
-                        "columnConfigurationMap": {
-                            "series": {
-                                "column": "category",
-                                "id": "column_d21aa98d19343"
-                            },
-                            "x": {
-                                "column": "check_time",
-                                "id": "column_d21aa98d15853"
-                            },
-                            "y": [
-                                {
-                                    "column": "severity_count",
-                                    "id": "column_c12ea4ac7628",
-                                    "transform": "SUM"
-                                }
-                            ]
-                        },
-                        "condensed": true,
-                        "dateTimeFormat": "YYYY-MM-DD HH:mm",
-                        "direction": {
-                            "type": "counterclockwise"
-                        },
-                        "error_y": {
-                            "type": "data",
-                            "visible": true
-                        },
-                        "globalSeriesType": "column",
-                        "hideXAxis": false,
-                        "isAggregationOn": true,
-                        "legend": {
-                            "traceorder": "normal"
-                        },
-                        "missingValuesAsZero": true,
-                        "numberFormat": "0,0[.]00000",
-                        "percentFormat": "0[.]00%",
-                        "series": {
-                            "error_y": {
-                                "type": "data",
-                                "visible": true
-                            },
-                            "percentValues": false,
-                            "stacking": "stack"
-                        },
-                        "seriesOptions": {
-                            "Data Protection": {
-                                "color": "#D32D41"
-                            },
-                            "Governance": {
-                                "color": "#6AB187"
-                            },
-                            "High": {
-                                "color": "#E92828",
-                                "yAxis": 0,
-                                "zIndex": 0
-                            },
-                            "Identity & Access": {
-                                "color": "#4CB5F5"
-                            },
-                            "Informational": {
-                                "color": "#1F3F49"
-                            },
-                            "Low": {
-                                "color": "#E1D006",
-                                "yAxis": 0,
-                                "zIndex": 2
-                            },
-                            "Medium": {
-                                "color": "#FB8D3D",
-                                "yAxis": 0,
-                                "zIndex": 1
-                            },
-                            "Network Security": {
-                                "color": "#CED2CC"
-                            },
-                            "column_c12ea4ac7628": {
-                                "type": "column",
-                                "yAxis": 0
-                            }
-                        },
-                        "showDataLabels": false,
-                        "sizemode": "diameter",
-                        "sortX": true,
-                        "sortY": true,
-                        "swappedAxes": false,
-                        "textFormat": "",
-                        "useAggregationsUi": true,
-                        "valuesOptions": {},
-                        "version": 2,
-                        "withRowNumber": true,
-                        "xAxis": {
-                            "labels": {
-                                "enabled": true
-                            },
-                            "title": {
-                                "text": "Date"
-                            },
-                            "type": "category"
-                        },
-                        "yAxis": [
-                            {
-                                "title": {
-                                    "text": "Count of Deviation Checks by Category"
-                                },
-                                "type": "-"
-                            },
-                            {
-                                "opposite": true,
-                                "type": "-"
-                            }
-                        ]
-                    },
-                    "query": {
-                        "can_edit": true,
-                        "created_at": "2023-01-27T20:17:53Z",
-                        "data_source_id": "d5878969-c046-49d7-8734-f81281bef428",
-                        "description": "",
-                        "id": "afe4e2ec-8d29-4428-a100-c1020ab57326",
-                        "is_draft": false,
-                        "is_safe": true,
-                        "name": "summary_stats_over_period",
-                        "options": {
-                            "apply_auto_limit": true,
-                            "folder_node_internal_name": "tree/3794856479258673",
-                            "folder_node_status": "ACTIVE",
-                            "parameters": [
-                                {
-                                    "$$value": "1657683783405196",
-                                    "global": false,
-                                    "locals": [],
-                                    "name": "workspaceid",
-                                    "parentQueryId": "afe4e2ec-8d29-4428-a100-c1020ab57326",
-                                    "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
-                                    "title": "Workspace",
-                                    "type": "query",
-                                    "urlPrefix": "p_",
-                                    "value": "1657683783405196"
-                                },
-                                {
-                                    "$$value": {
-                                        "name": "This month",
-                                        "unformattedName": {
-                                            "defaultMessage": [
-                                                {
-                                                    "type": 0,
-                                                    "value": "This month"
-                                                }
-                                            ],
-                                            "id": "gKBBvf"
-                                        }
-                                    },
-                                    "global": false,
-                                    "locals": [],
-                                    "name": "date_range",
-                                    "parentQueryId": "afe4e2ec-8d29-4428-a100-c1020ab57326",
-                                    "title": "date_range",
-                                    "type": "datetime-range",
-                                    "urlPrefix": "p_",
-                                    "value": "d_this_month"
-                                }
-                            ],
-                            "parent": "folders/3794856479258664",
-                            "run_as_role": "viewer",
-                            "schema": "security_analysis",
-                            "visualization_control_order": [
-                                "workspaceid",
-                                "date_range"
-                            ]
-                        },
-                        "query": "Select\n  results.category as category,\n  severity,\n  severity_count,\n  ord,\n  check_time\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord,\n      run.check_time\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp,\n      security_analysis.workspace_run_complete run\n    where\n      score = 1\n      and sc.id = sbp.id\n      and sc.run_id = run.run_id\n      and run.completed = true\n      and run.check_time > '{{ date_range.start }}' and run.check_time <= '{{ date_range.end }}'\n      and run.workspace_id = {{workspaceid}}\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = {{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity,\n      run.check_time\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category\ngroup by check_time, results.category, category_count,  severity, severity_count, ord",
-                        "run_as_role": "viewer",
-                        "run_as_service_principal_id": null,
-                        "schedule": null,
-                        "tags": [
-                            "SAT"
-                        ],
-                        "updated_at": "2023-01-30T15:24:33Z",
-                        "user_id": 6132399981223669,
-                        "version": 1
-                    },
-                    "query_plan": {
-                        "groups": [
-                            {
-                                "column": "category"
-                            },
-                            {
-                                "column": "check_time"
-                            }
-                        ],
-                        "selects": [
-                            {
-                                "column": "category"
-                            },
-                            {
-                                "column": "check_time"
-                            },
-                            {
-                                "alias": "column_c12ea4ac7628",
-                                "args": [
-                                    {
-                                        "column": "severity_count"
-                                    }
-                                ],
-                                "function": "SUM"
-                            }
-                        ]
-                    },
-                    "type": "CHART",
-                    "updated_at": "2023-01-30T15:17:33Z"
+                    "updated_at": "2023-07-07T17:41:02Z"
                 },
                 "width": 1
             }
@@ -6369,11 +6110,9 @@
             "last_modified_by": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
-            "latest_query_data_id": "8f313a11-0596-4b02-af41-12b805939e8c",
+            "latest_query_data_id": "bdc561fb-5a81-4226-8cdc-914159ccb7c4",
             "name": "workspace_ids",
             "options": {
                 "apply_auto_limit": true,
@@ -6395,9 +6134,7 @@
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
             "user_id": 6132399981223669,
             "version": 1,
@@ -6416,7 +6153,8 @@
                     "type": "TABLE",
                     "updated_at": "2022-09-07T17:45:32Z"
                 }
-            ]
+            ],
+            "warehouse_id": "3f0c53cc69ad14fc"
         },
         {
             "can_edit": true,
@@ -6432,11 +6170,9 @@
             "last_modified_by": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
-            "latest_query_data_id": "e43fb6d1-ee86-4a56-abef-6a929796c04d",
+            "latest_query_data_id": "7f33ff17-be2b-4155-beea-41cd287c26c8",
             "name": "category_pillars",
             "options": {
                 "apply_auto_limit": true,
@@ -6498,9 +6234,7 @@
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
             "user_id": 6132399981223669,
             "version": 1,
@@ -7148,7 +6882,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-23T19:16:17Z"
+                    "updated_at": "2023-07-07T15:11:11Z"
                 },
                 {
                     "created_at": "2022-07-20T14:41:17Z",
@@ -7207,7 +6941,8 @@
                     "type": "COUNTER",
                     "updated_at": "2022-07-20T14:41:16Z"
                 }
-            ]
+            ],
+            "warehouse_id": "3f0c53cc69ad14fc"
         },
         {
             "can_edit": true,
@@ -7223,11 +6958,9 @@
             "last_modified_by": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
-            "latest_query_data_id": "876a91f3-0a88-442b-a49b-e6058863ef91",
+            "latest_query_data_id": "a7326a4e-acd8-4457-a5a0-42cd73f6afc1",
             "name": "account_stats",
             "options": {
                 "apply_auto_limit": true,
@@ -7277,9 +7010,7 @@
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
             "user_id": 6132399981223669,
             "version": 1,
@@ -7840,7 +7571,8 @@
                     "type": "COUNTER",
                     "updated_at": "2022-09-22T14:41:20Z"
                 }
-            ]
+            ],
+            "warehouse_id": "3f0c53cc69ad14fc"
         },
         {
             "can_edit": true,
@@ -7856,23 +7588,9 @@
             "last_modified_by": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
-            "latest_execution": {
-                "catalog": null,
-                "data_source_id": "d5878969-c046-49d7-8734-f81281bef428",
-                "error_message": "",
-                "id": "63c5a547-42e8-4192-9cad-2fe5b05bbe65",
-                "num_rows": 10,
-                "query_id": "fdc33af2-0921-4fed-b320-08ed92eb4c18",
-                "query_text": "Select\n  concat(\n    results.category,\n    ' (Out of ',\n    category_count,\n    ')'\n  ) as category,\n  severity,\n  severity_count,\n  ord\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp\n    where\n      score = 1\n      and sc.id = sbp.id\n      and run_id = coalesce (\n        (\n          select\n            max(run_id)\n          from\n            security_analysis.workspace_run_complete\n          where\n            workspace_id = 1657683783405196\n            and completed = true\n            and chk_date = '2023-01-25'\n        ),\n        (\n          select\n            max(run_id)\n          from\n            security_analysis.workspace_run_complete\n          where\n            workspace_id = 1657683783405196\n            and completed = true\n        )\n      )\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = 1657683783405196\n    group by\n      sbp.category,\n      sbp.severity\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category LIMIT 1000",
-                "runtime": 2.06468,
-                "schema": "security_analysis",
-                "start_time": "2023-01-25T22:45:19",
-                "status": 3
-            },
+            "latest_query_data_id": "8f9aedef-0ad9-4cb1-8c4b-16434bf43844",
             "name": "summary_stats",
             "options": {
                 "apply_auto_limit": true,
@@ -7923,9 +7641,7 @@
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
             "user_id": 6132399981223669,
             "version": 1,
@@ -8122,7 +7838,7 @@
                     "id": "b94f0f26-5e39-4836-98c0-09c74c97f57d",
                     "name": "Bar",
                     "options": {
-                        "alignYAxesAtZero": false,
+                        "alignYAxesAtZero": true,
                         "coefficient": 1,
                         "columnConfigurationMap": {
                             "series": {
@@ -8205,7 +7921,7 @@
                         "yAxis": [
                             {
                                 "title": {
-                                    "text": "Count of Deviation Checks by Severity"
+                                    "text": "Count of deviations by severity"
                                 },
                                 "type": "-"
                             },
@@ -8243,7 +7959,7 @@
                         ]
                     },
                     "type": "CHART",
-                    "updated_at": "2023-01-23T18:44:21Z"
+                    "updated_at": "2023-07-07T15:08:10Z"
                 },
                 {
                     "created_at": "2022-07-20T14:41:26Z",
@@ -8431,7 +8147,8 @@
                     "type": "TABLE",
                     "updated_at": "2022-07-20T14:41:26Z"
                 }
-            ]
+            ],
+            "warehouse_id": "3f0c53cc69ad14fc"
         },
         {
             "can_edit": true,
@@ -8447,11 +8164,9 @@
             "last_modified_by": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
-            "latest_query_data_id": "d76e44cb-31f9-467f-83fb-3aeb4e3534b2",
+            "latest_query_data_id": "a05a2b51-41da-43e9-a500-3a4fa5538c25",
             "name": "security_check_details",
             "options": {
                 "apply_auto_limit": true,
@@ -8515,9 +8230,7 @@
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
             "user_id": 6132399981223669,
             "version": 1,
@@ -8586,7 +8299,7 @@
                     },
                     "query_plan": null,
                     "type": "DETAILS",
-                    "updated_at": "2023-01-30T15:28:28Z"
+                    "updated_at": "2023-07-07T17:41:01Z"
                 },
                 {
                     "created_at": "2022-09-12T21:50:56Z",
@@ -8816,7 +8529,8 @@
                     "type": "TABLE",
                     "updated_at": "2022-09-29T17:27:14Z"
                 }
-            ]
+            ],
+            "warehouse_id": "3f0c53cc69ad14fc"
         },
         {
             "can_edit": true,
@@ -8832,11 +8546,9 @@
             "last_modified_by": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
-            "latest_query_data_id": "85d5ba8c-c30e-4cd6-b988-8f804fc881b6",
+            "latest_query_data_id": "be28c7c6-a987-4f39-9ede-f4d30a7a5272",
             "name": "category_counters",
             "options": {
                 "apply_auto_limit": true,
@@ -8910,9 +8622,7 @@
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
             "user_id": 6132399981223669,
             "version": 1,
@@ -9244,7 +8954,8 @@
                     "type": "COUNTER",
                     "updated_at": "2022-09-26T16:25:25Z"
                 }
-            ]
+            ],
+            "warehouse_id": "3f0c53cc69ad14fc"
         },
         {
             "can_edit": true,
@@ -9260,11 +8971,9 @@
             "last_modified_by": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
-            "latest_query_data_id": "75e1a08b-9333-452b-9c8a-519072483a89",
+            "latest_query_data_id": "54de0df1-7515-45e9-8d40-558049c1b701",
             "name": "analysis_date_time",
             "options": {
                 "apply_auto_limit": true,
@@ -9308,44 +9017,7 @@
             "parent": "folders/2430306471320700",
             "permission_tier": "CAN_MANAGE",
             "query": "SELECT\n  max(sc.check_time) date\nFROM\n  security_analysis.security_checks sc\nwhere\n  sc.workspaceid = {{workspaceid}}\n  and run_id = coalesce (\n    (\n      select\n        max(run_id)\n      from\n        security_analysis.workspace_run_complete\n      where\n        workspace_id = {{workspaceid}}\n        and completed = true\n        and chk_date = '{{date_param}}'\n    ),\n    (\n      select\n        max(run_id) \n      from\n        security_analysis.workspace_run_complete\n      where\n        workspace_id = {{workspaceid}}\n        and completed = true\n    )\n  )",
-            "query_draft": {
-                "apply_auto_limit": true,
-                "catalog": "hive_metastore",
-                "draft_text": "SELECT\n  max(sc.check_time) date\nFROM\n  security_analysis.security_checks sc\nwhere\n  sc.workspaceid = {{workspaceid}}\n  and run_id = coalesce (\n    (\n      select\n        max(run_id)\n      from\n        security_analysis.workspace_run_complete\n      where\n        workspace_id = {{workspaceid}}\n        and completed = true\n        and chk_date = '{{date_param}}'\n    ),\n    (\n      select\n        max(run_id) \n      from\n        security_analysis.workspace_run_complete\n      where\n        workspace_id = {{workspaceid}}\n        and completed = true\n    )\n  )",
-                "org_id": 1657683783405196,
-                "original_query_text": "SELECT\n  max(sc.check_time) date\nFROM\n  security_analysis.security_checks sc\nwhere\n  sc.workspaceid = {{workspaceid}}\n  and run_id = coalesce (\n    (\n      select\n        max(run_id)\n      from\n        security_analysis.workspace_run_complete\n      where\n        workspace_id = {{workspaceid}}\n        and completed = true\n        and chk_date = '{{date_param}}'\n    ),\n    (\n      select\n        max(run_id) \n      from\n        security_analysis.workspace_run_complete\n      where\n        workspace_id = {{workspaceid}}\n        and completed = true\n    )\n  )",
-                "parameters": [
-                    {
-                        "$$value": "1657683783405196",
-                        "global": false,
-                        "locals": [],
-                        "name": "workspaceid",
-                        "parentQueryId": "9c7506cc-b0cc-4639-8e5d-752bf4d9bc50",
-                        "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
-                        "title": "workspaceid",
-                        "type": "query",
-                        "urlPrefix": "p_",
-                        "value": "1657683783405196"
-                    },
-                    {
-                        "$$value": {
-                            "name": "Today/Now"
-                        },
-                        "global": false,
-                        "locals": [],
-                        "name": "date_param",
-                        "parentQueryId": "9c7506cc-b0cc-4639-8e5d-752bf4d9bc50",
-                        "title": "date_param",
-                        "type": "date",
-                        "urlPrefix": "p_",
-                        "value": "d_now"
-                    }
-                ],
-                "query_id": "9c7506cc-b0cc-4639-8e5d-752bf4d9bc50",
-                "schema": "security_analysis",
-                "updated_at": "2023-01-23T15:09:36Z",
-                "user_id": 6132399981223669
-            },
+            "query_draft": null,
             "run_as_role": null,
             "run_as_service_principal_id": null,
             "schedule": null,
@@ -9356,9 +9028,7 @@
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
             "user_id": 6132399981223669,
             "version": 1,
@@ -9384,7 +9054,7 @@
                     },
                     "query_plan": null,
                     "type": "COUNTER",
-                    "updated_at": "2023-01-30T15:28:27Z"
+                    "updated_at": "2023-07-07T17:41:01Z"
                 },
                 {
                     "created_at": "2023-01-17T00:57:50Z",
@@ -9398,7 +9068,8 @@
                     "type": "TABLE",
                     "updated_at": "2023-01-17T00:57:50Z"
                 }
-            ]
+            ],
+            "warehouse_id": "3f0c53cc69ad14fc"
         },
         {
             "can_edit": true,
@@ -9414,11 +9085,9 @@
             "last_modified_by": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
-            "latest_query_data_id": "b978f2ad-e442-48d2-9f04-bbd4d9f1924c",
+            "latest_query_data_id": "a58bbd19-310b-4efe-89b5-f2f9cb398572",
             "name": "workspace_config_changes",
             "options": {
                 "apply_auto_limit": true,
@@ -9471,54 +9140,7 @@
             "parent": "folders/2430306471320700",
             "permission_tier": "CAN_MANAGE",
             "query": "SELECT\n  sc1.score as current_score,\n  sc2.score as previous_score,\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  sc1.score as Run1Status,\n  sc2.score as Run2Status,\n  sc1.check_time as Run1Date,\n  sc2.check_time as Run2Date,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  sc1.workspaceid\nFROM\n  security_analysis.security_checks sc1,\n  security_analysis.security_checks sc2,\n  security_analysis.security_best_practices BP\nwhere\n  sc1.workspaceid = {{workspaceid}}\n  and sc2.workspaceid = sc1.workspaceid\n  and sc1.id = sc2.id\n  and sc1.id = BP.id\n  and sc1.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n      and chk_date = '{{date_range.start}}'\n  )\n  and sc2.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n          and chk_date = '{{date_range.end}}'\n      )\n  )\n  \n ",
-            "query_draft": {
-                "apply_auto_limit": true,
-                "catalog": "hive_metastore",
-                "draft_text": "SELECT\n  sc1.score as current_score,\n  sc2.score as previous_score,\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  sc1.score as Run1Status,\n  sc2.score as Run2Status,\n  sc1.check_time as Run1Date,\n  sc2.check_time as Run2Date,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  sc1.workspaceid\nFROM\n  security_analysis.security_checks sc1,\n  security_analysis.security_checks sc2,\n  security_analysis.security_best_practices BP\nwhere\n  sc1.workspaceid = {{workspaceid}}\n  and sc2.workspaceid = sc1.workspaceid\n  and sc1.id = sc2.id\n  and sc1.id = BP.id\n  and sc1.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n      and chk_date = '{{date_range.start}}'\n  )\n  and sc2.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n          and chk_date = '{{date_range.end}}'\n      )\n  )\n  \n ",
-                "org_id": 1657683783405196,
-                "original_query_text": "SELECT\n  sc1.score as current_score,\n  sc2.score as previous_score,\n  BP.check_id,\n  check as Check,\n  BP.severity as Severity,\n  sc1.score as Run1Status,\n  sc2.score as Run2Status,\n  sc1.check_time as Run1Date,\n  sc2.check_time as Run2Date,\n  concat(\n    '<a  href=\"',\n    BP.doc_url,\n    '\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"remediation documentation\">',\n    BP.recommendation,\n    '</a>'\n  ) as Recommendation,\n  CASE\n    WHEN BP.severity = 'High' THEN 3\n    WHEN BP.severity = 'Medium' THEN 2\n    ELSE 1\n  END as ord,\n  sc1.workspaceid\nFROM\n  security_analysis.security_checks sc1,\n  security_analysis.security_checks sc2,\n  security_analysis.security_best_practices BP\nwhere\n  sc1.workspaceid = {{workspaceid}}\n  and sc2.workspaceid = sc1.workspaceid\n  and sc1.id = sc2.id\n  and sc1.id = BP.id\n  and sc1.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n      and chk_date = '{{date_range.start}}'\n  )\n  and sc2.run_id = (\n    select\n      max(run_id)\n    from\n      security_analysis.workspace_run_complete\n    where\n      workspace_id = {{workspaceid}}\n      and completed = true\n      and run_id = (\n        select\n          max(run_id)\n        from\n          security_analysis.workspace_run_complete\n        where\n          workspace_id = {{workspaceid}}\n          and completed = true\n          and chk_date = '{{date_range.end}}'\n      )\n  )\n  \n ",
-                "parameters": [
-                    {
-                        "$$value": "1657683783405196",
-                        "global": false,
-                        "locals": [],
-                        "name": "workspaceid",
-                        "parentQueryId": "2c0e5da9-6cb7-44f3-9a95-fcacf69988c8",
-                        "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
-                        "title": "workspaceid",
-                        "type": "query",
-                        "urlPrefix": "p_",
-                        "value": "1657683783405196"
-                    },
-                    {
-                        "$$value": {
-                            "name": "This week",
-                            "unformattedName": {
-                                "defaultMessage": [
-                                    {
-                                        "type": 0,
-                                        "value": "This week"
-                                    }
-                                ],
-                                "id": "BgZrE3"
-                            }
-                        },
-                        "global": false,
-                        "locals": [],
-                        "name": "date_range",
-                        "parentQueryId": "2c0e5da9-6cb7-44f3-9a95-fcacf69988c8",
-                        "pendingValue": null,
-                        "title": "date_range",
-                        "type": "date-range",
-                        "urlPrefix": "p_",
-                        "value": "d_this_week"
-                    }
-                ],
-                "query_id": "2c0e5da9-6cb7-44f3-9a95-fcacf69988c8",
-                "schema": "security_analysis",
-                "updated_at": "2023-01-30T15:27:22Z",
-                "user_id": 6132399981223669
-            },
+            "query_draft": null,
             "run_as_role": null,
             "run_as_service_principal_id": null,
             "schedule": null,
@@ -9529,9 +9151,7 @@
             "user": {
                 "email": "arun.pamulapati@databricks.com",
                 "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
+                "name": "Arun Pamulapati"
             },
             "user_id": 6132399981223669,
             "version": 1,
@@ -9936,7 +9556,7 @@
                     },
                     "query_plan": null,
                     "type": "TABLE",
-                    "updated_at": "2023-01-30T15:29:01Z"
+                    "updated_at": "2023-07-07T17:41:02Z"
                 },
                 {
                     "created_at": "2023-01-20T15:03:02Z",
@@ -10275,1004 +9895,8 @@
                     "type": "TABLE",
                     "updated_at": "2023-01-23T16:03:07Z"
                 }
-            ]
-        },
-        {
-            "can_edit": true,
-            "created_at": "2023-01-27T20:17:53Z",
-            "data_source_id": "d5878969-c046-49d7-8734-f81281bef428",
-            "description": "",
-            "id": "afe4e2ec-8d29-4428-a100-c1020ab57326",
-            "is_archived": false,
-            "is_draft": false,
-            "is_favorite": false,
-            "is_safe": true,
-            "job_id": null,
-            "last_modified_by": {
-                "email": "arun.pamulapati@databricks.com",
-                "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
-            },
-            "latest_execution": {
-                "catalog": null,
-                "data_source_id": "d5878969-c046-49d7-8734-f81281bef428",
-                "error_message": "",
-                "id": "647c9b0f-783e-4233-96af-6d8d8741ffb6",
-                "num_rows": 66,
-                "query_id": "afe4e2ec-8d29-4428-a100-c1020ab57326",
-                "query_text": "Select\n  results.category as category,\n  severity,\n  severity_count,\n  ord,\n  check_time\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord,\n      run.check_time\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp,\n      security_analysis.workspace_run_complete run\n    where\n      score = 1\n      and sc.id = sbp.id\n      and sc.run_id = run.run_id\n      and run.completed = true\n      and run.check_time > '2023-01-01 00:00' and run.check_time <= '2023-01-31 23:59'\n      and run.workspace_id = 1657683783405196\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = 1657683783405196\n    group by\n      sbp.category,\n      sbp.severity,\n      run.check_time\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category\ngroup by check_time, results.category, category_count,  severity, severity_count, ord LIMIT 1000",
-                "runtime": 2.03424,
-                "schema": "security_analysis",
-                "start_time": "2023-01-30T15:18:06",
-                "status": 3
-            },
-            "latest_query_data_id": "647c9b0f-783e-4233-96af-6d8d8741ffb6",
-            "name": "summary_stats_over_period",
-            "options": {
-                "apply_auto_limit": true,
-                "folder_node_internal_name": "tree/3794856479258673",
-                "folder_node_status": "ACTIVE",
-                "parameters": [
-                    {
-                        "$$value": "1657683783405196",
-                        "global": false,
-                        "locals": [],
-                        "name": "workspaceid",
-                        "parentQueryId": "afe4e2ec-8d29-4428-a100-c1020ab57326",
-                        "queryId": "07b9f7cc-acfd-4409-977d-b8f1e9527ca7",
-                        "title": "Workspace",
-                        "type": "query",
-                        "urlPrefix": "p_",
-                        "value": "1657683783405196"
-                    },
-                    {
-                        "$$value": {
-                            "name": "This month",
-                            "unformattedName": {
-                                "defaultMessage": [
-                                    {
-                                        "type": 0,
-                                        "value": "This month"
-                                    }
-                                ],
-                                "id": "gKBBvf"
-                            }
-                        },
-                        "global": false,
-                        "locals": [],
-                        "name": "date_range",
-                        "parentQueryId": "afe4e2ec-8d29-4428-a100-c1020ab57326",
-                        "title": "date_range",
-                        "type": "datetime-range",
-                        "urlPrefix": "p_",
-                        "value": "d_this_month"
-                    }
-                ],
-                "parent": "folders/3794856479258664",
-                "run_as_role": "viewer",
-                "schema": "security_analysis",
-                "visualization_control_order": [
-                    "workspaceid",
-                    "date_range"
-                ]
-            },
-            "parent": "folders/3794856479258664",
-            "permission_tier": "CAN_MANAGE",
-            "query": "Select\n  results.category as category,\n  severity,\n  severity_count,\n  ord,\n  check_time\nFROM\n  (\n    SELECT\n      sbp.category,\n      sbp.severity,\n      count(sbp.severity) severity_count,\n      CASE\n        WHEN sbp.severity = 'High' THEN 3\n        WHEN sbp.severity = 'Medium' THEN 2\n        ELSE 1\n      END as ord,\n      run.check_time\n    FROM\n      security_analysis.security_checks sc,\n      security_analysis.security_best_practices sbp,\n      security_analysis.workspace_run_complete run\n    where\n      score = 1\n      and sc.id = sbp.id\n      and sc.run_id = run.run_id\n      and run.completed = true\n      and run.check_time > '{{ date_range.start }}' and run.check_time <= '{{ date_range.end }}'\n      and run.workspace_id = {{workspaceid}}\n      and category not IN ('Workspace Settings', 'Workspace Stats')\n      and workspaceid = {{workspaceid}}\n    group by\n      sbp.category,\n      sbp.severity,\n      run.check_time\n  ) as results,\n  (\n    SELECT\n      category,\n      count(*) as category_count\n    FROM\n      security_analysis.security_best_practices\n    WHERE\n      category not IN ('Workspace Settings', 'Workspace Stats')\n    group by\n      category\n  ) as master\nwhere\n  results.category = master.category\ngroup by check_time, results.category, category_count,  severity, severity_count, ord",
-            "query_draft": null,
-            "run_as_role": "viewer",
-            "run_as_service_principal_id": null,
-            "schedule": null,
-            "tags": [
-                "SAT"
             ],
-            "updated_at": "2023-01-30T15:24:33Z",
-            "user": {
-                "email": "arun.pamulapati@databricks.com",
-                "id": 6132399981223669,
-                "is_db_admin": false,
-                "name": "Arun Pamulapati",
-                "profile_image_url": "https://www.gravatar.com/avatar/14ec1a31bedbf1f5cdc8a243bf5bfb64?s=40&d=identicon"
-            },
-            "user_id": 6132399981223669,
-            "version": 1,
-            "visualizations": [
-                {
-                    "created_at": "2023-01-27T20:17:54Z",
-                    "description": "",
-                    "id": "14c97cb6-bb23-4442-b56a-fee73565169a",
-                    "name": "Table",
-                    "options": {
-                        "alignYAxesAtZero": false,
-                        "coefficient": 1,
-                        "columnConfigurationMap": {
-                            "series": {
-                                "column": "severity",
-                                "id": "column_c12ea4ac5986"
-                            },
-                            "x": {
-                                "column": "category",
-                                "id": "column_c12ea4ac4907"
-                            },
-                            "y": [
-                                {
-                                    "column": "severity_count",
-                                    "id": "column_c12ea4ac4572",
-                                    "transform": "SUM"
-                                }
-                            ]
-                        },
-                        "columns": [
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "category",
-                                "order": 100000,
-                                "preserveWhitespace": false,
-                                "title": "category",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "severity",
-                                "order": 100001,
-                                "preserveWhitespace": false,
-                                "title": "severity",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "right",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "number",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "severity_count",
-                                "numberFormat": "0",
-                                "order": 100002,
-                                "preserveWhitespace": false,
-                                "title": "severity_count",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            }
-                        ],
-                        "condensed": false,
-                        "dateTimeFormat": "YYYY-MM-DD HH:mm",
-                        "direction": {
-                            "type": "counterclockwise"
-                        },
-                        "error_y": {
-                            "type": "data",
-                            "visible": true
-                        },
-                        "globalSeriesType": "column",
-                        "isAggregationOn": true,
-                        "itemsPerPage": 25,
-                        "legend": {
-                            "traceorder": "normal"
-                        },
-                        "missingValuesAsZero": true,
-                        "numberFormat": "0,0[.]00000",
-                        "percentFormat": "0[.]00%",
-                        "series": {
-                            "error_y": {
-                                "type": "data",
-                                "visible": true
-                            },
-                            "stacking": "stack"
-                        },
-                        "seriesOptions": {
-                            "High": {
-                                "color": "#E92828"
-                            },
-                            "Low": {
-                                "color": "#FFFF00"
-                            },
-                            "Medium": {
-                                "color": "#FB8D3D"
-                            },
-                            "column_c12ea4ac4572": {
-                                "type": "column",
-                                "yAxis": 0
-                            },
-                            "column_c12ea4ac4741": {
-                                "type": "column",
-                                "yAxis": 0
-                            }
-                        },
-                        "showDataLabels": false,
-                        "sizemode": "diameter",
-                        "sortX": true,
-                        "sortY": true,
-                        "swappedAxes": true,
-                        "textFormat": "",
-                        "useAggregationsUi": true,
-                        "valuesOptions": {},
-                        "version": 2,
-                        "withRowNumber": true,
-                        "xAxis": {
-                            "labels": {
-                                "enabled": true
-                            },
-                            "title": {
-                                "text": "Category"
-                            },
-                            "type": "-"
-                        },
-                        "yAxis": [
-                            {
-                                "title": {
-                                    "text": "Severity"
-                                },
-                                "type": "-"
-                            },
-                            {
-                                "opposite": true,
-                                "type": "-"
-                            }
-                        ]
-                    },
-                    "query_plan": null,
-                    "type": "TABLE",
-                    "updated_at": "2023-01-30T15:16:46Z"
-                },
-                {
-                    "created_at": "2023-01-27T20:17:53Z",
-                    "description": "",
-                    "id": "72753d28-3eba-4419-942d-8a707d49c417",
-                    "name": "Bar",
-                    "options": {
-                        "alignYAxesAtZero": true,
-                        "coefficient": 1,
-                        "columnConfigurationMap": {
-                            "series": {
-                                "column": "category",
-                                "id": "column_d21aa98d19343"
-                            },
-                            "x": {
-                                "column": "check_time",
-                                "id": "column_d21aa98d15853"
-                            },
-                            "y": [
-                                {
-                                    "column": "severity_count",
-                                    "id": "column_c12ea4ac7628",
-                                    "transform": "SUM"
-                                }
-                            ]
-                        },
-                        "condensed": true,
-                        "dateTimeFormat": "YYYY-MM-DD HH:mm",
-                        "direction": {
-                            "type": "counterclockwise"
-                        },
-                        "error_y": {
-                            "type": "data",
-                            "visible": true
-                        },
-                        "globalSeriesType": "column",
-                        "hideXAxis": false,
-                        "isAggregationOn": true,
-                        "legend": {
-                            "traceorder": "normal"
-                        },
-                        "missingValuesAsZero": true,
-                        "numberFormat": "0,0[.]00000",
-                        "percentFormat": "0[.]00%",
-                        "series": {
-                            "error_y": {
-                                "type": "data",
-                                "visible": true
-                            },
-                            "percentValues": false,
-                            "stacking": "stack"
-                        },
-                        "seriesOptions": {
-                            "Data Protection": {
-                                "color": "#D32D41"
-                            },
-                            "Governance": {
-                                "color": "#6AB187"
-                            },
-                            "High": {
-                                "color": "#E92828",
-                                "yAxis": 0,
-                                "zIndex": 0
-                            },
-                            "Identity & Access": {
-                                "color": "#4CB5F5"
-                            },
-                            "Informational": {
-                                "color": "#1F3F49"
-                            },
-                            "Low": {
-                                "color": "#E1D006",
-                                "yAxis": 0,
-                                "zIndex": 2
-                            },
-                            "Medium": {
-                                "color": "#FB8D3D",
-                                "yAxis": 0,
-                                "zIndex": 1
-                            },
-                            "Network Security": {
-                                "color": "#CED2CC"
-                            },
-                            "column_c12ea4ac7628": {
-                                "type": "column",
-                                "yAxis": 0
-                            }
-                        },
-                        "showDataLabels": false,
-                        "sizemode": "diameter",
-                        "sortX": true,
-                        "sortY": true,
-                        "swappedAxes": false,
-                        "textFormat": "",
-                        "useAggregationsUi": true,
-                        "valuesOptions": {},
-                        "version": 2,
-                        "withRowNumber": true,
-                        "xAxis": {
-                            "labels": {
-                                "enabled": true
-                            },
-                            "title": {
-                                "text": "Date"
-                            },
-                            "type": "category"
-                        },
-                        "yAxis": [
-                            {
-                                "title": {
-                                    "text": "Count of Deviation Checks by Category"
-                                },
-                                "type": "-"
-                            },
-                            {
-                                "opposite": true,
-                                "type": "-"
-                            }
-                        ]
-                    },
-                    "query_plan": {
-                        "groups": [
-                            {
-                                "column": "category"
-                            },
-                            {
-                                "column": "check_time"
-                            }
-                        ],
-                        "selects": [
-                            {
-                                "column": "category"
-                            },
-                            {
-                                "column": "check_time"
-                            },
-                            {
-                                "alias": "column_c12ea4ac7628",
-                                "args": [
-                                    {
-                                        "column": "severity_count"
-                                    }
-                                ],
-                                "function": "SUM"
-                            }
-                        ]
-                    },
-                    "type": "CHART",
-                    "updated_at": "2023-01-30T15:17:33Z"
-                },
-                {
-                    "created_at": "2023-01-27T20:17:54Z",
-                    "description": "",
-                    "id": "a595b0d9-a352-4dd6-a131-618d6b073d1e",
-                    "name": "Table",
-                    "options": {
-                        "alignYAxesAtZero": false,
-                        "coefficient": 1,
-                        "columnConfigurationMap": {
-                            "series": {
-                                "column": "severity",
-                                "id": "column_c12ea4ac5986"
-                            },
-                            "x": {
-                                "column": "category",
-                                "id": "column_c12ea4ac4907"
-                            },
-                            "y": [
-                                {
-                                    "column": "severity_count",
-                                    "id": "column_c12ea4ac4572",
-                                    "transform": "SUM"
-                                }
-                            ]
-                        },
-                        "columns": [
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "category",
-                                "order": 100000,
-                                "preserveWhitespace": false,
-                                "title": "category",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "severity",
-                                "order": 100001,
-                                "preserveWhitespace": false,
-                                "title": "severity",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "right",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "number",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "severity_count",
-                                "numberFormat": "0",
-                                "order": 100002,
-                                "preserveWhitespace": false,
-                                "title": "severity_count",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            }
-                        ],
-                        "condensed": false,
-                        "dateTimeFormat": "YYYY-MM-DD HH:mm",
-                        "direction": {
-                            "type": "counterclockwise"
-                        },
-                        "error_y": {
-                            "type": "data",
-                            "visible": true
-                        },
-                        "globalSeriesType": "column",
-                        "isAggregationOn": true,
-                        "itemsPerPage": 25,
-                        "legend": {
-                            "traceorder": "normal"
-                        },
-                        "missingValuesAsZero": true,
-                        "numberFormat": "0,0[.]00000",
-                        "percentFormat": "0[.]00%",
-                        "series": {
-                            "error_y": {
-                                "type": "data",
-                                "visible": true
-                            },
-                            "stacking": "stack"
-                        },
-                        "seriesOptions": {
-                            "High": {
-                                "color": "#E92828"
-                            },
-                            "Low": {
-                                "color": "#FFFF00"
-                            },
-                            "Medium": {
-                                "color": "#FB8D3D"
-                            },
-                            "column_c12ea4ac4572": {
-                                "type": "column",
-                                "yAxis": 0
-                            },
-                            "column_c12ea4ac4741": {
-                                "type": "column",
-                                "yAxis": 0
-                            }
-                        },
-                        "showDataLabels": false,
-                        "sizemode": "diameter",
-                        "sortX": true,
-                        "sortY": true,
-                        "swappedAxes": true,
-                        "textFormat": "",
-                        "useAggregationsUi": true,
-                        "valuesOptions": {},
-                        "version": 2,
-                        "withRowNumber": true,
-                        "xAxis": {
-                            "labels": {
-                                "enabled": true
-                            },
-                            "title": {
-                                "text": "Category"
-                            },
-                            "type": "-"
-                        },
-                        "yAxis": [
-                            {
-                                "title": {
-                                    "text": "Severity"
-                                },
-                                "type": "-"
-                            },
-                            {
-                                "opposite": true,
-                                "type": "-"
-                            }
-                        ]
-                    },
-                    "query_plan": null,
-                    "type": "TABLE",
-                    "updated_at": "2023-01-27T20:17:54Z"
-                },
-                {
-                    "created_at": "2023-01-27T20:17:54Z",
-                    "description": "",
-                    "id": "b11b8484-8f74-43c6-94de-c74ba80c71d7",
-                    "name": "Table",
-                    "options": {
-                        "alignYAxesAtZero": false,
-                        "coefficient": 1,
-                        "columnConfigurationMap": {
-                            "series": {
-                                "column": "severity",
-                                "id": "column_c12ea4ac5986"
-                            },
-                            "x": {
-                                "column": "category",
-                                "id": "column_c12ea4ac4907"
-                            },
-                            "y": [
-                                {
-                                    "column": "severity_count",
-                                    "id": "column_c12ea4ac4572",
-                                    "transform": "SUM"
-                                }
-                            ]
-                        },
-                        "columns": [
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "category",
-                                "order": 100000,
-                                "preserveWhitespace": false,
-                                "title": "category",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "severity",
-                                "order": 100001,
-                                "preserveWhitespace": false,
-                                "title": "severity",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "right",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "number",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "severity_count",
-                                "numberFormat": "0",
-                                "order": 100002,
-                                "preserveWhitespace": false,
-                                "title": "severity_count",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            }
-                        ],
-                        "condensed": false,
-                        "dateTimeFormat": "YYYY-MM-DD HH:mm",
-                        "direction": {
-                            "type": "counterclockwise"
-                        },
-                        "error_y": {
-                            "type": "data",
-                            "visible": true
-                        },
-                        "globalSeriesType": "column",
-                        "isAggregationOn": true,
-                        "itemsPerPage": 25,
-                        "legend": {
-                            "traceorder": "normal"
-                        },
-                        "missingValuesAsZero": true,
-                        "numberFormat": "0,0[.]00000",
-                        "percentFormat": "0[.]00%",
-                        "series": {
-                            "error_y": {
-                                "type": "data",
-                                "visible": true
-                            },
-                            "stacking": "stack"
-                        },
-                        "seriesOptions": {
-                            "High": {
-                                "color": "#E92828"
-                            },
-                            "Low": {
-                                "color": "#FFFF00"
-                            },
-                            "Medium": {
-                                "color": "#FB8D3D"
-                            },
-                            "column_c12ea4ac4572": {
-                                "type": "column",
-                                "yAxis": 0
-                            },
-                            "column_c12ea4ac4741": {
-                                "type": "column",
-                                "yAxis": 0
-                            }
-                        },
-                        "showDataLabels": false,
-                        "sizemode": "diameter",
-                        "sortX": true,
-                        "sortY": true,
-                        "swappedAxes": true,
-                        "textFormat": "",
-                        "useAggregationsUi": true,
-                        "valuesOptions": {},
-                        "version": 2,
-                        "withRowNumber": true,
-                        "xAxis": {
-                            "labels": {
-                                "enabled": true
-                            },
-                            "title": {
-                                "text": "Category"
-                            },
-                            "type": "-"
-                        },
-                        "yAxis": [
-                            {
-                                "title": {
-                                    "text": "Severity"
-                                },
-                                "type": "-"
-                            },
-                            {
-                                "opposite": true,
-                                "type": "-"
-                            }
-                        ]
-                    },
-                    "query_plan": null,
-                    "type": "TABLE",
-                    "updated_at": "2023-01-27T20:17:54Z"
-                },
-                {
-                    "created_at": "2023-01-27T20:17:53Z",
-                    "description": "",
-                    "id": "de9cf93d-5947-44bf-87a6-67fb533f9070",
-                    "name": "Table",
-                    "options": {
-                        "alignYAxesAtZero": false,
-                        "coefficient": 1,
-                        "columnConfigurationMap": {
-                            "series": {
-                                "column": "severity",
-                                "id": "column_c12ea4ac5986"
-                            },
-                            "x": {
-                                "column": "category",
-                                "id": "column_c12ea4ac4907"
-                            },
-                            "y": [
-                                {
-                                    "column": "severity_count",
-                                    "id": "column_c12ea4ac4572",
-                                    "transform": "SUM"
-                                }
-                            ]
-                        },
-                        "columns": [
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "category",
-                                "order": 100000,
-                                "preserveWhitespace": false,
-                                "title": "category",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "left",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "string",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "severity",
-                                "order": 100001,
-                                "preserveWhitespace": false,
-                                "title": "severity",
-                                "type": "string",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            },
-                            {
-                                "alignContent": "right",
-                                "allowHTML": false,
-                                "allowSearch": false,
-                                "booleanValues": [
-                                    "false",
-                                    "true"
-                                ],
-                                "displayAs": "number",
-                                "highlightLinks": false,
-                                "imageHeight": "",
-                                "imageTitleTemplate": "{{ @ }}",
-                                "imageUrlTemplate": "{{ @ }}",
-                                "imageWidth": "",
-                                "linkOpenInNewTab": true,
-                                "linkTextTemplate": "{{ @ }}",
-                                "linkTitleTemplate": "{{ @ }}",
-                                "linkUrlTemplate": "{{ @ }}",
-                                "name": "severity_count",
-                                "numberFormat": "0",
-                                "order": 100002,
-                                "preserveWhitespace": false,
-                                "title": "severity_count",
-                                "type": "integer",
-                                "useMonospaceFont": false,
-                                "visible": true
-                            }
-                        ],
-                        "condensed": false,
-                        "dateTimeFormat": "YYYY-MM-DD HH:mm",
-                        "direction": {
-                            "type": "counterclockwise"
-                        },
-                        "error_y": {
-                            "type": "data",
-                            "visible": true
-                        },
-                        "globalSeriesType": "column",
-                        "isAggregationOn": true,
-                        "itemsPerPage": 25,
-                        "legend": {
-                            "traceorder": "normal"
-                        },
-                        "missingValuesAsZero": true,
-                        "numberFormat": "0,0[.]00000",
-                        "percentFormat": "0[.]00%",
-                        "series": {
-                            "error_y": {
-                                "type": "data",
-                                "visible": true
-                            },
-                            "stacking": "stack"
-                        },
-                        "seriesOptions": {
-                            "High": {
-                                "color": "#E92828"
-                            },
-                            "Low": {
-                                "color": "#FFFF00"
-                            },
-                            "Medium": {
-                                "color": "#FB8D3D"
-                            },
-                            "column_c12ea4ac4572": {
-                                "type": "column",
-                                "yAxis": 0
-                            },
-                            "column_c12ea4ac4741": {
-                                "type": "column",
-                                "yAxis": 0
-                            }
-                        },
-                        "showDataLabels": false,
-                        "sizemode": "diameter",
-                        "sortX": true,
-                        "sortY": true,
-                        "swappedAxes": true,
-                        "textFormat": "",
-                        "useAggregationsUi": true,
-                        "valuesOptions": {},
-                        "version": 2,
-                        "withRowNumber": true,
-                        "xAxis": {
-                            "labels": {
-                                "enabled": true
-                            },
-                            "title": {
-                                "text": "Category"
-                            },
-                            "type": "-"
-                        },
-                        "yAxis": [
-                            {
-                                "title": {
-                                    "text": "Severity"
-                                },
-                                "type": "-"
-                            },
-                            {
-                                "opposite": true,
-                                "type": "-"
-                            }
-                        ]
-                    },
-                    "query_plan": null,
-                    "type": "TABLE",
-                    "updated_at": "2023-01-27T20:17:53Z"
-                }
-            ]
+            "warehouse_id": "3f0c53cc69ad14fc"
         }
     ]
 }

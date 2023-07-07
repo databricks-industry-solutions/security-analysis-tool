@@ -89,8 +89,8 @@ sqlctrl(workspace_id, f'''select * from `global_temp`.`acctworkspaces` where wor
 # COMMAND ----------
 
 def getPricingTier(df):
-  if(df is not None):
-    return ('AS-4', {'value':df.collect()[0].pricing_tier}, 'Account Stats')
+  if(df is not None and df.collect()[0].pricing_tier is not None):
+    return ('AS-4', {'value':df.collect()[0].pricing_tier.capitalize()}, 'Account Stats')
   else:
     return ('AS-4', {'value': 0}, 'Account Stats')
 
