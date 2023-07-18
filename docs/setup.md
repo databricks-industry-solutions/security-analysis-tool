@@ -591,7 +591,7 @@ Please gather the following information before you start setting up:
             
       https://pypi.org/project/google-auth/
             
-      Update the notebook, notebooks/utils/initialize with the following:
+      Update the notebook, notebooks/includes/install_sat_sdk with the following:
             
       %pip install requests --find-links /dbfs/FileStore/wheels/requests.whl
             
