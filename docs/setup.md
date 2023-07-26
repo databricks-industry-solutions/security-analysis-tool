@@ -601,4 +601,8 @@ Please gather the following information before you start setting up:
 
       #Example: %pip install dbl-sat-sdk==0.1.32 --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-0.1.32-py3-none-any.whl
       %pip install dbl-sat-sdk==w.x.y --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-w.x.y-py3-none-any.whl
-      
+
+5. I don't see all of my workspaces listed on the dashboard pull down
+
+      This is likely the cache issue in the dashboard, not a unique issue with SAT. Please go to the query behind the dashboard and run it by hand. Goto SQL View of your Databricks workspace -> Goto Queries -> Filter by Tags (SAT) -> find the query -> "workspace_ids" and run it.
+      Please confirm if you see both of the workspaces. This hopefully will refresh the cache. Then go back to the dashboard and refresh it. Now you should see the pulldown with all workspaces.
