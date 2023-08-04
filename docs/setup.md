@@ -590,7 +590,8 @@ Please gather the following information before you start setting up:
       Upload all wheel files to /FileStore/wheels in your workspace
       Verify all files are there by doing a %fs ls /FileStore/wheels from your notebook.
       Then change the cell in your notebook  install_sat_sdk to this
-            
+   
+      ```
       %pip install cachetools --find-links /dbfs/FileStore/wheels/cachetools-5.3.1-py3-none-any.whl
       %pip install pyasn1 --find-links /dbfs/FileStore/wheels/pyasn1-0.5.0-py2.py3-none-any.whl
       %pip install pyasn1-modules --find-links /dbfs/FileStore/wheels/pyasn1_modules-0.3.0-py2.py3-none-any.whl
@@ -599,5 +600,6 @@ Please gather the following information before you start setting up:
       %pip install PyJWT[crypto] --find-links /dbfs/FileStore/wheels/PyJWT-2.8.0-py3-none-any.whl
       %pip install msal --find-links /dbfs/FileStore/wheels/msal-1.22.0-py2.py3-none-any.whl
       %pip install dbl-sat-sdk==0.1.32 --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-0.1.32-py3-none-any.whl       
-      
+      ```
+   
       Make sure the versions for the above libraries match.
