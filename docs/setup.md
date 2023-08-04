@@ -600,4 +600,4 @@ Please gather the following information before you start setting up:
       %pip install msal --find-links /dbfs/FileStore/wheels/msal-1.22.0-py2.py3-none-any.whl
       %pip install dbl-sat-sdk==0.1.32 --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-0.1.32-py3-none-any.whl       
       
-      Make sure versions match.
+      Make sure the versions for the above libraries match.
