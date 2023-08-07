@@ -115,10 +115,10 @@ def insertIntoControlTable(workspace_id, id, score, additional_details):
     ts = time.time()
     #change this. Has to come via function.
     #orgId = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags().get('orgId').getOrElse(None)
-    run_id = spark.sql('select max(runID) from security_analysis.run_number_table').collect()[0][0]
+    run_id = spark.sql(f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table').collect()[0][0]
     jsonstr = json.dumps(additional_details)
-    sql = '''INSERT INTO `security_analysis`.`security_checks` (`workspaceid`, `id`, `score`, `additional_details`, `run_id`, `check_time`) 
-            VALUES ('{}', '{}', cast({} as int),  from_json('{}', 'MAP<STRING,STRING>'), {}, cast({} as timestamp))'''.format(workspace_id, id, score,  jsonstr, run_id, ts)
+    sql = '''INSERT INTO `{}`.`security_checks` (`workspaceid`, `id`, `score`, `additional_details`, `run_id`, `check_time`) 
+            VALUES ('{}', '{}', cast({} as int),  from_json('{}', 'MAP<STRING,STRING>'), {}, cast({} as timestamp))'''.format(json_["analysis_schema_name"],workspace_id, id, score,  jsonstr, run_id, ts)
     ###print(sql)
     spark.sql(sql)
 
@@ -135,10 +135,10 @@ def insertIntoInfoTable(workspace_id, name, value, category):
     ts = time.time()
     #change this. Has to come via function.
     #orgId = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags().get('orgId').getOrElse(None)
-    run_id = spark.sql('select max(runID) from security_analysis.run_number_table').collect()[0][0]
+    run_id = spark.sql(f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table').collect()[0][0]
     jsonstr = json.dumps(value)
-    sql = '''INSERT INTO `security_analysis`.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`) 
-            VALUES ('{}','{}', from_json('{}', 'MAP<STRING,STRING>'), '{}', '{}', cast({} as timestamp))'''.format(workspace_id, name, jsonstr, category, run_id, ts)
+    sql = '''INSERT INTO `{}`.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`) 
+            VALUES ('{}','{}', from_json('{}', 'MAP<STRING,STRING>'), '{}', '{}', cast({} as timestamp))'''.format(json_["analysis_schema_name"],workspace_id, name, jsonstr, category, run_id, ts)
     ### print(sql)
     spark.sql(sql)
 
@@ -177,7 +177,7 @@ def readWorkspaceConfigFile():
 # COMMAND ----------
 
 def getWorkspaceConfig():
-  df = spark.sql(f'''select * from security_analysis.account_workspaces''')
+  df = spark.sql(f'''select * from {json_["analysis_schema_name"]}.account_workspaces''')
   return df
 
 # COMMAND ----------
@@ -216,13 +216,13 @@ def readBestPracticesConfigsFile():
                             .select('id', 'check_id', 'category', 'check', 'evaluation_value', 
                                     'severity', 'recommendation', 'doc_url', 'aws', 'azure', 'gcp', 'enable', 'alert', 'logic', 'api'))
     
-  security_best_practices.write.format('delta').mode('overwrite').saveAsTable('security_analysis.security_best_practices')
+  security_best_practices.write.format('delta').mode('overwrite').saveAsTable(json_["analysis_schema_name"]+'.security_best_practices')
   display(security_best_practices)  
 
 # COMMAND ----------
 
 def getSecurityBestPracticeRecord(id, cloud_type):
-  df = spark.sql(f'''select * from security_analysis.security_best_practices where id = '{id}' ''')
+  df = spark.sql(f'''select * from {json_["analysis_schema_name"]}.security_best_practices where id = '{id}' ''')
   dict_elems = {} 
   enable=0
   if 'none' not in cloud_type and df is not None and df.count()>0:
@@ -248,20 +248,31 @@ def getConfigPath():
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS security_analysis;
-# MAGIC CREATE TABLE IF NOT EXISTS security_analysis.run_number_table (
-# MAGIC   runID BIGINT GENERATED ALWAYS AS IDENTITY,
-# MAGIC   check_time TIMESTAMP
-# MAGIC )
-# MAGIC USING DELTA
+"""%sql
+CREATE DATABASE IF NOT EXISTS security_analysis;
+CREATE TABLE IF NOT EXISTS security_analysis.run_number_table (
+  runID BIGINT GENERATED ALWAYS AS IDENTITY,
+  check_time TIMESTAMP
+)
+USING DELTA"""
+
+# COMMAND ----------
+
+def create_schema():
+  df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {json_["analysis_schema_name"]}' )
+  df = spark.sql(f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.run_number_table (
+                        runID BIGINT GENERATED ALWAYS AS IDENTITY,
+                        check_time TIMESTAMP 
+                        )
+                        USING DELTA""")
+
 
 # COMMAND ----------
 
 def insertNewBatchRun():
   import time
   ts = time.time()
-  df = spark.sql(f'insert into security_analysis.run_number_table (check_time) values ({ts})')
+  df = spark.sql(f'insert into {json_["analysis_schema_name"]}.run_number_table (check_time) values ({ts})')
 
 
 # COMMAND ----------
@@ -269,85 +280,145 @@ def insertNewBatchRun():
 def notifyworkspaceCompleted(workspaceID, completed):
   import time
   ts = time.time()
-  runID = spark.sql('select max(runID) from security_analysis.run_number_table').collect()[0][0]
-  spark.sql(f'''INSERT INTO security_analysis.workspace_run_complete (`workspace_id`,`run_id`, `completed`, `check_time`)  VALUES ({workspaceID}, {runID}, {completed}, cast({ts} as timestamp))''')
+  runID = spark.sql(f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table').collect()[0][0]
+  spark.sql(f'''INSERT INTO {json_["analysis_schema_name"]}.workspace_run_complete (`workspace_id`,`run_id`, `completed`, `check_time`)  VALUES ({workspaceID}, {runID}, {completed}, cast({ts} as timestamp))''')
 
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC --DROP DATABASE security_analysis CASCADE
+# MAGIC --DROP DATABASE json_["analysis_schema_name"] CASCADE
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS security_analysis;
-# MAGIC CREATE TABLE IF NOT EXISTS security_analysis.security_checks (
-# MAGIC   workspaceid string,
-# MAGIC   id int,
-# MAGIC   score integer, 
-# MAGIC   additional_details map<string, string>,
-# MAGIC   run_id bigint,
-# MAGIC   check_time timestamp,
-# MAGIC   chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),
-# MAGIC   chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
-# MAGIC )
-# MAGIC USING DELTA
-# MAGIC PARTITIONED BY (chk_date);
+"""%sql
+CREATE TABLE IF NOT EXISTS security_analysis.security_checks (
+  workspaceid string,
+  id int,
+  score integer, 
+  additional_details map<string, string>,
+  run_id bigint,
+  check_time timestamp,
+  chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),
+  chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
+)
+USING DELTA
+PARTITIONED BY (chk_date);"""
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS security_analysis;
-# MAGIC CREATE TABLE IF NOT EXISTS security_analysis.account_info (
-# MAGIC   workspaceid string,
-# MAGIC   name string, 
-# MAGIC   value map<string, string>, 
-# MAGIC   category string,
-# MAGIC   run_id bigint,
-# MAGIC   check_time timestamp,
-# MAGIC   chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),
-# MAGIC   chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
-# MAGIC )
-# MAGIC USING DELTA
-# MAGIC PARTITIONED BY (chk_date);
+def create_security_checks_table():
+  df = spark.sql(f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.security_checks ( 
+                workspaceid string,
+                id int,
+                score integer, 
+                additional_details map<string, string>,
+                run_id bigint,
+                check_time timestamp,
+                chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),
+                chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
+                )
+                USING DELTA
+                PARTITIONED BY (chk_date)""")
+
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS security_analysis;
-# MAGIC CREATE TABLE IF NOT EXISTS security_analysis.account_workspaces (
-# MAGIC    workspace_id string,
-# MAGIC    deployment_url string,
-# MAGIC    workspace_name string,
-# MAGIC    workspace_status string,
-# MAGIC    ws_token string,
-# MAGIC    analysis_enabled boolean,
-# MAGIC    sso_enabled boolean, 
-# MAGIC    scim_enabled boolean, 
-# MAGIC    vpc_peering_done boolean, 
-# MAGIC    object_storage_encrypted boolean,
-# MAGIC    table_access_control_enabled boolean
-# MAGIC )
-# MAGIC USING DELTA
+"""%sql
+CREATE DATABASE IF NOT EXISTS security_analysis;
+CREATE TABLE IF NOT EXISTS security_analysis.account_info (
+  workspaceid string,
+  name string, 
+  value map<string, string>, 
+  category string,
+  run_id bigint,
+  check_time timestamp,
+  chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),
+  chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
+)
+USING DELTA
+PARTITIONED BY (chk_date);"""
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS security_analysis;
-# MAGIC CREATE TABLE IF NOT EXISTS security_analysis.workspace_run_complete(
-# MAGIC     workspace_id string,
-# MAGIC     run_id bigint,
-# MAGIC     completed boolean,
-# MAGIC     check_time timestamp,
-# MAGIC     chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
-# MAGIC )
-# MAGIC USING DELTA
+def create_account_info_table():
+    df = spark.sql(f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.account_info (
+        workspaceid string,
+        name string, 
+        value map<string, string>, 
+        category string,
+        run_id bigint,
+        check_time timestamp,
+        chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),\
+        chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
+        )
+        USING DELTA
+        PARTITIONED BY (chk_date)""")
+
 
 # COMMAND ----------
 
-#Initialize best practices if not already loaded into database
-readBestPracticesConfigsFile()
+"""%sql
+CREATE DATABASE IF NOT EXISTS security_analysis;
+CREATE TABLE IF NOT EXISTS security_analysis.account_workspaces (
+   workspace_id string,
+   deployment_url string,
+   workspace_name string,
+   workspace_status string,
+   ws_token string,
+   analysis_enabled boolean,
+   sso_enabled boolean, 
+   scim_enabled boolean, 
+   vpc_peering_done boolean, 
+   object_storage_encrypted boolean,
+   table_access_control_enabled boolean
+)
+USING DELTA"""
+
+# COMMAND ----------
+
+def create_account_workspaces_table():
+    df = spark.sql(f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.account_workspaces (
+            workspace_id string,
+            deployment_url string,
+            workspace_name string,
+            workspace_status string,
+            ws_token string,
+            analysis_enabled boolean,
+            sso_enabled boolean,
+            scim_enabled boolean,
+            vpc_peering_done boolean,
+            object_storage_encrypted boolean,
+            table_access_control_enabled boolean
+            )
+            USING DELTA""")
+
+
+# COMMAND ----------
+
+"""%sql
+CREATE DATABASE IF NOT EXISTS security_analysis;
+CREATE TABLE IF NOT EXISTS security_analysis.workspace_run_complete(
+    workspace_id string,
+    run_id bigint,
+    completed boolean,
+    check_time timestamp,
+    chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
+)
+USING DELTA"""
+
+# COMMAND ----------
+
+def create_workspace_run_complete_table():
+    df = spark.sql(f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.workspace_run_complete(
+                    workspace_id string,
+                    run_id bigint,
+                    completed boolean,
+                    check_time timestamp,
+                    chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
+                    )
+                    USING DELTA""")
+
 
 # COMMAND ----------
 

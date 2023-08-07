@@ -45,7 +45,8 @@ json_.update({
    "dashboard_folder":"../../dashboards/",
    "dashboard_tag":"SAT",
    "use_mastercreds":True,
-   "use_parallel_runs":True
+   "use_parallel_runs":True,
+   "analysis_schema_name":"security_analysis_tool"
 })
 
 
@@ -91,3 +92,16 @@ if cloud_type == 'aws':
     except:
        pass
     json_.update(sp_auth)
+
+# COMMAND ----------
+
+create_schema()
+create_security_checks_table()
+create_account_info_table()
+create_account_workspaces_table()
+create_workspace_run_complete_table()
+
+# COMMAND ----------
+
+#Initialize best practices if not already loaded into database
+readBestPracticesConfigsFile()

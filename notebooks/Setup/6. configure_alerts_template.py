@@ -203,7 +203,7 @@ for ws_to_load in workspaces:
                                             run_id
                                         ) as previous_run_id
                                     FROM
-                                        security_analysis.workspace_run_complete
+                                         """+json_['analysis_schema_name']+""".workspace_run_complete
                                     where
                                         workspace_id = """+ws_to_load.workspace_id+"""
                                         and completed = true
@@ -225,8 +225,8 @@ for ws_to_load in workspaces:
                                         ) as message,
                                         count(*) as total
                                     FROM
-                                        security_analysis.security_checks sc,
-                                        security_analysis.security_best_practices sbp
+                                        """+json_['analysis_schema_name']+""".security_checks sc,
+                                        """+json_['analysis_schema_name']+""".security_best_practices sbp
                                     WHERE
                                         sbp.id = sc.id
                                         and sc.workspaceid = """+ws_to_load.workspace_id+""" 
@@ -254,9 +254,9 @@ for ws_to_load in workspaces:
                                         ) as message,
                                         count(*) as total
                                         FROM
-                                        security_analysis.security_checks sc1,
-                                        security_analysis.security_checks sc2,
-                                        security_analysis.security_best_practices sbp
+                                        """+json_['analysis_schema_name']+""".security_checks sc1,
+                                        """+json_['analysis_schema_name']+""".security_checks sc2,
+                                        """+json_['analysis_schema_name']+""".security_best_practices sbp
                                         where
                                         sc1.workspaceid = """+ws_to_load.workspace_id+""" 
                                         and sc2.workspaceid = sc1.workspaceid

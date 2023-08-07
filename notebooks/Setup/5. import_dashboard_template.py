@@ -199,7 +199,7 @@ def clone_dashboard(dashboard, target_client: Client, dashboard_state):
 def clone_or_update_query(dashboard_state, q, target_client):
     q_creation = {
         "data_source_id": target_client.data_source_id,
-        "query": q["query"],
+        "query": q["query"].replace('security_analysis',json_["analysis_schema_name"]),
         "name": q["name"],
         "description": q["description"],
         "schedule": q["schedule"],
