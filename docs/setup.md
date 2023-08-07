@@ -584,20 +584,22 @@ Please gather the following information before you start setting up:
       ```
       databricks --profile e2-satfs cp /localdrive/whlfile/dbl_sat_sdk-w.x.y-py3-none-any.whl dbfs:/FileStore/wheels/
       ```
-      Additionally download the following wheel files and upload it to the dbfs location as above.
-      https://pypi.org/project/requests/
+      Additionally download the following wheel files and upload them to the dbfs location as above.
+      https://github.com/databricks-industry-solutions/security-analysis-tool/tree/main/docs/wheels
             
-      https://pypi.org/project/msal/
-            
-      https://pypi.org/project/google-auth/
-            
-      Update the notebook, notebooks/utils/initialize with the following:
-            
-      %pip install requests --find-links /dbfs/FileStore/wheels/requests.whl
-            
-      %pip install msal --find-links /dbfs/FileStore/wheels/msal.whl
-            
-      %pip install google-auth --find-links /dbfs/FileStore/wheels/google-auth.whl 
-            
-      %pip install dbl-sat-sdk=={SDK_VERSION} --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-w.x.y-py3-none-any.whl
-
+      Upload all wheel files to /FileStore/wheels in your workspace
+      Verify all files are there by doing a %fs ls /FileStore/wheels from your notebook.
+      Then change the cell in your notebook  install_sat_sdk to this
+   
+      ```
+      %pip install cachetools --find-links /dbfs/FileStore/wheels/cachetools-5.3.1-py3-none-any.whl
+      %pip install pyasn1 --find-links /dbfs/FileStore/wheels/pyasn1-0.5.0-py2.py3-none-any.whl
+      %pip install pyasn1-modules --find-links /dbfs/FileStore/wheels/pyasn1_modules-0.3.0-py2.py3-none-any.whl
+      %pip install rsa --find-links /dbfs/FileStore/wheels/rsa-4.9-py3-none-any.whl
+      %pip install google-auth --find-links /dbfs/FileStore/wheels/google_auth-2.22.0-py2.py3-none-any.whl
+      %pip install PyJWT[crypto] --find-links /dbfs/FileStore/wheels/PyJWT-2.8.0-py3-none-any.whl
+      %pip install msal --find-links /dbfs/FileStore/wheels/msal-1.22.0-py2.py3-none-any.whl
+      %pip install dbl-sat-sdk==0.1.32 --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-0.1.32-py3-none-any.whl       
+      ```
+   
+      Make sure the versions for the above libraries match.
