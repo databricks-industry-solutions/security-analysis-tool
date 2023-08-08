@@ -117,7 +117,7 @@ def insertIntoControlTable(workspace_id, id, score, additional_details):
     #orgId = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags().get('orgId').getOrElse(None)
     run_id = spark.sql(f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table').collect()[0][0]
     jsonstr = json.dumps(additional_details)
-    sql = '''INSERT INTO `{}`.`security_checks` (`workspaceid`, `id`, `score`, `additional_details`, `run_id`, `check_time`) 
+    sql = '''INSERT INTO {}.`security_checks` (`workspaceid`, `id`, `score`, `additional_details`, `run_id`, `check_time`) 
             VALUES ('{}', '{}', cast({} as int),  from_json('{}', 'MAP<STRING,STRING>'), {}, cast({} as timestamp))'''.format(json_["analysis_schema_name"],workspace_id, id, score,  jsonstr, run_id, ts)
     ###print(sql)
     spark.sql(sql)
@@ -137,7 +137,7 @@ def insertIntoInfoTable(workspace_id, name, value, category):
     #orgId = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags().get('orgId').getOrElse(None)
     run_id = spark.sql(f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table').collect()[0][0]
     jsonstr = json.dumps(value)
-    sql = '''INSERT INTO `{}`.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`) 
+    sql = '''INSERT INTO {}.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`) 
             VALUES ('{}','{}', from_json('{}', 'MAP<STRING,STRING>'), '{}', '{}', cast({} as timestamp))'''.format(json_["analysis_schema_name"],workspace_id, name, jsonstr, category, run_id, ts)
     ### print(sql)
     spark.sql(sql)
