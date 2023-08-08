@@ -30,7 +30,7 @@ def get_sat_check_config():
 
     s_sql = '''
                 SELECT enable, evaluation_value, alert
-                FROM '{analysis_schema_name}'.security_best_practices 
+                FROM {analysis_schema_name}.security_best_practices 
                 WHERE check_id= '{check_id}'
             '''.format(check_id = check_id, analysis_schema_name= json_["analysis_schema_name"])
 
@@ -55,7 +55,7 @@ def set_sat_check_config():
     check_id = sat_check.split('_')[0]
 
     s_sql = '''
-                UPDATE  '{analysis_schema_name}'.security_best_practices 
+                UPDATE  {analysis_schema_name}.security_best_practices 
                 SET enable = {enable}, 
                     evaluation_value={evaluation_value}, 
                     alert = {alert}
@@ -79,7 +79,7 @@ def get_all_sat_checks():
 
     s_sql = '''
         SELECT CONCAT_WS('_',check_id, category, check) AS check
-        FROM '{analysis_schema_name}'.security_best_practices 
+        FROM {analysis_schema_name}.security_best_practices 
         WHERE {cloud_type}=1
         '''.format(cloud_type = cloud_type, analysis_schema_name= json_["analysis_schema_name"])
 
@@ -109,7 +109,7 @@ def get_workspace_check_config():
     s_sql = '''
                 SELECT analysis_enabled, sso_enabled, scim_enabled, vpc_peering_done, object_storage_encrypted, 
                 table_access_control_enabled
-                FROM '{analysis_schema_name}'.account_workspaces
+                FROM {analysis_schema_name}.account_workspaces
                 WHERE workspace_id= '{ws_id}'
             '''.format(ws_id = ws_id, analysis_schema_name= json_["analysis_schema_name"])
 
@@ -148,7 +148,7 @@ def set_workspace_check_config():
     
     if apply_setting_to_all_ws_enabled == '':
         s_sql = '''
-                    UPDATE  '{analysis_schema_name}'.account_workspaces 
+                    UPDATE  {analysis_schema_name}.account_workspaces 
                     SET analysis_enabled = {analysis_enabled}, 
                         sso_enabled={sso_enabled}, 
                         scim_enabled = {scim_enabled},
@@ -180,7 +180,7 @@ def get_all_workspaces():
 
     s_sql = '''
             SELECT CONCAT_WS('_',workspace_name, workspace_id) AS ws
-            FROM '{analysis_schema_name}'.account_workspaces 
+            FROM {analysis_schema_name}.account_workspaces 
           '''.format(analysis_schema_name= json_["analysis_schema_name"])
     all_workspaces = spark.sql(s_sql)
     workspaces = all_workspaces.rdd.map(lambda row : row[0]).collect()
