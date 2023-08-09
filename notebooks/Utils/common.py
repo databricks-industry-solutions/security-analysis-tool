@@ -286,27 +286,6 @@ def notifyworkspaceCompleted(workspaceID, completed):
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC --DROP DATABASE json_["analysis_schema_name"] CASCADE
-
-# COMMAND ----------
-
-"""%sql
-CREATE TABLE IF NOT EXISTS security_analysis.security_checks (
-  workspaceid string,
-  id int,
-  score integer, 
-  additional_details map<string, string>,
-  run_id bigint,
-  check_time timestamp,
-  chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),
-  chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
-)
-USING DELTA
-PARTITIONED BY (chk_date);"""
-
-# COMMAND ----------
-
 def create_security_checks_table():
   df = spark.sql(f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.security_checks ( 
                 workspaceid string,
@@ -321,23 +300,6 @@ def create_security_checks_table():
                 USING DELTA
                 PARTITIONED BY (chk_date)""")
 
-
-# COMMAND ----------
-
-"""%sql
-CREATE DATABASE IF NOT EXISTS security_analysis;
-CREATE TABLE IF NOT EXISTS security_analysis.account_info (
-  workspaceid string,
-  name string, 
-  value map<string, string>, 
-  category string,
-  run_id bigint,
-  check_time timestamp,
-  chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),
-  chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
-)
-USING DELTA
-PARTITIONED BY (chk_date);"""
 
 # COMMAND ----------
 
@@ -358,25 +320,6 @@ def create_account_info_table():
 
 # COMMAND ----------
 
-"""%sql
-CREATE DATABASE IF NOT EXISTS security_analysis;
-CREATE TABLE IF NOT EXISTS security_analysis.account_workspaces (
-   workspace_id string,
-   deployment_url string,
-   workspace_name string,
-   workspace_status string,
-   ws_token string,
-   analysis_enabled boolean,
-   sso_enabled boolean, 
-   scim_enabled boolean, 
-   vpc_peering_done boolean, 
-   object_storage_encrypted boolean,
-   table_access_control_enabled boolean
-)
-USING DELTA"""
-
-# COMMAND ----------
-
 def create_account_workspaces_table():
     df = spark.sql(f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.account_workspaces (
             workspace_id string,
@@ -393,19 +336,6 @@ def create_account_workspaces_table():
             )
             USING DELTA""")
 
-
-# COMMAND ----------
-
-"""%sql
-CREATE DATABASE IF NOT EXISTS security_analysis;
-CREATE TABLE IF NOT EXISTS security_analysis.workspace_run_complete(
-    workspace_id string,
-    run_id bigint,
-    completed boolean,
-    check_time timestamp,
-    chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
-)
-USING DELTA"""
 
 # COMMAND ----------
 

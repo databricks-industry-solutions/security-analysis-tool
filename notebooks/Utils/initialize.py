@@ -46,7 +46,7 @@ json_.update({
    "dashboard_tag":"SAT",
    "use_mastercreds":True,
    "use_parallel_runs":True,
-   "analysis_schema_name":"security_analysis_tool"
+   "analysis_schema_name":"security_analysis"
 })
 
 
