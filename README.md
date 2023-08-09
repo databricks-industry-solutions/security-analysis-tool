@@ -77,7 +77,7 @@ This section shows the trend of security best practice deviations over a date ra
 
 ![SAT Insights](./images/security_deviation_trend.png)
 
-## Security Deviation Trend
+## Security Configuration Comparison
 This section gives ability to compare two runs side by side along each of the security dimensions. This drill-down option helps pinpoint the checks that have either been rectified or degraded, so that security folks can address them speedily.
 For example, The diagram below shows the individual checks in various categories for each run. The red recatngle in the diagram shows an improvement in “Enforce User Isolation” but degradation in the “Admin Count” best practice. The expectation is that over time the cross marks should chage to tick marks. If it is the opposite, it warrants immediate investigation as it indicates a degradation. An alert also will be triggered incase of detecting detrimental changes to notify via an email. 
 ![SAT Insights](./images/security_config_comparison.png)
