@@ -4,11 +4,11 @@
 
 If you are an existing SAT user please run the following command to reset your Database in your DBSQL SQL Editor. 
 
-
+for Hive metastore based SAT schema:
   ``` 
     drop  database security_analysis cascade
    ```
-  or
+  or for Unity Catalog based SAT schema:
    ``` 
     drop  database <uc catalog name>.security_analysis cascade
    ```  
