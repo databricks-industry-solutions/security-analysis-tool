@@ -65,7 +65,7 @@ workspacesdf = spark.sql('select * from `global_temp`.`all_workspaces`')
 display(workspacesdf)
 workspaces = workspacesdf.collect()
 if workspaces is None or len(workspaces) == 0:
-    loggr.info('Workspaes are not configured for analyis, check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. ')
+    loggr.info('Workspaes are not configured for analyis, check the workspace_configs.csv and '+json_["analysis_schema_name"]+'.account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. ')
     #dbutils.notebook.exit("Unsuccessful analysis.")
 
 # COMMAND ----------
@@ -137,10 +137,9 @@ else:
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC select * from security_analysis.security_checks order by run_id desc, workspaceid asc, check_time asc
+display(spark.sql(f'select * from {json_["analysis_schema_name"]}.security_checks order by run_id desc, workspaceid asc, check_time asc'))
 
 # COMMAND ----------
 
-# MAGIC %sql use security_analysis;
-# MAGIC select * from workspace_run_complete order by run_id desc;
+
+display(spark.sql(f'select * from {json_["analysis_schema_name"]}.workspace_run_complete order by run_id desc'))

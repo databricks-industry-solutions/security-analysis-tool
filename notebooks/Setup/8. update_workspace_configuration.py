@@ -1,7 +1,11 @@
 # Databricks notebook source
+# MAGIC %run ../Utils/initialize
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##<img src="https://databricks.com/wp-content/themes/databricks/assets/images/header_logo_2x.png" alt="logo" width="150"/> 
-# MAGIC 
+# MAGIC
 # MAGIC ## Workspace Configuration
 # MAGIC * <i> This utility helps administrators review their current configuration of SAT checks and modify if needed. </i>
 # MAGIC * <b> get_all_workspaces() </b> 

@@ -29,6 +29,7 @@ import json
 json_ = {
    "account_id": dbutils.secrets.get(scope="sat_scope", key="account-console-id"),
    "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id"),
+   "analysis_schema_name":"security_analysis",
    "verbosity":"info"
 }
 
@@ -91,3 +92,16 @@ if cloud_type == 'aws':
     except:
        pass
     json_.update(sp_auth)
+
+# COMMAND ----------
+
+create_schema()
+create_security_checks_table()
+create_account_info_table()
+create_account_workspaces_table()
+create_workspace_run_complete_table()
+
+# COMMAND ----------
+
+#Initialize best practices if not already loaded into database
+readBestPracticesConfigsFile()

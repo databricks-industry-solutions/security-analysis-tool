@@ -30,9 +30,9 @@ def get_sat_check_config():
 
     s_sql = '''
                 SELECT enable, evaluation_value, alert
-                FROM security_analysis.security_best_practices 
+                FROM {analysis_schema_name}.security_best_practices 
                 WHERE check_id= '{check_id}'
-            '''.format(check_id = check_id)
+            '''.format(check_id = check_id, analysis_schema_name= json_["analysis_schema_name"])
 
     get_check = spark.sql(s_sql)
     check = get_check.toPandas().to_dict(orient = 'list')
@@ -55,19 +55,19 @@ def set_sat_check_config():
     check_id = sat_check.split('_')[0]
 
     s_sql = '''
-                UPDATE  security_analysis.security_best_practices 
+                UPDATE  {analysis_schema_name}.security_best_practices 
                 SET enable = {enable}, 
                     evaluation_value={evaluation_value}, 
                     alert = {alert}
                 WHERE check_id= '{check_id}'
-            '''.format(enable=enable, evaluation_value=evaluation_value, alert=alert, check_id = check_id)
+            '''.format(enable=enable, evaluation_value=evaluation_value, alert=alert, check_id = check_id, analysis_schema_name= json_["analysis_schema_name"])
     print(s_sql)
     spark.sql(s_sql)
     
     #update user config file (security_best_practices_user.csv)
     prefix = getConfigPath()
     userfile = f'{prefix}/security_best_practices_user.csv'
-    security_best_practices_pd = spark.table('security_analysis.security_best_practices').toPandas()
+    security_best_practices_pd = spark.table(f'{json_["analysis_schema_name"]}.security_best_practices').toPandas()
     security_best_practices_pd.to_csv(userfile, encoding='utf-8', index=False)
     
 #Reset SAT check widgets 
@@ -79,9 +79,9 @@ def get_all_sat_checks():
 
     s_sql = '''
         SELECT CONCAT_WS('_',check_id, category, check) AS check
-        FROM security_analysis.security_best_practices 
+        FROM {analysis_schema_name}.security_best_practices 
         WHERE {cloud_type}=1
-        '''.format(cloud_type = cloud_type)
+        '''.format(cloud_type = cloud_type, analysis_schema_name= json_["analysis_schema_name"])
 
     all_checks = spark.sql(s_sql)
     checks = all_checks.rdd.map(lambda row : row[0]).collect()
@@ -109,9 +109,9 @@ def get_workspace_check_config():
     s_sql = '''
                 SELECT analysis_enabled, sso_enabled, scim_enabled, vpc_peering_done, object_storage_encrypted, 
                 table_access_control_enabled
-                FROM security_analysis.account_workspaces
+                FROM {analysis_schema_name}.account_workspaces
                 WHERE workspace_id= '{ws_id}'
-            '''.format(ws_id = ws_id)
+            '''.format(ws_id = ws_id, analysis_schema_name= json_["analysis_schema_name"])
 
     get_workspace = spark.sql(s_sql)
     check = get_workspace.toPandas().to_dict(orient = 'list')
@@ -148,7 +148,7 @@ def set_workspace_check_config():
     
     if apply_setting_to_all_ws_enabled == '':
         s_sql = '''
-                    UPDATE  security_analysis.account_workspaces 
+                    UPDATE  {analysis_schema_name}.account_workspaces 
                     SET analysis_enabled = {analysis_enabled}, 
                         sso_enabled={sso_enabled}, 
                         scim_enabled = {scim_enabled},
@@ -158,11 +158,11 @@ def set_workspace_check_config():
                     WHERE workspace_id= '{ws_id}'
                 '''.format(analysis_enabled=analysis_enabled, sso_enabled=sso_enabled, scim_enabled=scim_enabled, 
                            vpc_peering_done=vpc_peering_done, object_storage_encrypted=object_storage_encrypted, 
-                           table_access_control_enabled=table_access_control_enabled, ws_id = ws_id)
+                           table_access_control_enabled=table_access_control_enabled, ws_id = ws_id, analysis_schema_name= json_["analysis_schema_name"])
         print(s_sql)
         spark.sql(s_sql)
     else:
-        s_sql = 'UPDATE  security_analysis.account_workspaces SET '
+        s_sql = 'UPDATE  "{analysis_schema_name}".account_workspaces SET '
         first_param=False
         for param in params:
             if param in apply_setting_to_all_ws_enabled:
@@ -172,7 +172,7 @@ def set_workspace_check_config():
                 s_sql = s_sql + val + "=" + eval(params[param])
                 first_param=True
         print(s_sql)
-        spark.sql(s_sql)
+        spark.sql(s_sql.format(analysis_schema_name= json_["analysis_schema_name"]))
         
 #Reset widget values to empty
 def get_all_workspaces():
@@ -180,8 +180,8 @@ def get_all_workspaces():
 
     s_sql = '''
             SELECT CONCAT_WS('_',workspace_name, workspace_id) AS ws
-            FROM security_analysis.account_workspaces 
-          '''
+            FROM {analysis_schema_name}.account_workspaces 
+          '''.format(analysis_schema_name= json_["analysis_schema_name"])
     all_workspaces = spark.sql(s_sql)
     workspaces = all_workspaces.rdd.map(lambda row : row[0]).collect()
     first_ws = str(workspaces[0])
