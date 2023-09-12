@@ -289,10 +289,13 @@ bootstrap('secretscope'+ '_' + workspace_id, secrets_client.get_secret_scopes_li
 
 tbl_name = 'global_temp.secretscope' + '_' + workspace_id
 sql = f'''select * from {tbl_name} '''
-df = spark.sql(sql)
-#vList = df.rdd.map(lambda x: x['name']).collect()
-vList=df.collect()
-bootstrap('secretslist'+ '_' + workspace_id, secrets_client.get_secrets, scope_list=vList)
+try:
+    df = spark.sql(sql)
+    #vList = df.rdd.map(lambda x: x['name']).collect()
+    vList=df.collect()
+    bootstrap('secretslist'+ '_' + workspace_id, secrets_client.get_secrets, scope_list=vList)
+except Exception:
+    loggr.exception("Exception encountered")    
 
 # COMMAND ----------
 
