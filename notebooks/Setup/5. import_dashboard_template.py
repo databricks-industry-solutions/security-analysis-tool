@@ -46,10 +46,8 @@ response = requests.get(
           json=None,
           timeout=60 
         )
-print(response.text)
 if '\"error_code\":\"403\"' not in response.text:
     resources = json.loads(response.text)
-    print(type(resources))
     found = False
     for resource in resources:
         if resource['endpoint_id'] == json_['sql_warehouse_id']:
