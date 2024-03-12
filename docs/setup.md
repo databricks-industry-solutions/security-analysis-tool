@@ -210,11 +210,11 @@ Please gather the following information before you start setting up:
        ``` 
   
        ```
-       databricks --profile e2-sat secrets put-secret sat_scope --key account-console-id
+       databricks --profile e2-sat secrets put-secret sat_scope account-console-id
        ```  
         
        ```
-       databricks --profile e2-sat secrets put-secret sat_scope --key sql-warehouse-id
+       databricks --profile e2-sat secrets put-secret sat_scope sql-warehouse-id
        ```  
     
 
