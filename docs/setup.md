@@ -87,7 +87,7 @@ Please gather the following information before you start setting up:
 
 6. Create secrets scopes
 
-  * Download and setup Databricks CLI by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html) on your work laptop or your virtual workstation.   
+  * Download and setup Databricks CLI (version 0.205 and above) by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html) on your work laptop or your virtual workstation.   
   * Note: if you have multiple Databricks profiles you will need to use --profile <profile name> switch to access the correct workspace,
     follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-sat**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
   * Setup authentication to your Databricks workspace by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#set-up-authentication)
