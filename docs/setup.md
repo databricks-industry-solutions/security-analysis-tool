@@ -87,20 +87,20 @@ Please gather the following information before you start setting up:
 
 6. Create secrets scopes
 
-  * Download and setup Databricks CLI by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html) on your work laptop or your virtual workstation.   
+  * Download and setup Databricks CLI (version 0.205 and above) by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html) on your work laptop or your virtual workstation.   
   * Note: if you have multiple Databricks profiles you will need to use --profile <profile name> switch to access the correct workspace,
     follow the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#connection-profiles) . Throughout the documentation below we use an example profile **e2-sat**, please adjust your commands as per your workspace profile or exclude  --profile <optional-profile-name> if you are using the default profile. 
   * Setup authentication to your Databricks workspace by following the instructions [here](https://docs.databricks.com/dev-tools/cli/index.html#set-up-authentication)
 
        ```
-            databricks configure --token --profile e2-sat
+            databricks --profile e2-sat configure
        ```
 
      <img src="./images/cli_authentication.png" width="50%" height="50%">
 
      You should see a listing of folders in your workspace : 
       ```
-           databricks --profile e2-sat workspace ls
+           databricks --profile e2-sat workspace list /Users
       ```
 
      <img src="./images/workspace_ls.png" width="50%" height="50%">
@@ -111,7 +111,7 @@ Please gather the following information before you start setting up:
      Note: The values you place below are case sensitive and need to be exact. 
  
      ```
-      databricks --profile e2-sat  secrets create-scope --scope sat_scope
+      databricks --profile e2-sat secrets create-scope sat_scope
       ```
 
      For more details refer [here](https://docs.databricks.com/dev-tools/cli/secrets-cli.html) 
@@ -130,13 +130,13 @@ Please gather the following information before you start setting up:
 
        *  Input your Databricks account console admin username to store it in a the secret store
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key user
+           databricks --profile e2-sat secrets put-secret sat_scope user
            ```
 
        *  Input your Databricks account console admin account password to store it in a the secret store
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key pass
+           databricks --profile e2-sat secrets put-secret sat_scope pass
            ```    
        
        **Authenticate using a Service Principal**
@@ -146,19 +146,19 @@ Please gather the following information before you start setting up:
        1. Set the use_sp_auth to `true` in order to use the Service Principal Authentication Flow
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key use-sp-auth --string-value true
+           databricks --profile e2-sat secrets put-secret sat_scope use-sp-auth --string-value true
            ```
        
        2. Store your Databricks Service Principal Client ID in the secret store:
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key client-id --string-value <client_id>
+           databricks --profile e2-sat secrets put-secret sat_scope client-id --string-value <client_id>
            ```
 
        3. Store your Databricks Service Principal Secret in the secret store:
 
            ```
-           databricks --profile e2-sat secrets put --scope sat_scope --key client-secret  --string-value <client_secret>
+           databricks --profile e2-sat secrets put-secret sat_scope client-secret  --string-value <client_secret>
            ```
       </details>
 
@@ -206,15 +206,15 @@ Please gather the following information before you start setting up:
     
 
        ```
-       databricks --profile e2-sat secrets put --scope sat_scope --key sat-token-<workspace_id> 
+       databricks --profile e2-sat secrets put-secret sat_scope sat-token-<workspace_id> 
        ``` 
   
        ```
-       databricks --profile e2-sat secrets put --scope sat_scope --key account-console-id
+       databricks --profile e2-sat secrets put-secret sat_scope account-console-id
        ```  
         
        ```
-       databricks --profile e2-sat secrets put --scope sat_scope --key sql-warehouse-id
+       databricks --profile e2-sat secrets put-secret sat_scope sql-warehouse-id
        ```  
     
 
@@ -251,24 +251,24 @@ Please gather the following information before you start setting up:
           * Setup the Subscription ID in a secret as subscription-id
   
              ```
-               databricks --profile e2-sat secrets put --scope sat_scope --key subscription-id
+               databricks --profile e2-sat secrets put-secret sat_scope subscription-id
              ``` 
   
           * Set the Directory (tenant) ID as tenant-id 
   
              ```
-               databricks --profile e2-sat secrets put --scope sat_scope --key tenant-id
+               databricks --profile e2-sat secrets put-secret sat_scope tenant-id
              ``` 
   
           * Setup the Application (client) ID as client-id 
     
              ```
-               databricks --profile e2-sat secrets put --scope sat_scope --key client-id
+               databricks --profile e2-sat secrets put-secret sat_scope client-id
              ``` 
   
           * Setup the Client secret in a secret 
              ```
-               databricks --profile e2-sat secrets put --scope sat_scope --key client-secret
+               databricks --profile e2-sat secrets put-secret sat_scope client-secret
              ``` 
       
          * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 7 should look like this if you are using the secrets (Required for TF deployments), no need to edit the cell:
@@ -314,12 +314,12 @@ Please gather the following information before you start setting up:
           * Setup the service account key json file in a secret as gs-path-to-json with the the "gsutil URI" ("File path to this resource in Cloud Storage") path :  
   
              ```
-               databricks --profile e2-sat secrets put --scope sat_scope --key gs-path-to-json
+               databricks --profile e2-sat secrets put-secret sat_scope gs-path-to-json
              ``` 
           * Setup the impersonate-service-account email address in a secret as impersonate-service-account
   
              ```
-               databricks --profile e2-sat secrets put --scope sat_scope --key impersonate-service-account
+               databricks --profile e2-sat secrets put-secret sat_scope impersonate-service-account
              ``` 
         
           * Your config in  \<SATProject\>/notebooks/Utils/initialize CMD 6 should look like this if you are using the secrets (Required for TF deployments), no need to edit the cell:
@@ -552,7 +552,7 @@ Please gather the following information before you start setting up:
 
     * Resolution:
       Check if the tokens are configured with the correct names by listing and comparing with the configuration.
-      databricks secrets list --scope sat_scope
+      databricks --profile e2-sat secrets list-secrets sat_scope
 
 2. Invalid access token
    
