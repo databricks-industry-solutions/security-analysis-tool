@@ -26,7 +26,7 @@ You will need the following information to set up SAT, we will show you how to g
 
 We created a companion Security Analysis Tool (SAT) [Setup primer video for AWS](https://www.youtube.com/watch?v=kLSc3UHKL40), Step by step follow along instructions [video for Azure Databricks](https://youtu.be/xAav6GslSd8) and a [Deployment checklist sheet](./) to help prepare for the SAT setup. 
 
-Note: SAT is beneficial to customers on [Databrics Premium or higher] (https://www.databricks.com/product/pricing/platform-addons) as most of the checks and recommendations involve security features available in tiers higher than the Standard. 
+Note: SAT is beneficial to customers on [Databrics Premium or higher](https://www.databricks.com/product/pricing/platform-addons) as most of the checks and recommendations involve security features available in tiers higher than the Standard. 
 
  1. Databricks Account ID 
  2. A Single user cluster  (To run the SAT checks)
