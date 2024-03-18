@@ -389,7 +389,7 @@ def token_max_life_rule(df):
         return (check_id, 0, {})   
 
 
-if enabled:
+if enabled and ('workspacesettings' + '_' + workspace_id in sqlContext.tableNames("global_temp")):
     # get maxTokenLifetimeDays  and check if it is set 
     tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
     sql = f'''
