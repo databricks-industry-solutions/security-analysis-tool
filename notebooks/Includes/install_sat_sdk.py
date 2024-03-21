@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** install_sat_sdk  
+# MAGIC **Functionality:** Installs the necessary sat sdk
+
+# COMMAND ----------
+
 SDK_VERSION='0.1.32'
 
 # COMMAND ----------

@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** 5. import_dashboard_template.      
+# MAGIC **Functionality:** Imports dashboard template from code repo into Dashboards section for SAT report.  
+
+# COMMAND ----------
+
 # MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------

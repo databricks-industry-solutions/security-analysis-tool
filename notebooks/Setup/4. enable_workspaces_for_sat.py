@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** 4. enable_workspaces_for_sat.      
+# MAGIC **Functionality:** Pulls the worskpaces from config file and pushes them into the schema for the pulldown and join queries.  
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/initialize
 
 # COMMAND ----------

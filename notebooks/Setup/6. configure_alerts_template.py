@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** 6. configure_alerts_template.      
+# MAGIC **Functionality:** Imports alerts template from code repo into Dashboards section for SAT alerts.  
+
+# COMMAND ----------
+
 # MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------

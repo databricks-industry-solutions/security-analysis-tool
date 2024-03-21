@@ -1,6 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC #### Generate secrets helper sh file
+# MAGIC **Notebook name:** 2. generate_secrets_setup_file.      
+# MAGIC **Functionality:** Generate secrets helper sh file (deprecated)
 
 # COMMAND ----------
 

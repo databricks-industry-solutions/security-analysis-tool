@@ -1,4 +1,11 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** security_analysis_driver.      
+# MAGIC **Functionality:** Main notebook to analyze and generate report of configured workspaces
+# MAGIC
+
+# COMMAND ----------
+
 # MAGIC %run ./Includes/install_sat_sdk
 
 # COMMAND ----------

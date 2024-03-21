@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** 7. update_sat_check_configuration.      
+# MAGIC **Functionality:** Optional notebooks for updating SAT checks customization.  
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/initialize
 
 # COMMAND ----------

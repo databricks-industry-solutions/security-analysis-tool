@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** 3. test_connections.      
+# MAGIC **Functionality:** Tests account and workspace connections and writes workspaces that can be connected with status into the config file
+
+# COMMAND ----------
+
 # MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------

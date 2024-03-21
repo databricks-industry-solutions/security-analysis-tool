@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** accounts_bootstrap      
+# MAGIC **Functionality:** Notebook that queries the account level APIs and creates temp tables with the results.  
+
+# COMMAND ----------
+
 # MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------

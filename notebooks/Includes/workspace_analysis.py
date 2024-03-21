@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** workspace_analysis  
+# MAGIC **Functionality:** runs analysis logic on the workspace api respones and writes the results into a checks tables 
+
+# COMMAND ----------
+
 # MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------
