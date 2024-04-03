@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** configure_sa_auth_tokens  
+# MAGIC **Functionality:** generates and saves the temp authorization tokens for gcp service account 
+
+# COMMAND ----------
+
 # MAGIC %run ../../Includes/install_sat_sdk
 
 # COMMAND ----------

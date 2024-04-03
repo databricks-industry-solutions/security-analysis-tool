@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** 1. list_account_workspaces_to_conf_file  
+# MAGIC **Functionality:** generates all the workspaces in the account (subscription in case of azure) and writes into a config file
+
+# COMMAND ----------
+
 # MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------

@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Notebook name:** sat_checks_config       
+# MAGIC **Functionality:** initializes the necessary configruation values for the rest of the process into a json
+
+# COMMAND ----------
+
 #Determine cloud type
 def getCloudType(url):
   if '.cloud.' in url:

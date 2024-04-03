@@ -1,6 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC ##### Common Routines
+# MAGIC **Notebook name:** common.       
+# MAGIC **Functionality:** routines used across the project
 
 # COMMAND ----------
 
