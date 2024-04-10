@@ -54,7 +54,7 @@ use_parallel_runs = json_.get("use_parallel_runs", False)
 if cloud_type == "gcp":
     # refresh account level tokens
     gcp_status1 = dbutils.notebook.run(
-        f"{basePath()}/Setup/gcp/configure_sa_auth_tokens", 3000
+        f"{basePath()}/notebooks/Setup/gcp/configure_sa_auth_tokens", 3000
     )
     if gcp_status1 != "OK":
         loggr.exception("Error Encountered in GCP Step#1", gcp_status1)
@@ -66,7 +66,9 @@ if cloud_type == "gcp":
 import json
 
 out = dbutils.notebook.run(
-    f"{basePath()}/Utils/accounts_bootstrap", 300, {"json_": json.dumps(json_)}
+    f"{basePath()}/notebooks/Utils/accounts_bootstrap",
+    300,
+    {"json_": json.dumps(json_)},
 )
 loggr.info(out)
 
@@ -107,7 +109,7 @@ def renewWorkspaceTokens(workspace_id):
     if cloud_type == "gcp":
         # refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
         gcp_status2 = dbutils.notebook.run(
-            f"{basePath()}/Setup/gcp/configure_tokens_for_worksaces",
+            f"{basePath()}/notebooks/Setup/gcp/configure_tokens_for_worksaces",
             3000,
             {"workspace_id": workspace_id},
         )
@@ -150,23 +152,25 @@ def processWorkspace(wsrow):
     )
     loggr.info(ws_json)
     retstr = dbutils.notebook.run(
-        f"{basePath()}/Utils/workspace_bootstrap", 3000, {"json_": json.dumps(ws_json)}
+        f"{basePath()}/notebooks/Utils/workspace_bootstrap",
+        3000,
+        {"json_": json.dumps(ws_json)},
     )
     if "Completed SAT" not in retstr:
         raise Exception("Workspace Bootstrap failed. Skipping workspace analysis")
     else:
         dbutils.notebook.run(
-            f"{basePath()}/Includes/workspace_analysis",
+            f"{basePath()}/notebooks/Includes/workspace_analysis",
             3000,
             {"json_": json.dumps(ws_json)},
         )
         dbutils.notebook.run(
-            f"{basePath()}/Includes/workspace_stats",
+            f"{basePath()}/notebooks/Includes/workspace_stats",
             1000,
             {"json_": json.dumps(ws_json)},
         )
         dbutils.notebook.run(
-            f"{basePath()}/Includes/workspace_settings",
+            f"{basePath()}/notebooks/Includes/workspace_settings",
             3000,
             {"json_": json.dumps(ws_json)},
         )

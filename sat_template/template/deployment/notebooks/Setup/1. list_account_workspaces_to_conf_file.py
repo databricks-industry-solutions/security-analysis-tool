@@ -50,7 +50,9 @@ loggr = LoggingUtils.get_logger()
 import json
 
 dbutils.notebook.run(
-    f"{basePath()}/Utils/accounts_bootstrap", 300, {"json_": json.dumps(json_)}
+    f"{basePath()}/notebooks/Utils/accounts_bootstrap",
+    300,
+    {"json_": json.dumps(json_)},
 )
 
 # COMMAND ----------
