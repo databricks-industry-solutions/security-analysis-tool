@@ -1,15 +1,12 @@
 import json
+import os
 import re
 import subprocess
 
 import inquirer
-import sh
-import typer
 from databricks.sdk import WorkspaceClient
 from inquirer.themes import GreenPassion
 from rich.progress import Progress, SpinnerColumn, TextColumn
-
-app = typer.Typer()
 
 
 def loading(func, message: str = "Loading..."):
@@ -208,9 +205,7 @@ def cloud_requirements():
 
 
 def dabs(profile: str, catalog: str, cloud_type: str, gcp_sa: str):
-    subprocess.call(
-        ["sh", "./install.sh", "deployment", profile, catalog, cloud_type, gcp_sa]
-    )
+    subprocess.call(["sh", "./setup.sh", "tmp", profile, catalog, cloud_type, gcp_sa])
 
 
 def install_sat(answers: dict, cloud_answers: dict):
@@ -224,17 +219,9 @@ def install_sat(answers: dict, cloud_answers: dict):
         dabs(answers["profile"], "hive_metastore", cloud_type, gcp_sa)
 
 
-@app.command()
-def migrate():
-    typer.clear()
-    typer.echo("Migrate to Unity Catalog")
-
-
-@app.command()
 def install():
     try:
         global client
-        typer.clear()
         answers = prompt(setup(loading(get_profiles)))
         client = WorkspaceClient(profile=answers["profile"])
         answersUC = prompt(
@@ -249,10 +236,10 @@ def install():
             ),
             message="Installing...",
         )
-        typer.echo("Installation complete!")
     except Exception as e:
-        typer.echo("Installation failed - Try again!")
+        print(e)
 
 
 if __name__ == "__main__":
-    app()
+    os.system("clear")
+    install()
