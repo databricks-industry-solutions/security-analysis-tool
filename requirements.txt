@@ -1,0 +1,5 @@
+inquirer
+databricks-sdk
+typer
+rich
+sh

@@ -1,0 +1,18 @@
+{
+    "welcome_message": "",
+    "properties": {
+        "catalog": {
+            "type": "string",
+            "description": "The catalog for SAT"
+        },
+        "cloud": {
+            "type": "string",
+            "description": "Cloud type"
+        },
+        "google_service_account": {
+            "type": "string",
+            "description": "Google service account"
+        }
+    },
+    "success_message": ""
+}
