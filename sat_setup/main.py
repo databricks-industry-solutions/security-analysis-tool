@@ -11,7 +11,7 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
     cloud = cloud_type(client)
     generate_secrets(client, answers, cloud)
     config = {
-        "catalog": profile,
+        "catalog": answers.get("catalog", None),
         "cloud": cloud,
         "google_service_account": answers.get("gcp-impersonate-service-account", None),
     }
