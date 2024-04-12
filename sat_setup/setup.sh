@@ -2,13 +2,10 @@
 
 project=$1
 profile=$2
-catalog=$3
-cloud_type=$4
-gcp_sa=$5
+config_file=$3
 
-echo "{\"catalog\": \"$catalog\", \"cloud\": \"$cloud_type\", \"google_service_account\": \"$gcp_sa\" }" >tmp_config.json
-databricks bundle init ./sat_template -p $profile --config-file tmp_config.json
-rm -rf tmp_config.json
+databricks bundle init ./dabs_template -p $profile --config-file $config_file
+rm -rf $config_file
 cd $project
 databricks bundle deploy -p $profile --force-lock
 cd ../

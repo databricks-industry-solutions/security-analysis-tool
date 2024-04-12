@@ -3,9 +3,8 @@ import os
 import re
 import subprocess
 
-import inquirer
 from databricks.sdk import WorkspaceClient
-from inquirer.themes import GreenPassion
+from inquirer import Confirm, List, Password, Text, list_input, prompt
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 
@@ -23,18 +22,32 @@ def loading(func, message: str = "Loading..."):
     return res
 
 
-def prompt(questions: list):
-    return inquirer.prompt(questions, theme=GreenPassion())
+def cloud_validation(cloud):
+    global cloud_type
+    if "azure" in client.config.host:
+        cloud_type = "azure"
+    elif "gcp" in client.config.host:
+        cloud_type = "gcp"
+    else:
+        cloud_type = "aws"
+
+    if cloud_type == cloud:
+        return False
+    return True
 
 
-def get_profiles():
-    output = json.loads(
+def databricks_command(commmand: str):
+    return json.loads(
         subprocess.run(
-            "databricks auth profiles -o json".split(" "),
+            commmand.split(" "),
             capture_output=True,
             text=True,
         ).stdout.strip()
-    )["profiles"]
+    )
+
+
+def get_profiles():
+    output = databricks_command("databricks auth profiles -o json")["profiles"]
     valid_profiles = []
     for p in output:
         if p["valid"] and "accounts" not in p["host"]:
@@ -42,16 +55,7 @@ def get_profiles():
     return valid_profiles
 
 
-def get_warehouses():
-    valid_warehouses = []
-    for w in client.warehouses.list():
-        valid_warehouses.append({"name": w.name, "id": w.id})
-    # valid_warehouses.append("Create new warehouse...")
-    return valid_warehouses
-
-
 def get_catalogs():
-    # TODO: search for catalogs for filtering
     valid_catalogs = []
     for c in client.catalogs.list():
         if c.catalog_type is not None and c.catalog_type.value != "SYSTEM_CATALOG":
@@ -59,56 +63,102 @@ def get_catalogs():
     return valid_catalogs
 
 
-def setup(profiles: list):
+def get_warehouses():
+    valid_warehouses = []
+    for w in client.warehouses.list():
+        valid_warehouses.append({"name": w.name, "id": w.id})
+    return valid_warehouses
+
+
+def form():
+    global client
+    profile = list_input(
+        message="Select profile",
+        choices=loading(get_profiles, "Loading profiles..."),
+    )
+    client = WorkspaceClient(profile=profile)
+
     questions = [
-        inquirer.List(
-            name="profile",
-            message="Select Databricks profile",
-            choices=profiles,
-            default="default",
-        ),
-        inquirer.Text(
+        Text(
             name="account_id",
             message="Databricks Account ID",
             validate=lambda _, x: re.match(
                 r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", x
             ),
         ),
-        inquirer.Confirm(
+        Confirm(
             name="enable_uc",
             message="Use Unity Catalog?",
             default=True,
         ),
+        List(
+            name="catalog",
+            message="Select catalog",
+            choices=loading(get_catalogs),
+            ignore=lambda x: not x["enable_uc"],
+        ),
+        List(
+            name="warehouse",
+            message="Select warehouse",
+            choices=loading(get_warehouses),
+        ),
     ]
-    return questions
+    questions = questions + cloud_specific_questions()
+    return prompt(questions), profile
 
 
-def setupUC(catalogs: list, uc: bool):
-    if uc:
-        questions = [
-            inquirer.List(
-                name="catalog",
-                message="Select catalog",
-                choices=catalogs,
-            ),
-            inquirer.List(
-                name="warehouse",
-                message="Select warehouse",
-                choices=get_warehouses(),
-            ),
-        ]
-    else:
-        questions = [
-            inquirer.List(
-                name="warehouse",
-                message="Select warehouse",
-                choices=get_warehouses(),
-            ),
-        ]
-    return questions
+def cloud_specific_questions():
+    azure = [
+        Text(
+            name="azure-tenant-id",
+            message="Azure Tenant ID",
+            ignore=cloud_validation("azure"),
+        ),
+        Text(
+            name="azure-subscription-id",
+            message="Azure Subscription ID",
+            ignore=cloud_validation("azure"),
+        ),
+        Text(
+            name="azure-client-id",
+            message="Client ID",
+            ignore=cloud_validation("azure"),
+        ),
+        Password(
+            name="azure-client-secret",
+            message="Client Secret",
+            ignore=cloud_validation("azure"),
+        ),
+    ]
+    gcp = [
+        Text(
+            name="gcp-gs-path-to-json",
+            message="Path to JSON key file",
+            ignore=cloud_validation("gcp"),
+        ),
+        Text(
+            name="gcp-impersonate-service-account",
+            message="Impersonate Service Account",
+            ignore=cloud_validation("gcp"),
+            default="",
+        ),
+    ]
+    aws = [
+        Text(
+            name="aws-client-id",
+            message="Client ID",
+            ignore=cloud_validation("aws"),
+        ),
+        Password(
+            name="aws-client-secret",
+            message="Client Secret",
+            ignore=cloud_validation("aws"),
+        ),
+    ]
+    return aws + azure + gcp
 
 
-def generate_secrets(data: dict, cloud_data: dict):
+def generate_secrets(answers: dict):
 
     scope_name = "sat_scope"
     for scope in client.secrets.list_scopes():
@@ -130,12 +180,12 @@ def generate_secrets(data: dict, cloud_data: dict):
     client.secrets.put_secret(
         scope=scope_name,
         key="account-console-id",
-        string_value=data["account_id"],
+        string_value=answers["account_id"],
     )
     client.secrets.put_secret(
         scope=scope_name,
         key="sql-warehouse-id",
-        string_value=data["warehouse"]["id"],
+        string_value=answers["warehouse"]["id"],
     )
 
     if cloud_type == "aws":
@@ -145,101 +195,37 @@ def generate_secrets(data: dict, cloud_data: dict):
             string_value=True,
         )
 
-    for value in cloud_data.keys():
-        client.secrets.put_secret(
-            scope=scope_name,
-            key=value,
-            string_value=cloud_data[value],
-        )
+    for value in answers.keys():
+        if cloud_type in value:
+            client.secrets.put_secret(
+                scope=scope_name,
+                key=value.replace(f"{cloud_type}-", ""),
+                string_value=answers[value],
+            )
 
 
-def cloud_requirements():
-    host = client.config.host
-    global cloud_type
-    if "azure" in host:
-        cloud_type = "azure"
-        questions = [
-            inquirer.Text(
-                name="tenant-id",
-                message="Azure Tenant ID",
-            ),
-            inquirer.Text(
-                name="subscription-id",
-                message="Azure Subscription ID",
-            ),
-            inquirer.Text(
-                name="client-id",
-                message="Client ID",
-            ),
-            inquirer.Password(
-                name="client-secret",
-                message="Client Secret",
-            ),
-        ]
-    elif "gcp" in host:
-        cloud_type = "gcp"
-        questions = [
-            inquirer.Text(
-                name="gs-path-to-json",
-                message="Path to JSON key file",
-            ),
-            inquirer.Text(
-                name="impersonate-service-account",
-                message="Impersonate Service Account",
-            ),
-        ]
-    else:
-        cloud_type = "aws"
-        questions = [
-            inquirer.Text(
-                name="client-id",
-                message="Client ID",
-            ),
-            inquirer.Password(
-                name="client-secret",
-                message="Client Secret",
-            ),
-        ]
+def install(answers: dict, profile: str):
+    generate_secrets(answers)
+    config = {
+        "catalog": profile,
+        "cloud": cloud_type,
+        "google_service_account": answers.get("gcp-impersonate-service-account", None),
+    }
 
-    return questions
+    config_file = "tmp_config.json"
+    with open(config_file, "w") as fp:
+        json.dump(config, fp)
+    subprocess.call(f"sh ./setup.sh tmp {profile} {config_file}".split(" "))
 
 
-def dabs(profile: str, catalog: str, cloud_type: str, gcp_sa: str):
-    subprocess.call(["sh", "./setup.sh", "tmp", profile, catalog, cloud_type, gcp_sa])
-
-
-def install_sat(answers: dict, cloud_answers: dict):
-    generate_secrets(data=answers, cloud_data=cloud_answers)
-    gcp_sa = ""
-    if cloud_answers.get("impersonate-service-account"):
-        gcp_sa = cloud_answers["impersonate-service-account"]
-    if answers.get("catalog"):
-        dabs(answers["profile"], answers["catalog"], cloud_type, gcp_sa)
-    else:
-        dabs(answers["profile"], "hive_metastore", cloud_type, gcp_sa)
-
-
-def install():
+def setup():
     try:
-        global client
-        answers = prompt(setup(loading(get_profiles)))
-        client = WorkspaceClient(profile=answers["profile"])
-        answersUC = prompt(
-            setupUC(loading(get_catalogs), answers["enable_uc"]),
-        )
-        cloud_answers = prompt(cloud_requirements())
-
-        loading(
-            lambda: install_sat(
-                answers={**answers, **answersUC},
-                cloud_answers=cloud_answers,
-            ),
-            message="Installing...",
-        )
-    except Exception as e:
-        print(e)
+        answers, profile = form()
+        install(answers, profile)
+    except KeyboardInterrupt:
+        print("Installation aborted.")
 
 
 if __name__ == "__main__":
     os.system("clear")
-    install()
+    setup()
