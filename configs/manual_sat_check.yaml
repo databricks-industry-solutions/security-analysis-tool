@@ -1,0 +1,113 @@
+- id: 4
+  enabled: false
+  check_id: DP-4
+  category: Data Protection
+  check: Object storage encryption for data sources
+  check_type: Manual
+  dasf: 'DASF 8: Encrypt data at rest'
+  evaluation_value: -1
+  severity: High
+  recommendation: Encrypt object storage data buckets and restrict access
+  aws: 1
+  azure: 1
+  gcp: 1
+  enable: 1
+  alert: 0
+  logic: Manual check (Update cofiguration status using <SATProject>/notebooks/Setup/8.
+    update_workspace_configuration notebook)
+  api: Manual check
+  aws_doc_url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-encryption.html
+  azure_doc_url: https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption
+  gcp_doc_url: https://cloud.google.com/storage/docs/encryption
+
+- id: 18
+  enabled: false
+  check_id: IA-1
+  category: Identity & Access
+  check: Enable single sign-on
+  check_type: Manual
+  dasf: 'DASF 1: SSO with IdP and MFA'
+  evaluation_value: -1
+  severity: High
+  recommendation: Authenticate via single sign-on and leverage multi-factor authentication
+  aws: 1
+  azure: 1
+  gcp: 1
+  enable: 1
+  alert: 0
+  logic: Manual check (Update cofiguration status using <SATProject>/notebooks/Setup/8.
+    update_workspace_configuration notebook)
+  api: Manual check
+  aws_doc_url: https://docs.databricks.com/administration-guide/users-groups/single-sign-on/index.html
+  azure_doc_url: https://learn.microsoft.com/en-us/azure/databricks/administration-guide/users-groups/single-sign-on/
+  gcp_doc_url: https://docs.gcp.databricks.com/administration-guide/users-groups/single-sign-on/index.html
+
+- id: 19
+  enabled: false
+  check_id: IA-2
+  category: Identity & Access
+  check: SCIM for user provisioning
+  check_type: Manual
+  dasf: 'DASF 2: Sync users and groups'
+  evaluation_value: -1
+  severity: High
+  recommendation: Provision users from your Identity Provider with workspace-level
+    SCIM APIs
+  aws: 1
+  azure: 1
+  gcp: 1
+  enable: 1
+  alert: 0
+  logic: Manual check (Update cofiguration status using <SATProject>/notebooks/Setup/8.
+    update_workspace_configuration notebook)
+  api: Manual check
+  aws_doc_url: https://docs.databricks.com/administration-guide/users-groups/scim/index.html
+  azure_doc_url: https://learn.microsoft.com/en-us/azure/databricks/administration-guide/users-groups/scim/index
+  gcp_doc_url: https://docs.gcp.databricks.com/administration-guide/users-groups/scim/index.html
+
+- id: 20
+  enabled: false
+  check_id: IA-3
+  category: Identity & Access
+  check: Table Access Control for clusters that don't use Unity Catalog
+  check_type: Manual
+  dasf: .nan
+  evaluation_value: -1
+  severity: High
+  recommendation: For clusters that do not use Unity Catalog, enable Table Access
+    Control in admin settings so that you can utilize Table ACL clusters that enforce
+    user isolation
+  aws: 1
+  azure: 1
+  gcp: 1
+  enable: 1
+  alert: 0
+  logic: Manual check (Update cofiguration status using <SATProject>/notebooks/Setup/8.
+    update_workspace_configuration notebook)
+  api: Manual check
+  aws_doc_url: https://docs.databricks.com/administration-guide/access-control/table-acl.html
+  azure_doc_url: https://learn.microsoft.com/en-us/azure/databricks/administration-guide/access-control/table-acl
+  gcp_doc_url: https://docs.gcp.databricks.com/administration-guide/access-control/table-acl.html
+  
+- id: 28
+  enabled: false
+  check_id: INFO-7
+  category: Informational
+  check: Detect network peering of VPC (AWS, GCP) or VNet (Azure)
+  check_type: Manual
+  dasf: .nan
+  evaluation_value: -1
+  severity: Medium
+  recommendation: Network peering is discouraged because private endpoints are recommended.
+    For example, AWS PrivateLink, Azure Private Link, or Google Private Service Connect.
+  aws: 1
+  azure: 1
+  gcp: 1
+  enable: 1
+  alert: 0
+  logic: Manual check (Update cofiguration status using <SATProject>/notebooks/Setup/8.
+    update_workspace_configuration notebook)
+  api: Manual check
+  aws_doc_url: https://docs.aws.amazon.com/vpc/latest/privatelink/create-interface-endpoint.html
+  azure_doc_url: https://learn.microsoft.com/en-us/azure/databricks/administration-guide/cloud-configurations/azure/vnet-inject
+  gcp_doc_url: https://cloud.google.com/vpc/docs/private-access-options

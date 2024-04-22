@@ -102,46 +102,40 @@ params = {'Analysis Enabled': 'analysis_enabled',
                   'Object Storage Encrypted': 'object_storage_encrypted', 
                   'Table Access Control Enabled':'table_access_control_enabled'}
 #SET & GET SAT check configurations for the workspace
+import yaml
 def get_workspace_check_config():
-    workspace = dbutils.widgets.get("workspaces")
-    ws_id = workspace.split('_')[-1]
-
-    s_sql = '''
-                SELECT analysis_enabled, sso_enabled, scim_enabled, vpc_peering_done, object_storage_encrypted, 
-                table_access_control_enabled
-                FROM {analysis_schema_name}.account_workspaces
-                WHERE workspace_id= '{ws_id}'
-            '''.format(ws_id = ws_id, analysis_schema_name= json_["analysis_schema_name"])
-
-    get_workspace = spark.sql(s_sql)
-    check = get_workspace.toPandas().to_dict(orient = 'list')
+    prefix = getConfigPath()
+    userfile = f'{prefix}/manual_sat_check.yaml'
+    # Load the YAML configuration
+    with open(userfile, 'r') as file:
+        all_checks = yaml.safe_load(file)
     
-    analysis_enabled = check['analysis_enabled'][0]
-    sso_enabled = check['sso_enabled'][0]
-    scim_enabled = check['scim_enabled'][0]
-    vpc_peering_done = check['vpc_peering_done'][0]
-    object_storage_encrypted = check['object_storage_encrypted'][0]
-    table_access_control_enabled = check['table_access_control_enabled'][0]
-   
+    # Prepare a list to hold the extracted data
+    checks_data = {}
 
-    dbutils.widgets.dropdown("analysis_enabled", str(analysis_enabled),  ['False','True'], "b. Analysis Enabled")
-    dbutils.widgets.dropdown("sso_enabled", str(sso_enabled),  ['False','True'], "c. SSO Enabled")
-    dbutils.widgets.dropdown("scim_enabled", str(scim_enabled),  ['False','True'], "d. SCIM Enabled")    
-    dbutils.widgets.dropdown("vpc_peering_done", str(vpc_peering_done),  ['False','True'], "e. ANY VPC PEERING")
-    dbutils.widgets.dropdown("object_storage_encrypted", str(object_storage_encrypted),  ['False','True'], "f. Object Storage Encrypted")
-    dbutils.widgets.dropdown("table_access_control_enabled", str(table_access_control_enabled),  ['False','True'], "g. Table Access Control Enabled")
-    dbutils.widgets.multiselect("apply_setting_to_all_ws_enabled", "",  ['','Analysis Enabled', 'SSO Enabled', 'SCIM Enabled', 'ANY VPC PEERING', 'Object Storage Encrypted', 'Table Access Control Enabled'], "i. Apply Setting to all workspaces")
+    # Iterate over each entry to extract required fields
+    for check in all_checks:
+        checks_data[check['check_id']] = {
+            'check': check['check'],
+            'enabled': check['enabled']
+        }
+    return checks_data
+
+# Example usage:
+# yaml_file_path = '/Workspace/Users/tony.bo@databricks.com/manual_sat_check.yaml'
+# checks_data = load_checks_from_yaml(yaml_file_path)
+# print("DP-4 \n"+ checks_data['DP-4']["check"] +"\n" + str(checks_data['DP-4']["enabled"]) )
     
     
-def set_workspace_check_config():
+def set_workspace_check_config(checks_data):
     #Retrieve widget values 
     workspace = dbutils.widgets.get("workspaces")
     analysis_enabled = dbutils.widgets.get("analysis_enabled").lower()
-    sso_enabled = dbutils.widgets.get("sso_enabled").lower()
-    scim_enabled = dbutils.widgets.get("scim_enabled").lower()
-    vpc_peering_done = dbutils.widgets.get("vpc_peering_done").lower()
-    object_storage_encrypted = dbutils.widgets.get("object_storage_encrypted").lower()
-    table_access_control_enabled = dbutils.widgets.get("table_access_control_enabled").lower()
+    sso_enabled = checks_data['IA-1']['enabled'].lower()
+    scim_enabled = checks_data['IA-2']['enabled'].lower()
+    vpc_peering_done = checks_data['INFO-7']['enabled'].lower()
+    object_storage_encrypted = checks_data['DP-4']['enabled'].lower()
+    table_access_control_enabled = checks_data['IA-3']['enabled'].lower()
     apply_setting_to_all_ws_enabled = dbutils.widgets.get("apply_setting_to_all_ws_enabled")
     
     ws_id = workspace.split('_')[-1]
