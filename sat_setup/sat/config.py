@@ -113,7 +113,7 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
     client.secrets.create_scope(scope_name)
 
     token = client.tokens.create(
-        lifetime_seconds=86400 * 365,
+        lifetime_seconds=86400 * 90,
         comment="Security Analysis Tool",
     )
     client.secrets.put_secret(
