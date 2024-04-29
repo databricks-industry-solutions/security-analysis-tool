@@ -40,6 +40,7 @@ def form():
             message="Select catalog",
             choices=loading(get_catalogs, client=client),
             ignore=lambda x: not x["enable_uc"],
+            default="hive_metastore",
         ),
         List(
             name="warehouse",
