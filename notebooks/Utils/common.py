@@ -33,28 +33,24 @@ def bootstrap(viewname, func, **kwargs ):
 # COMMAND ----------
 
 def handleAnalysisErrors(e):
-  print(e)
   """
   Handle AnalysisException when sql is run. This is raised when fields in sql are not found.
   """
-  if hasattr(e,'desc'):
-    v= e.desc
-    vlst = v.lower().split(" ")
-    strField=''
-    if len(vlst)>2 and vlst[0]=='cannot' and vlst[1]=='resolve':
-      strField='cannot find field ' + vlst[2] + ' in SQL'
-    elif len(vlst)>8 and vlst[0]=='[unresolved_column.with_suggestion]' and vlst[4]=='function' and vlst[5]=='parameter':
-      strField='cannot find field ' + vlst[8] + ' in SQL'
-    elif len(vlst)>8 and vlst[0]=='[unresolved_column.without_suggestion]' and vlst[4]=='function' and vlst[5]=='parameter':
-      strField='cannot find field ' + vlst[8] + ' in SQL'
-    elif len(vlst)>3 and vlst[1]=='such' and vlst[2]=='struct':
-      strField='cannot find struct field `' + vlst[4] + '` in SQL'
-    elif len(vlst)>2 and 'Did you mean' in v:
-      strField='field ' + vlst[1] + ' not found'
-    else:
-      strField=v
+  v= e.getMessage()
+  vlst = v.lower().split(" ")
+  strField=''
+  if len(vlst)>2 and vlst[0]=='cannot' and vlst[1]=='resolve':
+    strField='cannot find field ' + vlst[2] + ' in SQL'
+  elif len(vlst)>8 and vlst[0]=='[unresolved_column.with_suggestion]' and vlst[5]=='function' and vlst[6]=='parameter':
+    strField='cannot find field ' + vlst[9] + ' in SQL'
+  elif len(vlst)>8 and vlst[0]=='[unresolved_column.without_suggestion]' and vlst[5]=='function' and vlst[6]=='parameter':
+    strField='cannot find field ' + vlst[9] + ' in SQL'
+  elif len(vlst)>3 and vlst[1]=='such' and vlst[2]=='struct':
+    strField='cannot find struct field `' + vlst[4] + '` in SQL'
+  elif len(vlst)>2 and 'Did you mean' in v:
+    strField='field ' + vlst[1] + ' not found'
   else:
-    strField='No description'
+    strField=v
   return strField
 
 # COMMAND ----------
