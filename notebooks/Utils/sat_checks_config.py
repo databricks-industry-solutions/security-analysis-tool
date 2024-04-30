@@ -115,7 +115,7 @@ def get_workspace_check_config():
 
     # Iterate over each entry to extract required fields
     for check in all_checks:
-        checks_data[check['check_id']] = {
+        checks_data[check['id']] = {
             'check': check['check'],
             'enabled': check['enabled']
         }
@@ -123,11 +123,11 @@ def get_workspace_check_config():
     
 def set_workspace_check_config(checks_data):
     #Retrieve widget values 
-    sso_enabled = checks_data['IA-1']['enabled'].lower()
-    scim_enabled = checks_data['IA-2']['enabled'].lower()
-    vpc_peering_done = checks_data['INFO-7']['enabled'].lower()
-    object_storage_encrypted = checks_data['DP-4']['enabled'].lower()
-    table_access_control_enabled = checks_data['IA-3']['enabled'].lower()
+    sso_enabled = checks_data['18']['enabled'].lower()
+    scim_enabled = checks_data['19']['enabled'].lower()
+    vpc_peering_done = checks_data['28']['enabled'].lower()
+    object_storage_encrypted = checks_data['4']['enabled'].lower()
+    table_access_control_enabled = checks_data['20']['enabled'].lower()
     apply_setting_to_all_ws_enabled = dbutils.widgets.get("apply_setting_to_all_ws_enabled")
     
     ws_id = workspace.split('_')[-1]
