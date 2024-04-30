@@ -120,17 +120,9 @@ def get_workspace_check_config():
             'enabled': check['enabled']
         }
     return checks_data
-
-# Example usage:
-# yaml_file_path = '/Workspace/Users/tony.bo@databricks.com/manual_sat_check.yaml'
-# checks_data = load_checks_from_yaml(yaml_file_path)
-# print("DP-4 \n"+ checks_data['DP-4']["check"] +"\n" + str(checks_data['DP-4']["enabled"]) )
-    
     
 def set_workspace_check_config(checks_data):
     #Retrieve widget values 
-    workspace = dbutils.widgets.get("workspaces")
-    analysis_enabled = dbutils.widgets.get("analysis_enabled").lower()
     sso_enabled = checks_data['IA-1']['enabled'].lower()
     scim_enabled = checks_data['IA-2']['enabled'].lower()
     vpc_peering_done = checks_data['INFO-7']['enabled'].lower()
@@ -143,13 +135,11 @@ def set_workspace_check_config(checks_data):
     if apply_setting_to_all_ws_enabled == '':
         s_sql = '''
                     UPDATE  {analysis_schema_name}.account_workspaces 
-                    SET analysis_enabled = {analysis_enabled}, 
-                        sso_enabled={sso_enabled}, 
+                    SET sso_enabled={sso_enabled}, 
                         scim_enabled = {scim_enabled},
                         vpc_peering_done = {vpc_peering_done},
                         object_storage_encrypted = {object_storage_encrypted},
                         table_access_control_enabled = {table_access_control_enabled}
-                    WHERE workspace_id= '{ws_id}'
                 '''.format(analysis_enabled=analysis_enabled, sso_enabled=sso_enabled, scim_enabled=scim_enabled, 
                            vpc_peering_done=vpc_peering_done, object_storage_encrypted=object_storage_encrypted, 
                            table_access_control_enabled=table_access_control_enabled, ws_id = ws_id, analysis_schema_name= json_["analysis_schema_name"])
@@ -181,7 +171,7 @@ def get_all_workspaces():
     first_ws = str(workspaces[0])
 
     #Define Driver Widgets
-    dbutils.widgets.dropdown("workspaces", first_ws, [str(x) for x in workspaces], "a. Workspaces")
+    #dbutils.widgets.dropdown("workspaces", first_ws, [str(x) for x in workspaces], "a. Workspaces")
 
 # COMMAND ----------
 
