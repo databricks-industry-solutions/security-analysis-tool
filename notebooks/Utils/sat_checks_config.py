@@ -102,32 +102,46 @@ params = {'Analysis Enabled': 'analysis_enabled',
                   'Object Storage Encrypted': 'object_storage_encrypted', 
                   'Table Access Control Enabled':'table_access_control_enabled'}
 #SET & GET SAT check configurations for the workspace
-import yaml
 def get_workspace_check_config():
-    prefix = getConfigPath()
-    userfile = f'{prefix}/manual_sat_check.yaml'
-    # Load the YAML configuration
-    with open(userfile, 'r') as file:
-        all_checks = yaml.safe_load(file)
-    
-    # Prepare a list to hold the extracted data
-    checks_data = {}
+    workspace = dbutils.widgets.get("workspaces")
+    ws_id = workspace.split('_')[-1]
 
-    # Iterate over each entry to extract required fields
-    for check in all_checks:
-        checks_data[check['id']] = {
-            'check': check['check'],
-            'enabled': check['enabled']
-        }
-    return checks_data
+    s_sql = '''
+                SELECT analysis_enabled, sso_enabled, scim_enabled, vpc_peering_done, object_storage_encrypted, 
+                table_access_control_enabled
+                FROM {analysis_schema_name}.account_workspaces
+                WHERE workspace_id= '{ws_id}'
+            '''.format(ws_id = ws_id, analysis_schema_name= json_["analysis_schema_name"])
+
+    get_workspace = spark.sql(s_sql)
+    check = get_workspace.toPandas().to_dict(orient = 'list')
     
-def set_workspace_check_config(checks_data):
+    analysis_enabled = check['analysis_enabled'][0]
+    sso_enabled = check['sso_enabled'][0]
+    scim_enabled = check['scim_enabled'][0]
+    vpc_peering_done = check['vpc_peering_done'][0]
+    object_storage_encrypted = check['object_storage_encrypted'][0]
+    table_access_control_enabled = check['table_access_control_enabled'][0]
+   
+
+    dbutils.widgets.dropdown("analysis_enabled", str(analysis_enabled),  ['False','True'], "b. Analysis Enabled")
+    dbutils.widgets.dropdown("sso_enabled", str(sso_enabled),  ['False','True'], "c. SSO Enabled")
+    dbutils.widgets.dropdown("scim_enabled", str(scim_enabled),  ['False','True'], "d. SCIM Enabled")    
+    dbutils.widgets.dropdown("vpc_peering_done", str(vpc_peering_done),  ['False','True'], "e. ANY VPC PEERING")
+    dbutils.widgets.dropdown("object_storage_encrypted", str(object_storage_encrypted),  ['False','True'], "f. Object Storage Encrypted")
+    dbutils.widgets.dropdown("table_access_control_enabled", str(table_access_control_enabled),  ['False','True'], "g. Table Access Control Enabled")
+    dbutils.widgets.multiselect("apply_setting_to_all_ws_enabled", "",  ['','Analysis Enabled', 'SSO Enabled', 'SCIM Enabled', 'ANY VPC PEERING', 'Object Storage Encrypted', 'Table Access Control Enabled'], "i. Apply Setting to all workspaces")
+    
+    
+def set_workspace_check_config():
     #Retrieve widget values 
-    sso_enabled = checks_data['18']['enabled'].lower()
-    scim_enabled = checks_data['19']['enabled'].lower()
-    vpc_peering_done = checks_data['28']['enabled'].lower()
-    object_storage_encrypted = checks_data['4']['enabled'].lower()
-    table_access_control_enabled = checks_data['20']['enabled'].lower()
+    workspace = dbutils.widgets.get("workspaces")
+    analysis_enabled = dbutils.widgets.get("analysis_enabled").lower()
+    sso_enabled = dbutils.widgets.get("sso_enabled").lower()
+    scim_enabled = dbutils.widgets.get("scim_enabled").lower()
+    vpc_peering_done = dbutils.widgets.get("vpc_peering_done").lower()
+    object_storage_encrypted = dbutils.widgets.get("object_storage_encrypted").lower()
+    table_access_control_enabled = dbutils.widgets.get("table_access_control_enabled").lower()
     apply_setting_to_all_ws_enabled = dbutils.widgets.get("apply_setting_to_all_ws_enabled")
     
     ws_id = workspace.split('_')[-1]
@@ -135,11 +149,13 @@ def set_workspace_check_config(checks_data):
     if apply_setting_to_all_ws_enabled == '':
         s_sql = '''
                     UPDATE  {analysis_schema_name}.account_workspaces 
-                    SET sso_enabled={sso_enabled}, 
+                    SET analysis_enabled = {analysis_enabled}, 
+                        sso_enabled={sso_enabled}, 
                         scim_enabled = {scim_enabled},
                         vpc_peering_done = {vpc_peering_done},
                         object_storage_encrypted = {object_storage_encrypted},
                         table_access_control_enabled = {table_access_control_enabled}
+                    WHERE workspace_id= '{ws_id}'
                 '''.format(analysis_enabled=analysis_enabled, sso_enabled=sso_enabled, scim_enabled=scim_enabled, 
                            vpc_peering_done=vpc_peering_done, object_storage_encrypted=object_storage_encrypted, 
                            table_access_control_enabled=table_access_control_enabled, ws_id = ws_id, analysis_schema_name= json_["analysis_schema_name"])
@@ -171,8 +187,58 @@ def get_all_workspaces():
     first_ws = str(workspaces[0])
 
     #Define Driver Widgets
-    #dbutils.widgets.dropdown("workspaces", first_ws, [str(x) for x in workspaces], "a. Workspaces")
+    dbutils.widgets.dropdown("workspaces", first_ws, [str(x) for x in workspaces], "a. Workspaces")
 
 # COMMAND ----------
 
+#Workspace Level SAT Check Configuration
+params = {'Analysis Enabled': 'analysis_enabled', 
+                  'SSO Enabled':'sso_enabled', 
+                  'SCIM Enabled': 'scim_enabled', 
+                  'ANY VPC PEERING': 'vpc_peering_done', 
+                  'Object Storage Encrypted': 'object_storage_encrypted', 
+                  'Table Access Control Enabled':'table_access_control_enabled'}
+#SET & GET SAT check configurations for the workspace
+import yaml
+def get_workspace_self_assessment_check_config():
+    prefix = getConfigPath()
+    userfile = f'{prefix}/self_assessment_checks.yaml'
+    # Load the YAML configuration
+    with open(userfile, 'r') as file:
+        all_checks = yaml.safe_load(file)
+    
+    # Prepare a list to hold the extracted data
+    checks_data = {}
 
+    # Iterate over each entry to extract required fields
+    for check in all_checks:
+        checks_data[check['id']] = {
+            'check': check['check'],
+            'enabled': check['enabled']
+        }
+    return checks_data
+    
+def set_workspace_self_assessment_check_config(checks_data):
+    #Retrieve widget values 
+    sso_enabled = checks_data.get(18)['enabled']
+    scim_enabled = checks_data.get(19)['enabled']
+    vpc_peering_done = checks_data.get(28)['enabled']
+    object_storage_encrypted = checks_data.get(4)['enabled']
+    table_access_control_enabled = checks_data.get(20)['enabled']
+    #apply_setting_to_all_ws_enabled = dbutils.widgets.get("apply_setting_to_all_ws_enabled")
+    
+    #ws_id = workspace.split('_')[-1]
+    
+    
+    s_sql = '''
+                UPDATE  {analysis_schema_name}.account_workspaces 
+                SET sso_enabled={sso_enabled}, 
+                    scim_enabled = {scim_enabled},
+                    vpc_peering_done = {vpc_peering_done},
+                    object_storage_encrypted = {object_storage_encrypted},
+                    table_access_control_enabled = {table_access_control_enabled}
+            '''.format(sso_enabled=sso_enabled, scim_enabled=scim_enabled, 
+                        vpc_peering_done=vpc_peering_done, object_storage_encrypted=object_storage_encrypted, 
+                        table_access_control_enabled=table_access_control_enabled, analysis_schema_name= json_["analysis_schema_name"])
+    print(s_sql)
+    spark.sql(s_sql)

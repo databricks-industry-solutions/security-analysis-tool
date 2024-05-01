@@ -62,3 +62,22 @@ status6 = dbutils.notebook.run('./Setup/6. configure_alerts_template', 3000)
 if (status6 != 'OK'):
     loggr.exception('Error Encountered in Step#6', status6)
     dbutils.notebook.exit()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Read manual self assesment file and load workspace configurations for analysis
+
+# COMMAND ----------
+
+# DBTITLE 0,%md Running Manual SAT Checks here (/notebooks/setup/update_workspace_configurations)
+
+status9 = dbutils.notebook.run('./Setup/9. self_assess_workspace_configuration', 3000)
+if (status9 != 'OK'):
+    loggr.exception('Error Encountered in Step#9', status9)
+    dbutils.notebook.exit()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Running Manual SAT Checks here (/notebooks/setup/update_workspace_configurations)

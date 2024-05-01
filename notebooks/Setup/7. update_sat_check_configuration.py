@@ -1,4 +1,8 @@
 # Databricks notebook source
+# MAGIC %pip install PyYAML
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/initialize
 
 # COMMAND ----------

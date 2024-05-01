@@ -137,20 +137,6 @@ else:
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC Running Manual SAT Checks here (/notebooks/setup/update_workspace_configurations)
-
-# COMMAND ----------
-
-# MAGIC %run ./../Utils/sat_checks_config
-
-# COMMAND ----------
-
-get_workspace_check_config()
-set_workspace_check_config()
-
-# COMMAND ----------
-
 display(spark.sql(f'select * from {json_["analysis_schema_name"]}.security_checks order by run_id desc, workspaceid asc, check_time asc'))
 
 # COMMAND ----------

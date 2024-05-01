@@ -7,4 +7,4 @@ SDK_VERSION='0.1.32'
 
 # COMMAND ----------
 
-# MAGIC %pip install dbl-sat-sdk=={SDK_VERSION}
+# MAGIC %pip install PyYAML dbl-sat-sdk=={SDK_VERSION} 
