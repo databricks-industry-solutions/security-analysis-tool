@@ -144,6 +144,7 @@ Please gather the following information before you start setting up:
        **Authenticate using a Service Principal**
 
        Create a Service Principal and generate a secret for it. Follow steps 1 to 3 in [this documentation](https://docs.databricks.com/dev-tools/authentication-oauth.html#:~:text=To%20create%20an%20OAuth%20secret%20for%20a%20service,the%20same%20as%20the%20service%20principal%E2%80%99s%20application%20ID)
+    Follow the instructions and add a service principal to a workspace using the admin console as detailed in the document for each workspace you would like to analyze as an admin (Note: the Admin role for the Service Principle is required to analyze many of the APIs).
        
        1. Set the use_sp_auth to `true` in order to use the Service Principal Authentication Flow
 
@@ -195,7 +196,7 @@ Please gather the following information before you start setting up:
 
       </details>  
 
-8. Setup configuration in secrets and access configuration via secrets
+9. Setup configuration in secrets and access configuration via secrets
     * Create a secret for the workspace PAT token
 
       **Note**: Replace \<workspace_id\> with your SAT deployment workspace id. 
@@ -301,7 +302,7 @@ Please gather the following information before you start setting up:
                   })
 
              ``` 
-           *  Follow the instructions "Add a service principal to a workspace" [Add a service principal to a workspace using the admin console](https://learn.microsoft.com/en-us/azure/databricks/administration-guide/users-groups/service-principals#--add-a-service-principal-to-a-workspace) as detailed in the document for each workspce you would like to analyze.
+           *  Follow the instructions "Add a service principal to a workspace" [Add a service principal to a workspace using the admin console](https://learn.microsoft.com/en-us/azure/databricks/administration-guide/users-groups/service-principals#--add-a-service-principal-to-a-workspace) as detailed in the document for each workspace you would like to analyze as an admin (Note: the Admin role for the Service Principle is required to analyze many of the APIs).
 
            <img src="./images/azure_service_account_workspaces_api.png" width="70%" height="70%">
 
@@ -346,7 +347,7 @@ Please gather the following information before you start setting up:
                       })
              ```                            
                            
-          *  Follow the instructions in Step 4 of [Authenticate to workspace or account APIs with a Google ID token]([https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-4-add-the-service-account-as-a-workspace-or-account-user)) as detailed in the document for each workspce you would like to analyze and the account to add your main service account (SA-2).
+          *  Follow the instructions in Step 4 of [Authenticate to workspace or account APIs with a Google ID token]([https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-1-create-two-service-accounts](https://docs.gcp.databricks.com/dev-tools/api/latest/authentication-google-id-account-private-preview.html#step-4-add-the-service-account-as-a-workspace-or-account-user)) as detailed in the document for each workspace you would like to analyze and the account to add your main service account (SA-2) as an admin (Note: the Admin role for the Service account is required to analyze many of the APIs).
 
            <img src="./images/gcp_service_account_workspaces_api.png" width="70%" height="70%">
 
