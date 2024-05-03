@@ -1,15 +1,25 @@
 # AWS Setup Guide
-This guide provides step-by-step instructions for installing the Security Analysis Tool (SAT) in **AWS**.
+
+This guide will help you setup the Security Analysis Tool (SAT) on AWS Databricks.
+
+- [AWS Setup Guide](#aws-setup-guide)
+  - [Prerequisites](#prerequisites)
+    - [Service Principal](#service-principal)
+  - [Installation](#installation)
+  - [Troubleshooting](#troubleshooting)
+
+
 
 ## Prerequisites
 
-Before proceeding with the installation, make sure you have the following prerequisites:
+There are some pre-requisites that need to be met before you can setup SAT on AWS. Make sure you have the appropriate permissions in your AWS Cloud account to create the resources mentioned below.
 
-- Python 3.9 or higher
-- Databricks Account ID
-- Databricks SQL Warehouse (To run the SQL dashboard)
-- Databricks Service Principal
-- Pypi access from your workspace (To install the SAT utility library)
 
-## Setup
-To install SAT in AWS, follow these steps:
+### Service Principal
+
+The first step is to create a Service Principal in AWS. This will allow SAT to authenticate with AWS services. Follow the steps below to create a Service Principal:
+
+
+## Installation
+
+## Troubleshooting

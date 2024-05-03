@@ -1,8 +1,19 @@
 # Setup Guide
 
-## Considerations
+Follow this guide to setup the Security Analysis Tool (SAT) on your Databricks workspace.
 
-SAT cretes a new security_analysis database and Delta tables. If you are an existing SAT user please run the following command:
+## Pre-requisites
+
+Before proceeding with the installation, make sure you have the following prerequisites:
+
+- Python 3.9 or higher
+- Databricks Account ID
+- Databricks SQL Warehouse (To run the SQL dashboard)
+- Pypi access from your workspace (To install the SAT utility library)
+
+### Considerations
+
+SAT creates a new security_analysis database and Delta tables. If you are an existing SAT user please run the following command:
 
 ### Hive metastore based schema
 
@@ -16,4 +27,10 @@ SAT cretes a new security_analysis database and Delta tables. If you are an exis
   drop  database <uc_catalog_name>.security_analysis cascade;
 ```
 
-## Pre-requisites
+## Setup
+
+SAT can be setup on any of the cloud providers where Databricks is hosted. Follow the setup guide for the cloud provider you are using:
+
+- [AWS Setup Guide](./setup/aws.md)
+- [Azure Setup Guide](./setup/azure.md)
+- [GCP Setup Guide](./setup/gcp.md)
