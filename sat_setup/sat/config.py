@@ -73,6 +73,7 @@ def cloud_specific_questions(client: WorkspaceClient):
             name="azure-client-secret",
             message="Client Secret",
             ignore=cloud_validation(client, "azure"),
+            echo="",
         ),
     ]
     gcp = [
