@@ -17,6 +17,6 @@ def get_db_client():
     #workspace_id = json_['workspace_id']
     LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
     LOGGR = LoggingUtils.get_logger()
-
+    LOGGR.info(jsonstr)
     #sat_db_client = SatDBClient(jsonstr)
     return jsonstr
