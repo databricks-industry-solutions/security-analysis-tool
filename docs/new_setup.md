@@ -7,6 +7,7 @@ Follow this guide to setup the Security Analysis Tool (SAT) on your Databricks w
 Before proceeding with the installation, make sure you have the following prerequisites:
 
 - Python 3.9 or higher
+- Databricks CLI installed with a profile logged (See [here](https://docs.databricks.com/en/dev-tools/cli/install.html).)
 - Databricks Account ID
 - Databricks SQL Warehouse (To run the SQL dashboard)
 - Pypi access from your workspace (To install the SAT utility library)
