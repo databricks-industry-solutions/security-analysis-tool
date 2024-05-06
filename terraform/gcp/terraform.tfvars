@@ -5,5 +5,5 @@ account_console_id = ""
 
 ### GCP Specific Variables
 
-service_account_json_file   = ""
+gs_path_to_json   = ""
 impersonate_service_account = ""

@@ -1,5 +1,11 @@
 # Databricks notebook source
 # MAGIC %md
+# MAGIC **Notebook name:** workspace_stats  
+# MAGIC **Functionality:** runs analysis logic on the workspace stats and writes the results into a checks tables 
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ##### This Notebook gets all Account Stats and Workspace level Stats like number of jobs, numer of users, pricing tier, region, etc
 
 # COMMAND ----------

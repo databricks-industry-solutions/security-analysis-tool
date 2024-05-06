@@ -1,4 +1,9 @@
 # Databricks notebook source
+
+# MAGIC %md
+# MAGIC **Notebook name:** 8. update_workspace_configuration.      
+# MAGIC **Functionality:** Optional notebooks for updating SAT workspace customization.  
+
 # MAGIC %pip install PyYAML
 
 # COMMAND ----------

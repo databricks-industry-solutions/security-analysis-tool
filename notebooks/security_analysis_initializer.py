@@ -1,6 +1,8 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC Notebook to initialize setup of SAT 
+# MAGIC **Notebook name:** security_analysis_initializer.      
+# MAGIC **Functionality:** Main notebook to initialize setup of SAT
+# MAGIC
 
 # COMMAND ----------
 

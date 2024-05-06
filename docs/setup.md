@@ -59,7 +59,7 @@ Please gather the following information before you start setting up:
         <img src="./images/account_id.png" width="30%" height="30%">
 
  2. A Single user cluster  
-    *  Databricks Runtime Version  11.3 LTS or above
+    *  Databricks Runtime Version  14.3 LTS
     *  Node type i3.xlarge (please start with a max of a two node cluster and adjust to 5 nodes if you have many workspaces that will be analyzed with SAT)  
 
         <img src="./images/job_cluster.png" width="50%" height="50%">
