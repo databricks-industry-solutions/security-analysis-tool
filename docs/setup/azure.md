@@ -45,10 +45,6 @@ To setup SAT on Azure, you will need the following credentials:
 
 ## Installation
 
-To execute SAT, run the following command:
-
-```bash
-python main.py
-```
+To execute SAT run the `install.sh` script on your terminal.
 
 ## Troubleshooting
