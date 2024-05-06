@@ -197,4 +197,54 @@ def get_all_workspaces():
 
 # COMMAND ----------
 
+#Workspace Level SAT Check Configuration
+params = {'Analysis Enabled': 'analysis_enabled', 
+                  'SSO Enabled':'sso_enabled', 
+                  'SCIM Enabled': 'scim_enabled', 
+                  'ANY VPC PEERING': 'vpc_peering_done', 
+                  'Object Storage Encrypted': 'object_storage_encrypted', 
+                  'Table Access Control Enabled':'table_access_control_enabled'}
+#SET & GET SAT check configurations for the workspace
+import yaml
+def get_workspace_self_assessment_check_config():
+    prefix = getConfigPath()
+    userfile = f'{prefix}/self_assessment_checks.yaml'
+    # Load the YAML configuration
+    with open(userfile, 'r') as file:
+        all_checks = yaml.safe_load(file)
+    
+    # Prepare a list to hold the extracted data
+    checks_data = {}
 
+    # Iterate over each entry to extract required fields
+    for check in all_checks:
+        checks_data[check['id']] = {
+            'check': check['check'],
+            'enabled': check['enabled']
+        }
+    return checks_data
+    
+def set_workspace_self_assessment_check_config(checks_data):
+    #Retrieve widget values 
+    sso_enabled = checks_data.get(18)['enabled']
+    scim_enabled = checks_data.get(19)['enabled']
+    vpc_peering_done = checks_data.get(28)['enabled']
+    object_storage_encrypted = checks_data.get(4)['enabled']
+    table_access_control_enabled = checks_data.get(20)['enabled']
+    #apply_setting_to_all_ws_enabled = dbutils.widgets.get("apply_setting_to_all_ws_enabled")
+    
+    #ws_id = workspace.split('_')[-1]
+    
+    
+    s_sql = '''
+                UPDATE  {analysis_schema_name}.account_workspaces 
+                SET sso_enabled={sso_enabled}, 
+                    scim_enabled = {scim_enabled},
+                    vpc_peering_done = {vpc_peering_done},
+                    object_storage_encrypted = {object_storage_encrypted},
+                    table_access_control_enabled = {table_access_control_enabled}
+            '''.format(sso_enabled=sso_enabled, scim_enabled=scim_enabled, 
+                        vpc_peering_done=vpc_peering_done, object_storage_encrypted=object_storage_encrypted, 
+                        table_access_control_enabled=table_access_control_enabled, analysis_schema_name= json_["analysis_schema_name"])
+    print(s_sql)
+    spark.sql(s_sql)
