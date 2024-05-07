@@ -352,7 +352,9 @@ def getConfigPath():
 
 # COMMAND ----------
 def basePath():
-    return "/Workspace/Applications/SAT/files"
+    import os
+
+    return os.path.abspath(os.getcwd()).split("/notebooks")[0]
 
 
 # COMMAND ----------
