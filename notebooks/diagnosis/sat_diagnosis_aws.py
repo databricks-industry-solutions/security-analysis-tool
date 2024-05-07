@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC **Notebook name:** Validate SAT Configs  
-# MAGIC **Functionality:** Diagnose account and workspace connections and writes workspaces that can be connected with status into the config file
+# MAGIC **Notebook name:** sat_diagnosis_aws  
+# MAGIC **Functionality:** Diagnose account and workspace connections for aws workspaces
 
 # COMMAND ----------
 
@@ -27,7 +27,7 @@ found = False
 for secret_scope in secret_scopes:
    
    if secret_scope.name == json_['master_name_scope']:
-      print('Your SAT configuration is has the required scope name')
+      print('Your SAT configuration has the required scope name')
       found=True
       break
 if not found:
@@ -65,7 +65,7 @@ except Exception as e:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Validate the following Values and make sure they are correct
+# MAGIC ### Validate the following values and make sure they are correct
 
 # COMMAND ----------
 
@@ -136,7 +136,7 @@ def getAWSTokenwithOAuth(source, baccount, client_id, client_secret):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Check to see if the SP client_id and cleint_secret are are valid
+# MAGIC ### Check to see if the SP client_id and cleint_secret are valid
 
 # COMMAND ----------
 

@@ -60,14 +60,14 @@ try:
    dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
    tokenkey = f"{json_['workspace_pat_token_prefix']}-{current_workspace}"
    dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
-   print("Your SAT configuration is has required secret names")
+   print("Your SAT configuration has required secret names")
 except Exception as e:
    dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Validate the following Values and make sure they are correct
+# MAGIC ### Validate the following values and make sure they are correct
 
 # COMMAND ----------
 
