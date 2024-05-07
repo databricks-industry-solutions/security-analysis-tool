@@ -1,6 +1,6 @@
 #/bin/bash
 
-folder="sat_setup"
+folder="dabs"
 
 version=$(python -c "import sys; print(sys.version_info[:])" 2>&1)
 if [[ -z "$version" ]]; then

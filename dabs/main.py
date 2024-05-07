@@ -30,6 +30,9 @@ def setup():
     try:
         client, answers, profile = form()
         install(client, answers, profile)
+
+        # os.system("clear")
+        # subprocess.call(f"sh ./setup.sh tmp test test_file".split(" "))
     except KeyboardInterrupt:
         print("Installation aborted.")
     except Exception as e:
