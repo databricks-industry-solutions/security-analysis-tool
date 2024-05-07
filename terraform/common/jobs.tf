@@ -19,8 +19,10 @@ resource "databricks_job" "initializer" {
     }
   }
 
-  notebook_task {
-    notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_initializer"
+  task {
+    notebook_task {
+      notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_initializer"
+    }
   }
 
 }
@@ -45,9 +47,13 @@ resource "databricks_job" "driver" {
       package = "dbl-sat-sdk"
     }
   }
-
-  notebook_task {
-    notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_driver"
+  task {
+    notebook_task {
+      base_parameters = {
+        "deployment" : "TF"
+      }
+      notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_driver"
+    }
   }
 
   schedule {

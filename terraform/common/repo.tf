@@ -2,4 +2,5 @@
 
 resource "databricks_repo" "security_analysis_tool" {
   url = "https://github.com/databricks-industry-solutions/security-analysis-tool.git"
+  path = "/Workspace/Applications/SAT"
 }
