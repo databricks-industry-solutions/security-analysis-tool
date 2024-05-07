@@ -345,7 +345,7 @@ def token_rule(df):
 if enabled:
     tbl_name = 'global_temp.tokens' + '_' + workspace_id
     sql = f'''
-            SELECT `comment`, `created_by_username`, `token_id` 
+            SELECT `comment`, `created_by_username`, from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss") as exp_date, `token_id` 
             FROM {tbl_name} 
               WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value}) OR 
                   expiry_time = -1 
@@ -449,7 +449,7 @@ check_id='42' #Use service principals
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 service_principals_evaluation_value = int(sbp_rec['evaluation_value'])
 def use_service_principals(df):  
-    if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > service_principals_evaluation_value:
+    if df is not None and not df.rdd.isEmpty() and  len(df.collect()) >= service_principals_evaluation_value:
         return (check_id, 0, {'SPs': len(df.collect())})
     else:
         return (check_id, 1, {'SPs':'no serviceprincipals found'})
@@ -598,7 +598,7 @@ if enabled:
     sql = f'''
         SELECT cluster_id, cluster_name, policy_id
         FROM {tbl_name}
-        WHERE policy_id is null  and (cluster_source='UI' OR cluster_source='API') AND workspace_id="{workspaceId}"
+        WHERE policy_id is null  and (cluster_source='UI' OR cluster_source='API')
     '''
     sqlctrl(workspace_id, sql, cluster_policy_check)
 
@@ -726,9 +726,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 dbfs_warehouses_evaluation_value = int(sbp_rec['evaluation_value'])
 def dbfs_check(df):
   
-    if df is not None and not df.rdd.isEmpty() and len(df.collect()) > dbfs_warehouses_evaluation_value:
+    if df is not None and not df.rdd.isEmpty() and len(df.collect()) >= dbfs_warehouses_evaluation_value:
         paths = df.collect()
-        paths_dict = {'clusters' : [i.path for i in paths]}
+        paths_dict = {'paths' : [i.path for i in paths]}
         return (check_id, 1, paths_dict)
     else:
         return (check_id, 0, {})   
@@ -968,7 +968,7 @@ if enabled:
     sql=f'''
         SELECT cluster_id, current_time, last_restart, datediff(current_time,last_restart) as diff 
         FROM (SELECT cluster_id,cluster_name,start_time,last_restarted_time, greatest(start_time,last_restarted_time) as last_start,   
-                to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000), "yyyy-MM-dd hh:mm:ss") as last_restart , current_timestamp() as 
+                to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000, "yyyy-MM-dd hh:mm:ss")) as last_restart , current_timestamp() as 
                 current_time 
               FROM {tbl_name} 
               WHERE state="RUNNING" and (cluster_source='UI' OR cluster_source='API') ) 
