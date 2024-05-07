@@ -82,6 +82,33 @@ for key in dbutils.secrets.list(sat_scope):
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ### Check to see if the PAT token are valid
+
+# COMMAND ----------
+
+import requests
+
+access_token = dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
+
+# Define the URL and headers
+workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+
+
+url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
+headers = {
+    'Authorization': f'Bearer {access_token}'
+}
+
+# Make the GET request
+response = requests.get(url, headers=headers)
+
+# Print the response
+print(response.json())
+
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ### Check to see if the access tokens are successfully created
 
 # COMMAND ----------
