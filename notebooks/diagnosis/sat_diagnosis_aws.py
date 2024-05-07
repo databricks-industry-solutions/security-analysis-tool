@@ -9,7 +9,58 @@
 
 # COMMAND ----------
 
-dbutils.secrets.listScopes()
+# MAGIC %run ../Utils/initialize
+
+# COMMAND ----------
+
+secret_scopes = dbutils.secrets.listScopes()
+display(secret_scopes)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Let us check if there is an SAT scope configured
+
+# COMMAND ----------
+
+found = False
+for secret_scope in secret_scopes:
+   
+   if secret_scope.name == json_['master_name_scope']:
+      print('Your SAT configuration is has the required scope name')
+      found=True
+      break
+if not found:
+   dbutils.notebook.exit('Your SAT configuration is missing required scope, please review setup instructions"')
+
+      
+
+# COMMAND ----------
+
+import json
+#Get current workspace id
+context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
+current_workspace = context['tags']['orgId']
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Let us check if there are required configs in the SAT scope
+
+# COMMAND ----------
+
+
+try:
+   dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
+   dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
+   dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
+   dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
+   dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
+   tokenkey = f"{json_['workspace_pat_token_prefix']}-{current_workspace}"
+   dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
+   print("Your SAT configuration is has required secret names")
+except Exception as e:
+   dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
 
 # COMMAND ----------
 
@@ -18,7 +69,8 @@ dbutils.secrets.listScopes()
 
 # COMMAND ----------
 
-sat_scope = 'sat_scope'
+sat_scope = json_['master_name_scope']
+
 for key in dbutils.secrets.list(sat_scope):
     print(key.key)
     secretvalue = dbutils.secrets.get(scope=sat_scope, key=key.key)
@@ -28,13 +80,13 @@ for key in dbutils.secrets.list(sat_scope):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Check to see if the tokens are valid
+# MAGIC ### Check to see if the PAT token are valid
 
 # COMMAND ----------
 
 import requests
 
-access_token = sat-token-<<your workspace id>>
+access_token = dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
 
 # Define the URL and headers
 workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
@@ -54,8 +106,65 @@ print(response.json())
 
 # COMMAND ----------
 
+def getAWSTokenwithOAuth(source, baccount, client_id, client_secret):
+        '''generates OAuth token for Service Principal authentication flow'''
+        '''baccount if generating for account. False for workspace'''
+        response = None
+        user_pass = (client_id,client_secret)
+        oidc_token = {
+            "User-Agent": "databricks-sat/0.1.0"
+        }
+        json_params = {
+            "grant_type": "client_credentials",
+            "scope": "all-apis"
+        }
+              
+        if baccount is True:
+            full_endpoint = f"https://accounts.cloud.databricks.com/oidc/accounts/{source}/v1/token" #url for accounts api  
+        else: #workspace
+            full_endpoint = f'https://{source}/oidc/v1/token'
+
+        response = requests.post(full_endpoint, headers=oidc_token,
+                                    auth=user_pass, data=json_params, timeout=60)  
+
+        if response is not None and response.status_code == 200:
+            return response.json()['access_token']
+        LOGGR.debug(json.dumps(response.json()))
+        return None
+
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC
+# MAGIC ### Check to see if the SP client_id and cleint_secret are are valid
+
+# COMMAND ----------
+
+token = getAWSTokenwithOAuth(workspaceUrl,False, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
+                             
+print(token)
+
+# COMMAND ----------
+
+import requests
+
+access_token = dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
+
+# Define the URL and headers
+workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+
+
+url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
+headers = {
+    'Authorization': f'Bearer {token}'
+}
+
+# Make the GET request
+response = requests.get(url, headers=headers)
+
+# Print the response
+print(response.json())
+
 
 # COMMAND ----------
 
@@ -66,13 +175,19 @@ print(response.json())
 
 # MAGIC %sh 
 # MAGIC
-# MAGIC #curl --header 'Authorization: Bearer <<Sat-token-workspace-id>>' -X GET 'https://adb-6583047541360945.5.azuredatabricks.net/api/2.0/clusters/spark-versions'
+# MAGIC curl --header 'Authorization: Bearer <token>' -X GET 'https://sfe.cloud.databricks.com/api/2.0/clusters/spark-versions'
+
+# COMMAND ----------
+
+access_token = getAWSTokenwithOAuth(dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id'),True, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
+                             
+print(access_token)
 
 # COMMAND ----------
 
 # MAGIC %sh 
 # MAGIC
-# MAGIC curl -v -H 'Authorization: Bearer <<Generate a token for the SP which is an Account admin>>'   -H 'x-databricks-account-console-api-version: 2.0' 'https://accounts.azuredatabricks.net/api/2.0/accounts/827e3e09-89ba-4dd2-9161-a3301d0f21c0/scim/v2/Users?startIndex=1&count=10'
+# MAGIC curl -v -H 'Authorization: Bearer <toke>'  'https://accounts.cloud.databricks.com/api/2.0/accounts/<account_console_id>/workspaces'
 # MAGIC
 # MAGIC
 
@@ -82,10 +197,10 @@ import requests
 
 # Define the URL and headers
 DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=sat_scope, key="account-console-id")
-url = f'https://accounts.azuredatabricks.net/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}'
+url = f'https://accounts.cloud.databricks.com/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
 
 ## Note: The access token should be generated for a SP which is an account admin to run this command.  
-access_token = <<Sat-token-workspace-id>>
+
 headers = {
      'Authorization': f'Bearer {access_token}' 
 }
@@ -144,4 +259,4 @@ openssl_connect(workspaceUrl, 443)
 
 # COMMAND ----------
 
-openssl_connect('accounts.azuredatabricks.net', 443)
+openssl_connect('accounts.cloud.databricks.com', 443)
