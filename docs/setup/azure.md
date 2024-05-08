@@ -61,7 +61,11 @@ To setup SAT on Azure, you will need the following credentials:
 
 To execute SAT run the `install.sh` script on your terminal.
 
+![](../gif/terminal-azure.gif)
+
 ## Troubleshooting
+
+If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate permissions in your Azure cloud account. If you are still facing issues, please reach out to the SAT team for assistance.
 
 ## References
 
