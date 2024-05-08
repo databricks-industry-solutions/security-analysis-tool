@@ -547,7 +547,8 @@ Please gather the following information before you start setting up:
             
             
 ## Troubleshooting
-   
+We created diagnosis notebooks for respective clouds to help troubleshoot your SAT setup. Please review notebooks/diagnosis/ folder.
+
 1. Incorrectly configured secrets
     * Error:
    
