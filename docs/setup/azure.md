@@ -7,9 +7,11 @@ This guide will help you setup the Security Analysis Tool (SAT) on Azure Databri
   - [Prerequisites](#prerequisites)
     - [App Registration](#app-registration)
     - [App Client Secrets](#app-client-secrets)
+    - [Add Service Prinicpal to Databricks](#add-service-prinicpal-to-databricks)
     - [Credentials Needed](#credentials-needed)
   - [Installation](#installation)
   - [Troubleshooting](#troubleshooting)
+  - [References](#references)
 
 ## Prerequisites
 
@@ -34,6 +36,18 @@ After creating the App Registration, you will need to create a client secret. Th
 * Enter a description for the client secret and select the expiry date. Click on `Add`.
 * Copy the value of the client secret and save it in a secure location.
 
+### Add Service Prinicpal to Databricks
+
+After creating the App Registration and client secret, you will need to add the App Registration as a service principal in Databricks. Follow the steps below to add the service principal:
+
+* As an Account Admin, navigate to the Databricks account console.
+* Select the User Management tab and click on the Service Principals tab.
+* Click Add Service Principal.
+* Paste the App Client ID and App Client Secret in the respective fields.
+* Click Add.
+
+See the [Databricks documentation](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals) for more information on adding service principals.
+
 ### Credentials Needed
 
 To setup SAT on Azure, you will need the following credentials:
@@ -48,3 +62,8 @@ To setup SAT on Azure, you will need the following credentials:
 To execute SAT run the `install.sh` script on your terminal.
 
 ## Troubleshooting
+
+## References
+
+* [Azure App Registration](https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)
+* [Databricks Service Principals](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals)
