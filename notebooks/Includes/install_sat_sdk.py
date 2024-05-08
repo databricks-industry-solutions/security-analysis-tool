@@ -22,7 +22,7 @@ if dbr_version < RECOMMENDED_DBR_FOR_SAT:
 
 # COMMAND ----------
 
-SDK_VERSION='0.1.32'
+SDK_VERSION='0.1.33'
 
 # COMMAND ----------
 
