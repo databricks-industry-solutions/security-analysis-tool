@@ -2,7 +2,7 @@
 
 Follow this guide to setup the Security Analysis Tool (SAT) on your Databricks workspace.
 
-## Pre-requisites
+## Prerequisites
 
 Before proceeding with the installation, make sure you have the following prerequisites:
 

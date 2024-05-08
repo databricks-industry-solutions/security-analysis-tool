@@ -2,13 +2,12 @@
 
 This guide will help you setup the Security Analysis Tool (SAT) on AWS Databricks.
 
+
 - [AWS Setup Guide](#aws-setup-guide)
   - [Prerequisites](#prerequisites)
     - [Service Principal](#service-principal)
   - [Installation](#installation)
   - [Troubleshooting](#troubleshooting)
-
-
 
 ## Prerequisites
 
