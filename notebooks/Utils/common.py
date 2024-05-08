@@ -240,7 +240,7 @@ def getConfigPath():
   cwd = os.getcwd().lower()
   if (cwd.rfind('/azure') != -1) or (cwd.rfind('/gcp') != -1):
     return '../../../configs'  
-  elif (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1):
+  elif (cwd.rfind('/includes') != -1) or (cwd.rfind('/setup') != -1) or (cwd.rfind('/utils') != -1 or (cwd.rfind('/diagnosis') != -1)):
     return '../../configs'
   elif (cwd.rfind('/notebooks') != -1):
     return '../configs'
