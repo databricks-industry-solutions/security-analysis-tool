@@ -138,7 +138,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('endpoints' + '_' + workspace_id, db_sql_client.get_sqlendpoint_list)
+bootstrap('dbsql_workspaceconfig' + '_' + workspace_id, db_sql_client.get_sql_warehouse_configuration)
 
 # COMMAND ----------
 
@@ -146,15 +146,7 @@ bootstrap('dbsql_alerts' + '_' + workspace_id, db_sql_client.get_alerts_list)
 
 # COMMAND ----------
 
-bootstrap('dbsql_warehouselist' + '_' + workspace_id, db_sql_client.get_sql_warehouse_list)
-
-# COMMAND ----------
-
 bootstrap('dbsql_warehouselistv2' + '_' + workspace_id, db_sql_client.get_sql_warehouse_listv2)
-
-# COMMAND ----------
-
-bootstrap('dbsql_workspaceconfig' + '_' + workspace_id, db_sql_client.get_sql_workspace_config)
 
 # COMMAND ----------
 
@@ -479,6 +471,51 @@ bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_shar
 
 # COMMAND ----------
 
+ bootstrap('registered_models' + '_' + workspace_id, uc_client.get_registered_models)
+
+# COMMAND ----------
+
+ bootstrap('workspace_metastore_summary' + '_' + workspace_id, uc_client.get_workspace_metastore_summary)
+
+# COMMAND ----------
+
+ bootstrap('artifacts_allowlists_init_scripts' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="INIT_SCRIPT")
+
+# COMMAND ----------
+
+ bootstrap('artifacts_allowlists_library_jars' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="LIBRARY_JAR")
+
+# COMMAND ----------
+
+ bootstrap('artifacts_allowlists_library_mavens' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="LIBRARY_MAVEN")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Delta sharing
+
+# COMMAND ----------
+
+from clientpkgs.delta_sharing import DeltaSharingClient
+try:
+    delta_sharing = DeltaSharingClient(json_)
+except:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+ bootstrap('delta_sharing_providers_list' + '_' + workspace_id, delta_sharing.get_sharing_providers_list)
+
+# COMMAND ----------
+
+ bootstrap('delta_sharing_recepients_list' + '_' + workspace_id, delta_sharing.get_sharing_recepients_list)
+
+# COMMAND ----------
+
+ bootstrap('delta_list_shares' + '_' + workspace_id, delta_sharing.get_list_shares)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### Workspace
 
@@ -495,6 +532,40 @@ bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_shar
 
 # This is expensive. 
 #bootstrap('wsnotebooks', workspace_client.get_all_notebooks)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Model serving endpoints
+
+# COMMAND ----------
+
+from clientpkgs.serving_endpoints import ServingEndpoints
+try:
+    serving_endpoints = ServingEndpoints(json_)
+except:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+ bootstrap('model_serving_endpoints' + '_' + workspace_id, serving_endpoints.get_endpoints)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Vector Search
+
+# COMMAND ----------
+
+from clientpkgs.vector_search import VectorSearch
+try:
+    vector_search = VectorSearch(json_)
+except:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+ bootstrap('vector_search_endpoint_list' + '_' + workspace_id, vector_search.get_endpoint_list)
 
 # COMMAND ----------
 

@@ -150,3 +150,84 @@ display(spark.sql(f'select * from {json_["analysis_schema_name"]}.security_check
 
 
 display(spark.sql(f'select * from {json_["analysis_schema_name"]}.workspace_run_complete order by run_id desc'))
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from global_temp.vector_search_endpoint_list_1657683783405196
+
+# COMMAND ----------
+
+tbl_name = 'global_temp.vector_search_endpoint_list_1657683783405196'
+sql = f'''select name from {tbl_name} '''
+try:
+    df = spark.sql(sql)
+    #vList = df.rdd.map(lambda x: x['name']).collect()
+    vList=df.collect()
+    print(vList)
+except Exception:
+    loggr.exception("Exception encountered")    
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from global_temp.registered_models_1657683783405196
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from global_temp.workspace_metastore_summary_1657683783405196 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from global_temp.workspace_metastore_summary_1657683783405196 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT name as model_name, endpoint_type, config
+# MAGIC         FROM  global_temp.model_serving_endpoints_1657683783405196 WHERE endpoint_type = 'EXTERNAL_MODEL' 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT *
+# MAGIC         FROM  global_temp.vector_search_endpoint_list_1657683783405196 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC --SELECT * FROM global_temp.artifacts_allowlists_library_mavens_1657683783405196
+# MAGIC SELECT *
+# MAGIC         FROM global_temp.artifacts_allowlists_library_mavens_1657683783405196
+# MAGIC         UNION
+# MAGIC         SELECT *
+# MAGIC         FROM global_temp.artifacts_allowlists_library_jars_1657683783405196
+
+# COMMAND ----------
+
+check_id='104' #INFO-38 Third-party library control
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def third_party_library_control(df):
+    if df is not None and not df.rdd.isEmpty() and df.count()>1:
+        display(df)
+        model_serving_endpoints_list = df.collect()
+        model_serving_endpoints_dict = {i : i for i in model_serving_endpoints_list}
+        #print(model_serving_endpoints_dict)                                
+        return (check_id, 0, {'third_party_library_control':'Artifact allowlist configured'})
+    else:
+        return (check_id, 1, {'third_party_library_control':'No artifact allowlist configured'})   
+if enabled:    
+    tbl_name_1 = 'global_temp.artifacts_allowlists_library_jars' + '_' + '1657683783405196'
+    tbl_name_2 = 'global_temp.artifacts_allowlists_library_mavens' + '_' + '1657683783405196'
+    sql=f'''
+        SELECT *
+        FROM {tbl_name_1} 
+        UNION
+        SELECT *
+        FROM {tbl_name_2} 
+        
+    '''
+    sqlctrl('1657683783405196', sql, third_party_library_control)

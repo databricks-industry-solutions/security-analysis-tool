@@ -106,6 +106,19 @@ print(response.json())
 
 # COMMAND ----------
 
+url = f'https://{workspaceUrl}/api/2.1/unity-catalog/models'
+headers = {
+    'Authorization': f'Bearer {access_token}'
+}
+
+# Make the GET request
+response = requests.get(url, headers=headers)
+
+# Print the response
+print(response.json())
+
+# COMMAND ----------
+
 def getAWSTokenwithOAuth(source, baccount, client_id, client_secret):
         '''generates OAuth token for Service Principal authentication flow'''
         '''baccount if generating for account. False for workspace'''
@@ -165,6 +178,27 @@ response = requests.get(url, headers=headers)
 # Print the response
 print(response.json())
 
+
+# COMMAND ----------
+
+import requests
+
+access_token = dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
+
+# Define the URL and headers
+workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+
+
+url = f'https://{workspaceUrl}/api/2.1/unity-catalog/models'
+headers = {
+    'Authorization': f'Bearer {token}'
+}
+
+# Make the GET request
+response = requests.get(url, headers=headers)
+
+# Print the response
+print(response.json())
 
 # COMMAND ----------
 
