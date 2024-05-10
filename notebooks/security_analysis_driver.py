@@ -204,30 +204,3 @@ except Exception:
 # MAGIC         UNION
 # MAGIC         SELECT *
 # MAGIC         FROM global_temp.artifacts_allowlists_library_jars_1657683783405196
-
-# COMMAND ----------
-
-check_id='104' #INFO-38 Third-party library control
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def third_party_library_control(df):
-    if df is not None and not df.rdd.isEmpty() and df.count()>1:
-        display(df)
-        model_serving_endpoints_list = df.collect()
-        model_serving_endpoints_dict = {i : i for i in model_serving_endpoints_list}
-        #print(model_serving_endpoints_dict)                                
-        return (check_id, 0, {'third_party_library_control':'Artifact allowlist configured'})
-    else:
-        return (check_id, 1, {'third_party_library_control':'No artifact allowlist configured'})   
-if enabled:    
-    tbl_name_1 = 'global_temp.artifacts_allowlists_library_jars' + '_' + '1657683783405196'
-    tbl_name_2 = 'global_temp.artifacts_allowlists_library_mavens' + '_' + '1657683783405196'
-    sql=f'''
-        SELECT *
-        FROM {tbl_name_1} 
-        UNION
-        SELECT *
-        FROM {tbl_name_2} 
-        
-    '''
-    sqlctrl('1657683783405196', sql, third_party_library_control)
