@@ -30,6 +30,8 @@ SAT creates a new security_analysis database and Delta tables. If you are an exi
 
 ## Setup
 
+> SAT is a productivity tool to help verify security configurations of Databricks deployments, it's not meant to be used as certification or attestation of your deployments. SAT project is regularly updated to improve the correctness of checks, add new checks, and fix bugs. Please send your feedback and comments to sat@databricks.com. 
+
 SAT can be setup on any of the cloud providers where Databricks is hosted. Follow the setup guide for the cloud provider you are using:
 
 - [AWS Setup Guide](./setup/aws.md)
@@ -40,3 +42,5 @@ SAT can be setup on any of the cloud providers where Databricks is hosted. Follo
 * [SAT AWS Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/aws/TERRAFORM_AWS.md) 
 * [SAT Azure Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/azure/TERRAFORM_Azure.md) 
 * [SAT GCP Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/gcp/TERRAFORM_GCP.md)
+
+ 

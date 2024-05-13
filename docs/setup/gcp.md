@@ -6,6 +6,7 @@ This guide will help you setup the Security Analysis Tool (SAT) on GCP Databrick
   - [Prerequisites](#prerequisites)
     - [Service Principal](#service-principal)
   - [Installation](#installation)
+    - [Credentials Needed](#credentials-needed)
   - [Troubleshooting](#troubleshooting)
 
 
@@ -22,4 +23,19 @@ The first step is to create a Service Principal in GCP. This will allow SAT to a
 
 ## Installation
 
+### Credentials Needed
+
+To setup SAT on Azure, you will need the following credentials:
+* Databricks Account ID
+
+To execute SAT follow this steps:
+- Clone the SAT repository
+- Run the `install.sh` script on your terminal.
+
+![](../gif/terminal-aws.gif)
+
+> Remember that the target workspace should have a profile in Databricks CLI
+
 ## Troubleshooting
+
+If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate permissions in your Azure cloud account. If you are still facing issues, please send your feedback and comments to sat@databricks.com. 
