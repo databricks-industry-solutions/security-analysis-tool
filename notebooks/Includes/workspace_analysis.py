@@ -1368,7 +1368,7 @@ print(f"Workspace Analysis - {tcomp} seconds to run")
 
 # COMMAND ----------
 
-check_id='103'# NFO-37,Informational,Compliance security profile for new workspaces
+check_id='103'# INFO-37,Informational,Compliance security profile for new workspaces
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def compliance_security_profile(df):
