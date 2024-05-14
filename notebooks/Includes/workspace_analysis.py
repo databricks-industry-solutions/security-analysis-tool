@@ -1368,4 +1368,23 @@ print(f"Workspace Analysis - {tcomp} seconds to run")
 
 # COMMAND ----------
 
+check_id='103'# NFO-37,Informational,Compliance security profile for new workspaces
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def compliance_security_profile(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'compliance security profile setting for new workspaces':'True'})
+    else:
+        return (check_id, 1, {'compliance security profile setting for new workspaces':'False'})   
+if enabled:    
+    tbl_name = 'global_temp.account_csp'
+    sql=f'''
+        SELECT *
+        FROM {tbl_name}  WHERE csp_enablement_account.is_enforced = true
+        
+    '''
+    sqlctrl(workspace_id, sql, compliance_security_profile)
+
+# COMMAND ----------
+
 dbutils.notebook.exit(f'Completed SAT workspace analysis in {tcomp} seconds')
