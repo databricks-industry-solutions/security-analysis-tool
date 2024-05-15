@@ -24,8 +24,13 @@ The first step is to create a Service Principal in Databricks. This will allow S
 - Select `Service Principal` and then `Add service principal`
 - Type a new name for the service principal and then create a new OAuth Secret.
 - Save the `Secret` and `Client ID`
-- 
-Note: The Service Principle requires an [Accounts Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--assign-account-admin-roles-to-a-service-principal), [Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** and needs to be a member of the [metastore admin group](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges#who-has-metastore-admin-privileges) is required to analyze many of the APIs
+- To deploy SAT in a workspace, you must add the Service Principal to the workspace.
+  
+![AWS_SP_Workspace](../images/aws_ws.png)
+
+> The Service Principle requires an [Accounts Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--assign-account-admin-roles-to-a-service-principal), [Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** and needs to be a member of the [metastore admin group](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges#who-has-metastore-admin-privileges) is required to analyze many of the APIs
+
+
 
 ## Installation
 
