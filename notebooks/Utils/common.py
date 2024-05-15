@@ -352,9 +352,15 @@ def getConfigPath():
 
 # COMMAND ----------
 def basePath():
-    import os
-
-    return os.path.abspath(os.getcwd()).split("/notebooks")[0]
+    path = (
+        dbutils.notebook.entry_point.getDbutils()
+        .notebook()
+        .getContext()
+        .notebookPath()
+        .get()
+    )
+    path = path[: path.find("/notebooks")]
+    return f"/Workspace{path}"
 
 
 # COMMAND ----------

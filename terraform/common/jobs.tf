@@ -25,7 +25,7 @@ resource "databricks_job" "initializer" {
       }
     }
     notebook_task {
-      notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_initializer"
+      notebook_path = "${databricks_repo.security_analysis_tool.workspace_path}/notebooks/security_analysis_initializer"
     }
   }
 
@@ -59,7 +59,7 @@ resource "databricks_job" "driver" {
       }
     }
     notebook_task {
-      notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_driver"
+      notebook_path = "${databricks_repo.security_analysis_tool.workspace_path}/notebooks/security_analysis_driver"
     }
   }
 
