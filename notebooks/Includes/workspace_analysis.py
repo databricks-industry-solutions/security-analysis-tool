@@ -147,11 +147,13 @@ check_id='35' #Private Link
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 workspaceId = workspace_id
-
-def private_link(df):
+private_link = False
+def private_link_enabled(df):
     if df is not None and not df.rdd.isEmpty():
+        private_link = True
         return (check_id, 0, {})
     else:
+        private_link = False
         return (check_id, 1, {'workspaceId' : workspaceId})     
 
 if enabled:
@@ -161,7 +163,7 @@ if enabled:
         FROM {tbl_name}
         WHERE private_access_settings_id is not null AND workspace_id = "{workspaceId}"
     ''' 
-    sqlctrl(workspace_id, sql, private_link) 
+    sqlctrl(workspace_id, sql, private_link_enabled) 
 
 # COMMAND ----------
 
@@ -193,13 +195,16 @@ check_id='37' #IP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 workspaceId = workspace_id
-
+ip_access_list = False
 def public_access_enabled(df):
     if df is not None and len(df.columns)==0:
+        ip_access_list = False
         return (check_id, 1, {'workspaceId': workspaceId})    
     if df is not None and not df.rdd.isEmpty():
+        ip_access_list = True
         return (check_id, 0, {})
     else:
+        ip_access_list = False
         return (check_id, 1, {'workspaceId': workspaceId})   
     
 if enabled: 
@@ -253,6 +258,28 @@ def vpc_peering(df):
 # The 1=1 logic is intentional to get the human input as an answer for this check 
 if enabled:  
     sqlctrl(workspace_id, '''select * where 1=1''', vpc_peering) 
+
+# COMMAND ----------
+
+check_id='89' #NS-7 Secure model serving endpoints
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def model_serving_endpoints(df):
+    if df is not None and not df.rdd.isEmpty() and (ip_access_list==False and private_link == False):
+        model_serving_endpoints_list = df.collect()
+        model_serving_endpoints_dict = {i.model_name : [i.endpoint_type,i.config] for i in model_serving_endpoints_list}
+        
+        return (check_id, 1, model_serving_endpoints_dict)
+    else:
+        return (check_id, 0, {'model_serving_endpoints':'Model serving endpoints protected with IP access list or private link'})   
+if enabled:    
+    tbl_name = 'global_temp.model_serving_endpoints' + '_' + workspace_id
+    sql=f'''
+        SELECT model_name, endpoint_type, config
+        FROM {tbl_name} 
+        
+    '''
+    sqlctrl(workspace_id, sql, model_serving_endpoints)
 
 # COMMAND ----------
 
@@ -565,6 +592,29 @@ def object_storage_encryption_rule(df):
 #The 1=1 logic is intentional to get the human/manual input as an answer for this check
 if enabled:  
     sqlctrl(workspace_id, '''select * where 1=1''', object_storage_encryption_rule)
+
+# COMMAND ----------
+
+check_id='101' #DP-14 Store and retrieve embeddings securely
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def vector_search_endpoint_list(df):
+    if df is not None and not df.rdd.isEmpty():
+        vector_search_endpoint_list = df.collect()
+        vector_search_endpoint_dict = {i.name : [i.endpoint_type, i.creator, i.num_indexes] for i in vector_search_endpoint_list}
+        
+        return (check_id, 0, vector_search_endpoint_dict )
+    else:
+        return (check_id, 1, {'vector_search_endpoint_list':'No Vector Search Endpoints found'})  
+if enabled:    
+    tbl_name = 'global_temp.vector_search_endpoint_list' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name} 
+        
+    '''
+    sqlctrl(workspace_id, sql, vector_search_endpoint_list)
+
 
 # COMMAND ----------
 
@@ -1204,6 +1254,28 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='78' #	GOV-28  Check Govern model assets
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def models_in_uc(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_models = df.collect()
+        uc_models_dict = {i.name : [i.full_name] for i in uc_models}
+        
+        return (check_id, 0, uc_models_dict )
+    else:
+        return (check_id, 1, {})   
+if enabled:    
+    tbl_name = 'global_temp.registered_models' + '_' + workspace_id
+    sql=f'''
+        SELECT name, catalog_name,schema_name,owner, full_name
+        FROM {tbl_name} 
+        
+    '''
+    sqlctrl(workspace_id, sql, models_in_uc)
+
+# COMMAND ----------
+
 check_id='61' #	INFO-17  Check Serverless Compute enabled
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -1245,8 +1317,73 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='90' #INFO-29 Streamline the usage and management of various large language model (LLM) providers
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def model_serving_endpoints_external_model(df):
+    if df is not None and not df.rdd.isEmpty() and df.count()>1:
+        model_serving_endpoints_list = df.collect()
+        model_serving_endpoints_dict = {i.name : [i.endpoint_type,i.config] for i in model_serving_endpoints_list}
+        
+        return (check_id, 0, model_serving_endpoints_dict)
+    else:
+        return (check_id, 1, {'model_serving_endpoints_external_model':'No model serving endpoints with endpoint type EXTERNAL_MODEL found'})   
+if enabled:    
+    tbl_name = 'global_temp.model_serving_endpoints' + '_' + workspace_id
+    sql=f'''
+        SELECT name, endpoint_type, config
+        FROM {tbl_name}  WHERE endpoint_type = 'EXTERNAL_MODEL'  
+        
+    '''
+    sqlctrl(workspace_id, sql, model_serving_endpoints_external_model)
+
+# COMMAND ----------
+
+check_id='104' #INFO-38 Third-party library control
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def third_party_library_control(df):
+    if df is not None and not df.rdd.isEmpty():
+        print(df)
+        return (check_id, 0, {'third_party_library_control':'Artifact allowlist configured'})
+    else:
+        return (check_id, 1, {'third_party_library_control':'No artifact allowlist configured'})   
+if enabled:    
+    tbl_name_1 = 'global_temp.artifacts_allowlists_library_jars' + '_' + workspace_id
+    tbl_name_2 = 'global_temp.artifacts_allowlists_library_mavens' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name_1} 
+        UNION
+        SELECT *
+        FROM {tbl_name_2} 
+        
+    '''
+    sqlctrl(workspace_id, sql, third_party_library_control)
+
+# COMMAND ----------
+
 tcomp = time.time() - start_time
 print(f"Workspace Analysis - {tcomp} seconds to run")
+
+# COMMAND ----------
+
+check_id='103'# INFO-37,Informational,Compliance security profile for new workspaces
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def compliance_security_profile(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'compliance security profile setting for new workspaces':'True'})
+    else:
+        return (check_id, 1, {'compliance security profile setting for new workspaces':'False'})   
+if enabled:    
+    tbl_name = 'global_temp.account_csp'
+    sql=f'''
+        SELECT *
+        FROM {tbl_name}  WHERE csp_enablement_account.is_enforced = true
+        
+    '''
+    sqlctrl(workspace_id, sql, compliance_security_profile)
 
 # COMMAND ----------
 
