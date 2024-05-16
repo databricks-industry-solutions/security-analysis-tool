@@ -124,6 +124,8 @@ response = requests.get(
           timeout=60
         )
 
+exists = True
+
 if 'RESOURCE_DOES_NOT_EXIST' not in response.text:
     json_response = response.json()
     dashboard_id = json_response['resource_id']   
@@ -173,9 +175,14 @@ response = requests.post(
           timeout=60
         )
 
-json_response = response.json()
+exists = False
 
-dashboard_id = json_response['dashboard_id']
+if 'RESOURCE_ALREADY_EXISTS' not in response.text:
+    json_response = response.json()
+    dashboard_id = json_response['dashboard_id']  
+else:
+    exists = False
+    print("Lakeview Dashboard already exists")  
 
 # COMMAND ----------
 
