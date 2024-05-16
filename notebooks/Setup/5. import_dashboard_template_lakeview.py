@@ -23,12 +23,8 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-# COMMAND ----------
-
 dfexist = readWorkspaceConfigFile()
 dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceGlobalTempView('all_workspaces') 
-
-# COMMAND ----------
 
 # COMMAND ----------
 
@@ -46,72 +42,75 @@ ws = (workspacedf.collect())[0]
 
 # COMMAND ----------
 
-import requests
-import json
-
-DOMAIN = ws.deployment_url
-TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
-loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!")
-response = requests.get(
-          'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % TOKEN},
-          json=None,
-          timeout=60 
-        )
-if '\"error_code\":\"403\"' not in response.text:
-    resources = json.loads(response.text)
-    found = False
-    for resource in resources:
-        if resource['endpoint_id'] == json_['sql_warehouse_id']:
-            data_source_id = resource['id']
-            loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
-            found = True
-            break
-    if (found == False):
-        dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
-else:
-    dbutils.notebook.exit("Invalid access token, check PAT configuration value for this workspace.")      
-
-# COMMAND ----------
-
 # MAGIC %md
-# MAGIC #Import the Dashboard into the workspace
-
-# COMMAND ----------
-
-with open('/Workspace/Applications/SAT/files/dashboards/SAT_Dashboard.json') as json_file: CONTENT = json.load(json_file)
-
-BODY = {'path': '/Workspace/Applications/SAT/files/dashboards/SAT - Security Analysis Tool (Lakeview).lvdash.json', 'content': CONTENT['content'], 'format': 'AUTO', 'overwrite': 'true'}
-
-loggr.info(f"Importing Dashboard")
-response = requests.post(
-          'https://%s/api/2.0/workspace/import' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % TOKEN},
-          json=BODY,
-          timeout=60
-        )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # Get the metadata of the imported Dashboard
+# MAGIC # Delete previously created Dashboard
 
 # COMMAND ----------
 
 import requests
-import json
 
 BODY = {'path': '/Workspace/Applications/SAT/files/dashboards/SAT - Security Analysis Tool (Lakeview).lvdash.json'}
 
-loggr.info(f"Getting metadata of dashboard")
-response = requests.post(
+loggr.info(f"Getting Dashboard")
+response = requests.get(
           'https://%s/api/2.0/workspace/get-status' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % TOKEN},
           json=BODY,
           timeout=60
         )
 
-dashboard_id = json.loads(response.content.decode('utf-8'))['resource_id']
+if 'RESOURCE_DOES_NOT_EXIST' not in response.text:
+    json_response = response.json()
+    dashboard_id = json_response['resource_id']   
+else:
+    exists = False
+    print("Dashboard doesn't exist yet")           
+
+
+# COMMAND ----------
+
+#Delete using the API DELETE /api/2.0/lakeview/dashboards/
+
+if exists != False:
+
+  loggr.info(f"Deleting Dashboard")
+  response = requests.delete(
+            'https://%s/api/2.0/lakeview/dashboards/%s' % (DOMAIN, dashboard_id),
+            headers={'Authorization': 'Bearer %s' % TOKEN},
+            json=BODY,
+            timeout=60
+          )
+
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # Create Dashboard from json definition
+
+# COMMAND ----------
+
+import requests
+json_file_path = "/Workspace/Applications/SAT/files/dashboards/SAT_Dashboard_definition.json"
+
+# Read the JSON file as a string
+with open(json_file_path) as json_file:
+    json_data = json.load(json_file)
+
+json_string = json_string = json.dumps(json_data)
+
+BODY = {'display_name': 'SAT - Security Analysis Tool (Lakeview)','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': "/Workspace/Applications/SAT/files/dashboards"}
+
+loggr.info(f"Creating Dashboard")
+response = requests.post(
+          'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
+          headers={'Authorization': 'Bearer %s' % TOKEN},
+          json=BODY,
+          timeout=60
+        )
+
+json_response = response.json()
+
+dashboard_id = json_response['dashboard_id']
 
 # COMMAND ----------
 
@@ -133,6 +132,8 @@ response = requests.post(
           json=BODY,
           timeout=60
         )
+
+response.text
 
 # COMMAND ----------
 
