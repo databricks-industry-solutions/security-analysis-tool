@@ -23,6 +23,21 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
+# COMMAND ----------
+
+dfexist = readWorkspaceConfigFile()
+dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceGlobalTempView('all_workspaces') 
+
+# COMMAND ----------
+
+# COMMAND ----------
+
+import json
+context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
+current_workspace = context['tags']['orgId']
+
+# COMMAND ----------
+
 workspacedf = spark.sql("select * from `global_temp`.`all_workspaces` where workspace_id='" + current_workspace + "'" )
 if (workspacedf.rdd.isEmpty()):
     dbutils.notebook.exit("The current workspace is not found in configured list of workspaces for analysis.")
@@ -85,8 +100,6 @@ response = requests.post(
 
 import requests
 import json
-
-with open('SAT_Dashboard.json') as json_file: CONTENT = json.load(json_file)
 
 BODY = {'path': '/Workspace/Applications/SAT/files/dashboards/SAT - Security Analysis Tool (Lakeview).lvdash.json'}
 
