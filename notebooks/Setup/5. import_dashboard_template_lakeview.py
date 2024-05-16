@@ -42,6 +42,33 @@ ws = (workspacedf.collect())[0]
 
 # COMMAND ----------
 
+import requests
+DOMAIN = ws.deployment_url
+TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
+loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!")
+response = requests.get(
+          'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
+          headers={'Authorization': 'Bearer %s' % TOKEN},
+          json=None,
+          timeout=60 
+        )
+if '\"error_code\":\"403\"' not in response.text:
+    resources = json.loads(response.text)
+    found = False
+    for resource in resources:
+        if resource['endpoint_id'] == json_['sql_warehouse_id']:
+            data_source_id = resource['id']
+            loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
+            found = True
+            break
+    if (found == False):
+        dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
+else:
+    dbutils.notebook.exit("Invalid access token, check PAT configuration value for this workspace.")            
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Modify json file with the selected catalog
 
