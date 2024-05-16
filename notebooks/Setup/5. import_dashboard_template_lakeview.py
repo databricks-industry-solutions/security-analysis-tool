@@ -49,7 +49,7 @@ ws = (workspacedf.collect())[0]
 
 
 # Path to the JSON file
-file_path = '/Workspace/Users/andres.zuniga@databricks.com/SAT_Dashboard_definition.json'
+file_path = '/Workspace/Applications/SAT/files/dashboards/SAT_Dashboard_definition.json'
 
 # String to search and replace
 old_string = 'main.security_analysis'
