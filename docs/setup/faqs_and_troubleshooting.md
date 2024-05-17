@@ -4,21 +4,21 @@
     You can still setup SAT by downloading the [release zip](https://github.com/databricks-industry-solutions/security-analysis-tool/releases) file and by using Git repo to load SAT project into your workspace.
      * Add Repo by going to Repos in your workspace:  
      
-      <img src="./images/add_repo_1.png" width="50%" height="50%">   
+      <img src=".././images/add_repo_1.png" width="50%" height="50%">   
  
      * Type SAT as your "Repository name" and uncheck "Create repo by cloning a Git repository"
  
-      <img src="./images/add_repo_2.png" width="50%" height="50%">
+      <img src=".././images/add_repo_2.png" width="50%" height="50%">
  
      * Click on the pulldown menu and click on Import
       
-      <img src="./images/add_repo_3.png" width="50%" height="50%">
+      <img src=".././images/add_repo_3.png" width="50%" height="50%">
 
      * Drag and drop the release zip file and click Import
  
-      <img src="./images/add_repo_4.png" width="50%" height="50%">
+      <img src=".././images/add_repo_4.png" width="50%" height="50%">
       
-      <img src="./images/add_repo_5.png" width="50%" height="50%"> 
+      <img src=".././images/add_repo_5.png" width="50%" height="50%"> 
     
     You should see the SAT project in your workspace. 
 2. Can SAT make modifications to my workspaces and account?
