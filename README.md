@@ -7,7 +7,11 @@
 # Security Analysis Tool (SAT) 
 <img src="./images/sat_icon.jpg" width="10%" height="10%">
 
-Refer to [manual setup guide](./docs/setup.md) or [Terraform](./terraform) to setup and optional [video](https://www.youtube.com/watch?v=xAav6GslSd8) overview with follow along instruction.
+Refer to specific use-case:
+- [AWS](./docs/setup/aws.md)
+- [Azure](./docs/setup/azure.md)
+- [GCP](./docs/setup/gcp.md)
+- [Terraform](./terraform/README.md)
 
 ## Introduction
 
