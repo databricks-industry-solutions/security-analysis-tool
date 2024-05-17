@@ -41,7 +41,7 @@ To execute SAT follow this steps:
 - Clone the SAT repository
 - Run the `install.sh` script on your terminal.
 
-![](../gif/terminal-aws.gif)
+![](../gif/terminal-gcp.gif)
 
 > Remember that the target workspace should have a profile in Databricks CLI
 
