@@ -181,7 +181,7 @@ if 'RESOURCE_ALREADY_EXISTS' not in response.text:
     json_response = response.json()
     dashboard_id = json_response['dashboard_id']  
 else:
-    exists = False
+    exists = True
     print("Lakeview Dashboard already exists")  
 
 # COMMAND ----------
@@ -194,18 +194,21 @@ else:
 import requests
 import json
 
-URL = "https://"+DOMAIN+"/api/2.0/lakeview/dashboards/"+dashboard_id+"/published"
-BODY = {'embed_credentials': 'true', 'warehouse_id': json_['sql_warehouse_id']}
+if exists != True:
 
-loggr.info(f"Publishing the Dashboard using the SAT SQL Warehouse")
-response = requests.post(
-          URL,
-          headers={'Authorization': 'Bearer %s' % TOKEN},
-          json=BODY,
-          timeout=60
-        )
+    URL = "https://"+DOMAIN+"/api/2.0/lakeview/dashboards/"+dashboard_id+"/published"
+    BODY = {'embed_credentials': 'true', 'warehouse_id': json_['sql_warehouse_id']}
 
-response.text
+    loggr.info(f"Publishing the Dashboard using the SAT SQL Warehouse")
+    response = requests.post(
+            URL,
+            headers={'Authorization': 'Bearer %s' % TOKEN},
+            json=BODY,
+            timeout=60
+            )
+
+else:
+    print("Dashboard already exists")
 
 # COMMAND ----------
 
