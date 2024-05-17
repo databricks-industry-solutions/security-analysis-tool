@@ -46,4 +46,4 @@ SAT can be setup on any of the cloud providers where Databricks is hosted. Follo
 
 ## FAQs and Troubleshooting
 
-[Find answers to frequently asked questions, troubleshoot SAT issues, or diagnose SAT setup](./stup/faqs_and_troubleshooting.md)
+[Find answers to frequently asked questions, troubleshoot SAT issues, or diagnose SAT setup](./setup/faqs_and_troubleshooting.md)
