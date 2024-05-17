@@ -44,4 +44,6 @@ SAT can be setup on any of the cloud providers where Databricks is hosted. Follo
 * [SAT Azure Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/azure/TERRAFORM_Azure.md) 
 * [SAT GCP Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/gcp/TERRAFORM_GCP.md)
 
- 
+## FAQs and Troubleshooting
+
+[Find answers to frequently asked questions, troubleshoot SAT issues, or diagnose SAT setup](./stup/faqs_and_troubleshooting.md)
