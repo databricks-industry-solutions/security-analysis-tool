@@ -79,7 +79,7 @@ else:
 file_path = '/Workspace/Applications/SAT/files/dashboards/SAT_Dashboard_definition.json'
 
 # String to search and replace
-old_string = 'main.security_analysis'
+old_string = 'hive_metastore.security_analysis'
 new_string = json_['analysis_schema_name']
 
 # Read the JSON file
