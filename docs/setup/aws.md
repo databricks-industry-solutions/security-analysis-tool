@@ -11,7 +11,7 @@ This guide will help you setup the Security Analysis Tool (SAT) on AWS Databrick
 
 ## Prerequisites
 
-There are some pre-requisites that need to be met before you can setup SAT on AWS. Make sure you have the appropriate permissions in your Databricks Account Console to create the resources mentioned below.
+There are some prerequisites that need to be met before you can set up SAT on AWS. Make sure you have the appropriate permissions in your Databricks Account Console to create the resources mentioned below.
 
 > SAT is beneficial to customers on **Databrics Premium or Enterprise** as most of the checks and recommendations involve security features available in tiers higher than the Standard.
 
@@ -47,11 +47,12 @@ To execute SAT follow this steps:
 
 ![](../gif/terminal-aws.gif)
 
-> Remember that the target workspace should have a profile in Databricks CLI
+> Remember that the target workspace should have a [profile](https://docs.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html)
 
 
 
 
 ## Troubleshooting
 
-If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate permissions in your Azure cloud account. If you are still facing issues, please send your feedback and comments to sat@databricks.com. 
+Please review the FAQs and Troubleshooting resources documented [here](./faqs_and_troubleshooting.md) including a notebook to help diagnose your SAT setup.
+If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate configurations and permissions for your Databricks. If you are still facing issues, please send your feedback and comments to sat@databricks.com. 

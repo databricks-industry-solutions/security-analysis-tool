@@ -11,6 +11,8 @@ Before proceeding with the installation, make sure you have the following prereq
 - Databricks Account ID
 - Databricks SQL Warehouse (To run the SQL dashboard)
 - Pypi access from your workspace (To install the SAT utility library)
+  
+> SAT is beneficial to customers on **Databrics Premium or Enterprise** as most of the checks and recommendations involve security features available in tiers higher than the Standard.
 
 ### Considerations
 
@@ -38,9 +40,11 @@ SAT can be setup on any of the cloud providers where Databricks is hosted. Follo
 - [Azure Setup Guide](./setup/azure.md)
 - [GCP Setup Guide](./setup/gcp.md)
 
-**Note**: SAT can be setup as Terraform based deployment, if you use Terrafrom in your organization please please prefer Terrafrom instructions: 
+**Note**: SAT can be setup as Terraform based deployment, if you use Terraform in your organization please prefer Terraform instructions: 
 * [SAT AWS Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/aws/TERRAFORM_AWS.md) 
 * [SAT Azure Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/azure/TERRAFORM_Azure.md) 
 * [SAT GCP Terraform deployment](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/terraform/gcp/TERRAFORM_GCP.md)
 
- 
+## FAQs and Troubleshooting
+
+[Find answers to frequently asked questions, troubleshoot SAT issues, or diagnose SAT setup](./setup/faqs_and_troubleshooting.md)

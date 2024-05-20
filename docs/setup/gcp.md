@@ -43,8 +43,8 @@ To execute SAT follow this steps:
 
 ![](../gif/terminal-gcp.gif)
 
-> Remember that the target workspace should have a profile in Databricks CLI
+> Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
 
 ## Troubleshooting
-
+Please review the FAQs and Troubleshooting resources documented [here](./faqs_and_troubleshooting.md) including a notebook to help diagnose your SAT setup.
 If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate permissions in your Azure cloud account. If you are still facing issues, please send your feedback and comments to <sat@databricks.com>.
