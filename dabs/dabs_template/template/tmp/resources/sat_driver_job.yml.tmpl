@@ -18,7 +18,7 @@ resources:
         - job_cluster_key: job_cluster
           new_cluster:
             num_workers: 5
-            spark_version: 13.3.x-scala2.12
+            spark_version: 14.3.x-scala2.12
             runtime_engine: "PHOTON"
             data_security_mode: "SINGLE_USER"
             {{- if eq .cloud "aws" }}
