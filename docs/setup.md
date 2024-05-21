@@ -89,3 +89,30 @@ SAT can be setup on any of the cloud providers where Databricks is hosted. Follo
 
       <img src="./images/alerts_2.png" width="50%" height="50%">   
 
+## Update  configuration files (Optional)
+            
+1. Modify security_best_practices (Optional) 
+   * Go to \<SATProject\>/notebooks/Setup/7. update_sat_check_configuration and use this utility to enable/disable a Check, modify Evaluation Value and Alert configuration value for each check. You can update this file any time and any analysis from there on will take these values into consideration. 
+   * [Configure widget settings](https://docs.databricks.com/notebooks/widgets.html#configure-widget-settings-1) behavior "On Widget Change" for this notebooks to "Do Nothing"         
+            
+    <img src="./images/upate_security_best_practices.png" width="70%" height="70%">
+ 
+2. Modify workspace_configs file (Required for manual checks values if the checks need to be)
+     * **Note**:  Limit the number of workspaces to be analyzed by SAT to 100. 
+     * **Tip**:  You can use this utility to turn on a specific workspace and turn off other workspaces for a specific run.
+     * **Tip**:  You can use this utility to apply your edits to multiple workspaces settings by using "Apply Setting to all workspaces" option.
+     
+     * Go to\<SATProject\>/notebooks/Setup/8. update_workspace_configuration and  You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
+      * [Configure widget settings](https://docs.databricks.com/notebooks/widgets.html#configure-widget-settings-1) behavior "On Widget Change" for this notebooks to "Do Nothing"   
+     
+     
+     Update values for each workspace for the manual checks:(    sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled)
+ 
+     * sso_enabled : True if you enabled Single Singn-on for the workspace
+     * scim_enabled: True if you integrated with  SCIM for the workspace
+     * vpc_peering_done: False if you have not peered with another VPC 
+     * object_storage_encypted: True if you encrypted your data buckets
+     * table_access_control_enabled : True if you enabled ACLs so that you can utilize Table ACL clusters that enforce user isolation  
+     <img src="./images/update_workspace_configuration.png" width="70%" height="70%">  
+      
+
