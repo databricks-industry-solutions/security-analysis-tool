@@ -32,7 +32,8 @@
             
             
 ## Troubleshooting
-We created diagnosis notebooks for respective clouds to help troubleshoot your SAT setup. Please review notebooks/diagnosis/ folder.
+We created diagnosis notebooks for respective clouds to help troubleshoot your SAT setup. Please goto Workspace ->
+Applications -> files -> notebooks -> diagnosis/ folder and run the respective cloud sat_diagnosis_ notebook.
 
 * [SAT AWS troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_aws.py) 
 * [SAT Azure troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_azure.py) 
