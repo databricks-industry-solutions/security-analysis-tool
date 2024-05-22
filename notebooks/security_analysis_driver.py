@@ -150,3 +150,46 @@ display(spark.sql(f'select * from {json_["analysis_schema_name"]}.security_check
 
 
 display(spark.sql(f'select * from {json_["analysis_schema_name"]}.workspace_run_complete order by run_id desc'))
+
+# COMMAND ----------
+
+# MAGIC %sql 
+# MAGIC select * from global_temp.systemschemas_1425658296462059 where schema ="access" and state ="ENABLE_COMPLETED"
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC         SELECT *
+# MAGIC         FROM global_temp.unitycatalogmsv1_1657683783405196
+# MAGIC         WHERE securable_type = 'METASTORE'
+
+# COMMAND ----------
+
+check_id='105' #GOV-34,Governance,Monitor audit logs with system tables
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+metastores= [] # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
+def uc_systemschemas(df):
+    if metastores is not None and len(metastores)>0:
+        return (check_id, 1, metastores )
+    else:
+        return (check_id, 0, {})   
+if enabled:    
+    metastore_tbl_name = 'global_temp.unitycatalogmsv1' + '_' + workspace_id
+    sql = f'''select * from {metastore_tbl_name} WHERE securable_type = 'METASTORE''''    
+    df = spark.sql(sql)
+    vList=df.collect()
+    if vList is not None and len(vList) > 0:
+        int i =0
+        for v in vList:
+            systemschemas_tbl_name = 'global_temp.systemschemas' + '_' + workspace_id+'_' +i
+            systemschemas_sql=f'''
+                SELECT *
+                FROM {systemschemas_tbl_name} 
+                where schema ="access" and state ="ENABLE_COMPLETED"
+            '''
+            systemschemas_sql_df = spark.sql(systemschemas_sql)
+            shemas_enabled=dsystemschemas_sql_df.collect()
+            if(len(shemas_enabled)<=0):
+                metastores.append(v.metastore_name,"No access schema with state ENABLE_COMPLETED")
+            i++
+    sqlctrl(workspace_id, sql, uc_systemschemas)
