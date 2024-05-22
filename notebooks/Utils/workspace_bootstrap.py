@@ -491,6 +491,22 @@ bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_shar
 
 # COMMAND ----------
 
+tbl_name = 'global_temp.unitycatalogmsv1' + '_' + workspace_id
+sql = f'''select * from {tbl_name} WHERE securable_type = 'METASTORE''''
+try:
+    df = spark.sql(sql)
+    vList=df.collect()
+    if vList is not None and len(vList) > 0:
+        int i =0
+        for v in vList:
+            metastore_id =  v['metastore_id']
+            bootstrap('systemschemas'+ '_' + workspace_id+"_"+i, uc_client.get_systemschemas, metastore_id=metastore_id)
+            i++
+except Exception:
+    loggr.exception("Exception encountered")    
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### Delta sharing
 
