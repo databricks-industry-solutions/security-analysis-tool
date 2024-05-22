@@ -12,6 +12,10 @@
         "google_service_account": {
             "type": "string",
             "description": "Google service account"
+        },
+        "latest_lts": {
+            "type": "string",
+            "description": "Latest LTS version"
         }
     },
     "success_message": ""

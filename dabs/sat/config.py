@@ -99,6 +99,7 @@ def cloud_specific_questions(client: WorkspaceClient):
             name="aws-client-secret",
             message="Client Secret",
             ignore=cloud_validation(client, "aws"),
+            echo="",
         ),
     ]
     return aws + azure + gcp

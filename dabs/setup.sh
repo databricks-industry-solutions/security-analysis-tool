@@ -15,5 +15,5 @@ cd $project
 databricks bundle deploy -p $profile --force-lock
 cd ../
 rm -rf $project
-rm -rf configs dashboards notebooks
+rm -rf ./dabs_template/template/tmp/configs ./dabs_template/template/tmp/dashboards ./dabs_template/template/tmp/notebooks
 

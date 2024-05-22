@@ -14,6 +14,11 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
         "catalog": answers.get("catalog", None),
         "cloud": cloud,
         "google_service_account": answers.get("gcp-impersonate-service-account", None),
+        "latest_lts": client.clusters.select_spark_version(
+            long_term_support=True,
+            latest=True,
+            photon=True,
+        ),
     }
 
     config_file = "tmp_config.json"
@@ -30,9 +35,6 @@ def setup():
     try:
         client, answers, profile = form()
         install(client, answers, profile)
-
-        # os.system("clear")
-        # subprocess.call(f"sh ./setup.sh tmp test test_file".split(" "))
     except KeyboardInterrupt:
         print("Installation aborted.")
     except Exception as e:
