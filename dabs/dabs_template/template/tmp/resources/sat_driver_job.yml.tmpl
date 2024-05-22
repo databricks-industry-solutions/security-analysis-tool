@@ -20,13 +20,8 @@ resources:
             num_workers: 5
             spark_version: {{.latest_lts}}
             runtime_engine: "PHOTON"
-            data_security_mode: "SINGLE_USER"
-            {{- if eq .cloud "aws" }}
-            node_type_id: {{smallest_node_type}}
-            {{- else if eq .cloud "azure" }}
-            node_type_id: {{smallest_node_type}}
-            {{- else }}
-            node_type_id: n2-standard-4
+            node_type_id: {{.node_type}}
+            {{- if eq .cloud "gcp" }}
             gcp_attributes:
               google_service_account: {{.google_service_account}}
             {{- end }}

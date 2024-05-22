@@ -19,6 +19,13 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
             latest=True,
             photon=True,
         ),
+        "node_type": client.clusters.select_node_type(
+            local_disk=True,
+            min_cores=4,
+            gb_per_core=8,
+            photon_driver_capable=True,
+            photon_worker_capable=True,
+        ),
     }
 
     config_file = "tmp_config.json"

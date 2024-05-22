@@ -16,6 +16,10 @@
         "latest_lts": {
             "type": "string",
             "description": "Latest LTS version"
+        },
+        "node_type": {
+            "type": "string",
+            "description": "Node Type"
         }
     },
     "success_message": ""
