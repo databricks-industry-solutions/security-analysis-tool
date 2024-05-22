@@ -1276,6 +1276,37 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='105' #GOV-34,Governance,Monitor audit logs with system tables
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+metastores= [] # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
+def uc_systemschemas(df):
+    if metastores is not None and len(metastores)>0:
+        return (check_id, 1, metastores )
+    else:
+        return (check_id, 0, {})   
+if enabled:    
+    metastore_tbl_name = 'global_temp.unitycatalogmsv1' + '_' + workspace_id
+    sql = f'''select * from {metastore_tbl_name} WHERE securable_type = "METASTORE"'''    
+    df = spark.sql(sql)
+    vList=df.collect()
+    if vList is not None and len(vList) > 0:
+        i =0
+        for v in vList:
+            systemschemas_tbl_name = 'global_temp.systemschemas' + '_' + workspace_id+'_' +str(i)
+            systemschemas_sql=f'''
+                SELECT *
+                FROM {systemschemas_tbl_name} 
+                where schema ="access" and state ="ENABLE_COMPLETED"
+            '''
+            systemschemas_sql_df = spark.sql(systemschemas_sql)
+            shemas_enabled=systemschemas_sql_df.collect()
+            if(len(shemas_enabled)<=0):
+                metastores.append(v.metastore_name,"No access schema with state ENABLE_COMPLETED")
+            i=i+1
+    sqlctrl(workspace_id, sql, uc_systemschemas)
+
+# COMMAND ----------
+
 check_id='61' #	INFO-17  Check Serverless Compute enabled
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -1344,7 +1375,6 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def third_party_library_control(df):
     if df is not None and not df.rdd.isEmpty():
-        print(df)
         return (check_id, 0, {'third_party_library_control':'Artifact allowlist configured'})
     else:
         return (check_id, 1, {'third_party_library_control':'No artifact allowlist configured'})   
