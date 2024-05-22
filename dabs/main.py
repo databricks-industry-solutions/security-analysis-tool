@@ -17,7 +17,6 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
         "latest_lts": client.clusters.select_spark_version(
             long_term_support=True,
             latest=True,
-            photon=True,
         ),
         "node_type": client.clusters.select_node_type(
             local_disk=True,
