@@ -8,7 +8,7 @@
 <img src="./images/sat_icon.jpg" width="10%" height="10%">
 
 Refer to specific use-case:
-- [manul setup guide](./docs/setup.md)
+- [Standard setup guide](./docs/setup.md)
 - [Terraform](./terraform/README.md)
 
 ## Introduction
@@ -87,7 +87,7 @@ For example, The diagram below shows the individual checks in various categories
 
 
 ## Configuration and Usage instructions
-Refer to [manul setup guide](./docs/setup.md) or [Terraform](./terraform) to setup  
+Refer to [Standard setup guide](./docs/setup.md) or [Terraform](./terraform) to setup  
 
 ## Project support 
 
