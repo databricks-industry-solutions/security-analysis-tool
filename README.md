@@ -8,9 +8,7 @@
 <img src="./images/sat_icon.jpg" width="10%" height="10%">
 
 Refer to specific use-case:
-- [AWS](./docs/setup/aws.md)
-- [Azure](./docs/setup/azure.md)
-- [GCP](./docs/setup/gcp.md)
+- [manul setup guide](./docs/setup.md)
 - [Terraform](./terraform/README.md)
 
 ## Introduction
