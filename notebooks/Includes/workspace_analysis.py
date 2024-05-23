@@ -1278,10 +1278,10 @@ if enabled:
 
 check_id='105' #GOV-34,Governance,Monitor audit logs with system tables
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-metastores= [] # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
+metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
 def uc_systemschemas(df):
     if metastores is not None and len(metastores)>0:
-        return (check_id, 1, metastores )
+        return (check_id, 1, metastores)
     else:
         return (check_id, 0, {})   
 if enabled:    
@@ -1300,8 +1300,9 @@ if enabled:
             '''
             systemschemas_sql_df = spark.sql(systemschemas_sql)
             shemas_enabled=systemschemas_sql_df.collect()
+            print(shemas_enabled)
             if(len(shemas_enabled)<=0):
-                metastores.append(v.metastore_name,"No access schema with state ENABLE_COMPLETED")
+                metastores[v.metastore_id]= "access schema with ENABLE_COMPLETED not found"
             i=i+1
     sqlctrl(workspace_id, sql, uc_systemschemas)
 
