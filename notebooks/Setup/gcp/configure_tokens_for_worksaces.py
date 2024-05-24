@@ -177,7 +177,7 @@ if response.status_code == 200:
     #Do not renew token for the current workspace as the PAT token is already provided via config
     #Renew the token for specified workspace or all workspaces based on the workspace_id value
     for ws in workspaces:
-        if(((workspace_id is None and (str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')) or (workspace_id is not None and (str(ws['workspace_id']) == workspace_id) and (str(ws['workspace_id']) != current_workspace)))):
+        if((workspace_id is None and (str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')) or (workspace_id is not None and (str(ws['workspace_id']) == workspace_id) and (str(ws['workspace_id']) != current_workspace))):
             deployment_url = "https://"+ ws['deployment_name']+'.'+cloud_type+'.databricks.com'
             loggr.info(f" Getting token for Workspace : {deployment_url}")
             token = generateToken(deployment_url)
