@@ -76,16 +76,12 @@ if status5 != "OK":
     loggr.exception("Error Encountered in Step#5", status5)
     dbutils.notebook.exit()
 
-if cloud_type == "gcp":
-    loggr.warning("Lakeview not supported on GCP yet")
-    quit()
-else:
-    status5_1 = dbutils.notebook.run(
-        f"{basePath()}/notebooks/Setup/5. import_dashboard_template_lakeview", 3000
-    )
-    if status5_1 != "OK":
-        loggr.exception("Error Encountered in Step#5_1", status5_1)
-        dbutils.notebook.exit()
+status5_1 = dbutils.notebook.run(
+    f"{basePath()}/notebooks/Setup/5. import_dashboard_template_lakeview", 3000
+)
+if status5_1 != "OK":
+    loggr.exception("Error Encountered in Step#5_1", status5_1)
+    dbutils.notebook.exit()
 
 status6 = dbutils.notebook.run(
     f"{basePath()}/notebooks/Setup/6. configure_alerts_template", 3000

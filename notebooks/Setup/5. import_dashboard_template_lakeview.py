@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC **Notebook name:** 5. import_dashboard_template.      
-# MAGIC **Functionality:** Imports dashboard template from code repo into Dashboards section for SAT report.  
+# MAGIC **Notebook name:** 5. import_dashboard_template_lakeview.      
+# MAGIC **Functionality:** Imports dashboard template from code repo into Lakeview Dashboards section for SAT report.  
 
 # COMMAND ----------
 
@@ -76,7 +76,7 @@ else:
 
 
 # Path to the JSON file
-file_path = '/Workspace/Applications/SAT/files/dashboards/SAT_Dashboard_definition.json'
+file_path = f'{basePath()}/dashboards/SAT_Dashboard_definition.json'
 
 # String to search and replace
 old_string = 'hive_metastore.security_analysis'
@@ -114,7 +114,7 @@ with open(file_path, 'w') as file:
 
 import requests
 
-BODY = {'path': '/Workspace/Applications/SAT/files/dashboards/SAT - Security Analysis Tool (Lakeview).lvdash.json'}
+BODY = {'path': f'{basePath()}/dashboards/SAT - Security Analysis Tool (Lakeview).lvdash.json'}
 
 loggr.info(f"Getting Dashboard")
 response = requests.get(
@@ -157,7 +157,7 @@ if exists != False:
 # COMMAND ----------
 
 import requests
-json_file_path = "/Workspace/Applications/SAT/files/dashboards/SAT_Dashboard_definition.json"
+json_file_path = f"{basePath()}/dashboards/SAT_Dashboard_definition.json"
 
 # Read the JSON file as a string
 with open(json_file_path) as json_file:
@@ -165,7 +165,7 @@ with open(json_file_path) as json_file:
 
 json_string = json_string = json.dumps(json_data)
 
-BODY = {'display_name': 'SAT - Security Analysis Tool (Lakeview)','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': "/Workspace/Applications/SAT/files/dashboards"}
+BODY = {'display_name': 'SAT - Security Analysis Tool (Lakeview)','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
 
 loggr.info(f"Creating Dashboard")
 response = requests.post(
