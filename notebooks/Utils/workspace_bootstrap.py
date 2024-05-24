@@ -491,17 +491,16 @@ bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_shar
 
 # COMMAND ----------
 
-tbl_name = 'global_temp.unitycatalogmsv1' + '_' + workspace_id
-sql = f'''select * from {tbl_name} WHERE securable_type = "METASTORE"'''
+tbl_name = 'global_temp.unitycatalogmsv2' + '_' + workspace_id
+sql = f'''SELECT metastore_id,workspace_id
+        FROM {tbl_name} 
+        WHERE workspace_id="{workspace_id}"'''
 try:
     df = spark.sql(sql)
     vList=df.collect()
     if vList is not None and len(vList) > 0:
-        i=0
-        for v in vList:
-            metastore_id =  v['metastore_id']
-            bootstrap('systemschemas'+ '_' + workspace_id+'_'+str(i), uc_client.get_systemschemas, metastore_id=metastore_id)
-            i=i+1
+        metastore_id= vList[0]['metastore_id']
+        bootstrap('systemschemas'+ '_' + workspace_id, uc_client.get_systemschemas, metastore_id=metastore_id)
 except Exception:
     loggr.exception("Exception encountered")    
 
