@@ -1280,30 +1280,18 @@ check_id='105' #GOV-34,Governance,Monitor audit logs with system tables
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
 def uc_systemschemas(df):
-    if metastores is not None and len(metastores)>0:
-        return (check_id, 1, metastores)
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED found'} )
     else:
-        return (check_id, 0, {})   
+        return (check_id, 1, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED found not found'}) 
+    
 if enabled:    
-    metastore_tbl_name = 'global_temp.unitycatalogmsv1' + '_' + workspace_id
-    sql = f'''select * from {metastore_tbl_name} WHERE securable_type = "METASTORE"'''    
-    df = spark.sql(sql)
-    vList=df.collect()
-    if vList is not None and len(vList) > 0:
-        i =0
-        for v in vList:
-            systemschemas_tbl_name = 'global_temp.systemschemas' + '_' + workspace_id+'_' +str(i)
-            systemschemas_sql=f'''
-                SELECT *
-                FROM {systemschemas_tbl_name} 
-                where schema ="access" and state ="ENABLE_COMPLETED"
-            '''
-            systemschemas_sql_df = spark.sql(systemschemas_sql)
-            shemas_enabled=systemschemas_sql_df.collect()
-            print(shemas_enabled)
-            if(len(shemas_enabled)<=0):
-                metastores[v.metastore_id]= "access schema with ENABLE_COMPLETED not found"
-            i=i+1
+    tbl_name = 'global_temp.systemschemas' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name} 
+        where schema ="access" and state ="ENABLE_COMPLETED"
+    '''
     sqlctrl(workspace_id, sql, uc_systemschemas)
 
 # COMMAND ----------
