@@ -1283,7 +1283,7 @@ def uc_systemschemas(df):
     if df is not None and not df.rdd.isEmpty():
         return (check_id, 0, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED found'} )
     else:
-        return (check_id, 1, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED found not found'}) 
+        return (check_id, 1, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED not found'}) 
     
 if enabled:    
     tbl_name = 'global_temp.systemschemas' + '_' + workspace_id
