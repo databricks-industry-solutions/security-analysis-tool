@@ -55,7 +55,7 @@ try:
     workspace_id = dbutils.widgets.get('workspace_id')
 except Exception:
     loggr.exception("Exception encountered")
-loggr.info(f"Renewing token for workspace: {workspace_id}")
+loggr.info(f"Renewing token for workspace")
 
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
@@ -177,7 +177,7 @@ if response.status_code == 200:
     #Do not renew token for the current workspace as the PAT token is already provided via config
     #Renew the token for specified workspace or all workspaces based on the workspace_id value
     for ws in workspaces:
-        if((workspace_id is None and (str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')) or (workspace_id is not None and (str(ws['workspace_id']) == workspace_id) and (str(ws['workspace_id']) != current_workspace))):
+        if((ws['workspace_id'] in ['8577638828144838','8071921762083580']) and((workspace_id is None and (str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')) or (workspace_id is not None and (str(ws['workspace_id']) == workspace_id) and (str(ws['workspace_id']) != current_workspace)))):
             deployment_url = "https://"+ ws['deployment_name']+'.'+cloud_type+'.databricks.com'
             loggr.info(f" Getting token for Workspace : {deployment_url}")
             token = generateToken(deployment_url)
