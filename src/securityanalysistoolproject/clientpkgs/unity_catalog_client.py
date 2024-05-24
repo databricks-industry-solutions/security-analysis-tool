@@ -128,7 +128,7 @@ class UnityCatalogClient(SatDBClient):
     
     def get_workspace_metastore_assignments(self):
         """
-        Returns  workspace metastore assignment
+        Returns  workspace metastore assignment. Typo in function name. Should be singular.
         """
         # fetch all metastore assignment list
         metastorejson = self.get(f"/unity-catalog/current-metastore-assignment", version='2.1')
