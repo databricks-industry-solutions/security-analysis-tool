@@ -1,5 +1,6 @@
 '''Workspace settings module'''
 from core.dbclient import SatDBClient
+import json
 
 class WSSettingsClient(SatDBClient):
     '''workspace setting helper'''
@@ -68,3 +69,58 @@ class WSSettingsClient(SatDBClient):
     def flatten(self, tvarlist):
         '''flatten the structure'''
         return [item for sublist in tvarlist for item in sublist]
+    
+
+    
+    def get_automatic_cluster_update(self):
+        """
+        Returns an array of json objects for auto cluster update.
+        """
+        # fetch all endpoints
+        endpointjson= self.get(f"/settings/types/automatic_cluster_update/names/default", version='2.0')
+        endpointlist = []
+        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        return endpointlist   
+    
+    
+    def get_compliance_security_profile(self):
+        """
+        Returns an array of json objects for compliance security profile update.
+        """
+        # fetch all endpoints
+        endpointjson= self.get(f"/settings/types/shield_csp_enablement_ws_db/names/default", version='2.0')
+        endpointlist = []
+        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        return endpointlist  
+    
+    def get_enhanced_security_monitoring(self):
+        """
+        Returns an array of json objects for compliance security profile update.
+        """
+        # fetch all endpoints
+        endpointjson= self.get(f"/settings/types/shield_esm_enablement_ws_db/names/default", version='2.0')
+        endpointlist = []
+        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        return endpointlist  
+
+
+    def get_default_namespace_setting(self):
+        """
+        Returns an array of json objects for default namespace
+        """
+        # fetch all endpoints
+        endpointjson= self.get(f"/settings/types/default_namespace_ws/names/default", version='2.0')
+        endpointlist = []
+        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        return endpointlist  
+    
+        
+    def get_restrict_workspace_admin_settings(self):
+        """
+        Returns an array of json objects for workspace admin settings.
+        """
+        # fetch all endpoints
+        endpointjson= self.get(f"/settings/types/restrict_workspace_admins/names/default", version='2.0')
+        endpointlist = []
+        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        return endpointlist  
