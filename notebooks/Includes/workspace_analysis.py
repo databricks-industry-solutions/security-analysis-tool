@@ -1296,6 +1296,46 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='106'#GOV-35,Governance,Restrict workspace admins
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
+def restrict_workspace_admin_settings(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 1, {'restrict_workspace_admin_settings':'Found status as ALLOW_ALL, to disable the RestrictWorkspaceAdmins set the status to ALLOW_ALL'} )
+    else:
+        return (check_id, 0, {'restrict_workspace_admin_settings':'RestrictWorkspaceAdmins set the status to ALLOW_ALL'}) 
+    
+if enabled:    
+    tbl_name = 'global_temp.restrict_workspace_admin_settings' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name} 
+        where restrict_workspace_admins.status = "ALLOW_ALL"
+    '''
+    sqlctrl(workspace_id, sql, restrict_workspace_admin_settings)
+
+# COMMAND ----------
+
+check_id='107'#GOV-36,Governance,Automatic cluster update
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
+def automatic_cluster_update(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 1, {'automatic_cluster_update':'Found status as false to automatic cluster update setting'} )
+    else:
+        return (check_id, 0, {'automatic_cluster_update':'Found status as true to automatic cluster update setting'}) 
+    
+if enabled:    
+    tbl_name = 'global_temp.automatic_cluster_update' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name} 
+        where automatic_cluster_update_workspace.enabled = true
+    '''
+    sqlctrl(workspace_id, sql, automatic_cluster_update)
+
+# COMMAND ----------
+
 check_id='61' #	INFO-17  Check Serverless Compute enabled
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -1390,7 +1430,7 @@ print(f"Workspace Analysis - {tcomp} seconds to run")
 check_id='103'# INFO-37,Informational,Compliance security profile for new workspaces
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-def compliance_security_profile(df):
+def compliance_security_profile_account(df):
     if df is not None and not df.rdd.isEmpty():
         return (check_id, 0, {'compliance security profile setting for new workspaces':'True'})
     else:
@@ -1402,7 +1442,46 @@ if enabled:
         FROM {tbl_name}  WHERE csp_enablement_account.is_enforced = true
         
     '''
+    sqlctrl(workspace_id, sql, compliance_security_profile_account)
+
+# COMMAND ----------
+
+check_id='108'#INFO-39,Informational,Compliance security profile for the workspace
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def compliance_security_profile(df):
+    if df is not None and not df.rdd.isEmpty():
+        compliance_security_profile_list = df.collect()
+        return (check_id, 0, {'compliance_standards':compliance_security_profile_list[0]})
+    else:
+        return (check_id, 1, {'compliance security profile setting for this workspace':'False'})   
+if enabled:    
+    tbl_name = 'global_temp.compliance_security_profile'+'_' + workspace_id
+    sql=f'''
+        SELECT compliance_security_profile_workspace
+        FROM {tbl_name}  WHERE compliance_security_profile_workspace.is_enabled = true
+        
+    '''
     sqlctrl(workspace_id, sql, compliance_security_profile)
+
+# COMMAND ----------
+
+check_id='109'#INFO-40,Informational,Enhanced security monitoring for the workspace
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def enhanced_security_monitoring(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'compliance enhanced security monitoring setting for this workspace':'True'})
+    else:
+        return (check_id, 1, {'compliance enhanced security monitoring for this workspace':'False'})   
+if enabled:    
+    tbl_name = 'global_temp.enhanced_security_monitoring'+'_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name}  WHERE enhanced_security_monitoring_workspace.is_enabled = true
+        
+    '''
+    sqlctrl(workspace_id, sql, enhanced_security_monitoring)
 
 # COMMAND ----------
 

@@ -361,6 +361,22 @@ bootstrap('workspacesettings'+ '_' + workspace_id, ws_client.get_wssettings_list
 
 # COMMAND ----------
 
+bootstrap('automatic_cluster_update'+ '_' + workspace_id, ws_client.get_automatic_cluster_update)
+
+# COMMAND ----------
+
+bootstrap('compliance_security_profile'+ '_' + workspace_id, ws_client.get_compliance_security_profile)
+
+# COMMAND ----------
+
+bootstrap('enhanced_security_monitoring'+ '_' + workspace_id, ws_client.get_enhanced_security_monitoring)
+
+# COMMAND ----------
+
+bootstrap('restrict_workspace_admin_settings'+ '_' + workspace_id, ws_client.get_restrict_workspace_admin_settings)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### DBFS
 
