@@ -1321,9 +1321,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
 def automatic_cluster_update(df):
     if df is not None and not df.rdd.isEmpty():
-        return (check_id, 1, {'automatic_cluster_update':'Found status as false to automatic cluster update setting'} )
+        return (check_id, 0, {'automatic_cluster_update':'Found status as true to automatic cluster update setting'} )
     else:
-        return (check_id, 0, {'automatic_cluster_update':'Found status as true to automatic cluster update setting'}) 
+        return (check_id, 1, {'automatic_cluster_update':'Found status as false to automatic cluster update setting'}) 
     
 if enabled:    
     tbl_name = 'global_temp.automatic_cluster_update' + '_' + workspace_id
