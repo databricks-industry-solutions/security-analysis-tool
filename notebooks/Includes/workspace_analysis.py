@@ -1318,7 +1318,6 @@ if enabled:
 
 check_id='107'#GOV-36,Governance,Automatic cluster update
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
 def automatic_cluster_update(df):
     if df is not None and not df.rdd.isEmpty():
         return (check_id, 0, {'automatic_cluster_update':'Found status as true to automatic cluster update setting'} )
@@ -1471,9 +1470,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def enhanced_security_monitoring(df):
     if df is not None and not df.rdd.isEmpty():
-        return (check_id, 0, {'compliance enhanced security monitoring setting for this workspace':'True'})
+        return (check_id, 0, {'enhanced security monitoring setting for this workspace':'True'})
     else:
-        return (check_id, 1, {'compliance enhanced security monitoring for this workspace':'False'})   
+        return (check_id, 1, {'enhanced security monitoring for this workspace':'False'})   
 if enabled:    
     tbl_name = 'global_temp.enhanced_security_monitoring'+'_' + workspace_id
     sql=f'''
