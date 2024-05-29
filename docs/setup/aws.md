@@ -49,6 +49,7 @@ To execute SAT follow this steps:
 
 > Remember that the target workspace should have a [profile](https://docs.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html)
 
+Congratulations! 🎉 You are now ready to start using SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
 
 
 
