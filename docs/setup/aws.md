@@ -15,10 +15,10 @@ There are some prerequisites that need to be met before you can set up SAT on AW
 
 > SAT is beneficial to customers on **Databrics Premium or Enterprise** as most of the checks and recommendations involve security features available in tiers higher than the Standard.
 
-
 ### Service Principal
 
 The first step is to create a Service Principal in Databricks. This will allow SAT to authenticate with the other workspaces. Follow the steps:
+
 - Go to the [Account Console](https://accounts.cloud.databricks.com)
 - On the left side bar menu, click on `User management`
 - Select `Service Principal` and then `Add service principal`
@@ -30,19 +30,23 @@ The first step is to create a Service Principal in Databricks. This will allow S
 
 > The Service Principle requires an [Accounts Admin role](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-account-admin-roles-to-a-service-principal), [Admin role](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** and needs to be a member of the [metastore admin group](https://docs.databricks.com/en/data-governance/unity-catalog/manage-privileges/admin-privileges.html#who-has-metastore-admin-privileges) is required to analyze many of the APIs
 
-
-
 ## Installation
 
 ### Credentials Needed
 
 To setup SAT on AWS, you will need the following credentials:
-* Databricks Account ID
-* Databricks Service Principal ID
-* Databricks Service Principal Secret
+- Databricks Account ID
+- Databricks Service Principal ID
+- Databricks Service Principal Secret
 
 To execute SAT follow this steps:
-- Clone the SAT repository
+
+- Clone the SAT repository locally
+  
+  ```sh
+    git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+   ```
+
 - Run the `install.sh` script on your terminal.
 
 ![](../gif/terminal-aws.gif)
@@ -51,9 +55,7 @@ To execute SAT follow this steps:
 
 Congratulations! 🎉 You are now ready to start using SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
 
-
-
 ## Troubleshooting
 
 Please review the FAQs and Troubleshooting resources documented [here](./faqs_and_troubleshooting.md) including a notebook to help diagnose your SAT setup.
-If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate configurations and permissions for your Databricks. If you are still facing issues, please send your feedback and comments to sat@databricks.com. 
+If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate configurations and permissions for your Databricks. If you are still facing issues, please send your feedback and comments to <sat@databricks.com>.

@@ -35,10 +35,14 @@ To setup SAT on Azure, you will need the following credentials:
 - gsutil URI from GCS Bucket
 - ![alt text](../images/gs_path_to_json.png)
 
-
 To execute SAT follow this steps:
 
-- Clone the SAT repository
+- Clone the SAT repository locally
+  
+  ```sh
+    git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+   ```
+
 - Run the `install.sh` script on your terminal.
 
 ![](../gif/terminal-gcp.gif)
@@ -46,6 +50,7 @@ To execute SAT follow this steps:
 > Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
 
 Congratulations! 🎉 You are now ready to start using SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
+
 
 ## Troubleshooting
 Please review the FAQs and Troubleshooting resources documented [here](./faqs_and_troubleshooting.md) including a notebook to help diagnose your SAT setup.
