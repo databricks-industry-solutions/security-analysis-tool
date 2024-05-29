@@ -99,11 +99,12 @@ def replace_string(obj, old_str, new_str):
         for item in obj:
             replace_string(item, old_str, new_str)
 
-replace_string(data, old_string, new_string)
+if json_['analysis_schema_name'] != 'hive_metastore.security_analysis':
+    replace_string(data, old_string, new_string)
 
-# Write the updated JSON back to the file
-with open(file_path, 'w') as file:
-    json.dump(data, file, indent=4)
+    # Write the updated JSON back to the file
+    with open(file_path, 'w') as file:
+        json.dump(data, file, indent=4)
 
 # COMMAND ----------
 
@@ -165,7 +166,7 @@ with open(json_file_path) as json_file:
 
 json_string = json_string = json.dumps(json_data)
 
-BODY = {'display_name': 'SAT - Security Analysis Tool (Lakeview)','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
+BODY = {'display_name': 'SAT - Security Analysis Tool (Lakeview - Experimental)','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
 
 loggr.info(f"Creating Dashboard")
 response = requests.post(
