@@ -55,7 +55,7 @@ try:
     workspace_id = dbutils.widgets.get('workspace_id')
 except Exception:
     loggr.exception("Exception encountered")
-loggr.info(f"Renewing token for workspace: {workspace_id}")
+loggr.info(f"Renewing token for workspace")
 
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
