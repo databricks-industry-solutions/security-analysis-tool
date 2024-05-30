@@ -9,7 +9,7 @@ resource "databricks_secret" "user_email" {
 }
 
 resource "databricks_token" "pat" {
-  lifetime_seconds = 86400 * 365
+  lifetime_seconds = 86400 * 90
   comment          = "Security Analysis Tool"
 }
 
