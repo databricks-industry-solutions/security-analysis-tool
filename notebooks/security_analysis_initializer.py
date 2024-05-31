@@ -99,7 +99,9 @@ if status6 != "OK":
 
 # DBTITLE 0,%md Running Manual SAT Checks here (/notebooks/setup/update_workspace_configurations)
 
-status9 = dbutils.notebook.run('./Setup/9. self_assess_workspace_configuration', 3000)
+status9 = dbutils.notebook.run(
+    f"{basePath()}/notebooks/Setup/9. self_assess_workspace_configuration", 3000
+    )
 if (status9 != 'OK'):
     loggr.exception('Error Encountered in Step#9', status9)
     dbutils.notebook.exit()
