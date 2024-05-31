@@ -20,7 +20,7 @@
 
 # COMMAND ----------
 
-# MAGIC %run ./../Utils/sat_checks_config
+# MAGIC %run ../Utils/sat_checks_config
 
 # COMMAND ----------
 

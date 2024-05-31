@@ -5,8 +5,8 @@
 
 # COMMAND ----------
 
-# MAGIC %run common
-
+# MAGIC %run ./common
+# MAGIC
 
 # COMMAND ----------
 

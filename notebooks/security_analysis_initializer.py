@@ -105,8 +105,3 @@ status9 = dbutils.notebook.run(
 if (status9 != 'OK'):
     loggr.exception('Error Encountered in Step#9', status9)
     dbutils.notebook.exit()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC Running Manual SAT Checks here (/notebooks/setup/update_workspace_configurations)
