@@ -115,7 +115,7 @@ Go to Alerts and find the alert(s) created by SAT tag and adjust the schedule to
 
 - [Configure widget settings](https://docs.databricks.com/notebooks/widgets.html#configure-widget-settings-1) behavior "On Widget Change" for this notebooks to "Do Nothing"   
 
-Update values for each workspace for the manual checks:(    sso_enabled,scim_enabled,vpc_peering_done,object_storage_encypted,table_access_control_enabled)
+Update values for each workspace for the manual checks
 
 - sso_enabled : True if you enabled Single Singn-on for the workspace
 - scim_enabled: True if you integrated with  SCIM for the workspace
