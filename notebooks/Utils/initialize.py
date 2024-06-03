@@ -135,5 +135,10 @@ create_workspace_run_complete_table()
 
 # COMMAND ----------
 
-# Initialize best practices if not already loaded into database
+# Initialize best practices 
 readBestPracticesConfigsFile()
+
+# COMMAND ----------
+
+#Initialize sat dasf mapping
+load_sat_dasf_mapping()

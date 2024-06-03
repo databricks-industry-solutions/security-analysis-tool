@@ -1,0 +1,36 @@
+sat_id,dasf_control_id,dasf_control_name
+1,DASF 33,Manage credentials securely
+2,DASF 8,Encrypt data at rest
+2,DASF 30,Encrypt models
+3,DASF 8,Encrypt data at rest
+3,DASF 30,Encrypt models
+4,DASF 8,Encrypt data at rest
+8,DASF 14,Audit actions performed on datasets
+8,DASF 55,Monitor Audit logs
+9,DASF 38,Platform security — vulnerability management
+10,DASF 38,Platform security — vulnerability management
+18,DASF 1,SSO with IdP and MFA
+19,DASF 2,Sync users and groups
+29,DASF 43,Use access control lists
+30,DASF 43,Use access control lists
+31,DASF 43,Use access control lists
+32,DASF 52,Source code control
+35,DASF 4,Restrict access using private link
+37,DASF 3,Restrict access using IP access lists
+52,DASF 52,Source code control
+53,DASF 5,Control access to data and other objects
+53,DASF 16,Secure model features
+53,DASF 24,Control access to models and model assets
+53,DASF 43,Use access control lists
+54,DASF 51,Share data and AI assets securely
+55,DASF 51,Share data and AI assets securely
+56,DASF 51,Share data and AI assets securely
+89,DASF 31,Secure model serving endpoints
+90,DASF 32,Streamline the usage and management of various large language model (LLM) providers
+101,DASF 46,Store and retrieve embeddings securely 
+103,DASF 50,Platform compliance
+104,DASF 53,Third-party library control
+105,DASF 55,Monitor Audit logs
+107,DASF 38,Platform security — vulnerability management
+108,DASF 50,Platform compliance
+109,DASF 50,Platform compliance
