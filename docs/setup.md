@@ -54,7 +54,8 @@ SAT can be setup on any of the cloud providers where Databricks is hosted. Follo
 ## Usage
  
 
- > **Note**:  Limit the number of workspaces to be analyzed by SAT to 100.
+ > **Note**:  Go to Workspace -> Applications -> SAT -> files -> self_assessment_checks.yaml and make sure the "enabled" values reflect your environment for the listed manual checks with either true or false. SAT will automatically check the rest of the configurations.
+
 
 ### 1. Run jobs
 
@@ -105,7 +106,7 @@ Go to Alerts and find the alert(s) created by SAT tag and adjust the schedule to
             
     <img src="./images/upate_security_best_practices.png" width="70%" height="70%">
  
-#### 2. Modify workspace_configs file (Required for manual checks values if the checks need to be)
+#### 2. Modify workspace_configs file (Required for manual checks values)
 
 - **Tip**:  You can use this utility to turn on a specific workspace and turn off other workspaces for a specific run.
 
