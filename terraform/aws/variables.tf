@@ -33,13 +33,13 @@ variable "sqlw_id" {
 variable "account_user" {
   description = "Account Console Username"
   type        = string
-  default     = ""
+  default     = " "
 }
 
 variable "account_pass" {
   description = "Account Console Password"
   type        = string
-  default     = ""
+  default     = " "
 }
 
 variable "use_sp_auth" {

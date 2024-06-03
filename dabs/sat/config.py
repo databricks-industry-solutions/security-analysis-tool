@@ -12,6 +12,7 @@ from sat.utils import (
     get_profiles,
     get_warehouses,
     loading,
+    uc_enabled,
 )
 
 
@@ -21,7 +22,6 @@ def form():
         choices=loading(get_profiles, "Loading profiles..."),
     )
     client = WorkspaceClient(profile=profile)
-
     questions = [
         Text(
             name="account_id",
@@ -33,7 +33,8 @@ def form():
         Confirm(
             name="enable_uc",
             message="Use Unity Catalog?",
-            default=True,
+            default=lambda x: uc_enabled(client),
+            ignore=lambda x: not uc_enabled(client),
         ),
         List(
             name="catalog",

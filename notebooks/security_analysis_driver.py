@@ -78,6 +78,10 @@ readBestPracticesConfigsFile()
 
 # COMMAND ----------
 
+load_sat_dasf_mapping()
+
+# COMMAND ----------
+
 dfexist = getWorkspaceConfig()
 dfexist.filter(dfexist.analysis_enabled == True).createOrReplaceGlobalTempView(
     "all_workspaces"

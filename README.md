@@ -10,6 +10,7 @@
 Refer to specific use-case:
 - [Standard setup guide](./docs/setup.md)
 - [Terraform](./terraform/README.md)
+- [Deprecated: Manual setup](./docs/deprecated_old_setup.md)
 
 ## Introduction
 

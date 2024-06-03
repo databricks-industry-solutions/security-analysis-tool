@@ -54,7 +54,8 @@ SAT can be setup on any of the cloud providers where Databricks is hosted. Follo
 ## Usage
  
 
- > **Note**:  Limit the number of workspaces to be analyzed by SAT to 100.
+ > **Note**:  Go to Workspace -> Applications -> SAT -> files -> self_assessment_checks.yaml and make sure the "enabled" values reflect your environment for the listed manual checks with either true or false. SAT will automatically check the rest of the configurations.
+
 
 ### 1. Run jobs
 
@@ -99,19 +100,19 @@ Go to Alerts and find the alert(s) created by SAT tag and adjust the schedule to
 
 #### 1. Modify security_best_practices (Optional) 
 
-- Go to Workspace -> Applications -> files -> notebooks /Setup/7. update_sat_check_configuration and use this utility to enable/disable a Check, modify Evaluation Value and Alert configuration value for each check. You can update this file any time and any analysis from there on will take these values into consideration. 
+- Go to Workspace -> Applications -> SAT  -> files -> notebooks /Setup/7. update_sat_check_configuration and use this utility to enable/disable a Check, modify Evaluation Value and Alert configuration value for each check. You can update this file any time and any analysis from there on will take these values into consideration. 
 
 - [Configure widget settings](https://docs.databricks.com/notebooks/widgets.html#configure-widget-settings-1) behavior "On Widget Change" for this notebooks to "Do Nothing"         
             
     <img src="./images/upate_security_best_practices.png" width="70%" height="70%">
  
-#### 2. Modify workspace_configs file (Required for manual checks values if the checks need to be)
+#### 2. Modify workspace_configs file (Required for manual checks values)
 
 - **Tip**:  You can use this utility to turn on a specific workspace and turn off other workspaces for a specific run.
 
 - **Tip**:  You can use this utility to apply your edits to multiple workspaces settings by using "Apply Setting to all workspaces" option.
 
-- Go to Workspace -> Applications -> files -> notebooks/Setup/8. update_workspace_configuration and  You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
+- Go to Workspace -> Applications -> SAT  -> files -> notebooks/Setup/8. update_workspace_configuration and  You will need to set analysis_enabled as True or False based on if you would like to enroll a workspace to analyze by the SAT.
 
 - [Configure widget settings](https://docs.databricks.com/notebooks/widgets.html#configure-widget-settings-1) behavior "On Widget Change" for this notebooks to "Do Nothing"   
 

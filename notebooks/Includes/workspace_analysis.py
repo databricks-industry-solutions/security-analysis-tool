@@ -147,11 +147,13 @@ check_id='35' #Private Link
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 workspaceId = workspace_id
-
-def private_link(df):
+private_link = False
+def private_link_enabled(df):
     if df is not None and not df.rdd.isEmpty():
+        private_link = True
         return (check_id, 0, {})
     else:
+        private_link = False
         return (check_id, 1, {'workspaceId' : workspaceId})     
 
 if enabled:
@@ -161,7 +163,7 @@ if enabled:
         FROM {tbl_name}
         WHERE private_access_settings_id is not null AND workspace_id = "{workspaceId}"
     ''' 
-    sqlctrl(workspace_id, sql, private_link) 
+    sqlctrl(workspace_id, sql, private_link_enabled) 
 
 # COMMAND ----------
 
@@ -193,13 +195,16 @@ check_id='37' #IP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 workspaceId = workspace_id
-
+ip_access_list = False
 def public_access_enabled(df):
     if df is not None and len(df.columns)==0:
+        ip_access_list = False
         return (check_id, 1, {'workspaceId': workspaceId})    
     if df is not None and not df.rdd.isEmpty():
+        ip_access_list = True
         return (check_id, 0, {})
     else:
+        ip_access_list = False
         return (check_id, 1, {'workspaceId': workspaceId})   
     
 if enabled: 
@@ -253,6 +258,28 @@ def vpc_peering(df):
 # The 1=1 logic is intentional to get the human input as an answer for this check 
 if enabled:  
     sqlctrl(workspace_id, '''select * where 1=1''', vpc_peering) 
+
+# COMMAND ----------
+
+check_id='89' #NS-7 Secure model serving endpoints
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def model_serving_endpoints(df):
+    if df is not None and not df.rdd.isEmpty() and (ip_access_list==False and private_link == False):
+        model_serving_endpoints_list = df.collect()
+        model_serving_endpoints_dict = {i.model_name : [i.endpoint_type,i.config] for i in model_serving_endpoints_list}
+        
+        return (check_id, 1, model_serving_endpoints_dict)
+    else:
+        return (check_id, 0, {'model_serving_endpoints':'Model serving endpoints protected with IP access list or private link'})   
+if enabled:    
+    tbl_name = 'global_temp.model_serving_endpoints' + '_' + workspace_id
+    sql=f'''
+        SELECT model_name, endpoint_type, config
+        FROM {tbl_name} 
+        
+    '''
+    sqlctrl(workspace_id, sql, model_serving_endpoints)
 
 # COMMAND ----------
 
@@ -345,7 +372,7 @@ def token_rule(df):
 if enabled:
     tbl_name = 'global_temp.tokens' + '_' + workspace_id
     sql = f'''
-            SELECT `comment`, `created_by_username`, `token_id` 
+            SELECT `comment`, `created_by_username`, from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss") as exp_date, `token_id` 
             FROM {tbl_name} 
               WHERE (datediff(from_unixtime(expiry_time / 1000,"yyyy-MM-dd HH:mm:ss"), current_date()) > {expiry_limit_evaluation_value}) OR 
                   expiry_time = -1 
@@ -449,7 +476,7 @@ check_id='42' #Use service principals
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 service_principals_evaluation_value = int(sbp_rec['evaluation_value'])
 def use_service_principals(df):  
-    if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > service_principals_evaluation_value:
+    if df is not None and not df.rdd.isEmpty() and  len(df.collect()) >= service_principals_evaluation_value:
         return (check_id, 0, {'SPs': len(df.collect())})
     else:
         return (check_id, 1, {'SPs':'no serviceprincipals found'})
@@ -568,6 +595,29 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='101' #DP-14 Store and retrieve embeddings securely
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def vector_search_endpoint_list(df):
+    if df is not None and not df.rdd.isEmpty():
+        vector_search_endpoint_list = df.collect()
+        vector_search_endpoint_dict = {i.name : [i.endpoint_type, i.creator, i.num_indexes] for i in vector_search_endpoint_list}
+        
+        return (check_id, 0, vector_search_endpoint_dict )
+    else:
+        return (check_id, 1, {'vector_search_endpoint_list':'No Vector Search Endpoints found'})  
+if enabled:    
+    tbl_name = 'global_temp.vector_search_endpoint_list' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name} 
+        
+    '''
+    sqlctrl(workspace_id, sql, vector_search_endpoint_list)
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Compliance
 # MAGIC * Cluster Policies
@@ -598,7 +648,7 @@ if enabled:
     sql = f'''
         SELECT cluster_id, cluster_name, policy_id
         FROM {tbl_name}
-        WHERE policy_id is null  and (cluster_source='UI' OR cluster_source='API') AND workspace_id="{workspaceId}"
+        WHERE policy_id is null  and (cluster_source='UI' OR cluster_source='API')
     '''
     sqlctrl(workspace_id, sql, cluster_policy_check)
 
@@ -726,9 +776,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 dbfs_warehouses_evaluation_value = int(sbp_rec['evaluation_value'])
 def dbfs_check(df):
   
-    if df is not None and not df.rdd.isEmpty() and len(df.collect()) > dbfs_warehouses_evaluation_value:
+    if df is not None and not df.rdd.isEmpty() and len(df.collect()) >= dbfs_warehouses_evaluation_value:
         paths = df.collect()
-        paths_dict = {'clusters' : [i.path for i in paths]}
+        paths_dict = {'paths' : [i.path for i in paths]}
         return (check_id, 1, paths_dict)
     else:
         return (check_id, 0, {})   
@@ -968,7 +1018,7 @@ if enabled:
     sql=f'''
         SELECT cluster_id, current_time, last_restart, datediff(current_time,last_restart) as diff 
         FROM (SELECT cluster_id,cluster_name,start_time,last_restarted_time, greatest(start_time,last_restarted_time) as last_start,   
-                to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000), "yyyy-MM-dd hh:mm:ss") as last_restart , current_timestamp() as 
+                to_timestamp(from_unixtime(greatest(start_time,last_restarted_time) / 1000, "yyyy-MM-dd hh:mm:ss")) as last_restart , current_timestamp() as 
                 current_time 
               FROM {tbl_name} 
               WHERE state="RUNNING" and (cluster_source='UI' OR cluster_source='API') ) 
@@ -1204,6 +1254,87 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='78' #	GOV-28  Check Govern model assets
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def models_in_uc(df):
+    if df is not None and not df.rdd.isEmpty():
+        uc_models = df.collect()
+        uc_models_dict = {i.name : [i.full_name] for i in uc_models}
+        
+        return (check_id, 0, uc_models_dict )
+    else:
+        return (check_id, 1, {})   
+if enabled:    
+    tbl_name = 'global_temp.registered_models' + '_' + workspace_id
+    sql=f'''
+        SELECT name, catalog_name,schema_name,owner, full_name
+        FROM {tbl_name} 
+        
+    '''
+    sqlctrl(workspace_id, sql, models_in_uc)
+
+# COMMAND ----------
+
+check_id='105' #GOV-34,Governance,Monitor audit logs with system tables
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
+def uc_systemschemas(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED found'} )
+    else:
+        return (check_id, 1, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED not found'}) 
+    
+if enabled:    
+    tbl_name = 'global_temp.systemschemas' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name} 
+        where schema ="access" and state ="ENABLE_COMPLETED"
+    '''
+    sqlctrl(workspace_id, sql, uc_systemschemas)
+
+# COMMAND ----------
+
+check_id='106'#GOV-35,Governance,Restrict workspace admins
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
+def restrict_workspace_admin_settings(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 1, {'restrict_workspace_admin_settings':'Found status as ALLOW_ALL, to disable the RestrictWorkspaceAdmins set the status to ALLOW_ALL'} )
+    else:
+        return (check_id, 0, {'restrict_workspace_admin_settings':'RestrictWorkspaceAdmins set the status to ALLOW_ALL'}) 
+    
+if enabled:    
+    tbl_name = 'global_temp.restrict_workspace_admin_settings' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name} 
+        where restrict_workspace_admins.status = "ALLOW_ALL"
+    '''
+    sqlctrl(workspace_id, sql, restrict_workspace_admin_settings)
+
+# COMMAND ----------
+
+check_id='107'#GOV-36,Governance,Automatic cluster update
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+def automatic_cluster_update(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'automatic_cluster_update':'Found status as true to automatic cluster update setting'} )
+    else:
+        return (check_id, 1, {'automatic_cluster_update':'Found status as false to automatic cluster update setting'}) 
+    
+if enabled:    
+    tbl_name = 'global_temp.automatic_cluster_update' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name} 
+        where automatic_cluster_update_workspace.enabled = true
+    '''
+    sqlctrl(workspace_id, sql, automatic_cluster_update)
+
+# COMMAND ----------
+
 check_id='61' #	INFO-17  Check Serverless Compute enabled
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -1245,8 +1376,111 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='90' #INFO-29 Streamline the usage and management of various large language model (LLM) providers
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def model_serving_endpoints_external_model(df):
+    if df is not None and not df.rdd.isEmpty() and df.count()>1:
+        model_serving_endpoints_list = df.collect()
+        model_serving_endpoints_dict = {i.name : [i.endpoint_type,i.config] for i in model_serving_endpoints_list}
+        
+        return (check_id, 0, model_serving_endpoints_dict)
+    else:
+        return (check_id, 1, {'model_serving_endpoints_external_model':'No model serving endpoints with endpoint type EXTERNAL_MODEL found'})   
+if enabled:    
+    tbl_name = 'global_temp.model_serving_endpoints' + '_' + workspace_id
+    sql=f'''
+        SELECT name, endpoint_type, config
+        FROM {tbl_name}  WHERE endpoint_type = 'EXTERNAL_MODEL'  
+        
+    '''
+    sqlctrl(workspace_id, sql, model_serving_endpoints_external_model)
+
+# COMMAND ----------
+
+check_id='104' #INFO-38 Third-party library control
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def third_party_library_control(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'third_party_library_control':'Artifact allowlist configured'})
+    else:
+        return (check_id, 1, {'third_party_library_control':'No artifact allowlist configured'})   
+if enabled:    
+    tbl_name_1 = 'global_temp.artifacts_allowlists_library_jars' + '_' + workspace_id
+    tbl_name_2 = 'global_temp.artifacts_allowlists_library_mavens' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name_1} 
+        UNION
+        SELECT *
+        FROM {tbl_name_2} 
+        
+    '''
+    sqlctrl(workspace_id, sql, third_party_library_control)
+
+# COMMAND ----------
+
 tcomp = time.time() - start_time
 print(f"Workspace Analysis - {tcomp} seconds to run")
+
+# COMMAND ----------
+
+check_id='103'# INFO-37,Informational,Compliance security profile for new workspaces
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def compliance_security_profile_account(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'compliance security profile setting for new workspaces':'True'})
+    else:
+        return (check_id, 1, {'compliance security profile setting for new workspaces':'False'})   
+if enabled:    
+    tbl_name = 'global_temp.account_csp'
+    sql=f'''
+        SELECT *
+        FROM {tbl_name}  WHERE csp_enablement_account.is_enforced = true
+        
+    '''
+    sqlctrl(workspace_id, sql, compliance_security_profile_account)
+
+# COMMAND ----------
+
+check_id='108'#INFO-39,Informational,Compliance security profile for the workspace
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def compliance_security_profile(df):
+    if df is not None and not df.rdd.isEmpty():
+        compliance_security_profile_list = df.collect()
+        return (check_id, 0, {'compliance_standards':compliance_security_profile_list[0]})
+    else:
+        return (check_id, 1, {'compliance security profile setting for this workspace':'False'})   
+if enabled:    
+    tbl_name = 'global_temp.compliance_security_profile'+'_' + workspace_id
+    sql=f'''
+        SELECT compliance_security_profile_workspace
+        FROM {tbl_name}  WHERE compliance_security_profile_workspace.is_enabled = true
+        
+    '''
+    sqlctrl(workspace_id, sql, compliance_security_profile)
+
+# COMMAND ----------
+
+check_id='109'#INFO-40,Informational,Enhanced security monitoring for the workspace
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def enhanced_security_monitoring(df):
+    if df is not None and not df.rdd.isEmpty():
+        return (check_id, 0, {'enhanced security monitoring setting for this workspace':'True'})
+    else:
+        return (check_id, 1, {'enhanced security monitoring for this workspace':'False'})   
+if enabled:    
+    tbl_name = 'global_temp.enhanced_security_monitoring'+'_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name}  WHERE enhanced_security_monitoring_workspace.is_enabled = true
+        
+    '''
+    sqlctrl(workspace_id, sql, enhanced_security_monitoring)
 
 # COMMAND ----------
 

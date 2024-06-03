@@ -68,6 +68,8 @@ def get_profiles():
 
 
 def get_catalogs(client: WorkspaceClient):
+    if uc_enabled(client) is False:
+        return []
     valid_catalogs = []
     for c in client.catalogs.list():
         if c.catalog_type is not None and c.catalog_type.value != "SYSTEM_CATALOG":
@@ -80,3 +82,11 @@ def get_warehouses(client: WorkspaceClient):
     for w in client.warehouses.list():
         valid_warehouses.append({"name": w.name, "id": w.id})
     return valid_warehouses
+
+
+def uc_enabled(client: WorkspaceClient):
+    try:
+        client.metastores.current()
+        return True
+    except:
+        return False

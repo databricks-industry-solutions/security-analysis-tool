@@ -178,4 +178,25 @@ bootstrap('acctpvtlink', acct_client.get_privatelink_info)
 
 # COMMAND ----------
 
+from clientpkgs.accounts_settings import AccountsSettings
+
+try:
+    acct_settings = AccountsSettings(json_)
+except Exception:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+bootstrap('account_ipaccess_list', acct_settings.get_ipaccess_list)
+
+# COMMAND ----------
+
+bootstrap('account_csp', acct_settings.get_compliancesecurityprofile)
+
+# COMMAND ----------
+
+bootstrap('account_ncc', acct_settings.get_networkconnectivityconfigurations)
+
+# COMMAND ----------
+
 print(f"Account Bootstrap - {time.time() - start_time} seconds to run")

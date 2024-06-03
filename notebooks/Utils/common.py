@@ -38,38 +38,34 @@ def bootstrap(viewname, func, **kwargs):
 
 
 def handleAnalysisErrors(e):
-    print(e)
     """
-  Handle AnalysisException when sql is run. This is raised when fields in sql are not found.
-  """
-    if hasattr(e, "desc"):
-        v = e.desc
-        vlst = v.lower().split(" ")
-        strField = ""
-        if len(vlst) > 2 and vlst[0] == "cannot" and vlst[1] == "resolve":
-            strField = "cannot find field " + vlst[2] + " in SQL"
-        elif (
-            len(vlst) > 8
-            and vlst[0] == "[unresolved_column.with_suggestion]"
-            and vlst[4] == "function"
-            and vlst[5] == "parameter"
-        ):
-            strField = "cannot find field " + vlst[8] + " in SQL"
-        elif (
-            len(vlst) > 8
-            and vlst[0] == "[unresolved_column.without_suggestion]"
-            and vlst[4] == "function"
-            and vlst[5] == "parameter"
-        ):
-            strField = "cannot find field " + vlst[8] + " in SQL"
-        elif len(vlst) > 3 and vlst[1] == "such" and vlst[2] == "struct":
-            strField = "cannot find struct field `" + vlst[4] + "` in SQL"
-        elif len(vlst) > 2 and "Did you mean" in v:
-            strField = "field " + vlst[1] + " not found"
-        else:
-            strField = v
+    Handle AnalysisException when sql is run. This is raised when fields in sql are not found.
+    """
+    v = e.getMessage()
+    vlst = v.lower().split(" ")
+    strField = ""
+    if len(vlst) > 2 and vlst[0] == "cannot" and vlst[1] == "resolve":
+        strField = "cannot find field " + vlst[2] + " in SQL"
+    elif (
+        len(vlst) > 8
+        and vlst[0] == "[unresolved_column.with_suggestion]"
+        and vlst[5] == "function"
+        and vlst[6] == "parameter"
+    ):
+        strField = "cannot find field " + vlst[9] + " in SQL"
+    elif (
+        len(vlst) > 8
+        and vlst[0] == "[unresolved_column.without_suggestion]"
+        and vlst[5] == "function"
+        and vlst[6] == "parameter"
+    ):
+        strField = "cannot find field " + vlst[9] + " in SQL"
+    elif len(vlst) > 3 and vlst[1] == "such" and vlst[2] == "struct":
+        strField = "cannot find struct field `" + vlst[4] + "` in SQL"
+    elif len(vlst) > 2 and "Did you mean" in v:
+        strField = "field " + vlst[1] + " not found"
     else:
-        strField = "No description"
+        strField = v
     return strField
 
 
@@ -264,16 +260,7 @@ def readBestPracticesConfigsFile():
 
     prefix = getConfigPath()
     origfile = f"{prefix}/security_best_practices.csv"
-    userfile = (
-        f"{prefix}/security_best_practices_user.csv"  # delete this file to get latest
-    )
-    file_exists = exists(userfile)
-
-    if (
-        file_exists
-    ):  # bootstrap has already been done, the DB is the master, do not overwrite
-        return
-
+    
     schema_list = [
         "id",
         "check_id",
@@ -298,8 +285,7 @@ def readBestPracticesConfigsFile():
     security_best_practices_pd = pd.read_csv(
         origfile, header=0, usecols=schema_list
     ).rename(columns={doc_url: "doc_url"})
-    security_best_practices_pd.to_csv(userfile, encoding="utf-8", index=False)
-
+   
     security_best_practices = spark.createDataFrame(
         security_best_practices_pd, schema
     ).select(
@@ -328,6 +314,31 @@ def readBestPracticesConfigsFile():
 
 # COMMAND ----------
 
+# Read and load the SAT and DASF mapping file. (SAT_DASF_mapping.csv)
+def load_sat_dasf_mapping():
+  import pandas as pd
+  from os.path import exists
+  import shutil
+
+  
+  prefix = getConfigPath()
+  origfile = f'{prefix}/sat_dasf_mapping.csv'
+    
+  schema_list = ['sat_id', 'dasf_control_id','dasf_control_name']
+
+  schema = '''sat_id int, dasf_control_id string,dasf_control_name string'''
+
+  sat_dasf_mapping_pd = pd.read_csv(origfile, header=0, usecols=schema_list)
+    
+  sat_dasf_mapping = (spark.createDataFrame(sat_dasf_mapping_pd, schema)
+                            .select('sat_id', 'dasf_control_id','dasf_control_name'))
+    
+  sat_dasf_mapping.write.format('delta').mode('overwrite').saveAsTable(json_["analysis_schema_name"]+'.sat_dasf_mapping')
+  display(sat_dasf_mapping) 
+
+
+# COMMAND ----------
+
 
 def getSecurityBestPracticeRecord(id, cloud_type):
     df = spark.sql(
@@ -351,6 +362,7 @@ def getConfigPath():
 
 
 # COMMAND ----------
+
 def basePath():
     path = (
         dbutils.notebook.entry_point.getDbutils()
@@ -500,5 +512,3 @@ JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info"
 # COMMAND ----------
 
 JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68",  "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "sso": true, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false,  "cloud_type":"azure"}'
-
-# COMMAND ----------

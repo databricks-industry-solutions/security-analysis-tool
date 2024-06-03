@@ -1,0 +1,19 @@
+- id: 4
+  enabled: true
+  check: Object storage encryption for data sources
+
+- id: 18
+  enabled: false
+  check: Enable single sign-on
+
+- id: 19
+  enabled: false
+  check: SCIM for user provisioning
+
+- id: 20
+  enabled: false
+  check: Table Access Control for clusters that don't use Unity Catalog
+
+- id: 28
+  enabled: true
+  check: Detect network peering of VPC (AWS, GCP) or VNet (Azure)
