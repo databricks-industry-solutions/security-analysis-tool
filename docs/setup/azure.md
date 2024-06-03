@@ -24,9 +24,9 @@ There are some pre-requisites that need to be met before you can setup SAT on Az
 
 The first step is to create an App Registration in Azure. This will allow SAT to authenticate with Azure services. Follow the steps below to create an App Registration:
 
-* Open the Azure portal and navigate to Microsoft Entra ID.
-* Click on `App registrations` and then click on `New registration`.
-* Enter a name for the App Registration and select the appropriate permissions. The minimum requirement is to have access in a single tenant.
+- Open the Azure portal and navigate to Microsoft Entra ID.
+- Click on `App registrations` and then click on `New registration`.
+- Enter a name for the App Registration and select the appropriate permissions. The minimum requirement is to have access in a single tenant.
 
 ![alt text](../images/azure_app_reg.png)
 
@@ -34,20 +34,23 @@ The first step is to create an App Registration in Azure. This will allow SAT to
 
 After creating the App Registration, you will need to create a client secret. This secret will be used to authenticate with Azure services. Follow the steps below to create a client secret:
 
-* Open the App Registration you created in the previous step.
-* Click on `Certificates & secrets` and then click on `New client secret`.
-* Enter a description for the client secret and select the expiry date. Click on `Add`.
-* Copy the value of the client secret and save it in a secure location.
+- Open the App Registration you created in the previous step.
+- Click on `Certificates & secrets` and then click on `New client secret`.
+- Enter a description for the client secret and select the expiry date. Click on `Add`.
+- Copy the value of the client secret and save it in a secure location.
 
 ### Add Service Principle to Databricks
 
 After creating the App Registration and client secret, you will need to add the App Registration as a service principal in Databricks. Follow the steps below to add the service principal:
 
-* As an Account Admin, navigate to the Databricks account console.
-* Select the User Management tab and click on the Service Principals tab.
-* Click Add Service Principal.
-* Paste the App Client ID and App Client Secret in the respective fields.
-* Click Add.
+- Go to the [Account Console](https://accounts.azuredatabricks.net/)
+- On the left side bar menu, click on `User management`
+- Select `Service Principal` and then `Add service principal`
+- Paste the App Client ID and App Client Secret in the respective fields.
+- Click Add.
+- The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
+- Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
+- Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions.
 
 ![Azure_SP_Workspace](../images/azure_ws.png)
 
@@ -60,11 +63,12 @@ See the [Databricks documentation](https://learn.microsoft.com/en-us/azure/datab
 ### Credentials Needed
 
 To setup SAT on Azure, you will need the following credentials:
-* Databricks Account ID
-* Azure Tenant ID
-* Azure Subscription ID
-* Azure App Client ID (Obtained from App Registration)
-* Azure App Client Secret (Obtained from App Client Secrets)
+
+- Databricks Account ID
+- Azure Tenant ID
+- Azure Subscription ID
+- Azure App Client ID (Obtained from App Registration)
+- Azure App Client Secret (Obtained from App Client Secrets)
 
 To execute SAT follow this steps:
 
@@ -89,5 +93,5 @@ If any issues arise during the installation process, please check your credentia
 
 ## References
 
-* [Azure App Registration](https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)
-* [Databricks Service Principals](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals)
+- [Azure App Registration](https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)
+- [Databricks Service Principals](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals)
