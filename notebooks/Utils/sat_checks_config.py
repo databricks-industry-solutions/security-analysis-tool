@@ -299,7 +299,13 @@ def get_workspace_self_assessment_check_config():
 
 def set_workspace_self_assessment_check_config(checks_data):
     # Retrieve widget values
-    sso_enabled = checks_data.get(18)["enabled"]
+
+    cloud_type = getCloudType(hostname)
+    if cloud_type == "azure" or cloud_type == "gcp" :
+            sso_enabled = 'true'
+    else:
+        sso_enabled = checks_data.get(18)["enabled"]
+
     scim_enabled = checks_data.get(19)["enabled"]
     vpc_peering_done = checks_data.get(28)["enabled"]
     object_storage_encrypted = checks_data.get(4)["enabled"]

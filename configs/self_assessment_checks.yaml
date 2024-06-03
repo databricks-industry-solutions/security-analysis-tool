@@ -3,15 +3,15 @@
   check: Object storage encryption for data sources
 
 - id: 18
-  enabled: true
+  enabled: false
   check: Enable single sign-on
 
 - id: 19
-  enabled: true
+  enabled: false
   check: SCIM for user provisioning
 
 - id: 20
-  enabled: true
+  enabled: false
   check: Table Access Control for clusters that don't use Unity Catalog
 
 - id: 28

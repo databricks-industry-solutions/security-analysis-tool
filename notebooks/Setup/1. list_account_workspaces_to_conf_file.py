@@ -97,8 +97,8 @@ def generateWorkspaceConfigFile(workspace_prefix):
         df = df.withColumn(
             "ws_token", concat(lit(workspace_prefix), lit("-"), col("workspace_id"))
         )  # added with workspace prfeix
-
-        if cloud_type == "azure":
+        #both azure and gcp require sso
+        if cloud_type == "azure" or cloud_type == "gcp" :
             df = df.withColumn("sso_enabled", lit(True))
         else:
             df = df.withColumn("sso_enabled", lit(False))
