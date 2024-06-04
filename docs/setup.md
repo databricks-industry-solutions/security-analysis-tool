@@ -125,3 +125,17 @@ Update values for each workspace for the manual checks
 - table_access_control_enabled : True if you enabled ACLs so that you can utilize Table ACL clusters that enforce user isolation  
 
 <img src="./images/update_workspace_configuration.png" width="70%" height="70%">  
+
+
+## Uninstall SAT
+
+### Standard Setup
+
+Steps:
+- Delete `/Workspaces/SAT` folder
+- Delete Workflows `SAT Initializer Notebook` and `SAT Driver Notebook`
+- Delete the Dashboards
+
+### Terraform
+
+Uninstalling using `terraform destroy`
