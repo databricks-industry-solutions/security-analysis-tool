@@ -45,7 +45,17 @@ To execute SAT follow this steps:
     git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
    ```
 
+> To ensure that the install.sh script is executable, you need to modify its permissions using the chmod command.
+
+> For linux or mac users:
+> ```sh
+> chmod +x install.sh
+>```
+
+
 - Run the `install.sh` script on your terminal.
+
+
 
 ![](../gif/terminal-gcp.gif)
 

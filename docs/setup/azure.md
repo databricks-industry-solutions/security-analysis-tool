@@ -80,6 +80,12 @@ To execute SAT follow this steps:
 
 - Run the `install.sh` script on your terminal.
 
+> To ensure that the install.sh script is executable, you need to modify its permissions using the chmod command.
+    ```sh
+      chmod +x install.sh
+      ./install.sh
+    ```
+
 ![](../gif/terminal-azure.gif)
 
 > Remember the target workspace should have a [profile](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/profiles) in [Databricks CLI](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/)

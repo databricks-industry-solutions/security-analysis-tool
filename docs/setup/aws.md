@@ -52,6 +52,13 @@ To execute SAT follow this steps:
 
 - Run the `install.sh` script on your terminal.
 
+> To ensure that the install.sh script is executable, you need to modify its permissions using the chmod command.
+    ```sh
+      chmod +x install.sh
+      ./install.sh
+    ```
+
+
 ![](../gif/terminal-aws.gif)
 
 > Remember that the target workspace should have a [profile](https://docs.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html)
