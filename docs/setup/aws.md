@@ -22,10 +22,11 @@ The first step is to create a Service Principal in Databricks. This will allow S
 - Go to the [Account Console](https://accounts.cloud.databricks.com)
 - On the left side bar menu, click on `User management`
 - Select `Service Principal` and then `Add service principal`
+- Type a new name for the service principal.
 - The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
 - Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
 - Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions.
-- Type a new name for the service principal and then create a new OAuth Secret.
+- Create a new OAuth Secret.
 - Save the `Secret` and `Client ID`
 - To deploy SAT in a workspace, you must add the Service Principal to the workspace.
   
@@ -50,6 +51,8 @@ To execute SAT follow this steps:
     git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
    ```
 
+> Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
+
 - Run the `install.sh` script on your terminal.
 
 > To ensure that the install.sh script is executable, you need to modify its permissions using the chmod command.
@@ -60,8 +63,6 @@ To execute SAT follow this steps:
 
 
 ![](../gif/terminal-aws.gif)
-
-> Remember that the target workspace should have a [profile](https://docs.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html)
 
 Congratulations! 🎉 You are now ready to start using SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
 

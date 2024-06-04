@@ -46,7 +46,8 @@ After creating the App Registration and client secret, you will need to add the 
 - Go to the [Account Console](https://accounts.azuredatabricks.net/)
 - On the left side bar menu, click on `User management`
 - Select `Service Principal` and then `Add service principal`
-- Paste the App Client ID and App Client Secret in the respective fields.
+- Select `Microsoft Entra ID Managed Application` as the service principal type.
+- Paste the App Client ID and create a new name for the service principal.
 - Click Add.
 - The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
 - Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
@@ -78,6 +79,8 @@ To execute SAT follow this steps:
     git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
    ```
 
+> Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
+
 - Run the `install.sh` script on your terminal.
 
 > To ensure that the install.sh script is executable, you need to modify its permissions using the chmod command.
@@ -87,8 +90,6 @@ To execute SAT follow this steps:
     ```
 
 ![](../gif/terminal-azure.gif)
-
-> Remember the target workspace should have a [profile](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/profiles) in [Databricks CLI](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/)
 
 Congratulations! 🎉 You are now ready to start using SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
 

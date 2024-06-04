@@ -31,7 +31,8 @@ The first step is to create a Service Principal in GCP. This will allow SAT to a
 
 ### Credentials Needed
 
-To setup SAT on Azure, you will need the following credentials:
+To setup SAT on GCP, you will need the following credentials:
+
 - Databricks Account ID
 - Service Account email
 - gsutil URI from GCS Bucket
@@ -52,18 +53,15 @@ To execute SAT follow this steps:
 > chmod +x install.sh
 >```
 
+> Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
 
 - Run the `install.sh` script on your terminal.
 
-
-
 ![](../gif/terminal-gcp.gif)
-
-> Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
 
 Congratulations! 🎉 You are now ready to start using SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
 
 
 ## Troubleshooting
 Please review the FAQs and Troubleshooting resources documented [here](./faqs_and_troubleshooting.md) including a notebook to help diagnose your SAT setup.
-If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate permissions in your Azure cloud account. If you are still facing issues, please send your feedback and comments to <sat@databricks.com>.
+If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate permissions in your GCP cloud account. If you are still facing issues, please send your feedback and comments to <sat@databricks.com>.
