@@ -2,6 +2,9 @@
 
 folder="dabs"
 
+alias python=python3
+alias pip=pip3
+
 version=$(python -c "import sys; print(sys.version_info[:])" 2>&1)
 if [[ -z "$version" ]]; then
     echo "Python not found"
