@@ -46,7 +46,8 @@ After creating the App Registration and client secret, you will need to add the 
 - Go to the [Account Console](https://accounts.azuredatabricks.net/)
 - On the left side bar menu, click on `User management`
 - Select `Service Principal` and then `Add service principal`
-- Paste the App Client ID and App Client Secret in the respective fields.
+- Select `Microsoft Entra ID Managed Application` as the service principal type.
+- Paste the App Client ID and create a new name for the service principal.
 - Click Add.
 - The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
 - Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
