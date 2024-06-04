@@ -33,27 +33,29 @@ variable "sqlw_id" {
 variable "account_user" {
   description = "Account Console Username"
   type        = string
+  default     = " "
 }
 
 variable "account_pass" {
   description = "Account Console Password"
   type        = string
+  default     = " "
 }
 
 variable "use_sp_auth" {
   description = "Authenticate with Service Principal OAuth tokens instead of user and password"
-  type = bool
-  default = false
+  type        = bool
+  default     = true
 }
 
 variable "client_id" {
   description = "Service Principal Application (client) ID"
-  type = string
-  default = "value"
+  type        = string
+  default     = "value"
 }
 
 variable "client_secret" {
   description = "SP Secret"
-  type = string
-  default = "value"
+  type        = string
+  default     = "value"
 }

@@ -1,0 +1,3 @@
+inquirer
+databricks-sdk
+rich

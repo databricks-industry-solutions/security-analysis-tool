@@ -1,0 +1,27 @@
+resources:
+  jobs:
+    sat_driver:
+      name: "SAT Driver Notebook"
+      schedule:
+        quartz_cron_expression: "0 0 8 ? * Mon,Wed,Fri"
+        timezone_id: "America/New_York"
+      tasks:
+        - task_key: "sat_initializer"
+          job_cluster_key: job_cluster
+          libraries:
+            - pypi:
+                package: dbl-sat-sdk
+          notebook_task:
+            notebook_path: "../notebooks/security_analysis_driver.py"
+
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            num_workers: 5
+            spark_version: {{.latest_lts}}
+            runtime_engine: "PHOTON"
+            node_type_id: {{.node_type}}
+            {{- if eq .cloud "gcp" }}
+            gcp_attributes:
+              google_service_account: {{.google_service_account}}
+            {{- end }}

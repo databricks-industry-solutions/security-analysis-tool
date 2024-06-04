@@ -5,6 +5,6 @@ account_console_id = ""
 
 ### AWS Specific Variables
 
-account_user = ""
-account_pass = ""
+client_id = ""
+client_secret = ""
 

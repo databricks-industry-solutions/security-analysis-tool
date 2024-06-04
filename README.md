@@ -7,7 +7,10 @@
 # Security Analysis Tool (SAT) 
 <img src="./images/sat_icon.jpg" width="10%" height="10%">
 
-Refer to [manual setup guide](./docs/setup.md) or [Terraform](./terraform) to setup and optional [video](https://www.youtube.com/watch?v=xAav6GslSd8) overview with follow along instruction.
+Refer to specific use-case:
+- [Standard setup guide](./docs/setup.md)
+- [Terraform](./terraform/README.md)
+- [Deprecated: Manual setup](./docs/deprecated_old_setup.md)
 
 ## Introduction
 
@@ -85,7 +88,7 @@ For example, The diagram below shows the individual checks in various categories
 
 
 ## Configuration and Usage instructions
-Refer to [manul setup guide](./docs/setup.md) or [Terraform](./terraform) to setup  
+Refer to [Standard setup guide](./docs/setup.md) or [Terraform](./terraform) to setup  
 
 ## Project support 
 

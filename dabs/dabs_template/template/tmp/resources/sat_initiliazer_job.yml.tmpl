@@ -1,0 +1,25 @@
+resources:
+  jobs:
+    sat_initializer:
+      name: "SAT Initializer Notebook (one-time)"
+
+      tasks:
+        - task_key: "sat_initializer"
+          job_cluster_key: job_cluster
+          libraries:
+            - pypi:
+                package: dbl-sat-sdk
+          notebook_task:
+            notebook_path: "../notebooks/security_analysis_initializer.py"
+
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            num_workers: 5
+            spark_version: {{.latest_lts}}
+            runtime_engine: "PHOTON"
+            node_type_id: {{.node_type}}
+            {{- if eq .cloud "gcp" }}
+            gcp_attributes:
+              google_service_account: {{.google_service_account}}
+            {{- end }}
