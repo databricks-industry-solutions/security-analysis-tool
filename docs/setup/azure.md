@@ -30,6 +30,8 @@ The first step is to create an App Registration in Azure. This will allow SAT to
 
 ![alt text](../images/azure_app_reg.png)
 
+
+
 ### App Client Secrets
 
 After creating the App Registration, you will need to create a client secret. This secret will be used to authenticate with Azure services. Follow the steps below to create a client secret:
@@ -38,6 +40,9 @@ After creating the App Registration, you will need to create a client secret. Th
 - Click on `Certificates & secrets` and then click on `New client secret`.
 - Enter a description for the client secret and select the expiry date. Click on `Add`.
 - Copy the value of the client secret and save it in a secure location.
+- Please add the created app with "Reader" role into the subscription level via Access control (IAM) using Role assignments under your [subscription, Access control (IAM) section](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal#step-2-open-the-add-role-assignment-page)
+
+![alt text](../images/azure_role_assignment.png)
 
 ### Add Service Principle to Databricks
 
