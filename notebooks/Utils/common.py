@@ -148,7 +148,7 @@ def insertIntoControlTable(workspace_id, id, score, additional_details):
         f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table'
     ).collect()[0][0]
     jsonstr = json.dumps(additional_details)
-    sql = """INSERT INTO {}.`security_checks` (`workspaceid`, `id`, `score`, `additional_details`, `run_id`, `check_time`) 
+    sql = """INSERT INTO {}.`security_checks` (`workspaceid`, `id`, `score`, `additional_details`, `run_id`, `check_time`)
             VALUES ('{}', '{}', cast({} as int),  from_json('{}', 'MAP<STRING,STRING>'), {}, cast({} as timestamp))""".format(
         json_["analysis_schema_name"], workspace_id, id, score, jsonstr, run_id, ts
     )
@@ -176,7 +176,7 @@ def insertIntoInfoTable(workspace_id, name, value, category):
         f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table'
     ).collect()[0][0]
     jsonstr = json.dumps(value)
-    sql = """INSERT INTO {}.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`) 
+    sql = """INSERT INTO {}.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`)
             VALUES ('{}','{}', from_json('{}', 'MAP<STRING,STRING>'), '{}', '{}', cast({} as timestamp))""".format(
         json_["analysis_schema_name"], workspace_id, name, jsonstr, category, run_id, ts
     )
@@ -260,7 +260,7 @@ def readBestPracticesConfigsFile():
 
     prefix = getConfigPath()
     origfile = f"{prefix}/security_best_practices.csv"
-    
+
     schema_list = [
         "id",
         "check_id",
@@ -279,13 +279,13 @@ def readBestPracticesConfigsFile():
         doc_url,
     ]
 
-    schema = """id int, check_id string,category string,check string, evaluation_value string,severity string,
+    schema = """id int, check_id string,category string,check string, evaluation_value int,severity string,
                recommendation string,aws int,azure int,gcp int,enable int,alert int, logic string, api string,  doc_url string"""
 
     security_best_practices_pd = pd.read_csv(
         origfile, header=0, usecols=schema_list
     ).rename(columns={doc_url: "doc_url"})
-   
+
     security_best_practices = spark.createDataFrame(
         security_best_practices_pd, schema
     ).select(
@@ -320,21 +320,21 @@ def load_sat_dasf_mapping():
   from os.path import exists
   import shutil
 
-  
+
   prefix = getConfigPath()
   origfile = f'{prefix}/sat_dasf_mapping.csv'
-    
+
   schema_list = ['sat_id', 'dasf_control_id','dasf_control_name']
 
   schema = '''sat_id int, dasf_control_id string,dasf_control_name string'''
 
   sat_dasf_mapping_pd = pd.read_csv(origfile, header=0, usecols=schema_list)
-    
+
   sat_dasf_mapping = (spark.createDataFrame(sat_dasf_mapping_pd, schema)
                             .select('sat_id', 'dasf_control_id','dasf_control_name'))
-    
+
   sat_dasf_mapping.write.format('delta').mode('overwrite').saveAsTable(json_["analysis_schema_name"]+'.sat_dasf_mapping')
-  display(sat_dasf_mapping) 
+  display(sat_dasf_mapping)
 
 
 # COMMAND ----------
@@ -393,7 +393,7 @@ def create_schema():
     df = spark.sql(
         f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.run_number_table (
                         runID BIGINT GENERATED ALWAYS AS IDENTITY,
-                        check_time TIMESTAMP 
+                        check_time TIMESTAMP
                         )
                         USING DELTA"""
     )
@@ -431,10 +431,10 @@ def notifyworkspaceCompleted(workspaceID, completed):
 
 def create_security_checks_table():
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.security_checks ( 
+        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.security_checks (
                 workspaceid string,
                 id int,
-                score integer, 
+                score integer,
                 additional_details map<string, string>,
                 run_id bigint,
                 check_time timestamp,
@@ -453,8 +453,8 @@ def create_account_info_table():
     df = spark.sql(
         f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.account_info (
         workspaceid string,
-        name string, 
-        value map<string, string>, 
+        name string,
+        value map<string, string>,
         category string,
         run_id bigint,
         check_time timestamp,
