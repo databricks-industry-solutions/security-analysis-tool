@@ -13,7 +13,7 @@ This guide will help you setup the Security Analysis Tool (SAT) on AWS Databrick
 
 There are some prerequisites that need to be met before you can set up SAT on AWS. Make sure you have the appropriate permissions in your Databricks Account Console to create the resources mentioned below.
 
-> SAT is beneficial to customers on **Databrics Premium or Enterprise** as most of the checks and recommendations involve security features available in tiers higher than the Standard.
+> SAT is beneficial to customers on **Databricks Premium or Enterprise** as most of the checks and recommendations involve security features available in tiers higher than the Standard.
 
 ### Service Principal
 
