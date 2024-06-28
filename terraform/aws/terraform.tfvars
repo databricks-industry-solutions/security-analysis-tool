@@ -3,8 +3,8 @@ workspace_PAT      = ""
 workspace_id       = ""
 account_console_id = ""
 
-### AWS Specific Variables
+### Databricks Service Principal
 
-client_id = ""
-client_secret = ""
+client_id = "" // Databricks Service Principal Application ID
+client_secret = "" //Databricks Service Principal ID Secret
 
