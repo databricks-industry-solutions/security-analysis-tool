@@ -52,7 +52,7 @@ response = requests.get(
           json=None,
           timeout=60 
         )
-if '\"error_code\":\"403\"' not in response.text:
+if response.status_code == 200:
     resources = json.loads(response.text)
     found = False
     for resource in resources:
@@ -64,6 +64,7 @@ if '\"error_code\":\"403\"' not in response.text:
     if (found == False):
         dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
 else:
+    loggr.info(f"Error with PAT token, {response.text}")
     dbutils.notebook.exit("Invalid access token, check PAT configuration value for this workspace.")            
 
 
