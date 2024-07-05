@@ -42,7 +42,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: terraform/aws/aws-basic 
+        working-directory: terraform/aws/aws-basic
 
     outputs:
       databricks_workspace_host: ${{ steps.terraform-outputs.outputs.databricks_workspace_host }}
@@ -173,8 +173,63 @@ jobs:
           terraform apply tfplan
         continue-on-error: true
 
-      - name: Databricks Cluster List
-        run: databricks clusters list
+      - name: Run Initializer Job
+        id: initializer
+        run: |
+          JOB_ID=$(terraform output -raw initializer_job_id)
+
+          JSON_OUTPUT=$(databricks jobs run-now $JOB_ID)
+
+          if echo "$JSON_OUTPUT" | grep -q 'Error'; then
+            JOB_STATUS="FAILED"
+          else
+            
+            RESULT_STATE=$(echo $JSON_OUTPUT | jq -r '.state.result_state')
+
+            if [ "$RESULT_STATE" == "SUCCESS" ]; then
+              JOB_STATUS="SUCCESS"
+            else
+              JOB_STATUS="FAILED"
+            fi
+          fi
+
+          if [ "$JOB_STATUS" == "FAILED" ]; then
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Initializer Job Status
+        if: steps.initializer.outcome == 'failure'
+        run: exit 1
+
+      - name: Run driver Job
+        id: driver
+        run: |
+          JOB_ID=$(terraform output -raw driver_job_id)
+
+          JSON_OUTPUT=$(databricks jobs run-now $JOB_ID)
+
+          if echo "$JSON_OUTPUT" | grep -q 'Error'; then
+            JOB_STATUS="FAILED"
+          else
+            
+            RESULT_STATE=$(echo $JSON_OUTPUT | jq -r '.state.result_state')
+
+            if [ "$RESULT_STATE" == "SUCCESS" ]; then
+              JOB_STATUS="SUCCESS"
+            else
+              JOB_STATUS="FAILED"
+            fi
+          fi
+
+          if [ "$JOB_STATUS" == "FAILED" ]; then
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: Driver Job Status
+        if: steps.driver.outcome == 'failure'
+        run: exit 1
 
   destroy:
     name: AWS Workspace Destroy with Terraform
@@ -192,7 +247,7 @@ jobs:
 
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 4      
+      max-parallel: 4
 
     defaults:
       run:
@@ -202,7 +257,7 @@ jobs:
       - name: Checkout Workspace Terraform code
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.SAT_SOURCE_REPO }}        
+          repository: ${{ env.TF_SOURCE_REPO }}
 
       - name: AWS Authentication
         uses: aws-actions/configure-aws-credentials@v4
