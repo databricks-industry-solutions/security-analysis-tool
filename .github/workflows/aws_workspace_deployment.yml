@@ -22,7 +22,7 @@ env:
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   AWS_OIDC_ROLE_ARN: ${{ secrets.AWS_OIDC_ROLE_ARN }}
 
-  TF_SOURCE_REPO: jgarciaf106/security-analysis-tool-tf-resources/
+  TF_SOURCE_REPO: jgarciaf106/security-analysis-tool-tf-resources
 
 jobs:
   deploy:
