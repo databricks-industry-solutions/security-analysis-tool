@@ -3,6 +3,8 @@ resource "databricks_sql_endpoint" "new" {
   name             = "SAT Warehouse"
   cluster_size     = "Small"
   max_num_clusters = 1
+  enable_serverless_compute = var.serverless ? true : false
+  warehouse_type = var.serverless ? "PRO" : "CLASSIC"
 
   tags {
     custom_tags {

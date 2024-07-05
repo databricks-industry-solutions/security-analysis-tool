@@ -11,6 +11,7 @@
 /configs/security_best_practices_user.csv
 .databricks/
 .vscode/settings.json
+/workflows
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

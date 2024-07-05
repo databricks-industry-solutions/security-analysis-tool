@@ -17,6 +17,11 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "serverless" {
+  type = bool
+  default = false
+}
+
 variable "secret_scope_name" {
   description = "Name of secret scope for SAT secrets"
   type        = string
