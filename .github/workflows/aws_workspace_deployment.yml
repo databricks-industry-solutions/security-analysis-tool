@@ -53,7 +53,7 @@ jobs:
       - name: Checkout Workspace Terraform code
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.SAT_SOURCE_REPO }}
+          repository: ${{ env.TF_SOURCE_REPO }}
 
       - name: AWS Authentication
         uses: aws-actions/configure-aws-credentials@v4
