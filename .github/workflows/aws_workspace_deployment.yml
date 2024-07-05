@@ -1,0 +1,238 @@
+# This is a basic GitHub Actions pipeline to validate Terraform
+name: Databricks Terraform Infrastructure Pipeline AWS
+
+on:
+  push:
+    branches: [main]
+  # pull_request:
+  #   branches: [ main ]
+
+env:
+  BACKEND_RG_NAME: ${{ secrets.BACKEND_RG_NAME }}
+  BACKEND_SA_NAME: ${{ secrets.BACKEND_SA_NAME }}
+  BACKEND_CONTAINER_NAME: ${{ secrets.BACKEND_CONTAINER_NAME }}
+  BACKEND_KEY: ${{ secrets.BACKEND_KEY }}
+  ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
+
+  DATABRICKS_ACCOUNT_ID: ${{ secrets.DATABRICKS_ACCOUNT_ID }}
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_SP_CLIENT_ID: ${{ secrets.DATABRICKS_SP_CLIENT_ID }}
+  DATABRICKS_SP_CLIENT_SECRET: ${{ secrets.DATABRICKS_SP_CLIENT_SECRET }}
+
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  AWS_OIDC_ROLE_ARN: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+
+  TF_SOURCE_REPO: jgarciaf106/security-analysis-tool-tf-resources/
+
+jobs:
+  deploy:
+    name: AWS Workspace Deployment with Terraform
+
+    # if: github.event_name == 'pull_request'
+
+    environment: AWS
+
+    permissions:
+      contents: "read"
+      id-token: "write"
+
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 4
+
+    defaults:
+      run:
+        working-directory: terraform/aws/aws-basic 
+
+    outputs:
+      databricks_workspace_host: ${{ steps.terraform-outputs.outputs.databricks_workspace_host }}
+      databricks_workspace_id: ${{ steps.terraform-outputs.outputs.databricks_workspace_id }}
+      databricks_workspace_pat: ${{ steps.terraform-outputs.outputs.databricks_workspace_pat }}
+
+    steps:
+      - name: Checkout Workspace Terraform code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SAT_SOURCE_REPO }}
+
+      - name: AWS Authentication
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-west-2
+          role-to-assume: ${{ env.AWS_OIDC_ROLE_ARN }}
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Set execute permissions
+        run: chmod +x ws_tf_actions.sh
+
+      - name: Terraform Init
+        id: init
+        run: ./ws_tf_actions.sh init
+
+      - name: Terraform Validate
+        id: validate
+        run: ./ws_tf_actions.sh validate
+
+      - name: Terraform Plan
+        id: plan
+        run: ./ws_tf_actions.sh plan
+        continue-on-error: true
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform Apply
+        id: apply
+        run: ./ws_tf_actions.sh apply
+        continue-on-error: true
+
+      - name: Terraform Apply Status
+        if: steps.apply.outcome == 'failure'
+        run: exit 1
+
+      - name: Set Terraform Outputs
+        id: terraform-outputs
+        run: |
+          echo "databricks_workspace_host=$(terraform output -raw databricks_workpace_host)" >> "$GITHUB_OUTPUT"
+          echo "databricks_workspace_id=$(terraform output -raw databricks_workspace_id)"  >> "$GITHUB_OUTPUT"
+          echo "databricks_workspace_pat=$(terraform output -raw databricks_workspace_pat)" >> "$GITHUB_OUTPUT"
+
+      - name: Success
+        if: steps.apply.outcome == 'success'
+        run: echo "Workspace Deployment Successful"
+
+  sat:
+    name: SAT Installation with Terraform
+
+    #if: github.event_name == 'pull_request'
+
+    needs: deploy
+
+    environment: AWS
+
+    permissions:
+      contents: "read"
+      id-token: "write"
+
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 4
+
+    defaults:
+      run:
+        working-directory: terraform/aws
+
+    steps:
+      - name: Checkout Workspace Terraform code
+        uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+        env:
+          DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
+          DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -no-color
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan \
+          -no-color \
+          -input=false \
+          -var="account_console_id=$DATABRICKS_ACCOUNT_ID" \
+          -var="databricks_url=${{ needs.deploy.outputs.databricks_workspace_host }}" \
+          -var="workspace_id=${{ needs.deploy.outputs.databricks_workspace_id }}" \
+          -var="workspace_PAT=${{ needs.deploy.outputs.databricks_workspace_pat }}" \
+          -var="client_id=$DATABRICKS_SP_CLIENT_ID" \
+          -var="client_secret=$DATABRICKS_SP_CLIENT_SECRET" \
+          -var="client_secret=$DATABRICKS_SP_CLIENT_SECRET" \
+          -var="serverless=true" \
+          -out="tfplan"
+        continue-on-error: true
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          terraform apply tfplan
+        continue-on-error: true
+
+      - name: Databricks Cluster List
+        run: databricks clusters list
+
+  destroy:
+    name: AWS Workspace Destroy with Terraform
+
+    if: false
+
+    #if: github.ref == 'refs/heads/main'
+    needs: sat
+
+    environment: AWS
+
+    permissions:
+      contents: "read"
+      id-token: "write"
+
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 4      
+
+    defaults:
+      run:
+        working-directory: terraform/aws/aws-basic
+
+    steps:
+      - name: Checkout Workspace Terraform code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SAT_SOURCE_REPO }}        
+
+      - name: AWS Authentication
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-west-2
+          role-to-assume: ${{ env.AWS_OIDC_ROLE_ARN }}
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Set execute permissions
+        run: chmod +x ws_tf_actions.sh
+
+      - name: Terraform Init
+        id: init
+        run: ./ws_tf_actions.sh init
+
+      - name: Terraform Validate
+        id: validate
+        run: ./ws_tf_actions.sh validate
+
+      - name: Terraform Destroy
+        id: destroy
+        run: ./ws_tf_actions.sh destroy
+        continue-on-error: true
+
+      - name: Terraform Destoy Status
+        if: steps.destroy.outcome == 'failure'
+        run: exit 1
+
+      - name: Success
+        if: steps.destroy.outcome == 'success'
+        run: echo "Workspace Destroyed Successfully"

@@ -28,6 +28,11 @@ variable "sqlw_id" {
   }
 }
 
+variable "serverless" {
+  type = bool
+  default = false
+}
+
 ### GCP Specific Variables
 
 variable "gs_path_to_json" {

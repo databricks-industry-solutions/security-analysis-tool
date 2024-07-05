@@ -23,6 +23,11 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "serverless" {
+  type = bool
+  default = false
+}
+
 ### Azure Specific Variables
 
 variable "client_id" {

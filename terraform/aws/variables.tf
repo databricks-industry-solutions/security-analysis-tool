@@ -28,6 +28,11 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "serverless" {
+  type = bool
+  default = false
+}
+
 ### AWS Specific Variables
 
 variable "account_user" {
