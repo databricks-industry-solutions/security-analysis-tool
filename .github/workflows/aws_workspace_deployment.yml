@@ -122,7 +122,7 @@ jobs:
       max-parallel: 4
 
     env:
-      TERRAFORM_DIR: terraform/aws/aws-basic
+      TERRAFORM_DIR: terraform/aws
       TESTS_DIR: tests
 
     steps:
