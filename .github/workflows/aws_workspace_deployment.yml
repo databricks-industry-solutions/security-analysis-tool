@@ -131,9 +131,6 @@ jobs:
 
       - name: Install Databricks CLI
         uses: databricks/setup-cli@main
-        env:
-          DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
-          DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
 
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
@@ -196,7 +193,10 @@ jobs:
 
           if [ "$JOB_STATUS" == "FAILED" ]; then
             exit 1
-          fi
+          fi        
+        env:
+          DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
+          DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
         continue-on-error: true
 
       - name: Initializer Job Status
@@ -226,6 +226,9 @@ jobs:
           if [ "$JOB_STATUS" == "FAILED" ]; then
             exit 1
           fi
+        env:
+          DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
+          DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
         continue-on-error: true
 
       - name: Driver Job Status
