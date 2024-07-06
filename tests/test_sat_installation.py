@@ -9,10 +9,12 @@ def set_terraform_dir(path):
 def get_terraform_output(tf_output_var):
     try:
         # Run the terraform command
+        root_dir = os.environ.get('GITHUB_ACTION_PATH')
         terraform_dir = os.environ.get('TERRAFORM_DIR')
 
+
         if terraform_dir:
-            os.chdir(terraform_dir)
+            os.chdir(f"{root_dir}/{terraform_dir}")
 
         result = subprocess.run(
             ["terraform", "output", "-raw", tf_output_var],
