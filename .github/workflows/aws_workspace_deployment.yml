@@ -135,6 +135,11 @@ jobs:
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Install Pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
       - name: Terraform Init
         id: init
         run: terraform init -no-color
@@ -174,6 +179,9 @@ jobs:
         id: unittest
         run: |
           pytest -v tests/test_sat_installation.py
+        env:
+          DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
+          DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
         continue-on-error: true
       
       - name: SAT Installation Unit Test Status
