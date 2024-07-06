@@ -177,6 +177,7 @@ jobs:
         id: initializer
         run: |
           JOB_ID=$(terraform output -raw initializer_job_id)
+          echo $JOB_ID
 
           JSON_OUTPUT=$(databricks jobs run-now $JOB_ID)
 
