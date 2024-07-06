@@ -177,8 +177,9 @@ jobs:
 
       - name: SAT Installation Unit Test
         id: unittest
+        working-directory: tests
         run: |
-          pytest -v tests/test_sat_installation.py
+          pytest -v test_sat_installation.py
         env:
           DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
           DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
