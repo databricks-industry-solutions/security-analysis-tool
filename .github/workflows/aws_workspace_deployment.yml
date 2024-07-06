@@ -15,7 +15,7 @@ env:
   ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
 
   DATABRICKS_ACCOUNT_ID: ${{ secrets.DATABRICKS_ACCOUNT_ID }}
-  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_ACCOUNT_HOST: ${{ secrets.DATABRICKS_ACCOUNT_HOST }}
   DATABRICKS_SP_CLIENT_ID: ${{ secrets.DATABRICKS_SP_CLIENT_ID }}
   DATABRICKS_SP_CLIENT_SECRET: ${{ secrets.DATABRICKS_SP_CLIENT_SECRET }}
 
@@ -179,25 +179,7 @@ jobs:
         id: unittest
         working-directory: tests
         run: |
-          #!/usr/bin/env python3
-          import subprocess
-          import json
-
-          def get_terraform_output(tf_output_var):
-              try:
-                  # Run the terraform command
-                  result = subprocess.run(
-                      ["terraform", "output", "-raw", tf_output_var],
-                      check=True,
-                      stdout=subprocess.PIPE,
-                      stderr=subprocess.PIPE,
-                      text=True
-                  )
-                  output = result.stdout.strip()
-                  return output
-              except subprocess.CalledProcessError as e:
-                  print(f"An error occurred while running terraform: {e.stderr}")
-                  return None
+          pytest -v test_sat_installation.py
         env:
           DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
           DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
