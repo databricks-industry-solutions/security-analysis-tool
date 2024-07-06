@@ -1,10 +1,19 @@
 import pytest
+import os
 import subprocess
 import json
+
+def set_terraform_dir(path):
+    os.environ['TERRAFORM_DIR'] = path
 
 def get_terraform_output(tf_output_var):
     try:
         # Run the terraform command
+        terraform_dir = os.environ.get('TERRAFORM_DIR')
+
+        if terraform_dir:
+            os.chdir(terraform_dir)
+            
         result = subprocess.run(
             ["terraform", "output", "-raw", tf_output_var],
             check=True,

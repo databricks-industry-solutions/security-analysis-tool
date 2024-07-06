@@ -47,7 +47,7 @@ jobs:
     outputs:
       databricks_workspace_host: ${{ steps.terraform-outputs.outputs.databricks_workspace_host }}
       databricks_workspace_id: ${{ steps.terraform-outputs.outputs.databricks_workspace_id }}
-      databricks_workspace_pat: ${{ steps.terraform-outputs.outputs.databricks_workspace_pat }}
+      databricks_workspace_pat: ::add-mask::${{ steps.terraform-outputs.outputs.databricks_workspace_pat }}
 
     steps:
       - name: Checkout Workspace Terraform code
@@ -121,9 +121,9 @@ jobs:
     strategy:
       max-parallel: 4
 
-    defaults:
-      run:
-        working-directory: terraform/aws
+    env:
+      TERRAFORM_DIR: terraform/aws/aws-basic
+      TESTS_DIR: tests
 
     steps:
       - name: Checkout Workspace Terraform code
@@ -143,10 +143,12 @@ jobs:
       - name: Terraform Init
         id: init
         run: terraform init -no-color
+        working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Terraform Validate
         id: validate
         run: terraform validate -no-color
+        working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Terraform Plan
         id: plan
@@ -163,6 +165,7 @@ jobs:
           -var="client_secret=$DATABRICKS_SP_CLIENT_SECRET" \
           -var="serverless=true" \
           -out="tfplan"
+        working-directory: ${{ env.TERRAFORM_DIR }}
         continue-on-error: true
 
       - name: Terraform Plan Status
@@ -173,18 +176,19 @@ jobs:
         id: apply
         run: |
           terraform apply tfplan
+        working-directory: ${{ env.TERRAFORM_DIR }}
         continue-on-error: true
 
       - name: SAT Installation Unit Test
         id: unittest
-        working-directory: tests
         run: |
-          python test_sat_installation.py
+          pytest -v test_sat_installation.py        
+        working-directory: ${{ env.TESTS_DIR }}
         env:
           DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
-          DATABRICKS_TOKEN: ::add-mask::${{ needs.deploy.outputs.databricks_workspace_pat }}
+          DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
         continue-on-error: true
-        
+
       
       - name: SAT Installation Unit Test Status
         if: steps.unittest.outcome == 'failure'
