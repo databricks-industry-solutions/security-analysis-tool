@@ -47,7 +47,7 @@ jobs:
     outputs:
       databricks_workspace_host: ${{ steps.terraform-outputs.outputs.databricks_workspace_host }}
       databricks_workspace_id: ${{ steps.terraform-outputs.outputs.databricks_workspace_id }}
-      databricks_workspace_pat: ::add-mask::${{ steps.terraform-outputs.outputs.databricks_workspace_pat }}
+      databricks_workspace_pat: ${{ steps.terraform-outputs.outputs.databricks_workspace_pat }}
 
     steps:
       - name: Checkout Workspace Terraform code
