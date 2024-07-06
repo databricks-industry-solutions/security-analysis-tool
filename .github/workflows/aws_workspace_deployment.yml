@@ -179,6 +179,7 @@ jobs:
         id: unittest
         working-directory: tests
         run: |
+          python
           import subprocess
           import json
 
@@ -197,7 +198,6 @@ jobs:
               except subprocess.CalledProcessError as e:
                   print(f"An error occurred while running terraform: {e.stderr}")
                   return None
-          print(get_terraform_output("initializer_job_id"))
         env:
           DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
           DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
