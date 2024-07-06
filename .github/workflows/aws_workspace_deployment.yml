@@ -189,7 +189,6 @@ jobs:
           DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
         continue-on-error: true
 
-      
       - name: SAT Installation Unit Test Status
         if: steps.unittest.outcome == 'failure'
         run: exit 1
