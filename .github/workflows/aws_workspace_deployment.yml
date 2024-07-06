@@ -179,7 +179,7 @@ jobs:
         id: unittest
         working-directory: tests
         run: |
-          python
+          #!/usr/bin/env python3
           import subprocess
           import json
 
