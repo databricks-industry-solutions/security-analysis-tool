@@ -170,75 +170,18 @@ jobs:
           terraform apply tfplan
         continue-on-error: true
 
-      - name: Run Initializer Job
-        id: initializer
+      - name: SAT Installation Unit Test
+        id: unittest
         run: |
-          JOB_ID=$(terraform output -raw initializer_job_id)
-          echo $JOB_ID
-
-          JSON_OUTPUT=$(databricks jobs run-now $JOB_ID)
-
-          if echo "$JSON_OUTPUT" | grep -q 'Error'; then
-            JOB_STATUS="FAILED"
-          else
-            
-            RESULT_STATE=$(echo $JSON_OUTPUT | jq -r '.state.result_state')
-
-            if [ "$RESULT_STATE" == "SUCCESS" ]; then
-              JOB_STATUS="SUCCESS"
-            else
-              JOB_STATUS="FAILED"
-            fi
-          fi
-
-          if [ "$JOB_STATUS" == "FAILED" ]; then
-            exit 1
-          fi        
-        env:
-          DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
-          DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
+          pytest -v tests/test_sat_installation.py
         continue-on-error: true
-
-      - name: Initializer Job Status
-        if: steps.initializer.outcome == 'failure'
-        run: exit 1
-
-      - name: Run driver Job
-        id: driver
-        run: |
-          JOB_ID=$(terraform output -raw driver_job_id)
-
-          JSON_OUTPUT=$(databricks jobs run-now $JOB_ID)
-
-          if echo "$JSON_OUTPUT" | grep -q 'Error'; then
-            JOB_STATUS="FAILED"
-          else
-            
-            RESULT_STATE=$(echo $JSON_OUTPUT | jq -r '.state.result_state')
-
-            if [ "$RESULT_STATE" == "SUCCESS" ]; then
-              JOB_STATUS="SUCCESS"
-            else
-              JOB_STATUS="FAILED"
-            fi
-          fi
-
-          if [ "$JOB_STATUS" == "FAILED" ]; then
-            exit 1
-          fi
-        env:
-          DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
-          DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
-        continue-on-error: true
-
-      - name: Driver Job Status
-        if: steps.driver.outcome == 'failure'
+      
+      - name: SAT Installation Unit Test Status
+        if: steps.unittest.outcome == 'failure'
         run: exit 1
 
   destroy:
     name: AWS Workspace Destroy with Terraform
-
-    if: false
 
     #if: github.ref == 'refs/heads/main'
     needs: sat
