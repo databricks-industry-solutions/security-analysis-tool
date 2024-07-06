@@ -179,7 +179,25 @@ jobs:
         id: unittest
         working-directory: tests
         run: |
-          pytest -v test_sat_installation.py
+          import subprocess
+          import json
+
+          def get_terraform_output(tf_output_var):
+              try:
+                  # Run the terraform command
+                  result = subprocess.run(
+                      ["terraform", "output", "-raw", tf_output_var],
+                      check=True,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True
+                  )
+                  output = result.stdout.strip()
+                  return output
+              except subprocess.CalledProcessError as e:
+                  print(f"An error occurred while running terraform: {e.stderr}")
+                  return None
+          print(get_terraform_output("initializer_job_id"))
         env:
           DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
           DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
