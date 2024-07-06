@@ -184,6 +184,7 @@ jobs:
           DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
           DATABRICKS_TOKEN: ::add-mask::${{ needs.deploy.outputs.databricks_workspace_pat }}
         continue-on-error: true
+        
       
       - name: SAT Installation Unit Test Status
         if: steps.unittest.outcome == 'failure'
