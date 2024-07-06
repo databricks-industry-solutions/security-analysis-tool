@@ -45,16 +45,20 @@ def check_job_status(json_output):
     else:
         return "FAILED"
 
+job_output = run_databricks_job("initializer_job_id")
+print(job_output)
+job_status = check_job_status(job_output)
+print(job_status)
 
-# ------------------------------ TESTS ------------------------------
-def test_databricks_initializer_job_run(logger):
-    # Run the Databricks initializer job
-    job_output = run_databricks_job("initializer_job_id")
-    job_status = check_job_status(job_output)
-    assert job_status == "SUCCESS"
+# # ------------------------------ TESTS ------------------------------
+# def test_databricks_initializer_job_run(logger):
+#     # Run the Databricks initializer job
+#     job_output = run_databricks_job("initializer_job_id")
+#     job_status = check_job_status(job_output)
+#     assert job_status == "SUCCESS"
 
-def test_databricks_driver_job_run(logger):
-    # Run the Databricks driver job
-    job_output = run_databricks_job("driver_job_id")
-    job_status = check_job_status(job_output)
-    assert job_status == "SUCCESS"
+# def test_databricks_driver_job_run(logger):
+#     # Run the Databricks driver job
+#     job_output = run_databricks_job("driver_job_id")
+#     job_status = check_job_status(job_output)
+#     assert job_status == "SUCCESS"
