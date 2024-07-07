@@ -47,7 +47,7 @@ def run_databricks_job(tf_output_var):
         return None
     
 def check_job_status(json_output):
-    if "Error" in json.dumps(json_output):
+    if json_output is None:
         return "FAILED"
     
     result_state = json_output.get("state", {}).get("result_state")
