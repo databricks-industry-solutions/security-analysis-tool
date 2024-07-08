@@ -1,11 +1,11 @@
 # This is a basic GitHub Actions pipeline to validate Terraform
-name: Databricks Terraform Infrastructure Pipeline AWS
+name: SAT AWS Workspace Deployment
 
 on:
   push:
     branches: [main]
-  # pull_request:
-  #   branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 env:
   BACKEND_RG_NAME: ${{ secrets.BACKEND_RG_NAME }}
@@ -27,9 +27,9 @@ env:
 
 jobs:
   deploy:
-    name: AWS Workspace Deployment with Terraform
+    name: Terraform -> AWS Workspace Deployment
 
-    # if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'
 
     environment: AWS
 
@@ -106,7 +106,7 @@ jobs:
         run: echo "Workspace Deployment Successful"
 
   sat:
-    name: SAT Installation with Terraform
+    name: Terraform -> SAT Installation
 
     #if: github.event_name == 'pull_request'
 
@@ -183,21 +183,29 @@ jobs:
       - name: SAT Installation Unit Test
         id: unittest
         run: |
-          pytest -v test_sat_installation.py        
+          pytest -v test_sat_installation.py --junitxml=pytest.xml
         working-directory: ${{ env.TESTS_DIR }}
         env:
           DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
           DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
         continue-on-error: true
 
-      - name: SAT Installation Unit Test Status
-        if: steps.unittest.outcome == 'failure'
+      - name: Publish Test Results
+        id: publish
+        uses: turing85/publish-report@v2.0.2
+        if: always()
+        with:
+          report-name: "SAT Test Report"
+          report-path: "${{ env.TESTS_DIR }}/pytest.xml"
+
+      - name: Test Status
+        if: steps.publish.outcome == 'failure'
         run: exit 1
 
   destroy:
-    name: AWS Workspace Destroy with Terraform
+    name: Terraform -> AWS Workspace Destroy
 
-    #if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     needs: sat
 
     environment: AWS
