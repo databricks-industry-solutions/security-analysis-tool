@@ -115,8 +115,9 @@ jobs:
     environment: AWS
 
     permissions:
-      contents: "read"
-      id-token: "write"
+      contents: write
+      checks: write
+      pull-requests: write
 
     runs-on: ubuntu-latest
     strategy:
@@ -130,16 +131,13 @@ jobs:
       - name: Checkout Workspace Terraform code
         uses: actions/checkout@v4
 
-      - name: Install Databricks CLI
-        uses: databricks/setup-cli@main
-
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Install Pytest
+      - name: Install Requirements
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install --upgrade pytest databricks-sdk pytest-cov
 
       - name: Terraform Init
         id: init
@@ -180,11 +178,15 @@ jobs:
         working-directory: ${{ env.TERRAFORM_DIR }}
         continue-on-error: true
 
+      - name: Sleep for 30 seconds before running tests
+        uses: jakejarvis/wait-action@master
+        with:
+          time: '30s'
+
       - name: SAT Installation Unit Test
         id: unittest
         run: |
-          pytest -v test_sat_installation.py --junitxml=pytest.xml
-        working-directory: ${{ env.TESTS_DIR }}
+          pytest -v --junitxml=pytest.xml --cov=app tests/
         env:
           DATABRICKS_HOST: ${{ needs.deploy.outputs.databricks_workspace_host }}
           DATABRICKS_TOKEN: ${{ needs.deploy.outputs.databricks_workspace_pat }}
@@ -196,7 +198,8 @@ jobs:
         if: always()
         with:
           report-name: "SAT Test Report"
-          report-path: "${{ env.TESTS_DIR }}/pytest.xml"
+          report-path: './pytest.xml'
+        
 
       - name: Test Status
         if: steps.publish.outcome == 'failure'
