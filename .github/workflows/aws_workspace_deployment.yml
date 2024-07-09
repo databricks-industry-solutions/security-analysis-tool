@@ -108,8 +108,6 @@ jobs:
   sat:
     name: Terraform -> SAT Installation
 
-    #if: github.event_name == 'pull_request'
-
     needs: deploy
 
     environment: AWS
@@ -208,7 +206,7 @@ jobs:
   destroy:
     name: Terraform -> AWS Workspace Destroy
 
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
     needs: sat
 
     environment: AWS
