@@ -130,16 +130,13 @@ jobs:
       - name: Checkout Workspace Terraform code
         uses: actions/checkout@v4
 
-      - name: Install Databricks CLI
-        uses: databricks/setup-cli@main
-
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Install Pytest
+      - name: Install Requirements
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install --upgrade pytest databricks-sdk
 
       - name: Terraform Init
         id: init
@@ -196,7 +193,7 @@ jobs:
         if: always()
         with:
           report-name: "SAT Test Report"
-          report-path: "${{ env.TESTS_DIR }}/pytest.xml"
+          report-path: "**/*.xml"
 
       - name: Test Status
         if: steps.publish.outcome == 'failure'
