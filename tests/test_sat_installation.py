@@ -1,11 +1,29 @@
 import pytest
-import asyncio
 import os
 import subprocess
-import json
 
 
-def get_terraform_output(tf_output_var):
+def run_databricks_job(client, job_id):
+    """
+    Function to run a Databricks job and wait for its completion.
+    """
+    run = client.jobs.run_now(job_id=job_id).result()
+    run_id = run.run_id
+
+    # Wait for the job to complete
+    while True:
+        run_status = client.jobs.get_run(run_id=run_id)
+        state = run_status.state.result_state.value
+        if state == "SUCCESS":
+            break
+        elif state == "FAILED":
+            break
+    return state
+
+
+def terraform_outputs():
+    tf_output_vars = ["initializer_job_id", "driver_job_id"]
+    output = []
     try:
         # Run the terraform command
         root_dir = os.environ.get("ROOT_DIR")
@@ -14,68 +32,27 @@ def get_terraform_output(tf_output_var):
         if terraform_dir:
             os.chdir(f"{root_dir}/{terraform_dir}")
 
-        result = subprocess.run(
-            ["terraform", "output", "-raw", tf_output_var],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        output = result.stdout.strip()
+        for tf_output_var in tf_output_vars:
+            result = subprocess.run(
+                ["terraform", "output", "-raw", tf_output_var],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            output.append(result.stdout.strip())
         return output
     except subprocess.CalledProcessError as e:
         print(f"An error occurred while running terraform: {e.stderr}")
         return None
 
 
-async def run_databricks_job(tf_output_var):
-    job_id = get_terraform_output(tf_output_var)
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "databricks",
-            "jobs",
-            "run-now",
-            job_id,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            print(
-                f"An error occurred while running the databricks job: {stderr.decode()}"
-            )
-            return None
-
-        json_output = stdout.decode().strip()
-        return json.loads(json_output)
-
-    except Exception as e:
-        print(f"An error occurred while running the databricks job: {str(e)}")
-        return None
-
-
-def check_job_status(json_output):
-    if json_output is None:
-        return "FAILED"
-
-    result_state = json_output.get("state", {}).get("result_state")
-    if result_state == "SUCCESS":
-        return "SUCCESS"
-    else:
-        return "FAILED"
+job_ids = terraform_outputs()
 
 
 # ------------------------------ TESTS ------------------------------
-def test_databricks_initializer_job_run(logger):
+@pytest.mark.parametrize("job_id", job_ids)
+def test_databricks_job_runs(logger, databricks_client, job_id):
     # Run the Databricks initializer job
-    job_output = asyncio.run(run_databricks_job("initializer_job_id"))
-    job_status = check_job_status(job_output)
-    assert job_status == "SUCCESS"
-
-
-def test_databricks_driver_job_run(logger):
-    # Run the Databricks driver job
-    job_output = asyncio.run(run_databricks_job("driver_job_id"))
-    job_status = check_job_status(job_output)
+    job_status = run_databricks_job(databricks_client, job_id)
     assert job_status == "SUCCESS"
