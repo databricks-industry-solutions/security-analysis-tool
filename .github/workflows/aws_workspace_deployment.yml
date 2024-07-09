@@ -3,8 +3,10 @@ name: SAT AWS Workspace Deployment
 
 on:
   pull_request:
-    types: [opened, closed]
     branches: [ main ]
+  pull_request_target:
+    types:
+      - closed
 
 
 env:
@@ -206,8 +208,7 @@ jobs:
   destroy:
     name: Terraform -> AWS Workspace Destroy
 
-    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
-    needs: sat
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
 
     environment: AWS
 
