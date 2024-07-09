@@ -209,7 +209,6 @@ jobs:
     name: Terraform -> AWS Workspace Destroy
 
     if: github.event.action == 'closed' && github.event.pull_request.merged == true
-    needs: sat
 
     environment: AWS
 
