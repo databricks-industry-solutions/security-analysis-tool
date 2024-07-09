@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   BACKEND_RG_NAME: ${{ secrets.BACKEND_RG_NAME }}
@@ -108,7 +108,7 @@ jobs:
   sat:
     name: Terraform -> SAT Installation
 
-    #if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
 
     needs: deploy
 
@@ -181,7 +181,7 @@ jobs:
       - name: Sleep for 30 seconds before running tests
         uses: jakejarvis/wait-action@master
         with:
-          time: '30s'
+          time: "30s"
 
       - name: SAT Installation Unit Test
         id: unittest
@@ -198,8 +198,7 @@ jobs:
         if: always()
         with:
           report-name: "SAT Test Report"
-          report-path: './pytest.xml'
-        
+          report-path: "./pytest.xml"
 
       - name: Test Status
         if: steps.publish.outcome == 'failure'
