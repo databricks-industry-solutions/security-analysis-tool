@@ -2,10 +2,10 @@
 name: SAT AWS Workspace Deployment
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    types: [opened, closed]
     branches: [ main ]
+
 
 env:
   BACKEND_RG_NAME: ${{ secrets.BACKEND_RG_NAME }}
@@ -29,7 +29,7 @@ jobs:
   deploy:
     name: Terraform -> AWS Workspace Deployment
 
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
 
     environment: AWS
 
