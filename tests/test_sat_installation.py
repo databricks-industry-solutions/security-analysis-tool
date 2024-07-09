@@ -41,6 +41,11 @@ def terraform_outputs():
                 text=True,
             )
             output.append(result.stdout.strip())
+        
+        # swith back to the root directory
+        if root_dir: 
+            os.chdir(root_dir)
+
         return output
     except subprocess.CalledProcessError as e:
         print(f"An error occurred while running terraform: {e.stderr}")

@@ -38,5 +38,3 @@ def databricks_client():
 
     yield client
 
-    # Teardown code if necessary
-    client.close()

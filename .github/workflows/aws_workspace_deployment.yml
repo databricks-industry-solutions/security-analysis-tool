@@ -177,6 +177,11 @@ jobs:
         working-directory: ${{ env.TERRAFORM_DIR }}
         continue-on-error: true
 
+      - name: Sleep for 30 seconds before running tests
+        uses: jakejarvis/wait-action@master
+        with:
+          time: '30s'
+
       - name: SAT Installation Unit Test
         id: unittest
         run: |
