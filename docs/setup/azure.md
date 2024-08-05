@@ -76,9 +76,9 @@ To setup SAT on Azure, you will need the following credentials:
 - Azure App Client ID (Obtained from App Registration)
 - Azure App Client Secret (Obtained from App Client Secrets)
 
-To execute SAT follow this steps:
+To execute the SAT follow these steps on your workstation or a compatible VM that has access to the internet and the Databricks workspace:
 
-- Clone the SAT repository locally
+- Clone the SAT repository locally 
   
   ```sh
     git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
@@ -96,7 +96,7 @@ To execute SAT follow this steps:
 
 ![](../gif/terminal-azure.gif)
 
-Congratulations! 🎉 You are now ready to start using SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
+Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
 
 
 ## Troubleshooting
