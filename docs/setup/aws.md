@@ -43,7 +43,7 @@ To setup SAT on AWS, you will need the following credentials:
 - Databricks Service Principal ID
 - Databricks Service Principal Secret
 
-To execute SAT follow this steps:
+To execute the SAT follow these steps on your workstation or a compatible VM that has access to the internet and the Databricks workspace:
 
 - Clone the SAT repository locally
   
@@ -64,7 +64,7 @@ To execute SAT follow this steps:
 
 ![](../gif/terminal-aws.gif)
 
-Congratulations! 🎉 You are now ready to start using SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
+Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../setup.md#usage) for a detailed description on how to run and use it.
 
 ## Troubleshooting
 
