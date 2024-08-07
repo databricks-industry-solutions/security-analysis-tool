@@ -38,7 +38,7 @@ To setup SAT on GCP, you will need the following credentials:
 - gsutil URI from GCS Bucket
 - ![alt text](../images/gs_path_to_json.png)
 
-To execute SAT follow this steps:
+To execute the SAT follow these steps on your workstation or a compatible VM that has access to the internet and the Databricks workspace:
 
 - Clone the SAT repository locally
   
