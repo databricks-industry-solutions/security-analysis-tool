@@ -206,7 +206,7 @@ Please gather the following information before you start setting up:
      * Set the PAT token value for the workspace_id 
      * Set the value for the account_id 
      * Set the value for the sql_warehouse_id
-     * Set the value for the analysis_schema_name to store SAT analysis results (for UC use catalogname.schema name , for hive use schema name)
+     * Set the value for the analysis_schema_name to store SAT analysis results (for UC use catalog.schema name , for hive use schema name)
     
 
        ```
