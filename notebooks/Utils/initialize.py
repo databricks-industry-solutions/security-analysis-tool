@@ -43,6 +43,7 @@ json_ = {
     "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id"),
     "analysis_schema_name": "security_analysis",
     "verbosity": "info",
+    "proxies":{},   #{"http":"http://proxy.example.com:8080", "https": "http://secureproxy.example.com:8080"}
 }
 
 # COMMAND ----------
