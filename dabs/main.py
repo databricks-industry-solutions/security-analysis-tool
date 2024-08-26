@@ -4,8 +4,8 @@ import subprocess
 import argparse
 
 from databricks.sdk import WorkspaceClient
-from sat.config import form, generate_secrets
-from sat.utils import cloud_type
+from sat.config import form, generate_secrets, get_env_vars
+from sat.utils import cloud_type, validate_profile 
 
 
 def install(client: WorkspaceClient, answers: dict, profile: str):
@@ -37,23 +37,15 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
     print("Installation complete.")
     print(f"Review workspace -> {client.config.host}")
 
+def setup(env_vars=False):
+    
+    client, answers, profile = None, None, None
 
-def setup():
     try:
-        client, answers, profile = form()
-
-        # ----------------- DEBUG -----------------
-
-        print(profile) # adb-one-env
-        print()
-        print(client) # databricks auth client by the cli
-        print()
-        print(answers) # json file with the answers
-        print()
-        input("Press enter to continue...")
-
-        # ----------------- DEBUG -----------------
-
+        if env_vars:
+            get_env_vars()
+        else:
+            client, answers, profile = form()
 
         install(client, answers, profile)
     except KeyboardInterrupt:
@@ -69,8 +61,10 @@ if __name__ == "__main__":
     parser.add_argument('--profile', type=str, help='Profile to use')
     args = parser.parse_args()
 
+    # TO DO: Delete this line
     profile = args.profile
     print(f"Profile: {profile}")
+    print(f"Profile is valid: {validate_profile(profile)}")
 
-
-    setup()
+    # TO DO: Validate profile and run setup
+    setup(env_vars=True)

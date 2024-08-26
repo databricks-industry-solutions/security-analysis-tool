@@ -57,6 +57,13 @@ def databricks_command(commmand: str):
         ).stdout.strip()
     )
 
+def validate_profile(profile_name: str):
+    output = databricks_command("databricks auth profiles -o json")["profiles"]
+    
+    return any(
+        p for p in output
+        if p["valid"] and "accounts" not in p["host"] and p["name"] == profile_name
+    )
 
 def get_profiles():
     output = databricks_command("databricks auth profiles -o json")["profiles"]

@@ -15,6 +15,10 @@ from sat.utils import (
     uc_enabled,
 )
 
+def get_env_vars():
+    print("Getting environment variables...")
+
+
 
 def form():
     profile = list_input(
