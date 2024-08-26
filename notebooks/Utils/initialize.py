@@ -45,7 +45,7 @@ json_ = {
         scope="sat_scope", key="analysis_schema_name"
     ),
     "verbosity": "info",
-    "proxies": {},
+    "proxies": json.loads(dbutils.secrets.get(scope="sat_scope", key="proxies")),
 }
 
 # COMMAND ----------

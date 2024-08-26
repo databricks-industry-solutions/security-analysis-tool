@@ -23,6 +23,11 @@ variable "sqlw_id" {
   }
 }
 
+variable "proxies" {
+  type        = object
+  description = "Proxies to be used for Databricks API calls"
+}
+
 ### GCP Specific Variables
 
 variable "client_id" {

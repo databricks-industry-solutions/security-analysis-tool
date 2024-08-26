@@ -155,11 +155,24 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
         key="analysis_schema_name",
         string_value=answers["security_analysis_schema"],
     )
-    client.secrets.put_secret(
-        scope=scope_name,
-        key="proxies",
-        string_value="{}",
-    )
+
+    if answers["use_proxy"]:
+        client.secrets.put_secret(
+            scope=scope_name,
+            key="proxies",
+            string_value=json.dumps(
+                {
+                    "http": answers["http"],
+                    "https": answers["https"],
+                }
+            ),
+        )
+    else:
+        client.secrets.put_secret(
+            scope=scope_name,
+            key="proxies",
+            string_value="{}",
+        )
 
     if cloud_type == "aws":
         client.secrets.put_secret(

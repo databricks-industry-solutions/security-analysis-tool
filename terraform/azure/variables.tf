@@ -23,6 +23,11 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "proxies" {
+  type        = object
+  description = "Proxies to be used for Databricks API calls"
+}
+
 ### Azure Specific Variables
 
 variable "client_id" {

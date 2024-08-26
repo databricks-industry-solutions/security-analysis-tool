@@ -8,3 +8,4 @@ analysis_schema_name = ""
 client_id     = "" // Databricks Service Principal Application ID
 client_secret = "" //Databricks Service Principal ID Secret
 
+proxies = {}
