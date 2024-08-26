@@ -59,3 +59,7 @@ variable "client_secret" {
   type        = string
   default     = "value"
 }
+variable "analysis_schema_name" {
+  type        = string
+  description = "Name of the schema to be used for analysis"
+}

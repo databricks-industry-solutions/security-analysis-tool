@@ -7,8 +7,9 @@ terraform {
 }
 
 provider "databricks" {
-  host  = var.databricks_url
-  token = var.workspace_PAT
+  host          = var.databricks_url
+  client_id     = var.client_id
+  client_secret = var.client_secret
 }
 
 module "common" {
