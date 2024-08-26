@@ -279,13 +279,13 @@ def readBestPracticesConfigsFile():
         doc_url,
     ]
 
-    schema = """id int, check_id string,category string,check string, evaluation_value string,severity string,
+    schema = """id int, check_id string,category string,check string, evaluation_value int,severity string,
                recommendation string,aws int,azure int,gcp int,enable int,alert int, logic string, api string,  doc_url string"""
 
     security_best_practices_pd = pd.read_csv(
         origfile, header=0, usecols=schema_list
     ).rename(columns={doc_url: "doc_url"})
-   
+    
     security_best_practices = spark.createDataFrame(
         security_best_practices_pd, schema
     ).select(
@@ -305,7 +305,6 @@ def readBestPracticesConfigsFile():
         "logic",
         "api",
     )
-
     security_best_practices.write.format("delta").mode("overwrite").saveAsTable(
         json_["analysis_schema_name"] + ".security_best_practices"
     )
