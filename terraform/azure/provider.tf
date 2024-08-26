@@ -5,8 +5,9 @@ terraform {
 }
 
 provider "databricks" {
-  host      = var.databricks_url
-#  auth_type = "azure-cli"
+  host          = var.databricks_url
+  client_id     = var.client_id
+  client_secret = var.client_secret
 }
 
 module "common" {

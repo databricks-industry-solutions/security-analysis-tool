@@ -19,7 +19,7 @@ resource "databricks_secret" "sql_warehouse_id" {
   string_value = var.sqlw_id == "new" ? databricks_sql_endpoint.new[0].id : data.databricks_sql_warehouse.old[0].id
   scope        = databricks_secret_scope.sat.id
 }
-resource "databricks_secret" "sql_warehouse_id" {
+resource "databricks_secret" "analysis_schema_name" {
   key          = "analysis_schema_name"
   string_value = var.analysis_schema_name
   scope        = databricks_secret_scope.sat.id

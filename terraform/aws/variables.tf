@@ -8,11 +8,6 @@ variable "workspace_id" {
   type        = string
 }
 
-variable "workspace_PAT" {
-  description = "PAT should look like dapixxxxxxxxxxxxxxxxxxxx"
-  type        = string
-}
-
 variable "account_console_id" {
   description = "Databricks Account Console ID"
   type        = string

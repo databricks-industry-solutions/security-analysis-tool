@@ -8,11 +8,6 @@ variable "workspace_id" {
   type        = string
 }
 
-variable "workspace_PAT" {
-  description = "PAT should look like dapixxxxxxxxxxxxxxxxxxxx"
-  type        = string
-}
-
 variable "account_console_id" {
   description = "Databricks Account Console ID"
   type        = string
@@ -29,6 +24,16 @@ variable "sqlw_id" {
 }
 
 ### GCP Specific Variables
+
+variable "client_id" {
+  description = "Service Principal (client) ID"
+  type        = string
+}
+
+variable "client_secret" {
+  description = "SP Secret"
+  type        = string
+}
 
 variable "gs_path_to_json" {
   type        = string

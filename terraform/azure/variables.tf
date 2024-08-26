@@ -30,6 +30,11 @@ variable "client_id" {
   type        = string
 }
 
+variable "client_secret" {
+  description = "SP Secret"
+  type        = string
+}
+
 variable "tenant_id" {
   description = "The Directory (tenant) ID for the application registered in Azure AD"
   type        = string
@@ -40,7 +45,4 @@ variable "subscription_id" {
   type        = string
 }
 
-variable "client_secret" {
-  description = "SP Secret"
-  type        = string
-}
+
