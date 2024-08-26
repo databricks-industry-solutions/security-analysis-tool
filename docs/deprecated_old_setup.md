@@ -206,6 +206,7 @@ Please gather the following information before you start setting up:
      * Set the PAT token value for the workspace_id 
      * Set the value for the account_id 
      * Set the value for the sql_warehouse_id
+     * Set the value for the analysis_schema_name to store SAT analysis results (for UC use catalog.schema name , for hive use schema name)
     
 
        ```
@@ -219,6 +220,10 @@ Please gather the following information before you start setting up:
        ```
        databricks --profile e2-sat secrets put-secret sat_scope sql-warehouse-id
        ```  
+        
+       ```
+       databricks --profile e2-sat secrets put-secret sat_scope analysis_schema_name 
+       ```  
     
 
    * In your environment where you imported SAT project from git (Refer to Step 4 in Prerequisites) Open the \<SATProject\>/notebooks/Utils/initialize notebook and modify the JSON string with :  
@@ -230,7 +235,8 @@ Please gather the following information before you start setting up:
          ```
               {
                  "account_id": dbutils.secrets.get(scope="sat_scope", key="account-console-id"),   
-                 "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id")
+                 "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id"),
+                 "analysis_schema_name": dbutils.secrets.get(scope="sat_scope", key="analysis_schema_name"),
                  "verbosity":"info"
               }
 
