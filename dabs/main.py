@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import argparse
 
 from databricks.sdk import WorkspaceClient
 from sat.config import form, generate_secrets
@@ -40,6 +41,20 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
 def setup():
     try:
         client, answers, profile = form()
+
+        # ----------------- DEBUG -----------------
+
+        print(profile) # adb-one-env
+        print()
+        print(client) # databricks auth client by the cli
+        print()
+        print(answers) # json file with the answers
+        print()
+        input("Press enter to continue...")
+
+        # ----------------- DEBUG -----------------
+
+
         install(client, answers, profile)
     except KeyboardInterrupt:
         print("Installation aborted.")
@@ -49,4 +64,13 @@ def setup():
 
 if __name__ == "__main__":
     os.system("clear")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--profile', type=str, help='Profile to use')
+    args = parser.parse_args()
+
+    profile = args.profile
+    print(f"Profile: {profile}")
+
+
     setup()

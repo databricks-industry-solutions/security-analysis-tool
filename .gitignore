@@ -148,3 +148,6 @@ dabs/dabs_template/template/tmp
 
 **/.terraform*
 **/terraform.tfstate*
+
+# Mock Data
+dabs/sat/mock.json

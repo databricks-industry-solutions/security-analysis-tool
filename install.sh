@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 
 folder="dabs"
 
@@ -18,4 +18,9 @@ fi
 
 cd $folder
 pip install -r requirements.txt
-python main.py
+
+if [ "$1" == "--profile" ]; then
+    python main.py --profile="$2"
+else
+    python main.py
+fi
