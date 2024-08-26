@@ -2,6 +2,8 @@ import json
 import os
 import re
 import subprocess
+import argparse
+
 
 from databricks.sdk import WorkspaceClient
 from inquirer import Confirm, List, Password, Text, list_input, prompt
@@ -57,9 +59,22 @@ def databricks_command(commmand: str):
         ).stdout.strip()
     )
 
+# Right now this function is scoped to --profile, but the idea is
+# to expand it to other flags as well 
+def check_flags():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--profile', type=str, help='Profile to use')
+    args = parser.parse_args()
+
+    profile = args.profile
+    valid = validate_profile(profile)
+
+    return profile, valid
+
+
 def validate_profile(profile_name: str):
     output = databricks_command("databricks auth profiles -o json")["profiles"]
-    
+
     return any(
         p for p in output
         if p["valid"] and "accounts" not in p["host"] and p["name"] == profile_name

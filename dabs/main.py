@@ -5,7 +5,7 @@ import argparse
 
 from databricks.sdk import WorkspaceClient
 from sat.config import form, generate_secrets, get_env_vars
-from sat.utils import cloud_type, validate_profile 
+from sat.utils import cloud_type, check_flags 
 
 
 def install(client: WorkspaceClient, answers: dict, profile: str):
@@ -57,14 +57,11 @@ def setup(env_vars=False):
 if __name__ == "__main__":
     os.system("clear")
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--profile', type=str, help='Profile to use')
-    args = parser.parse_args()
+    db_profile, valid = check_flags()
 
-    # TO DO: Delete this line
-    profile = args.profile
-    print(f"Profile: {profile}")
-    print(f"Profile is valid: {validate_profile(profile)}")
+    if not valid:
+        print(f"Profile {db_profile} is not valid. Please check your profile.")
+        exit(1)
 
     # TO DO: Validate profile and run setup
-    setup(env_vars=True)
+    setup(env_vars=valid)
