@@ -150,4 +150,4 @@ dabs/dabs_template/template/tmp
 **/terraform.tfstate*
 
 # Ignore Config File
-config.json
+dabs/SAT-config.json

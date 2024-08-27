@@ -39,7 +39,14 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
 
 def setup():
     try:
-        client, answers, profile = form()
+        if os.path.isfile("SAT-config.json"):
+            with open("SAT-config.json", "r") as file:
+                config = json.load(file)
+                profile = config.get("profile", None)
+                answers = config.get("answers", None)
+                client = WorkspaceClient(profile=profile)
+        else:
+          client, answers, profile = form()
         install(client, answers, profile)
     except KeyboardInterrupt:
         print("Installation aborted.")
