@@ -378,16 +378,6 @@ def basePath():
 
 # COMMAND ----------
 
-"""%sql
-CREATE DATABASE IF NOT EXISTS security_analysis;
-CREATE TABLE IF NOT EXISTS security_analysis.run_number_table (
-  runID BIGINT GENERATED ALWAYS AS IDENTITY,
-  check_time TIMESTAMP
-)
-USING DELTA"""
-
-# COMMAND ----------
-
 
 def create_schema():
     df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {json_["analysis_schema_name"]}')
