@@ -148,3 +148,6 @@ dabs/dabs_template/template/tmp
 
 **/.terraform*
 **/terraform.tfstate*
+
+# Ignore Config File
+config.json
