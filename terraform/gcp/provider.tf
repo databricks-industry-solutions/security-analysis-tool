@@ -18,4 +18,5 @@ module "common" {
   workspace_id                    = var.workspace_id
   sqlw_id                         = var.sqlw_id
   gcp_impersonate_service_account = var.impersonate_service_account
+  proxies                         = var.proxies
 }

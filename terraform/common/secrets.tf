@@ -28,7 +28,7 @@ resource "databricks_secret" "analysis_schema_name" {
 
 resource "databricks_secret" "proxies" {
   key          = "proxies"
-  string_value = var.proxies
+  string_value = jsonencode(var.proxies)
   scope        = databricks_secret_scope.sat.id
 }
 
