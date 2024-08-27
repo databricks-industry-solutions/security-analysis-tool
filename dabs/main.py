@@ -37,13 +37,13 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
     print("Installation complete.")
     print(f"Review workspace -> {client.config.host}")
 
-def setup(env_vars=False):
+def setup(env_vars=False, db_profile=None):
     
-    client, answers, profile = None, None, None
+    client, answers, profile = None, None, db_profile
 
     try:
         if env_vars:
-            get_env_vars()
+            get_env_vars(profile)
         else:
             client, answers, profile = form()
 
@@ -56,12 +56,12 @@ def setup(env_vars=False):
 
 if __name__ == "__main__":
     os.system("clear")
-
     db_profile, valid = check_flags()
 
-    if not valid:
+    if db_profile is None:
+        setup()
+    elif not valid:
         print(f"Profile {db_profile} is not valid. Please check your profile.")
         exit(1)
-
-    # TO DO: Validate profile and run setup
-    setup(env_vars=valid)
+    else:
+        setup(env_vars=valid, db_profile=db_profile)

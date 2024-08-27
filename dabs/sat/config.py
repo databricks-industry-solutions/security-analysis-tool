@@ -15,8 +15,21 @@ from sat.utils import (
     uc_enabled,
 )
 
-def get_env_vars():
+def get_env_vars(profile):
     print("Getting environment variables...")
+
+    client = WorkspaceClient(profile=profile)
+
+    is_azure = client.config.is_azure
+    is_gcp = client.config.is_gcp
+    is_aws = client.config.is_aws
+
+    if is_azure:
+        pass
+    elif is_gcp:
+        pass
+    elif is_aws:
+        pass
 
 
 
