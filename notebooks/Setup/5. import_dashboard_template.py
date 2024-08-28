@@ -100,8 +100,8 @@ if response.status_code == 200:
     if (found == False):
         dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
 else:
-    loggr.info(f"Error with PAT token, {response.text}")    
-    dbutils.notebook.exit("Invalid access token, check PAT configuration value for this workspace.")            
+    loggr.info(f"Error with token, {response.text}")    
+    dbutils.notebook.exit("Invalid access token, check configuration value for this workspace.")            
 
 
 # COMMAND ----------
