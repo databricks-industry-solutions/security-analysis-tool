@@ -38,7 +38,6 @@ variable "gcp_impersonate_service_account" {
 variable "analysis_schema_name" {
   type        = string
   description = "Name of the schema to be used for analysis"
-  default     = "security_analysis"
 }
 
 variable "proxies" {

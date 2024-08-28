@@ -23,10 +23,16 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "analysis_schema_name" {
+  type        = string
+  description = "Name of the schema to be used for analysis"
+}
+
 variable "proxies" {
-  type        = object
+  type        = map
   description = "Proxies to be used for Databricks API calls"
 }
+
 
 ### Azure Specific Variables
 

@@ -1,6 +1,7 @@
 databricks_url     = ""
 workspace_id       = ""
 account_console_id = ""
+analysis_schema_name = ""
 
 ### Azure Specific Variables
 
