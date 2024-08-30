@@ -205,7 +205,3 @@ modifyWorkspaceConfigFile(input_status_arr)
 # COMMAND ----------
 
 dbutils.notebook.exit('OK')
-
-# COMMAND ----------
-
-

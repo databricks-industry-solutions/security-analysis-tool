@@ -51,10 +51,11 @@ ws = (workspacedf.collect())[0]
 from core.dbclient import SatDBClient
 json_.update({'url':'https://' + ws.deployment_url, 'workspace_id': ws.workspace_id,  'clusterid':clusterid, 'cloud_type':cloud_type})  
 
+
 token = ''
 if cloud_type =='azure': #client secret always needed
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':token, 'client_secret': client_secret})
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
 elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
     client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
     json_.update({'token':token, 'client_secret': client_secret})

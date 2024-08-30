@@ -497,6 +497,41 @@ def create_workspace_run_complete_table():
 
 # COMMAND ----------
 
+def generateGCPWSToken(deployment_url, cred_file_path,target_principal):
+    from google.oauth2 import service_account
+    import gcsfs
+    import json 
+    gcp_accounts_url = 'https://accounts.gcp.databricks.com'
+    target_scopes = [deployment_url]
+    print(target_scopes)
+    # Reading gcs files with gcsfs
+    gcs_file_system = gcsfs.GCSFileSystem(project="gcp_project_name")
+    gcs_json_path = cred_file_path
+    with gcs_file_system.open(gcs_json_path) as f:
+      json_dict = json.load(f)
+      key = json.dumps(json_dict) 
+    source_credentials = service_account.Credentials.from_service_account_info(json_dict,scopes=target_scopes)
+    from google.auth import impersonated_credentials
+    from google.auth.transport.requests import AuthorizedSession
+
+    target_credentials = impersonated_credentials.Credentials(
+      source_credentials=source_credentials,
+      target_principal=target_principal,
+      target_scopes = target_scopes,
+      lifetime=36000)
+
+    creds = impersonated_credentials.IDTokenCredentials(
+                                      target_credentials,
+                                      target_audience=deployment_url,
+                                      include_email=True)
+
+    authed_session = AuthorizedSession(creds)
+    resp = authed_session.get(gcp_accounts_url)
+    return creds.token
+    
+
+# COMMAND ----------
+
 # For testing
 JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": false, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false}'
 
