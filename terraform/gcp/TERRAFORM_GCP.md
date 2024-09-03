@@ -26,8 +26,6 @@ Further Documentation for some of the variables:
 
 [account_console_id](https://docs.gcp.databricks.com/administration-guide/account-settings/#locate-your-account-id)
 
-[workspace_PAT](https://docs.gcp.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
-
 [GCP Specific variables](../../docs/setup.md#authentication-information) and navigate to the GCP section
 
 ## Run Terraform

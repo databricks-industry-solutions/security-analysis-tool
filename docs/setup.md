@@ -27,7 +27,7 @@ SAT creates a new security_analysis database and Delta tables. If you are an exi
 ### Unity Catalog based schema
 
 ```sql
-  drop  database <uc_catalog_name>.security_analysis cascade;
+  drop  database <uc_catalog_name>.<schema_name> cascade;
 ```
 
 ## Setup

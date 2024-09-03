@@ -25,8 +25,6 @@ Further Documentation for some of the variables:
 
 [account_console_id](https://docs.databricks.com/administration-guide/account-settings/index.html#locate-your-account-id)
 
-[workspace_PAT](https://docs.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
-
 ## Run Terraform
 
 Step 6: Terraform [Init](https://developer.hashicorp.com/terraform/cli/commands/init)
