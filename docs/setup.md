@@ -71,10 +71,10 @@ You now have two jobs (SAT Initializer Notebook & SAT Driver Notebook). Run SAT 
 
 ###  2. Access Databricks SQL Dashboards
 
-   > **Note:** You can also use Lakeview Dashboards to view the results, instead of classic Dashboards.
+   > **Note:** You can also use Lakeview Dashboards to view the results.
 
 
-In DBSQL find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter the dashboard by **SAT** tag. 
+In DBSQL find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter the dashboard by **SAT** tag.  (The old classic legacy dashboard can be found in Workspace -> Home -> SAT_dashboard)
 
    <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
 
