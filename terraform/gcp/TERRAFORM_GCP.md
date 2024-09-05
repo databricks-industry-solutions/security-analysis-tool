@@ -1,5 +1,7 @@
 ## Setting up Terraform
 
+> **SAT v0.2.0 or higher** brings full support for Unity Catalog. Now you can pick your catalog instead of hive_metastore. Plus, you get to choose your own schema name.
+
 Step 1: [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
 
 Step 2: [Install Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on local machine
@@ -27,6 +29,14 @@ Further Documentation for some of the variables:
 [account_console_id](https://docs.gcp.databricks.com/administration-guide/account-settings/#locate-your-account-id)
 
 [GCP Specific variables](../../docs/setup.md#authentication-information) and navigate to the GCP section
+
+> **Proxies are now supported as part of SAT. You can add your HTTP and HTTPS links to use your proxies.**
+```json
+{
+    "http": "http://example.com",
+    "https": "https://example.com"
+}
+```
 
 ## Run Terraform
 
