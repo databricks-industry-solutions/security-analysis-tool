@@ -1,5 +1,7 @@
 ## Setting up Terraform
 
+> **SAT v0.2.0 or higher** brings full support for Unity Catalog. Now you can pick your catalog instead of hive_metastore. Plus, you get to choose your own schema name.
+
 Step 1: [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
 
 Step 2: [Install Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on local machine
@@ -8,12 +10,13 @@ Step 3: Git Clone Repo
   
   ```sh
     git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
-   ``` 
+   ```
+
 Step 4: Change Directories
 
   ```sh
     cd security-analysis-tool/terraform/<cloud>/
-  ``` 
+  ```
 
 Step 5: Set values in `terraform.tfvars` file
 
@@ -25,7 +28,13 @@ Further Documentation for some of the variables:
 
 [account_console_id](https://docs.databricks.com/administration-guide/account-settings/index.html#locate-your-account-id)
 
-[workspace_PAT](https://docs.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
+> **Proxies are now supported as part of SAT. You can add your HTTP and HTTPS links to use your proxies.**
+```json
+{
+    "http": "http://example.com",
+    "https": "https://example.com"
+}
+```
 
 ## Run Terraform
 

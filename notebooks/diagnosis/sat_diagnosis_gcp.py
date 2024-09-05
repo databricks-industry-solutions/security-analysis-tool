@@ -41,14 +41,6 @@ if not found:
 
 # COMMAND ----------
 
-import json
-#Get current workspace id
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
-print(current_workspace)
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ### Let us check if there are required configs in the SAT scope
 
@@ -59,27 +51,19 @@ try:
    dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
    dbutils.secrets.get(scope=json_['master_name_scope'], key='gs-path-to-json')
    dbutils.secrets.get(scope=json_['master_name_scope'], key='impersonate-service-account')
-   tokenkey = f"{json_['workspace_pat_token_prefix']}-{current_workspace}"
-   dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
+   dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
    print("Your SAT configuration has required secret names")
 except Exception as e:
    dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Validate the following Values and make sure they are correct
+import requests,json
 
-# COMMAND ----------
 
-sat_scope = json_['master_name_scope']
-
-for key in dbutils.secrets.list(sat_scope):
-    if key.key == tokenkey or not key.key.startswith("sat-token-"): 
-        print(key.key)
-        secretvalue = dbutils.secrets.get(scope=sat_scope, key=key.key)
-        print(" ".join(secretvalue))
-
+# Define the URL and headers
+workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
+  .getContext().toJson())['tags']['browserHostName']
 
 # COMMAND ----------
 
@@ -90,24 +74,10 @@ for key in dbutils.secrets.list(sat_scope):
 
 import requests,json
 
-access_token = dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
 
 # Define the URL and headers
 workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
   .getContext().toJson())['tags']['browserHostName']
-
-
-url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
-headers = {
-    'Authorization': f'Bearer {access_token}'
-}
-
-# Make the GET request
-response = requests.get(url, headers=headers)
-
-# Print the response
-print(response.json())
-
 
 # COMMAND ----------
 
@@ -197,7 +167,7 @@ print(access_token)
 import requests
 
 # Define the URL and headers
-DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=sat_scope, key="account-console-id")
+DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=json_['master_name_scope'], key="account-console-id")
 url = f'https://accounts.gcp.databricks.com/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
 
 ## Note: The access token should be generated for a SP which is an account admin to run this command.  
@@ -274,7 +244,6 @@ print(identity_token)
 
 import requests,json
 
-access_token = dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
 
 # Define the URL and headers
 workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \

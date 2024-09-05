@@ -34,6 +34,12 @@ current_workspace = context['tags']['orgId']
 
 # COMMAND ----------
 
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+
+# COMMAND ----------
+
 workspacedf = spark.sql("select * from `global_temp`.`all_workspaces` where workspace_id='" + current_workspace + "'" )
 if (workspacedf.rdd.isEmpty()):
     dbutils.notebook.exit("The current workspace is not found in configured list of workspaces for analysis.")
@@ -42,13 +48,44 @@ ws = (workspacedf.collect())[0]
 
 # COMMAND ----------
 
+from core.dbclient import SatDBClient
+json_.update({'url':'https://' + ws.deployment_url, 'workspace_id': ws.workspace_id,  'clusterid':clusterid, 'cloud_type':cloud_type})  
+
+
+token = ''
+if cloud_type =='azure': #client secret always needed
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+    mastername = ' '
+    masterpwd = ' ' # we still need to send empty user/pwd.
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+else: #lets populate master key for accounts api
+    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+    
+if (json_['use_mastercreds']) is False:
+    tokenscope = json_['workspace_pat_scope']
+    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
+    token = dbutils.secrets.get(tokenscope, tokenkey)
+    json_.update({'token':token})
+
+db_client = SatDBClient(json_)
+token = db_client.get_temporary_oauth_token()
+
+
+# COMMAND ----------
+
 import requests
+
 DOMAIN = ws.deployment_url
-TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
 loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!")
 response = requests.get(
           'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % TOKEN},
+          headers={'Authorization': 'Bearer %s' % token},
           json=None,
           timeout=60 
         )
@@ -64,8 +101,8 @@ if response.status_code == 200:
     if (found == False):
         dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
 else:
-    loggr.info(f"Error with PAT token, {response.text}")
-    dbutils.notebook.exit("Invalid access token, check PAT configuration value for this workspace.")            
+    loggr.info(f"Error with token, {response.text}")
+    dbutils.notebook.exit("Invalid access token, check configuration value for this workspace.")            
 
 
 # COMMAND ----------
@@ -121,7 +158,7 @@ BODY = {'path': f'{basePath()}/dashboards/SAT - Security Analysis Tool (Lakeview
 loggr.info(f"Getting Dashboard")
 response = requests.get(
           'https://%s/api/2.0/workspace/get-status' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % TOKEN},
+          headers={'Authorization': 'Bearer %s' % token},
           json=BODY,
           timeout=60
         )
@@ -145,7 +182,7 @@ if exists != False:
   loggr.info(f"Deleting Dashboard")
   response = requests.delete(
             'https://%s/api/2.0/lakeview/dashboards/%s' % (DOMAIN, dashboard_id),
-            headers={'Authorization': 'Bearer %s' % TOKEN},
+            headers={'Authorization': 'Bearer %s' % token},
             json=BODY,
             timeout=60
           )
@@ -172,7 +209,7 @@ BODY = {'display_name': 'SAT - Security Analysis Tool (Lakeview - Experimental)'
 loggr.info(f"Creating Dashboard")
 response = requests.post(
           'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % TOKEN},
+          headers={'Authorization': 'Bearer %s' % token},
           json=BODY,
           timeout=60
         )
@@ -204,7 +241,7 @@ if exists != True:
     loggr.info(f"Publishing the Dashboard using the SAT SQL Warehouse")
     response = requests.post(
             URL,
-            headers={'Authorization': 'Bearer %s' % TOKEN},
+            headers={'Authorization': 'Bearer %s' % token},
             json=BODY,
             timeout=60
             )

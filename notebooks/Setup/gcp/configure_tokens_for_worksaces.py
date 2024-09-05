@@ -46,9 +46,7 @@ if cred_file_path is None or target_principal is None:
 
 workspace_pat_scope = json_['workspace_pat_scope']
 tokenscope = json_['workspace_pat_token_prefix']
-ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"-"+current_workspace)
 
-account_id = json_["account_id"] 
 
 workspace_id = None
 try:
@@ -169,20 +167,19 @@ response = requests.get(
   json=None,
   timeout=600
 )
-
+ws_temp_token = generateGCPWSToken(gcp_workspace_url ,dbutils.secrets.get(scope=json_['master_name_scope'], key='gs-path-to-json'),dbutils.secrets.get(scope=json_['master_name_scope'], key='impersonate-service-account'))
 if response.status_code == 200:
     loggr.info("Workspaces query successful!")
     workspaces = response.json()
     #generate rest of the workspace tokens and store them in the secret store of the main workspace
-    #Do not renew token for the current workspace as the PAT token is already provided via config
     #Renew the token for specified workspace or all workspaces based on the workspace_id value
     for ws in workspaces:
-        if((workspace_id is None and (str(ws['workspace_id']) != current_workspace) and (ws['workspace_status'] == 'RUNNING')) or (workspace_id is not None and (str(ws['workspace_id']) == workspace_id) and (str(ws['workspace_id']) != current_workspace))):
+        if((workspace_id is None and (ws['workspace_status'] == 'RUNNING')) or (workspace_id is not None and (str(ws['workspace_id']) == workspace_id))):
             deployment_url = "https://"+ ws['deployment_name']+'.'+cloud_type+'.databricks.com'
             loggr.info(f" Getting token for Workspace : {deployment_url}")
             token = generateToken(deployment_url)
             if token:
-                storeTokenAsSecret(gcp_workspace_url, workspace_pat_scope, tokenscope+"-"+str(ws['workspace_id']), ws_pat_token, token)
+                storeTokenAsSecret(gcp_workspace_url, workspace_pat_scope, tokenscope+"-"+str(ws['workspace_id']), ws_temp_token, token)
 else:
     loggr.info(f"Error querying workspace API. Check account tokens: {response}")   
 

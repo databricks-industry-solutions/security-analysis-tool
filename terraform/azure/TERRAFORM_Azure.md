@@ -1,5 +1,7 @@
 ## Setting up Terraform
 
+> **SAT v0.2.0 or higher** brings full support for Unity Catalog. Now you can pick your catalog instead of hive_metastore. Plus, you get to choose your own schema name.
+
 Step 1: [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
 
 Step 2: [Install Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on local machine
@@ -39,6 +41,13 @@ Run the login command and sign in with your account credentials in the browser.
 az login
 ```
 
+> **Proxies are now supported as part of SAT. You can add your HTTP and HTTPS links to use your proxies.**
+```json
+{
+    "http": "http://example.com",
+    "https": "https://example.com"
+}
+```
 
 ## Run Terraform
 

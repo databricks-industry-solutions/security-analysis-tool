@@ -28,6 +28,12 @@ dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True
 
 # COMMAND ----------
 
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+
+# COMMAND ----------
+
 import json
 context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
 current_workspace = context['tags']['orgId']
@@ -42,6 +48,37 @@ ws = (workspacedf.collect())[0]
 
 # COMMAND ----------
 
+from core.dbclient import SatDBClient
+json_.update({'url':'https://' + ws.deployment_url, 'workspace_id': ws.workspace_id,  'clusterid':clusterid, 'cloud_type':cloud_type})  
+
+
+token = ''
+if cloud_type =='azure': #client secret always needed
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+    mastername = ' '
+    masterpwd = ' ' # we still need to send empty user/pwd.
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+else: #lets populate master key for accounts api
+    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+    
+if (json_['use_mastercreds']) is False:
+    tokenscope = json_['workspace_pat_scope']
+    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
+    token = dbutils.secrets.get(tokenscope, tokenkey)
+    json_.update({'token':token})
+
+db_client = SatDBClient(json_)
+token = db_client.get_temporary_oauth_token()
+
+
+# COMMAND ----------
+
 workspacesdf = spark.sql('select * from `global_temp`.`all_workspaces`')
 display(workspacesdf)
 workspaces = workspacesdf.collect()
@@ -51,6 +88,7 @@ workspaces = workspacesdf.collect()
 #todo: Add parent folder to all SQL assets, expose name in _json (default SAT)
 #create a folder to house all SAT sql artifacts
 import requests
+
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 session = requests.Session()
@@ -62,8 +100,6 @@ session.mount('https://', adapter)
 def create_ws_folder(ws, dir_name):
     #delete tthe WS folder if it exists
     delete_ws_folder(ws, dir_name)
-    
-    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
     path = "/Users/"+context['tags']['user']+"/"+ dir_name
@@ -85,7 +121,7 @@ def get_ws_folder_object_id(ws, dir_name):
     
     #Use the workspace list API to get the object_id for the folder you want to use. 
     #Here’s an example for how to get it for a folder called “/Users/me@example.com”:
-    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
+  
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
     path = "/Users/"+context['tags']['user']+"/"
@@ -107,8 +143,6 @@ def get_ws_folder_object_id(ws, dir_name):
 
 #delete folder that houses all SAT sql artifacts
 def delete_ws_folder(ws, dir_name):
-    
-    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
     path = "/Users/"+context['tags']['user']+"/"+ dir_name
@@ -134,16 +168,18 @@ folder_id = create_ws_folder(ws, 'SAT_alerts')
 # COMMAND ----------
 
 import requests
+from core.dbclient import SatDBClient
+
 data_source_id =''
 user_id = None
 DOMAIN = ws.deployment_url
-TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
-        
+  
+   
 loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!") 
        
 response = requests.get(
           'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % TOKEN},
+          headers={'Authorization': 'Bearer %s' % token},
           json=None,
           timeout=60  
         )
@@ -164,9 +200,6 @@ retry = Retry(connect=10, backoff_factor=0.5)
 adapter = HTTPAdapter(max_retries=retry)
 session.mount('http://', adapter)
 session.mount('https://', adapter)
-
-DOMAIN = ws.deployment_url
-TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
 loggr.info(f"Creating alerts on: {DOMAIN}!") 
 
 #load alerts templates for each workspace
@@ -177,7 +210,7 @@ for ws_to_load in workspaces:
     response = requests.get(
               'https://%s/api/2.0/preview/sql/alerts' % (DOMAIN),
               json = body,
-              headers={'Authorization': 'Bearer %s' % TOKEN},
+              headers={'Authorization': 'Bearer %s' % token},
               timeout=60)
     alerts = response.json()
     found = False
@@ -194,7 +227,7 @@ for ws_to_load in workspaces:
         continue    
     response = session.post(
               'https://%s/api/2.0/preview/sql/queries' % (DOMAIN),
-              headers={'Authorization': 'Bearer %s' % TOKEN},
+              headers={'Authorization': 'Bearer %s' % token},
               json={
                         "data_source_id":data_source_id,
                         "name": "sat_alert_"+ws_to_load.workspace_id,
@@ -293,7 +326,7 @@ for ws_to_load in workspaces:
     if query_id is not None:
         response = session.post(
                   'https://%s/api/2.0/preview/sql/alerts' % (DOMAIN),
-                  headers={'Authorization': 'Bearer %s' % TOKEN},
+                  headers={'Authorization': 'Bearer %s' % token},
                   json={
                    "name":"sat_alerts_"+ws_to_load.workspace_id+"",
                    "options":{

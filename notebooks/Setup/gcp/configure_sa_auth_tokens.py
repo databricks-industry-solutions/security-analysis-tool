@@ -43,8 +43,6 @@ if cred_file_path is None or target_principal is None:
 
 workspace_pat_scope = json_['workspace_pat_scope']
 tokenscope = json_['workspace_pat_token_prefix']
-ws_pat_token = dbutils.secrets.get(workspace_pat_scope, tokenscope+"-"+current_workspace)
-
 
 master_name_scope = json_["master_name_scope"] 
 master_name_key = json_["master_name_key"] 
@@ -190,15 +188,17 @@ def storeTokenAsSecret(deployment_url, scope, key, PAT_token, token):
 if gcp_workspace_url is None or identity_token is None or access_token is None:
     dbutils.notebook.exit("Failed to create the necessary tokens, please check your Service key file and the Impersonation service account ")
 
+ws_temp_token = generateGCPWSToken(gcp_workspace_url ,dbutils.secrets.get(scope=json_['master_name_scope'], key='gs-path-to-json'),dbutils.secrets.get(scope=json_['master_name_scope'], key='impersonate-service-account'))
+
 
 if gcp_workspace_url:
     if identity_token:
         loggr.info(f"Storing identity token :- scope:{master_name_scope}, key:{master_name_key}, on workpace:{gcp_workspace_url}")
-        storeTokenAsSecret(gcp_workspace_url,master_name_scope, master_name_key,ws_pat_token,identity_token)
+        storeTokenAsSecret(gcp_workspace_url,master_name_scope, master_name_key,ws_temp_token,identity_token)
 
     if access_token:
          loggr.info(f"Storing identity token :- scope:{master_pwd_scope}, key:{master_pwd_key}, on workpace:{gcp_workspace_url}")          
-         storeTokenAsSecret(gcp_workspace_url,master_pwd_scope, master_pwd_key,ws_pat_token,access_token)
+         storeTokenAsSecret(gcp_workspace_url,master_pwd_scope, master_pwd_key,ws_temp_token,access_token)
 
 # COMMAND ----------
 

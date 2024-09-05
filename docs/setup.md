@@ -1,5 +1,7 @@
 # Setup Guide
 
+> **SAT v0.2.0 or higher** brings full support for Unity Catalog. Now you can pick your catalog instead of hive_metastore. Plus, you get to choose your own schema name.
+
 Follow this guide to setup the Security Analysis Tool (SAT) on your Databricks workspace.
 
 ## Prerequisites
@@ -27,12 +29,13 @@ SAT creates a new security_analysis database and Delta tables. If you are an exi
 ### Unity Catalog based schema
 
 ```sql
-  drop  database <uc_catalog_name>.security_analysis cascade;
+  drop  database <uc_catalog_name>.<schema_name> cascade;
 ```
 
 ## Setup
 
-> SAT is a productivity tool to help verify security configurations of Databricks deployments, it's not meant to be used as certification or attestation of your deployments. SAT project is regularly updated to improve the correctness of checks, add new checks, and fix bugs. Please send your feedback and comments to sat@databricks.com. 
+> SAT is a productivity tool to help verify security configurations of Databricks deployments, it's not meant to be used as certification or attestation of your deployments. SAT project is regularly updated to improve the correctness of checks, add new checks, and fix bugs. You will need a single SAT install per Databricks account in AWS and GCP and a single install per azure subscription in Azure. Add the Service principle as mentioned in the detailed steps to analyze the rest of the workspaces from the workspace where SAT is installed. You can choose not to add SP to a given workspace if you wish to ignore a given workspace.
+> Please send your feedback and comments to sat@databricks.com. 
 
 SAT can be setup on any of the cloud providers where Databricks is hosted. Follow the setup guide for the cloud provider you are using:
 
@@ -70,10 +73,10 @@ You now have two jobs (SAT Initializer Notebook & SAT Driver Notebook). Run SAT 
 
 ###  2. Access Databricks SQL Dashboards
 
-   > **Note:** You can also use Lakeview Dashboards to view the results, instead of classic Dashboards.
+   > **Note:** You can also use Lakeview Dashboards to view the results.
 
 
-In DBSQL find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter the dashboard by **SAT** tag. 
+In DBSQL find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter the dashboard by **SAT** tag.  (The old classic legacy dashboard can be found in Workspace -> Home -> SAT_dashboard)
 
    <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
 

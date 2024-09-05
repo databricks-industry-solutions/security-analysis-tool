@@ -5,6 +5,7 @@ This guide will help you setup the Security Analysis Tool (SAT) on GCP Databrick
 - [GCP Setup Guide](#gcp-setup-guide)
   - [Prerequisites](#prerequisites)
     - [Service Accounts](#service-accounts)
+    - [Databricks Service Principal](#databricks-service-principal)
   - [Installation](#installation)
     - [Credentials Needed](#credentials-needed)
   - [Troubleshooting](#troubleshooting)
@@ -26,6 +27,21 @@ The first step is to create a Service Principal in GCP. This will allow SAT to a
 - The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
 - Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
 - Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions.
+
+### Databricks Service Principal
+
+The first step is to create a Service Principal in Databricks. This will allow SAT to authenticate with the other workspaces. Follow the steps:
+
+- Go to the [Account Console](https://accounts.cloud.databricks.com)
+- On the left side bar menu, click on `User management`
+- Select `Service Principal` and then `Add service principal`
+- Type a new name for the service principal.
+- The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
+- Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
+- Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions.
+- Create a new OAuth Secret.
+- Save the `Secret` and `Client ID`
+- To deploy SAT in a workspace, you must add the Service Principal to the workspace.
 
 ## Installation
 

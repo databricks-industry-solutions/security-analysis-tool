@@ -16,7 +16,7 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
 * [SAT Azure troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_azure.py)
 * [SAT GCP troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_gcp.py)
 
-### 1. Incorrectly configured secrets
+### Incorrectly configured secrets
 
 * **Error:**
 
@@ -31,19 +31,7 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
     databricks --profile e2-sat secrets list-secrets sat_scope
     ```
 
-### 2. Invalid access token
-
-* **Error:**
-
-    ```
-    Error 403 Invalid access token.
-    ```
-
-* **Resolution:**
-
-    Check your PAT token configuration for the `workspace_pat_token` key.
-
-### 3. Firewall blocking Databricks accounts console
+### Firewall blocking Databricks accounts console
 
 * **Error:**
 
@@ -86,7 +74,7 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
 
     If you don’t see a JSON with a clean listing of workspaces, you are likely having a firewall issue that is blocking calls to the accounts console. Please have your infrastructure team add `accounts.cloud.databricks.com` to the allow-list. Ensure that the private IPv4 address from the NAT gateway is added to the IP allow list.
 
-### 4. Offline install of libraries in case of no PyPI access
+### Offline install of libraries in case of no PyPI access
 
 * **Steps:**
 

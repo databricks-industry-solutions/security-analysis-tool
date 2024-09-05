@@ -43,13 +43,37 @@ def form():
             ignore=lambda x: not x["enable_uc"],
             default="hive_metastore",
         ),
+        Text(
+            name="security_analysis_schema",
+            message="Schema name for SAT",
+            default="security_analysis",
+        ),
         List(
             name="warehouse",
             message="Select warehouse",
             choices=loading(get_warehouses, client=client),
         ),
     ]
-    questions = questions + cloud_specific_questions(client)
+    proxies = [
+        Confirm(
+            name="use_proxy",
+            message="Want to use a proxy?",
+            default=False,
+        ),
+        Text(
+            name="http",
+            message="HTTP Proxy",
+            ignore=lambda x: not x["use_proxy"],
+            default="",
+        ),
+        Text(
+            name="https",
+            message="HTTPS Proxy",
+            ignore=lambda x: not x["use_proxy"],
+            default="",
+        ),
+    ]
+    questions = questions + cloud_specific_questions(client) + proxies
     return client, prompt(questions), profile
 
 
@@ -116,15 +140,6 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
 
     client.secrets.create_scope(scope_name)
 
-    token = client.tokens.create(
-        lifetime_seconds=86400 * 90,
-        comment="Security Analysis Tool",
-    )
-    client.secrets.put_secret(
-        scope=scope_name,
-        key=f"sat-token-{client.get_workspace_id()}",
-        string_value=token.token_value,
-    )
     client.secrets.put_secret(
         scope=scope_name,
         key="account-console-id",
@@ -135,6 +150,29 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
         key="sql-warehouse-id",
         string_value=answers["warehouse"]["id"],
     )
+    client.secrets.put_secret(
+        scope=scope_name,
+        key="analysis_schema_name",
+        string_value=f'{answers["catalog"]}.{answers["security_analysis_schema"]}',
+    )
+
+    if answers["use_proxy"]:
+        client.secrets.put_secret(
+            scope=scope_name,
+            key="proxies",
+            string_value=json.dumps(
+                {
+                    "http": answers["http"],
+                    "https": answers["https"],
+                }
+            ),
+        )
+    else:
+        client.secrets.put_secret(
+            scope=scope_name,
+            key="proxies",
+            string_value="{}",
+        )
 
     if cloud_type == "aws":
         client.secrets.put_secret(
