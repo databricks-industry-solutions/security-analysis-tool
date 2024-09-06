@@ -28,6 +28,12 @@ dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True
 
 # COMMAND ----------
 
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+
+# COMMAND ----------
+
 import json
 context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
 current_workspace = context['tags']['orgId']
@@ -42,13 +48,44 @@ ws = (workspacedf.collect())[0]
 
 # COMMAND ----------
 
+from core.dbclient import SatDBClient
+json_.update({'url':'https://' + ws.deployment_url, 'workspace_id': ws.workspace_id,  'clusterid':clusterid, 'cloud_type':cloud_type})  
+
+
+token = ''
+if cloud_type =='azure': #client secret always needed
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+    mastername = ' '
+    masterpwd = ' ' # we still need to send empty user/pwd.
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+else: #lets populate master key for accounts api
+    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+    
+if (json_['use_mastercreds']) is False:
+    tokenscope = json_['workspace_pat_scope']
+    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
+    token = dbutils.secrets.get(tokenscope, tokenkey)
+    json_.update({'token':token})
+
+db_client = SatDBClient(json_)
+token = db_client.get_temporary_oauth_token()
+
+
+# COMMAND ----------
+
 import requests
+
 DOMAIN = ws.deployment_url
-TOKEN =  dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token) 
 loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!")
 response = requests.get(
           'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % TOKEN},
+          headers={'Authorization': 'Bearer %s' % token},
           json=None,
           timeout=60 
         )
@@ -64,8 +101,8 @@ if response.status_code == 200:
     if (found == False):
         dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
 else:
-    loggr.info(f"Error with PAT token, {response.text}")    
-    dbutils.notebook.exit("Invalid access token, check PAT configuration value for this workspace.")            
+    loggr.info(f"Error with token, {response.text}")    
+    dbutils.notebook.exit("Invalid access token, check configuration value for this workspace.")            
 
 
 # COMMAND ----------
@@ -73,6 +110,7 @@ else:
 #todo: Add parent folder to all SQL assets, expose name in _json (default SAT)
 #create a folder to house all SAT sql artifacts
 import requests
+from core.dbclient import SatDBClient
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 session = requests.Session()
@@ -84,8 +122,6 @@ session.mount('https://', adapter)
 def create_ws_folder(ws, dir_name):
     #delete tthe WS folder if it exists
     delete_ws_folder(ws, dir_name)
-    
-    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
     path = "/Users/"+context['tags']['user']+"/"+ dir_name
@@ -107,7 +143,6 @@ def get_ws_folder_object_id(ws, dir_name):
     
     #Use the workspace list API to get the object_id for the folder you want to use. 
     #Here’s an example for how to get it for a folder called “/Users/me@example.com”:
-    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
     path = "/Users/"+context['tags']['user']+"/"
@@ -129,8 +164,6 @@ def get_ws_folder_object_id(ws, dir_name):
 
 #delete folder that houses all SAT sql artifacts
 def delete_ws_folder(ws, dir_name):
-    
-    token = dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token)
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
     path = "/Users/"+context['tags']['user']+"/"+ dir_name
@@ -329,7 +362,8 @@ def load_dashboard(target_client: Client, dashboard_id, dashboard_state, folder_
 
 # COMMAND ----------
 
-target_client, dashboard_id_to_load,dashboard_folder  = get_client(ws, dbutils.secrets.get(json_['workspace_pat_scope'], ws.ws_token))
+from core.dbclient import SatDBClient
+target_client, dashboard_id_to_load,dashboard_folder  = get_client(ws, token)
 workspace_state = {}
 loggr.info(f"Loading dashboard to master workspace {ws.workspace_id} from dashboard folder {dashboard_folder}")
 load_dashboard(target_client, dashboard_id_to_load,  workspace_state, dashboard_folder)

@@ -30,9 +30,9 @@ The first step is to create a Service Principal in Databricks. This will allow S
 - Save the `Secret` and `Client ID`
 - To deploy SAT in a workspace, you must add the Service Principal to the workspace.
   
-![AWS_SP_Workspace](../images/aws_ws.png)
+![AWS_SP_Workspace](../images/gcp_ws.png)
 
-> The Service Principle requires an [Accounts Admin role](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-account-admin-roles-to-a-service-principal), [Admin role](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** and needs to be a member of the [metastore admin group](https://docs.databricks.com/en/data-governance/unity-catalog/manage-privileges/admin-privileges.html#who-has-metastore-admin-privileges) is required to analyze many of the APIs
+> The Service Principle requires an [Accounts Admin role](https://docs.gcp.databricks.com/en/admin/users-groups/service-principals.html#assign-account-admin-roles-to-a-service-principal), [Admin role](https://docs.gcp.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** and needs to be a member of the [metastore admin group](https://docs.gcp.databricks.com/en/data-governance/unity-catalog/manage-privileges/admin-privileges.html#who-has-metastore-admin-privileges) is required to analyze many of the APIs
 
 ## Installation
 
@@ -61,6 +61,7 @@ To execute the SAT follow these steps on your workstation or a compatible VM tha
       ./install.sh
     ```
 
+> **Proxies are now supported as part of SAT. You can add your HTTP and HTTPS links to use your proxies.**
 
 ![](../gif/terminal-aws.gif)
 

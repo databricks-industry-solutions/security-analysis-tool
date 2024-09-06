@@ -357,7 +357,7 @@ if enabled:
 # DBTITLE 1,Token Management
 check_id='21' #PAT Token with no lifetime limit
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-expiry_limit_evaluation_value = int(sbp_rec['evaluation_value'])
+expiry_limit_evaluation_value = sbp_rec['evaluation_value']
 def token_rule(df):
     #Check for count of tokens that are either set to expire in over 90 days from today or set to never expire. 
     if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
@@ -383,7 +383,7 @@ if enabled:
 
 check_id='7' # PAT Tokens About to Expire
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-expiry_limit_evaluation_value = int(sbp_rec['evaluation_value'])
+expiry_limit_evaluation_value = sbp_rec['evaluation_value']
 def token_rule(df):
     #Check for count of tokens that expiring in expiry_limit_evaluation_value days from today. 
     if df is not None and not df.rdd.isEmpty() and len(df.collect()) > 1:
@@ -449,7 +449,7 @@ if enabled and ('workspacesettings' + '_' + workspace_id in sqlContext.tableName
 # DBTITLE 1,Admin count
 check_id='27' #Admin Count
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-admin_count_evaluation_value = int(sbp_rec['evaluation_value'])
+admin_count_evaluation_value = sbp_rec['evaluation_value']
 def admin_rule(df):  
     if df is not None and not df.rdd.isEmpty() and  len(df.collect()) > admin_count_evaluation_value:
         df = df.rdd.map(lambda x: (re.sub('[\"\'\\\\]', '_', x['Admins']),)).toDF(['Admins'])           
@@ -474,7 +474,7 @@ if enabled:
 
 check_id='42' #Use service principals
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-service_principals_evaluation_value = int(sbp_rec['evaluation_value'])
+service_principals_evaluation_value = sbp_rec['evaluation_value']
 def use_service_principals(df):  
     if df is not None and not df.rdd.isEmpty() and  len(df.collect()) >= service_principals_evaluation_value:
         return (check_id, 0, {'SPs': len(df.collect())})
@@ -502,7 +502,7 @@ if enabled:
 # DBTITLE 1,Secrets Management
 check_id='1' #Secrets Management
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-secrets_count_evaluation_value = int(sbp_rec['evaluation_value'])
+secrets_count_evaluation_value = sbp_rec['evaluation_value']
 def secrets_rule(df):
     if df is not None and not df.rdd.isEmpty() and df.collect()[0][0] >= secrets_count_evaluation_value:
         num_secrets = df.collect()[0][0]
@@ -773,7 +773,7 @@ if enabled:
 # DBTITLE 1,DBFS /user/hive/warehouse - managed tables
 check_id='15'  #Managed Tables
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-dbfs_warehouses_evaluation_value = int(sbp_rec['evaluation_value'])
+dbfs_warehouses_evaluation_value = sbp_rec['evaluation_value']
 def dbfs_check(df):
   
     if df is not None and not df.rdd.isEmpty() and len(df.collect()) >= dbfs_warehouses_evaluation_value:
@@ -797,7 +797,7 @@ if enabled:
 # DBTITLE 1,DBFS /mnt check
 check_id='16' #Mounts
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-dbfs_fuse_mnt_evaluation_value = int(sbp_rec['evaluation_value'])
+dbfs_fuse_mnt_evaluation_value = sbp_rec['evaluation_value']
 def dbfs_mnt_check(df):
   
     if df is not None and not df.rdd.isEmpty() and len(df.collect())>=dbfs_fuse_mnt_evaluation_value:
@@ -896,7 +896,7 @@ if enabled:
 # DBTITLE 1,jobs - max concurrent runs >=5 (Denial of Service)
 check_id='23' #Max concurrent runs
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-max_concurrent_runs_evaluation_value = int(sbp_rec['evaluation_value'])
+max_concurrent_runs_evaluation_value = sbp_rec['evaluation_value']
 def mcr_check(df):
     if df is not None and not df.rdd.isEmpty():
         mcr = df.collect()
@@ -947,7 +947,7 @@ if enabled:
 # DBTITLE 1,Multiple users have cluster create privileges
 check_id='25' #User Privileges
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-max_cluster_create_count_evaluation_value = int(sbp_rec['evaluation_value'])
+max_cluster_create_count_evaluation_value = sbp_rec['evaluation_value']
 # Report on Clusters that do not have a policy id associated with them
 def cc_check(df):
     if df is not None and not df.rdd.isEmpty() and len(df.collect())>max_cluster_create_count_evaluation_value:
@@ -1003,7 +1003,7 @@ if enabled:
 # DBTITLE 1,How long since the last cluster restart
 check_id='9' #Long running clusters
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-days_since_restart_evaluation_value = int(sbp_rec['evaluation_value'])
+days_since_restart_evaluation_value = sbp_rec['evaluation_value']
 def time_check(df):
     if df is not None and not df.rdd.isEmpty() and len(df.collect())>=1:
         timlst = df.collect()

@@ -23,10 +23,26 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "analysis_schema_name" {
+  type        = string
+  description = "Name of the schema to be used for analysis"
+}
+
+variable "proxies" {
+  type        = map
+  description = "Proxies to be used for Databricks API calls"
+}
+
+
 ### Azure Specific Variables
 
 variable "client_id" {
   description = "Service Principal Application (client) ID"
+  type        = string
+}
+
+variable "client_secret" {
+  description = "SP Secret"
   type        = string
 }
 
@@ -40,7 +56,4 @@ variable "subscription_id" {
   type        = string
 }
 
-variable "client_secret" {
-  description = "SP Secret"
-  type        = string
-}
+

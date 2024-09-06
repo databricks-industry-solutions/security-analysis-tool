@@ -9,7 +9,10 @@
 
 Refer to specific use-case:
 - [Standard setup guide](./docs/setup.md)
-- [Terraform](./terraform/README.md)
+- Terraform
+   - [AWS](./terraform/aws/TERRAFORM_AWS.md)
+   - [Azure](./terraform/azure/TERRAFORM_Azure.md)
+   - [GCP](./terraform/gcp/TERRAFORM_GCP.md)
 - [Deprecated: Manual setup](./docs/deprecated_old_setup.md)
 
 ## Introduction

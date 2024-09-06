@@ -7,8 +7,9 @@ terraform {
 }
 
 provider "databricks" {
-  host  = var.databricks_url
-  token = var.workspace_PAT
+  host          = var.databricks_url
+  client_id     = var.client_id
+  client_secret = var.client_secret
 }
 
 module "common" {
@@ -17,4 +18,6 @@ module "common" {
   workspace_id                    = var.workspace_id
   sqlw_id                         = var.sqlw_id
   gcp_impersonate_service_account = var.impersonate_service_account
+  analysis_schema_name            = var.analysis_schema_name
+  proxies                         = var.proxies
 }

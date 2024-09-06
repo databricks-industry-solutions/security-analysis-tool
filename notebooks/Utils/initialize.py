@@ -41,8 +41,11 @@ import json
 json_ = {
     "account_id": dbutils.secrets.get(scope="sat_scope", key="account-console-id"),
     "sql_warehouse_id": dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id"),
-    "analysis_schema_name": "security_analysis",
+    "analysis_schema_name": dbutils.secrets.get(
+        scope="sat_scope", key="analysis_schema_name"
+    ),
     "verbosity": "info",
+    "proxies": json.loads(dbutils.secrets.get(scope="sat_scope", key="proxies")),
 }
 
 # COMMAND ----------
@@ -135,10 +138,10 @@ create_workspace_run_complete_table()
 
 # COMMAND ----------
 
-# Initialize best practices 
+# Initialize best practices
 readBestPracticesConfigsFile()
 
 # COMMAND ----------
 
-#Initialize sat dasf mapping
+# Initialize sat dasf mapping
 load_sat_dasf_mapping()

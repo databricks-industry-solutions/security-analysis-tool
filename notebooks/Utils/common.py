@@ -243,73 +243,74 @@ def getWorkspaceConfig():
 # This is needed only on bootstrap, subsequetly the database is the master copy of the user configuration
 # Every time the values are altered, the _user file can be regenerated - but it is more as FYI
 def readBestPracticesConfigsFile():
-    import shutil
-    from os.path import exists
+    security_best_practices_exists = spark.catalog.tableExists( f'{json_["analysis_schema_name"]}.security_best_practices')
+    if not security_best_practices_exists:
+        import shutil
+        from os.path import exists
 
-    import pandas as pd
+        import pandas as pd
 
-    hostname = (
-        dbutils.notebook.entry_point.getDbutils()
-        .notebook()
-        .getContext()
-        .apiUrl()
-        .getOrElse(None)
-    )
-    cloud_type = getCloudType(hostname)
-    doc_url = cloud_type + "_doc_url"
+        hostname = (
+            dbutils.notebook.entry_point.getDbutils()
+            .notebook()
+            .getContext()
+            .apiUrl()
+            .getOrElse(None)
+        )
+        cloud_type = getCloudType(hostname)
+        doc_url = cloud_type + "_doc_url"
 
-    prefix = getConfigPath()
-    origfile = f"{prefix}/security_best_practices.csv"
-    
-    schema_list = [
-        "id",
-        "check_id",
-        "category",
-        "check",
-        "evaluation_value",
-        "severity",
-        "recommendation",
-        "aws",
-        "azure",
-        "gcp",
-        "enable",
-        "alert",
-        "logic",
-        "api",
-        doc_url,
-    ]
+        prefix = getConfigPath()
+        origfile = f"{prefix}/security_best_practices.csv"
+        
+        schema_list = [
+            "id",
+            "check_id",
+            "category",
+            "check",
+            "evaluation_value",
+            "severity",
+            "recommendation",
+            "aws",
+            "azure",
+            "gcp",
+            "enable",
+            "alert",
+            "logic",
+            "api",
+            doc_url,
+        ]
 
-    schema = """id int, check_id string,category string,check string, evaluation_value string,severity string,
-               recommendation string,aws int,azure int,gcp int,enable int,alert int, logic string, api string,  doc_url string"""
+        schema = """id int, check_id string,category string,check string, evaluation_value int,severity string,
+                recommendation string,aws int,azure int,gcp int,enable int,alert int, logic string, api string,  doc_url string"""
 
-    security_best_practices_pd = pd.read_csv(
-        origfile, header=0, usecols=schema_list
-    ).rename(columns={doc_url: "doc_url"})
-   
-    security_best_practices = spark.createDataFrame(
-        security_best_practices_pd, schema
-    ).select(
-        "id",
-        "check_id",
-        "category",
-        "check",
-        "evaluation_value",
-        "severity",
-        "recommendation",
-        "doc_url",
-        "aws",
-        "azure",
-        "gcp",
-        "enable",
-        "alert",
-        "logic",
-        "api",
-    )
-
-    security_best_practices.write.format("delta").mode("overwrite").saveAsTable(
-        json_["analysis_schema_name"] + ".security_best_practices"
-    )
-    display(security_best_practices)
+        security_best_practices_pd = pd.read_csv(
+            origfile, header=0, usecols=schema_list
+        ).rename(columns={doc_url: "doc_url"})
+        
+        security_best_practices = spark.createDataFrame(
+            security_best_practices_pd, schema
+        ).select(
+            "id",
+            "check_id",
+            "category",
+            "check",
+            "evaluation_value",
+            "severity",
+            "recommendation",
+            "doc_url",
+            "aws",
+            "azure",
+            "gcp",
+            "enable",
+            "alert",
+            "logic",
+            "api",
+        )
+        security_best_practices.write.format("delta").mode("overwrite").saveAsTable(
+            json_["analysis_schema_name"] + ".security_best_practices"
+        )
+        display(security_best_practices)
 
 
 # COMMAND ----------
@@ -374,16 +375,6 @@ def basePath():
     path = path[: path.find("/notebooks")]
     return f"/Workspace{path}"
 
-
-# COMMAND ----------
-
-"""%sql
-CREATE DATABASE IF NOT EXISTS security_analysis;
-CREATE TABLE IF NOT EXISTS security_analysis.run_number_table (
-  runID BIGINT GENERATED ALWAYS AS IDENTITY,
-  check_time TIMESTAMP
-)
-USING DELTA"""
 
 # COMMAND ----------
 
@@ -503,6 +494,41 @@ def create_workspace_run_complete_table():
                     USING DELTA"""
     )
 
+
+# COMMAND ----------
+
+def generateGCPWSToken(deployment_url, cred_file_path,target_principal):
+    from google.oauth2 import service_account
+    import gcsfs
+    import json 
+    gcp_accounts_url = 'https://accounts.gcp.databricks.com'
+    target_scopes = [deployment_url]
+    print(target_scopes)
+    # Reading gcs files with gcsfs
+    gcs_file_system = gcsfs.GCSFileSystem(project="gcp_project_name")
+    gcs_json_path = cred_file_path
+    with gcs_file_system.open(gcs_json_path) as f:
+      json_dict = json.load(f)
+      key = json.dumps(json_dict) 
+    source_credentials = service_account.Credentials.from_service_account_info(json_dict,scopes=target_scopes)
+    from google.auth import impersonated_credentials
+    from google.auth.transport.requests import AuthorizedSession
+
+    target_credentials = impersonated_credentials.Credentials(
+      source_credentials=source_credentials,
+      target_principal=target_principal,
+      target_scopes = target_scopes,
+      lifetime=36000)
+
+    creds = impersonated_credentials.IDTokenCredentials(
+                                      target_credentials,
+                                      target_audience=deployment_url,
+                                      include_email=True)
+
+    authed_session = AuthorizedSession(creds)
+    resp = authed_session.get(gcp_accounts_url)
+    return creds.token
+    
 
 # COMMAND ----------
 

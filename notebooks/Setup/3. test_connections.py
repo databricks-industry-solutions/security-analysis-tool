@@ -54,6 +54,7 @@ from core.dbclient import SatDBClient
 
 def test_connection(jsonarg, accounts_test=False):
   db_client = SatDBClient(jsonarg)
+  token = db_client.get_temporary_oauth_token()
   if accounts_test == True:
     hostname='Accounts'
     workspace_id='Accounts_Cred'
@@ -182,17 +183,7 @@ for ws in workspaces:
     masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
     json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
       
-  
-  # if the worspace we are testing is the current workspace, 
-  # We need the current workspace connection tested with the token to configure alerts and dashboard later
-  if ws.workspace_id == current_workspace:
-    loggr.info(f"\033[1mCurrent workspace {ws.workspace_id} detected. Using PAT.\033[0m")
-    tokenscope = json_['workspace_pat_scope']
-    tokenkey = ws.ws_token #already has prefix in config file
-    token = dbutils.secrets.get(tokenscope, tokenkey)
-    json_.update({'token':token})
-  #for all other non-current workspaces
-  elif (json_['use_mastercreds']) is False:
+  if (json_['use_mastercreds']) is False:
     tokenscope = json_['workspace_pat_scope']
     tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
     try:
@@ -214,7 +205,3 @@ modifyWorkspaceConfigFile(input_status_arr)
 # COMMAND ----------
 
 dbutils.notebook.exit('OK')
-
-# COMMAND ----------
-
-

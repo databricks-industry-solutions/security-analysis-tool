@@ -2,14 +2,16 @@ databricks_url = ""
 workspace_PAT = ""
 workspace_id = ""
 account_console_id = ""
+analysis_schema_name = ""
 
 #Uncomment and set sqlw_id if you have an existing SQL Warehouse you'd like to use, else leave it commented out
 #sqlw_id = ""
 
 ### AWS Specific Variables
+client_id     = "" // Databricks Service Principal Application ID
+client_secret = "" //Databricks Service Principal ID Secret
 
-account_user = ""
-account_pass = ""
+
 
 ### Azure Specific Variables
 

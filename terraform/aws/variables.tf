@@ -8,11 +8,6 @@ variable "workspace_id" {
   type        = string
 }
 
-variable "workspace_PAT" {
-  description = "PAT should look like dapixxxxxxxxxxxxxxxxxxxx"
-  type        = string
-}
-
 variable "account_console_id" {
   description = "Databricks Account Console ID"
   type        = string
@@ -58,4 +53,14 @@ variable "client_secret" {
   description = "SP Secret"
   type        = string
   default     = "value"
+}
+
+variable "analysis_schema_name" {
+  type        = string
+  description = "Name of the schema to be used for analysis"
+}
+
+variable "proxies" {
+  type        = map
+  description = "Proxies to be used for Databricks API calls"
 }

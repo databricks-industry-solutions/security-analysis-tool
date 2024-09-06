@@ -1,9 +1,14 @@
 databricks_url     = ""
-workspace_PAT      = ""
 workspace_id       = ""
 account_console_id = ""
+analysis_schema_name = ""
+proxies = {}
 
 ### GCP Specific Variables
-
-gs_path_to_json   = ""
+client_id                   = ""
+client_secret               = ""
+gs_path_to_json             = ""
 impersonate_service_account = ""
+
+
+
