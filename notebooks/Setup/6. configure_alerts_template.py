@@ -328,21 +328,28 @@ for ws_to_load in workspaces:
                   'https://%s/api/2.0/sql/alerts' % (DOMAIN),
                   headers={'Authorization': 'Bearer %s' % token},
                   json={
-                   "name":"sat_alerts_"+ws_to_load.workspace_id+"",
-                   "options":{
-                      "op":">=",
-                      "value":1,
-                      "muted":False,
-                      "column":"total",
-                      "custom_subject":"SAT-Alert for workspace:"+ws_to_load.workspace_id,
-                      "custom_body":"Hello,\nAlert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}.\nThere have been the following unexpected events on the last run:\n{{QUERY_RESULT_ROWS}}\n\n",
-                      "schedule_failures":0
-                
-                   },
-                   "query_id":query_id,
-                   "parent":"folders/"+str(folder_id)   
-                },
-                timeout=60  
+                   "alert": {
+                       "display_name":"sat_alerts_"+ws_to_load.workspace_id+"",
+                       "custom_subject":"SAT-Alert for workspace:"+ws_to_load.workspace_id,
+                        "custom_body":"Hello,\nAlert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}.\nThere have been the following unexpected events on the last run:\n{{QUERY_RESULT_ROWS}}\n\n",
+                        "condition": {
+                            "op": "GREATER_THAN_OR_EQUAL",
+                            "operand": {
+                                "column": {
+                                    "name": "total"
+                                }
+                            },
+                            "threshold": {
+                                "value": {
+                                    "double_value": 1.0
+                                }
+                            }
+                        },
+                        "query_id":query_id,
+                        "parent":"folders/"+str(folder_id)
+                        }
+                    },
+                    timeout=60
                 )
 
     if response.status_code == 200:
