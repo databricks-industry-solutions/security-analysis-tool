@@ -208,7 +208,7 @@ for ws_to_load in workspaces:
     alert_name = "sat_alerts_"+ws_to_load.workspace_id
     body = {"name" : alert_name}
     response = requests.get(
-              'https://%s/api/2.0/preview/sql/alerts' % (DOMAIN),
+              'https://%s/api/2.0/sql/alerts' % (DOMAIN),
               json = body,
               headers={'Authorization': 'Bearer %s' % token},
               timeout=60)
@@ -226,7 +226,7 @@ for ws_to_load in workspaces:
         loggr.info(f"Folder can't be created or found {ws_to_load.workspace_id}") 
         continue    
     response = session.post(
-              'https://%s/api/2.0/preview/sql/queries' % (DOMAIN),
+              'https://%s/api/2.0/sql/queries' % (DOMAIN),
               headers={'Authorization': 'Bearer %s' % token},
               json={
                         "data_source_id":data_source_id,
@@ -325,7 +325,7 @@ for ws_to_load in workspaces:
 
     if query_id is not None:
         response = session.post(
-                  'https://%s/api/2.0/preview/sql/alerts' % (DOMAIN),
+                  'https://%s/api/2.0/sql/alerts' % (DOMAIN),
                   headers={'Authorization': 'Bearer %s' % token},
                   json={
                    "name":"sat_alerts_"+ws_to_load.workspace_id+"",
