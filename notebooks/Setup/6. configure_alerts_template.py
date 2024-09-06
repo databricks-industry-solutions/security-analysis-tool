@@ -152,6 +152,24 @@ def delete_ws_folder(ws, dir_name):
     
     session.post(target_url, headers=headers, json=body, timeout=60  ).json()
     loggr.info(f"Dir {dir_name} deleted")
+
+def create_email_notification(email):
+    response = requests.post(
+                  'https://%s/api/2.0/notification-destinations' % (ws.deployment_url),
+                  headers={'Authorization': 'Bearer %s' % token},
+                  json={
+                    "config": {
+                        "email": {
+                            "addresses": [
+                                email,
+                            ]
+                        }
+                    },
+                    "destination_type": "WEBHOOK",
+                    "display_name": "SAT-Alert for workspace:"+ws_id
+                },
+                timeout=60  
+                )
     
 
 
