@@ -340,6 +340,31 @@ def load_sat_dasf_mapping():
 
 # COMMAND ----------
 
+# Read and load the SAT and DASF mapping file. (SAT_DASF_mapping.csv)
+def load_sat_dagf_mapping():
+  import pandas as pd
+  from os.path import exists
+  import shutil
+
+  
+  prefix = getConfigPath()
+  origfile = f'{prefix}/sat_dagf_mapping.csv'
+    
+  schema_list = ['sat_id', 'dagf_control_id','dagf_control_name']
+
+  schema = '''sat_id int, dagf_control_id string, dagf_control_name string'''
+
+  sat_dasf_mapping_pd = pd.read_csv(origfile, header=0, usecols=schema_list)
+    
+  sat_dasf_mapping = (spark.createDataFrame(sat_dasf_mapping_pd, schema)
+                            .select('sat_id', 'dagf_control_id','dagf_control_name'))
+    
+  sat_dasf_mapping.write.format('delta').mode('overwrite').saveAsTable(json_["analysis_schema_name"]+'.sat_dagf_mapping')
+  display(sat_dasf_mapping) 
+
+
+# COMMAND ----------
+
 
 def getSecurityBestPracticeRecord(id, cloud_type):
     df = spark.sql(
@@ -494,41 +519,6 @@ def create_workspace_run_complete_table():
                     USING DELTA"""
     )
 
-
-# COMMAND ----------
-
-def generateGCPWSToken(deployment_url, cred_file_path,target_principal):
-    from google.oauth2 import service_account
-    import gcsfs
-    import json 
-    gcp_accounts_url = 'https://accounts.gcp.databricks.com'
-    target_scopes = [deployment_url]
-    print(target_scopes)
-    # Reading gcs files with gcsfs
-    gcs_file_system = gcsfs.GCSFileSystem(project="gcp_project_name")
-    gcs_json_path = cred_file_path
-    with gcs_file_system.open(gcs_json_path) as f:
-      json_dict = json.load(f)
-      key = json.dumps(json_dict) 
-    source_credentials = service_account.Credentials.from_service_account_info(json_dict,scopes=target_scopes)
-    from google.auth import impersonated_credentials
-    from google.auth.transport.requests import AuthorizedSession
-
-    target_credentials = impersonated_credentials.Credentials(
-      source_credentials=source_credentials,
-      target_principal=target_principal,
-      target_scopes = target_scopes,
-      lifetime=36000)
-
-    creds = impersonated_credentials.IDTokenCredentials(
-                                      target_credentials,
-                                      target_audience=deployment_url,
-                                      include_email=True)
-
-    authed_session = AuthorizedSession(creds)
-    resp = authed_session.get(gcp_accounts_url)
-    return creds.token
-    
 
 # COMMAND ----------
 
