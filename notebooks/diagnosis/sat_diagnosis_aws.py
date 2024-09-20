@@ -257,3 +257,9 @@ openssl_connect(workspaceUrl, 443)
 # COMMAND ----------
 
 openssl_connect('accounts.cloud.databricks.com', 443)
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC
+# MAGIC tail -100 /var/log/dbrprofiler.log
