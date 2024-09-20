@@ -6,6 +6,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./diagnosis/pre_run_config_check
+
+# COMMAND ----------
+
 # MAGIC %run ./Includes/install_sat_sdk
 
 # COMMAND ----------

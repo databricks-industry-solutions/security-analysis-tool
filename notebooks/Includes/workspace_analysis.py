@@ -504,12 +504,13 @@ check_id='1' #Secrets Management
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 secrets_count_evaluation_value = sbp_rec['evaluation_value']
 def secrets_rule(df):
-    if df is not None and not df.rdd.isEmpty() and df.collect()[0][0] >= secrets_count_evaluation_value:
+    if df is not None and not df.rdd.isEmpty() and df.collect()[0][0] > secrets_count_evaluation_value:
         num_secrets = df.collect()[0][0]
-        secrets_dict = {'num_secrets' : num_secrets}
+        secrets_dict = {'found_num_secrets' : num_secrets}
         print(secrets_dict)
         return (check_id, 0, secrets_dict )
     else:
+        secrets_dict = {'found_num_secrets' : secrets_count_evaluation_value}
         return (check_id, 1, {})   
 
 if enabled:
