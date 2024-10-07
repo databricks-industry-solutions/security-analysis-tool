@@ -77,9 +77,19 @@ You now have two jobs (SAT Initializer Notebook & SAT Driver Notebook). Run SAT 
 
 ###  2. Access Databricks SQL Dashboards
 
-   > **Note:** You can also use Lakeview Dashboards to view the results.
+   > **Note:** You can use Lakeview Dashboards to view the results.
+ 
+The Dashboard is, by default, owned by the profile you used to set up SAT or the Service Principle. If you see errors running the dashboard, you are likely running into permissions issues. 
+ 1. Go over to the dashboard and click on the "Share" button in the top right.
+ 2. Click on the cogwheel and select the option "Assign new owner"
+ 3. Assign yourself as the new owner of the dashboard. You can also assign this to someone who has access to the SAT catalog/schema and tables.
+ 4. Click on the "Published" option at the top to switch to the draft version of the dashboard.Click on the "Publish" button next to the share option.
+ 5. In the general settings section, you can choose one of two options: 
+      Embed credentials (default): All viewers will run queries using the owner's credentials and compute. This may expose data to users who normally wouldn't have access.
+      Don't ember credentials: Each viewer will need access to this workspace, the associated data, and the compute to view this dashboard. We recommend using this option.
 
 
+  > **Note:** We are switching SAT to Lakeview Dashboard, but the classic dashboard is still available.
 In DBSQL find "SAT - Security Analysis Tool" dashboard  to see the report. You can filter the dashboard by **SAT** tag.  (The old classic legacy dashboard can be found in Workspace -> Home -> SAT_dashboard)
 
    <img src="./images/sat_dashboard_loc.png" width="70%" height="70%">
