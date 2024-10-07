@@ -2,6 +2,8 @@
 
 > **SAT v0.2.0 or higher** brings full support for Unity Catalog. Now you can pick your catalog instead of hive_metastore. Plus, you get to choose your own schema name.
 
+> **Note**: SAT requires at least one SAT set up in a workspace per **account** in AWS or GCP and at least one SAT set up in a workspace per Azure **subscription**. 
+
 Follow this guide to setup the Security Analysis Tool (SAT) on your Databricks workspace.
 
 ## Prerequisites
