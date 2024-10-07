@@ -92,6 +92,7 @@ For example, The diagram below shows the individual checks in various categories
 
 ## Configuration and Usage instructions
 Refer to [Standard setup guide](./docs/setup.md) or [Terraform](./terraform) to setup  
+Note: You will need to set up at least one SAT in a workspace per **account** in AWS or GCP and at least one SAT in a workspace per Azure **subscription**. 
 
 ## Project support 
 
