@@ -811,7 +811,7 @@ def dbfs_mnt_check(df):
 
     
 if enabled:     
-    tbl_name = 'global_temp.dbfssettingsdirs' + '_' + workspace_id
+    tbl_name = 'global_temp.dbfssettingsmounts' + '_' + workspace_id
     sql =f'''
         SELECT path
         FROM {tbl_name}
