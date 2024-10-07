@@ -2,6 +2,7 @@
 
 This guide will help you setup the Security Analysis Tool (SAT) on Azure Databricks.
 
+> Note: SAT requires at least one SAT set up in a workspace per Azure **subscription**. 
 
 - [Azure Setup Guide](#azure-setup-guide)
   - [Prerequisites](#prerequisites)
