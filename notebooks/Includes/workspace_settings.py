@@ -430,30 +430,6 @@ if enabled:
 
 # COMMAND ----------
 
-id = '52' # Enable git versioning for notebooks
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def enableNotebookGitVersioning(df): 
-    value = 'false'
-    defn = {'defn' : ''}
-    for row in df.rdd.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
-    if(value == None or value == 'true'):
-        return (id, 0, defn)
-    else:
-        return (id, 1, defn)
-
-if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name} 
-        WHERE name="enableNotebookGitVersioning"
-    '''
-    sqlctrl(workspace_id, sql, enableNotebookGitVersioning)
-
-# COMMAND ----------
-
 id = '63' # Legacy Global Init Scripts
 enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 
