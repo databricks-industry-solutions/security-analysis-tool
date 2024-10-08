@@ -242,16 +242,24 @@ for ws_to_load in workspaces:
 
     if (folder_id is None):
         loggr.info(f"Folder can't be created or found {ws_to_load.workspace_id}") 
-        continue    
+        continue
     response = session.post(
-              'https://%s/api/2.0/sql/queries' % (DOMAIN),
-              headers={'Authorization': 'Bearer %s' % token},
-              json={
-                        "data_source_id":data_source_id,
-                        "name": "sat_alert_"+ws_to_load.workspace_id,
+            'https://%s/api/2.0/sql/queries' % (DOMAIN),
+            headers={'Authorization': 'Bearer %s' % token},
+            json={
+                "query": 
+                    {
                         "description": "",
-                        "parent":"folders/"+str(folder_id),
-                        "query": """
+                        "tags": [
+                        "Security Analysis Tool"
+                        ],
+                        "display_name": "sat_alert_"+ws_to_load.workspace_id,
+                        "parent_path": "folders/"+str(folder_id),
+                        "parameters": [],
+                        "warehouse_id": data_source_id,
+                        "run_as_mode": "OWNER",
+                        "query_text": 
+                            """
                                     WITH prev_run(run_id, previous_run_id ) AS (
                                     SELECT
                                         run_id,
@@ -327,13 +335,11 @@ for ws_to_load in workspaces:
                                         ORDER BY
                                         total DESC
                                     )
-                                    """
-                  
-                   
-
-                      },
-              timeout=60  
-            )
+                            """
+                    }
+            },
+            timeout=60   
+    ) 
 
     if response.status_code == 200:
         loggr.info(f"Alert query is successfuly created: {response.json()['id']}!")
