@@ -206,7 +206,7 @@ resources = json.loads(response.text)
 for resource in resources:
     if resource['endpoint_id'] == json_['sql_warehouse_id']:
         data_source_id = resource['id']
-        loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
+        loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']} -> {data_source_id}!") 
 
 # COMMAND ----------
 
@@ -254,9 +254,9 @@ for ws_to_load in workspaces:
                         "Security Analysis Tool"
                         ],
                         "display_name": "sat_alert_"+ws_to_load.workspace_id,
-                        "parent_path": "folders/"+str(folder_id),
+                        "parent_path": "/Users/"+context['tags']['user']+"/SAT_alerts",
                         "parameters": [],
-                        "warehouse_id": data_source_id,
+                        "warehouse_id": json_['sql_warehouse_id'],
                         "run_as_mode": "OWNER",
                         "query_text": 
                             """
