@@ -91,13 +91,46 @@ Here is what your SAT Dashboard should look like:
    <img src="../images/sat_dashboard_partial.png" width="50%" height="50%">   
     
 ### 3. Activate Alerts 
-Go to Alerts and find the alert(s) created by SAT tag and adjust the schedule to your needs. You can add more recipients to alerts by configuring  [notification destinations](https://docs.databricks.com/sql/admin/notification-destinations.html).
+
+On the left side bar, navigate to ```SQL > Alerts```. By default, the ```My Alerts``` tab will be selected, but you can click on the ```All alerts``` tab to see the alerts created by SAT. Once you have clicked the ```All alerts``` tab, you will see the SAT alerts, similar to the image below:
+
+<img src="./images/all_alerts_tab.png" width="50%" height="50%">
+<br/>
+
+##### Notification Delivery
+
+Click on an alert to see the details:
+
+<img src="./images/alert_details.png" width="50%" height="50%">  
+<br/>
+
+In the expanded alert details, click ```Add schedule``` (located at the bottom left of this screenshot):
+
+<img src="./images/alert_add_schedule.png" width="50%" height="50%">  
+<br/>
+
+In the ```Settings``` tab, you can define the interval for the alert to be triggered:
+
+<img src="./images/alert_interval_settings.png" width="50%" height="50%">
+<br/>
+
+Next, click the ```Destinations``` tab: 
+
+<img src="./images/alert_destination_tab.png" width="50%" height="50%">
+<br/>
+
+In the search bar, you can search for a user (email) or destination object. In the screenshot below, we selected email as our destination for our alert: 
+
+<img src="./images/alert_email_destination.png" width="50%" height="50%">
+<br/>
+
+Click create to save the schedule with defined destinations configured: 
+
+<img src="./images/alert_save_schedule.png" width="50%" height="50%">
+<br/>
+
+You can add more recipients to alerts, check out the [notification destinations](https://docs.databricks.com/sql/admin/notification-destinations.html) documenation.
      
-
-<img src="./images/alerts_1.png" width="50%" height="50%">   
- 
-
-<img src="./images/alerts_2.png" width="50%" height="50%">   
 
 ### 4. Update  configuration files (Optional)
 
