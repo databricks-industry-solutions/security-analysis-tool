@@ -152,6 +152,24 @@ def delete_ws_folder(ws, dir_name):
     
     session.post(target_url, headers=headers, json=body, timeout=60  ).json()
     loggr.info(f"Dir {dir_name} deleted")
+
+def create_email_notification(email):
+    response = requests.post(
+                  'https://%s/api/2.0/notification-destinations' % (ws.deployment_url),
+                  headers={'Authorization': 'Bearer %s' % token},
+                  json={
+                    "config": {
+                        "email": {
+                            "addresses": [
+                                email,
+                            ]
+                        }
+                    },
+                    "destination_type": "WEBHOOK",
+                    "display_name": "SAT-Alert for workspace:"+ws_id
+                },
+                timeout=60  
+                )
     
 
 
@@ -188,7 +206,7 @@ resources = json.loads(response.text)
 for resource in resources:
     if resource['endpoint_id'] == json_['sql_warehouse_id']:
         data_source_id = resource['id']
-        loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
+        loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']} -> {data_source_id}!") 
 
 # COMMAND ----------
 
@@ -208,7 +226,7 @@ for ws_to_load in workspaces:
     alert_name = "sat_alerts_"+ws_to_load.workspace_id
     body = {"name" : alert_name}
     response = requests.get(
-              'https://%s/api/2.0/preview/sql/alerts' % (DOMAIN),
+              'https://%s/api/2.0/sql/alerts' % (DOMAIN),
               json = body,
               headers={'Authorization': 'Bearer %s' % token},
               timeout=60)
@@ -224,16 +242,24 @@ for ws_to_load in workspaces:
 
     if (folder_id is None):
         loggr.info(f"Folder can't be created or found {ws_to_load.workspace_id}") 
-        continue    
+        continue
     response = session.post(
-              'https://%s/api/2.0/preview/sql/queries' % (DOMAIN),
-              headers={'Authorization': 'Bearer %s' % token},
-              json={
-                        "data_source_id":data_source_id,
-                        "name": "sat_alert_"+ws_to_load.workspace_id,
+            'https://%s/api/2.0/sql/queries' % (DOMAIN),
+            headers={'Authorization': 'Bearer %s' % token},
+            json={
+                "query": 
+                    {
                         "description": "",
-                        "parent":"folders/"+str(folder_id),
-                        "query": """
+                        "tags": [
+                        "Security Analysis Tool"
+                        ],
+                        "display_name": "sat_alert_"+ws_to_load.workspace_id,
+                        "parent_path": "/Users/"+context['tags']['user']+"/SAT_alerts",
+                        "parameters": [],
+                        "warehouse_id": json_['sql_warehouse_id'],
+                        "run_as_mode": "OWNER",
+                        "query_text": 
+                            """
                                     WITH prev_run(run_id, previous_run_id ) AS (
                                     SELECT
                                         run_id,
@@ -309,13 +335,11 @@ for ws_to_load in workspaces:
                                         ORDER BY
                                         total DESC
                                     )
-                                    """
-                  
-                   
-
-                      },
-              timeout=60  
-            )
+                            """
+                    }
+            },
+            timeout=60   
+    ) 
 
     if response.status_code == 200:
         loggr.info(f"Alert query is successfuly created: {response.json()['id']}!")
@@ -325,24 +349,31 @@ for ws_to_load in workspaces:
 
     if query_id is not None:
         response = session.post(
-                  'https://%s/api/2.0/preview/sql/alerts' % (DOMAIN),
+                  'https://%s/api/2.0/sql/alerts' % (DOMAIN),
                   headers={'Authorization': 'Bearer %s' % token},
                   json={
-                   "name":"sat_alerts_"+ws_to_load.workspace_id+"",
-                   "options":{
-                      "op":">=",
-                      "value":1,
-                      "muted":False,
-                      "column":"total",
-                      "custom_subject":"SAT-Alert for workspace:"+ws_to_load.workspace_id,
-                      "custom_body":"Hello,\nAlert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}.\nThere have been the following unexpected events on the last run:\n{{QUERY_RESULT_ROWS}}\n\n",
-                      "schedule_failures":0
-                
-                   },
-                   "query_id":query_id,
-                   "parent":"folders/"+str(folder_id)   
-                },
-                timeout=60  
+                   "alert": {
+                       "display_name":"sat_alerts_"+ws_to_load.workspace_id+"",
+                       "custom_subject":"SAT-Alert for workspace:"+ws_to_load.workspace_id,
+                        "custom_body":"Hello,\nAlert \"{{ALERT_NAME}}\" changed status to {{ALERT_STATUS}}.\nThere have been the following unexpected events on the last run:\n{{QUERY_RESULT_ROWS}}\n\n",
+                        "condition": {
+                            "op": "GREATER_THAN_OR_EQUAL",
+                            "operand": {
+                                "column": {
+                                    "name": "total"
+                                }
+                            },
+                            "threshold": {
+                                "value": {
+                                    "double_value": 1.0
+                                }
+                            }
+                        },
+                        "query_id":query_id,
+                        "parent":"folders/"+str(folder_id)
+                        }
+                    },
+                    timeout=60
                 )
 
     if response.status_code == 200:
