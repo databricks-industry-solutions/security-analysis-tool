@@ -4,7 +4,7 @@
 
 > **Note**: SAT requires at least one SAT set up in a workspace per **account** in AWS or GCP and at least one SAT set up in a workspace per Azure **subscription**.  
 
->  Please make sure to review the SAT report with your business stakeholders, administrators, security team and auditors about SAT report and assess your organizational security requirements before making any security improvments bases on the report, not all deviations required to be mitigated. Some of the recommendations may have cost implications, some of the security features recommneded may have dependecny feature limitations, please thorougly review individual feature doucmentation before making changes to your security configurations.
+>  Please make sure to review the SAT report with your business stakeholders, administrators, security team and auditors about SAT report and assess your organizational security requirements before making any security improvements based on the report, not all deviations required to be mitigated. Some of the recommendations may have cost implications, some of the security features recommended may have dependency feature limitations, please thoroughly review individual feature documentation before making changes to your security configurations.
 
 Follow this guide to setup the Security Analysis Tool (SAT) on your Databricks workspace.
 
