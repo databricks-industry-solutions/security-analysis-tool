@@ -14,7 +14,6 @@ sat_id,dasf_control_id,dasf_control_name
 32,DASF-52:Source code control,
 35,DASF-4:Restrict access using private link,
 37,DASF-3:Restrict access using IP access lists,
-52,DASF-52:Source code control,
 53,"DASF-5:Control access to data and other objects, DASF-16:Secure model features, DASF-24:Control access to models and model assets, DASF:43-Use access control lists",
 54,DASF-51:Share data and AI assets securely,
 55,DASF-51:Share data and AI assets securely,
