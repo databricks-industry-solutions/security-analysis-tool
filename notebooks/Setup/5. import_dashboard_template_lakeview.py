@@ -153,7 +153,7 @@ if json_['analysis_schema_name'] != 'hive_metastore.security_analysis':
 
 import requests
 
-BODY = {'path': f'{basePath()}/[SAT] Security Analysis Tool - Workspace In-Depth.lvdash.json'}
+BODY = {'path': f'{basePath()}/dashboards/SAT - Security Analysis Tool (Lakeview).lvdash.json'}
 
 loggr.info(f"Getting Dashboard")
 response = requests.get(
@@ -204,7 +204,7 @@ with open(json_file_path) as json_file:
 
 json_string = json_string = json.dumps(json_data)
 
-BODY = {'display_name': '[SAT] Security Analysis Tool - Workspace In-Depth','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
+BODY = {'display_name': 'SAT - Security Analysis Tool (Lakeview - Experimental)','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
 
 loggr.info(f"Creating Dashboard")
 response = requests.post(
