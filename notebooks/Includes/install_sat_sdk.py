@@ -22,11 +22,11 @@ if dbr_version < RECOMMENDED_DBR_FOR_SAT:
 
 # COMMAND ----------
 
-SDK_VERSION='0.1.36' 
+SDK_VERSION='0.1.37' 
 
 # COMMAND ----------
 
-#%pip install dbl-sat-sdk=={SDK_VERSION} --find-links /dbfs/FileStore/tables/dbl_sat_sdk-0.1.28-py3-none-any.whl
+#%pip install dbl-sat-sdk=={SDK_VERSION} --find-links /dbfs/FileStore/tables/dbl_sat_sdk-0.1.37-py3-none-any.whl
 
 # COMMAND ----------
 

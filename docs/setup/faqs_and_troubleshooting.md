@@ -118,7 +118,7 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
         
         %pip install msal --find-links /dbfs/FileStore/wheels/msal-1.22.0-py2.py3-none-any.whl
         
-        %pip install dbl-sat-sdk==0.1.34 --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-0.1.34-py3-none-any.whl
+        %pip install dbl-sat-sdk==0.1.37 --find-links /dbfs/FileStore/wheels/dbl_sat_sdk-0.1.37-py3-none-any.whl
         ```
 
     7. Make sure the versions for the above libraries match.
