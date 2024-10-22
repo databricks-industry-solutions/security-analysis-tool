@@ -2,7 +2,7 @@
 from io import open
 from os import path
 from setuptools import setup
-
+ 
 DESCRIPTION = "Databricks Security Analysis Tool"
 
 __version__ = "0.1.34"

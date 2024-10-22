@@ -14,7 +14,7 @@ LOGGR=None
 
 if LOGGR is None:
     LOGGR = LoggingUtils.get_logger()
-
+ 
 
 class SatDBClient:
     """

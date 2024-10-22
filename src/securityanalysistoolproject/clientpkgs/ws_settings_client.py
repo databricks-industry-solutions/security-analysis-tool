@@ -1,6 +1,13 @@
 '''Workspace settings module'''
 from core.dbclient import SatDBClient
 import json
+from core.logging_utils import LoggingUtils
+ 
+
+LOGGR=None
+
+if LOGGR is None:
+    LOGGR = LoggingUtils.get_logger()
 
 class WSSettingsClient(SatDBClient):
     '''workspace setting helper'''
