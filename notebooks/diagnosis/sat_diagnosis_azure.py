@@ -58,8 +58,7 @@ try:
    dbutils.secrets.get(scope=json_['master_name_scope'], key='tenant-id')
    dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
    dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-   tokenkey = f"{json_['workspace_pat_token_prefix']}-{current_workspace}"
-   dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
+   dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
    print("Your SAT configuration has required secret names")
 except Exception as e:
    dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
@@ -77,33 +76,6 @@ for key in dbutils.secrets.list(sat_scope):
     print(key.key)
     secretvalue = dbutils.secrets.get(scope=sat_scope, key=key.key)
     print(" ".join(secretvalue))
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Check to see if the PAT token are valid
-
-# COMMAND ----------
-
-import requests
-
-access_token = dbutils.secrets.get(scope=json_['master_name_scope'], key=tokenkey)
-
-# Define the URL and headers
-workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
-
-
-url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
-headers = {
-    'Authorization': f'Bearer {access_token}'
-}
-
-# Make the GET request
-response = requests.get(url, headers=headers)
-
-# Print the response
-print(response.json())
 
 
 # COMMAND ----------
@@ -194,7 +166,7 @@ import requests
 
 # Define the URL and headers
 DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=sat_scope, key="account-console-id")
-url = f'https://accounts.azuredatabricks.net/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}'
+url = f'https://accounts.azuredatabricks.net/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
 
 ## Note: The access token should be generated for a SP which is an account admin to run this command.  
 
