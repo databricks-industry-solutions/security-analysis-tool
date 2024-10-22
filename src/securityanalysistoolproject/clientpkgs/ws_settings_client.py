@@ -2,7 +2,7 @@
 from core.dbclient import SatDBClient
 import json
 from core.logging_utils import LoggingUtils
- 
+
 
 LOGGR=None
 
@@ -11,7 +11,6 @@ if LOGGR is None:
 
 class WSSettingsClient(SatDBClient):
     '''workspace setting helper'''
-
     def get_wssettings_list(self):
         """
         Returns an array of json objects for workspace settings.
@@ -57,7 +56,6 @@ class WSSettingsClient(SatDBClient):
             {"name": "enableLibraryAndInitScriptOnSharedCluster", "defn":"Enable libraries and init scripts on shared Unity Catalog clusters"}                              
             ]
         # pylint: enable=line-too-long
-
         for keyn in ws_keymap:
             valn={}
             try:
@@ -69,7 +67,8 @@ class WSSettingsClient(SatDBClient):
             valins = {}
             valins['name']=keyn['name']
             valins['defn']=keyn['defn']
-            valins['value']=None if valn[keyn['name']] is None else valn[keyn['name']]
+            #fixed feature/SFE-3483
+            valins['value']=None if keyn['name'] not in valn or valn[keyn['name']] is None else valn[keyn['name']]
             all_result.append(valins)
         return all_result
 

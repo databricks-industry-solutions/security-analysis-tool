@@ -14,7 +14,7 @@ LOGGR=None
 
 if LOGGR is None:
     LOGGR = LoggingUtils.get_logger()
- 
+
 
 class SatDBClient:
     """
@@ -41,7 +41,7 @@ class SatDBClient:
             self._use_mastercreds = pars.str2bool(configs['use_mastercreds'])
         else:
             self._use_mastercreds = configs['use_mastercreds']
-
+        self._proxies = configs.get('proxies', {})
 
         #Azure
         if 'azure' in self._cloud_type:
@@ -130,7 +130,17 @@ class SatDBClient:
                     "User-Agent": "databricks-sat/0.1.0"
                 }
         return None
-   
+    
+    def get_temporary_oauth_token(self):
+        self._update_token()
+        if self._token is None:
+            return None
+        temptok = self._token.get("Authorization","").split(' ')
+        if(len(temptok) > 1):
+            return (temptok[1])
+        else:
+            return None
+
     
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
@@ -138,14 +148,14 @@ class SatDBClient:
             self._update_token_master()
             if (self._cloud_type == 'azure'):
                 results = requests.get(f'{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
-                            headers=self._token, timeout=60)
+                            headers=self._token, timeout=60, proxies=self._proxies)
             else:    
                 results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
-                            headers=self._token, timeout=60)
+                            headers=self._token, timeout=60, proxies=self._proxies)
         else:
             self._update_token()
             results = requests.get(f'{self._url}/api/2.0/clusters/spark-versions',
-                headers=self._token, timeout=60)
+                headers=self._token, timeout=60, proxies=self._proxies)
         http_status_code = results.status_code
         if http_status_code != 200:
             LOGGR.info("Error. Either the credentials have expired or the \
@@ -173,9 +183,9 @@ class SatDBClient:
             LOGGR.debug(f"Get: {full_endpoint}")
 
             if json_params:
-                raw_results = requests.get(full_endpoint, headers=self._token, params=json_params, timeout=60)
+                raw_results = requests.get(full_endpoint, headers=self._token, params=json_params, timeout=60, proxies=self._proxies)
             else:
-                raw_results = requests.get(full_endpoint, headers=self._token, timeout=60)
+                raw_results = requests.get(full_endpoint, headers=self._token, timeout=60, proxies=self._proxies)
 
             http_status_code = raw_results.status_code
             if http_status_code in SatDBClient.http_error_codes:
@@ -203,16 +213,16 @@ class SatDBClient:
                 if http_type == 'post':
                     if files_json:
                         raw_results = requests.post(full_endpoint, headers=self._token,
-                                                    data=json_params, files=files_json, timeout=60)
+                                                    data=json_params, files=files_json, timeout=60, proxies=self._proxies)
                     else:
                         raw_results = requests.post(full_endpoint, headers=self._token,
-                                                    json=json_params, timeout=60)
+                                                    json=json_params, timeout=60, proxies=self._proxies)
                 if http_type == 'put':
                     raw_results = requests.put(full_endpoint, headers=self._token,
-                                               json=json_params, timeout=60)
+                                               json=json_params, timeout=60, proxies=self._proxies)
                 if http_type == 'patch':
                     raw_results = requests.patch(full_endpoint, headers=self._token,
-                                                 json=json_params, timeout=60)
+                                                 json=json_params, timeout=60, proxies=self._proxies)
             else:
                 LOGGR.info("Must have a payload in json_args param.")
                 return {}
@@ -416,7 +426,7 @@ class SatDBClient:
             full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
         response = requests.post(full_endpoint, headers=oidc_token,
-                                    auth=user_pass, data=json_params, timeout=60)  
+                                    auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)  
 
         if response is not None and response.status_code == 200:
             return response.json()['access_token']
