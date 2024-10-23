@@ -20,7 +20,7 @@ Step 4: Change Directories
 cd security-analysis-tool/terraform/<cloud>/
 ``` 
 
-Step 5: Set values in `terraform.tfvars` file
+Step 5: Generate a `terraform.tfvars` file base on `template.tfvars`
 
 Using any editor set the values in the `terraform.tfvars` file. The descriptions of all the variables are located in the `variables.tf` file. Once the variables are set you are ready to run Terraform.
 
