@@ -1,25 +1,22 @@
-databricks_url = ""
-workspace_PAT = ""
-workspace_id = ""
+databricks_url     = ""
+workspace_id       = ""
 account_console_id = ""
+
+# Should follow this format:
+# Unity Catalog: catalog.schema
+# Hive Metastore: hive_metastore.schema
 analysis_schema_name = ""
 
-#Uncomment and set sqlw_id if you have an existing SQL Warehouse you'd like to use, else leave it commented out
-#sqlw_id = ""
-
-### AWS Specific Variables
-
-#account_user = ""
-#account_pass = ""
-
 ### Azure Specific Variables
-
-client_id = ""
-tenant_id = ""
-client_secret = ""
+client_id       = ""
+client_secret   = ""
+tenant_id       = ""
 subscription_id = ""
 
-### GCP Specific Variables
-
-#gs_path_to_json = ""
-#impersonate_service_account = ""
+# If you are behind a proxy, you can specify the proxy server here, if not leave this with the default value
+# Example:
+# {
+#   "http": "http://proxy.example.com:8080",
+#   "https": "http://proxy.example.com:8080"
+# }
+proxies = {}

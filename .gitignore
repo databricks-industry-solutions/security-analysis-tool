@@ -147,4 +147,5 @@ dmypy.json
 dabs/dabs_template/template/tmp
 
 **/.terraform*
+**/terraform.tfvars
 **/terraform.tfstate*
