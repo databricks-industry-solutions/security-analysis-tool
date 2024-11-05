@@ -9,15 +9,20 @@ RECOMMENDED_DBR_FOR_SAT= 14.3
 import os
 #Get databricks runtime configured to run SAT
 dbr_version = os.environ.get('DATABRICKS_RUNTIME_VERSION','0.0')
+is_sat_compatible = False
 #sanity check in case there is major and minor version
 #strip minor version since we need to compare as number
-dbrarray = dbr_version.split('.')
-dbr_version =  f'{dbrarray[0]}.{dbrarray[1]}'
-dbr_version = float(dbr_version)
+if(dbr_version.startswith("client")):
+    is_sat_compatible = True
+else:
+    dbrarray = dbr_version.split('.')
+    dbr_version =  f'{dbrarray[0]}.{dbrarray[1]}'
+    dbr_version = float(dbr_version)
+    is_sat_compatible = True if dbr_version >= RECOMMENDED_DBR_FOR_SAT else False
 
 #test version
 
-if dbr_version < RECOMMENDED_DBR_FOR_SAT:
+if is_sat_compatible== False:
     dbutils.notebook.exit(f"Detected DBR version {dbr_version} . Please use the DBR {RECOMMENDED_DBR_FOR_SAT} for SAT and try again , please refer to docs/setup.md")
 
 # COMMAND ----------
