@@ -17,13 +17,13 @@ class LoggingUtils():
     @classmethod
     def get_logger(cls, modname='_profiler_'):
         '''get logger object'''
-        logpath=''
-        if platform.system()=='Darwin':
-            logpath='./Logs/dbrprofiler.log'
-            if not os.path.isdir('./Logs/'):
-                os.makedirs('./Logs/')
-        else:
-            logpath='/var/log/dbrprofiler.log'
+        log_base_dir = './Logs'
+
+        if not os.path.isdir('./Logs/'):
+            os.makedirs('./Logs/')
+
+        # logpath='/var/log/dbrprofiler.log'
+        logpath=f"{log_base_dir}/dbrprofiler.log"
 
         # Create a custom logger
         logger = logging.getLogger(modname)
