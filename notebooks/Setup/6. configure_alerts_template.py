@@ -17,14 +17,14 @@
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
 dfexist = readWorkspaceConfigFile()
-dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceGlobalTempView('all_workspaces') 
+dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceTempView('all_workspaces') 
 
 # COMMAND ----------
 
@@ -34,14 +34,13 @@ clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 
 # COMMAND ----------
 
-import json
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
+from dbruntime.databricks_repl_context import get_context
+current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
-workspacedf = spark.sql("select * from `global_temp`.`all_workspaces` where workspace_id='" + current_workspace + "'" )
-if (workspacedf.rdd.isEmpty()):
+workspacedf = spark.sql("select * from `all_workspaces` where workspace_id='" + current_workspace + "'" )
+if len(workspacedf.take(1))==0:
     dbutils.notebook.exit("The current workspace is not found in configured list of workspaces for analysis.")
 display(workspacedf)
 ws = (workspacedf.collect())[0]
@@ -79,7 +78,7 @@ token = db_client.get_temporary_oauth_token()
 
 # COMMAND ----------
 
-workspacesdf = spark.sql('select * from `global_temp`.`all_workspaces`')
+workspacesdf = spark.sql('select * from `all_workspaces`')
 display(workspacesdf)
 workspaces = workspacesdf.collect()
 
@@ -102,7 +101,7 @@ def create_ws_folder(ws, dir_name):
     delete_ws_folder(ws, dir_name)
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
-    path = "/Users/"+context['tags']['user']+"/"+ dir_name
+    path = "/Users/"+get_context().user+"/"+ dir_name
     body = {"path":  path}
     target_url = url + "/api/2.0/workspace/mkdirs"
     
@@ -124,7 +123,7 @@ def get_ws_folder_object_id(ws, dir_name):
   
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
-    path = "/Users/"+context['tags']['user']+"/"
+    path = "/Users/"+get_context().user+"/"
     body = {"path":  path}
     
     target_url = url + "/api/2.0/workspace/list"
@@ -145,7 +144,7 @@ def get_ws_folder_object_id(ws, dir_name):
 def delete_ws_folder(ws, dir_name):
     url = "https://"+ ws.deployment_url
     headers = {"Authorization": "Bearer " + token, 'Content-type': 'application/json'}
-    path = "/Users/"+context['tags']['user']+"/"+ dir_name
+    path = "/Users/"+get_context().user+"/"+ dir_name
     body = {"path":  path, "recursive": True}
     target_url = url + "/api/2.0/workspace/delete"
     loggr.info(f"Creating {path} using {target_url}")
@@ -254,7 +253,7 @@ for ws_to_load in workspaces:
                         "Security Analysis Tool"
                         ],
                         "display_name": "sat_alert_"+ws_to_load.workspace_id,
-                        "parent_path": "/Users/"+context['tags']['user']+"/SAT_alerts",
+                        "parent_path": "/Users/"+get_context().user+"/SAT_alerts",
                         "parameters": [],
                         "warehouse_id": json_['sql_warehouse_id'],
                         "run_as_mode": "OWNER",

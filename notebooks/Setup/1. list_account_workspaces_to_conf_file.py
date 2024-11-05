@@ -40,7 +40,7 @@ json_.update(
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
 
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
 loggr = LoggingUtils.get_logger()
@@ -74,10 +74,10 @@ def generateWorkspaceConfigFile(workspace_prefix):
     else:
         excluded_configured_workspace = ""  # running first time
     # get current workspaces that are not yet configured for analysis
-    spsql = f"""select workspace_id, deployment_name as deployment_url, workspace_name, workspace_status from `global_temp`.`acctworkspaces` 
+    spsql = f"""select workspace_id, deployment_name as deployment_url, workspace_name, workspace_status from `acctworkspaces` 
             where workspace_status = "RUNNING" {excluded_configured_workspace}"""
     df = spark.sql(spsql)
-    if not df.rdd.isEmpty():
+    if len(df.take(1)) > 0:
         if cloud_type == "azure":
             df = df.withColumn(
                 "deployment_url",

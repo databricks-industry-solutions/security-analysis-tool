@@ -17,20 +17,19 @@
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
 dfexist = readWorkspaceConfigFile()
-dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceGlobalTempView('all_workspaces') 
+dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceTempView('all_workspaces') 
 
 # COMMAND ----------
 
-import json
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
+from dbruntime.databricks_repl_context import get_context
+current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
@@ -40,8 +39,8 @@ clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 
 # COMMAND ----------
 
-workspacedf = spark.sql("select * from `global_temp`.`all_workspaces` where workspace_id='" + current_workspace + "'" )
-if (workspacedf.rdd.isEmpty()):
+workspacedf = spark.sql("select * from `all_workspaces` where workspace_id='" + current_workspace + "'" )
+if len(workspacedf.take(1))==0:
     dbutils.notebook.exit("The current workspace is not found in configured list of workspaces for analysis.")
 display(workspacedf)
 ws = (workspacedf.collect())[0]

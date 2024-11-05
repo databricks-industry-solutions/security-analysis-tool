@@ -17,19 +17,26 @@ def bootstrap(viewname, func, **kwargs):
     import json
 
     from pyspark.sql.types import StructType
+    from pyspark.sql.functions import col,schema_of_json,from_json
 
     apiDF = None
     try:
         lst = func(**kwargs)
+        print(lst)
         if lst:
             lstjson = [json.dumps(ifld) for ifld in lst]
-            apiDF = spark.read.json(sc.parallelize(lstjson))
+            #apiDF = spark.read.json(lstjson)
+            apiDF = spark.createDataFrame([(x,) for x in lstjson], ["json_string"])
+            inferred_schema = schema_of_json(apiDF.select("json_string").first()[0])
+            apiDF = apiDF.select(from_json(col("json_string"), inferred_schema).alias("parsed_json")).select("parsed_json.*")
         else:
             apiDF = spark.createDataFrame([], StructType([]))
             loggr.info("No Results!")
-        spark.catalog.dropGlobalTempView(viewname)
-        apiDF.createGlobalTempView(viewname)
-        loggr.info(f"View created. `global_temp`.`{viewname}`")
+        #apiDF.createOrReplaceTempView(viewname)
+        if len(apiDF.take(1)) > 0:
+            apiDF.write.mode("overwrite").saveAsTable(viewname)
+            loggr.info(f"Table created: `{viewname}`")
+        #loggr.info(f"View created. `global_temp`.`{viewname}`")
     except Exception:
         loggr.exception("Exception encountered")
 
