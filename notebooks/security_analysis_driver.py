@@ -10,6 +10,10 @@
 
 # COMMAND ----------
 
+spark.conf.get('spark.databricks.clusterUsageTags.clusterId')
+
+# COMMAND ----------
+
 # MAGIC %run ./Includes/install_sat_sdk
 
 # COMMAND ----------
@@ -189,31 +193,6 @@ def processWorkspace(wsrow):
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-def combine(ws):
-    renewWorkspaceTokens(ws.workspace_id)
-    processWorkspace(ws)
-    notifyworkspaceCompleted(ws.workspace_id, True)
-from concurrent.futures import ThreadPoolExecutor
-
-loggr.info("Running in parallel")
-with ThreadPoolExecutor(max_workers=2) as executor:
-    futures = []
-    for workspace in workspaces:
-        future = executor.submit(combine, workspace)
-        futures.append(future)
-        time.sleep(20)  # Add a 1-second delay between submissions
-
-    try:
-        for future in futures:
-            result = future.result()
-            print(result)
-    except Exception as e:
-        loggr.info(e)
-
-# COMMAND ----------
-
-from concurrent.futures import ThreadPoolExecutor
-
 
 def combine(ws):
     renewWorkspaceTokens(ws.workspace_id)
@@ -228,7 +207,7 @@ if use_parallel_runs == True:
         for workspace in workspaces:
             future = executor.submit(combine, workspace)
             futures.append(future)
-            time.sleep(20)  # Adding time between submissions as concurrent 
+            time.sleep(10)  # Adding time between submissions as concurrent 
 
         try:
             for future in futures:
