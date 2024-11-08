@@ -35,7 +35,7 @@ else:
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
@@ -100,6 +100,10 @@ except Exception:
 #if is_successful_ws: 
 if not is_successful_ws:
   dbutils.notebook.exit('Unsuccessful Workspace connection. Verify credentials.')
+
+# COMMAND ----------
+
+spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
 
@@ -285,7 +289,7 @@ bootstrap('secretscope'+ '_' + workspace_id, secrets_client.get_secret_scopes_li
 
 # COMMAND ----------
 
-tbl_name = 'global_temp.secretscope' + '_' + workspace_id
+tbl_name = 'secretscope' + '_' + workspace_id
 sql = f'''select * from {tbl_name} '''
 try:
     df = spark.sql(sql)
@@ -507,7 +511,7 @@ bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_shar
 
 # COMMAND ----------
 
-tbl_name = 'global_temp.unitycatalogmsv2' + '_' + workspace_id
+tbl_name = 'unitycatalogmsv2' + '_' + workspace_id
 sql = f'''SELECT metastore_id,workspace_id
         FROM {tbl_name} 
         WHERE workspace_id="{workspace_id}"'''

@@ -50,6 +50,26 @@ json_ = {
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ##### Intermediate Schema Creation
+# MAGIC The following section creates an intermediate schema for storing temporary tables. Previously, these were created as global temp views, but since serverless does not support global temp views, they are now created as tables.
+
+# COMMAND ----------
+
+intermediate_schema_name = (
+    f"{json_['analysis_schema_name'].split('.')[0]}.intermediate_schema"
+    if '.' in json_['analysis_schema_name']
+    else "hive_metastore.intermediate_schema"
+)
+json_.update(
+    {
+        "intermediate_schema" : intermediate_schema_name
+    }
+
+)
+
+# COMMAND ----------
+
 json_.update(
     {
         "master_name_scope": "sat_scope_v3",

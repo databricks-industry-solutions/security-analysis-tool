@@ -36,7 +36,7 @@ else:
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
@@ -44,6 +44,10 @@ loggr = LoggingUtils.get_logger()
 
 cloud_type = json_['cloud_type']
 workspace_id = json_['workspace_id']
+
+# COMMAND ----------
+
+spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
 
@@ -61,7 +65,7 @@ def enableJobViewAcls(df): #Job View Acls
     else:
         return (id, 1, defn)
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableJobViewAcls"
@@ -84,7 +88,7 @@ def enforceClusterViewAcls(df): #Cluster View Acls
     else:
         return (id, 1,  defn)
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enforceClusterViewAcls"
@@ -108,7 +112,7 @@ def enforceWorkspaceViewAcls(df): #Workspace View Acls
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enforceWorkspaceViewAcls"
@@ -133,7 +137,7 @@ def enableProjectTypeInWorkspace(df): #Project Type In Workspace
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableProjectTypeInWorkspace"
@@ -157,7 +161,7 @@ def enableResultsDownloading(df): #Results Downloading
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableResultsDownloading"
@@ -181,7 +185,7 @@ def maximumLifetimeNewTokens(df): #Max life time for tokens
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="maxTokenLifetimeDays"
@@ -205,7 +209,7 @@ def enforceUserIsolation(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enforceUserIsolation"
@@ -229,7 +233,7 @@ def enableEnforceImdsV2(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableEnforceImdsV2"
@@ -253,7 +257,7 @@ def enableExportNotebook(df):
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableExportNotebook"
@@ -277,7 +281,7 @@ def enableNotebookTableClipboard(df):
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableNotebookTableClipboard"
@@ -301,7 +305,7 @@ def enableXFrameOptions(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enable-X-Frame-Options"
@@ -325,7 +329,7 @@ def enableXContentTypeOptions(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enable-X-Content-Type-Options"
@@ -349,7 +353,7 @@ def enableXXSSProtection(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings'+ '_' + workspace_id
+    tbl_name = 'workspacesettings'+ '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enable-X-XSS-Protection"
@@ -373,7 +377,7 @@ def storeInteractiveNotebookResultsInCustomerAccount(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings'+ '_' + workspace_id
+    tbl_name = 'workspacesettings'+ '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="storeInteractiveNotebookResultsInCustomerAccount"
@@ -397,7 +401,7 @@ def enableVerboseAuditLogs(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableVerboseAuditLogs"
@@ -421,7 +425,7 @@ def enableFileStoreEndpoint(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableFileStoreEndpoint"
@@ -445,7 +449,7 @@ def enableDeprecatedGlobalInitScripts(df):
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableDeprecatedGlobalInitScripts"
@@ -469,7 +473,7 @@ def enableDeprecatedClusterNamedInitScripts(df):
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableDeprecatedClusterNamedInitScripts"

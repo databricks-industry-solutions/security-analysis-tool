@@ -96,6 +96,10 @@ if not is_successful_acct:
 
 # COMMAND ----------
 
+spark.sql(f"USE {json_['intermediate_schema']}")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### Accounts
 

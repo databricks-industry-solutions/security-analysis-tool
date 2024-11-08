@@ -41,7 +41,7 @@ else:
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
@@ -49,6 +49,10 @@ loggr = LoggingUtils.get_logger()
 
 cloud_type = json_['cloud_type']
 workspace_id = json_['workspace_id']
+
+# COMMAND ----------
+
+spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
 
@@ -63,7 +67,7 @@ def getAccountId(df):
   else:
     return ('AS-1', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `global_temp`.`acctworkspaces` where workspace_id={workspace_id}''', getAccountId, True)
+sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountId, True)
 
 # COMMAND ----------
 
@@ -80,7 +84,7 @@ def getAccountRegion(df):
   else:
     return ('AS-2', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `global_temp`.`acctworkspaces` where workspace_id={workspace_id}''', getAccountRegion, True)
+sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountRegion, True)
 
 # COMMAND ----------
 
@@ -90,7 +94,7 @@ def getDeploymentName(df):
   else:
     return ('AS-3', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `global_temp`.`acctworkspaces` where workspace_id={workspace_id}''', getDeploymentName, True)
+sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getDeploymentName, True)
 
 # COMMAND ----------
 
@@ -100,7 +104,7 @@ def getPricingTier(df):
   else:
     return ('AS-4', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `global_temp`.`acctworkspaces` where workspace_id={workspace_id}''', getPricingTier, True)
+sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getPricingTier, True)
 
 # COMMAND ----------
 
@@ -117,7 +121,7 @@ def getWorkspaceStatus(df):
   else:
     return ('AS-6', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `global_temp`.`acctworkspaces` where workspace_id={workspace_id}''', getWorkspaceStatus, True)
+sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getWorkspaceStatus, True)
 
 # COMMAND ----------
 
@@ -127,7 +131,7 @@ def num_defined_jobs_rule(df):
     else:
         return ('WST-1', 0, 'OK', {'value': 0}, 'Workspace Stats')
 
-tbl_name = 'global_temp.jobs' + '_' + workspace_id
+tbl_name = 'jobs' + '_' + workspace_id
 sql = f'''
     SELECT * FROM {tbl_name} 
 '''
@@ -141,8 +145,8 @@ def num_external_jobs_rule(df):
     else:
         return ('WST-2', {'value': 0}, 'Workspace Stats')
 
-tbl_name = 'global_temp.jobs' + '_' + workspace_id
-tbl_name_runs = 'global_temp.job_runs' + '_' + workspace_id
+tbl_name = 'jobs' + '_' + workspace_id
+tbl_name_runs = 'job_runs' + '_' + workspace_id
 sql = f'''
     SELECT distinct job_id from FROM {tbl_name_runs} a 
     LEFT ANTI JOIN {tbl_name} b
