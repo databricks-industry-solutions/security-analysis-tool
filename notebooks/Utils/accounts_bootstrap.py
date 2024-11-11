@@ -35,6 +35,14 @@ else:
 
 # COMMAND ----------
 
+
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
+
+LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
+loggr = LoggingUtils.get_logger()
+
+# COMMAND ----------
+
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
 

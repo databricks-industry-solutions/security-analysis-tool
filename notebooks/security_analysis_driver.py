@@ -10,10 +10,6 @@
 
 # COMMAND ----------
 
-spark.conf.get('spark.databricks.clusterUsageTags.clusterId')
-
-# COMMAND ----------
-
 # MAGIC %run ./Includes/install_sat_sdk
 
 # COMMAND ----------
