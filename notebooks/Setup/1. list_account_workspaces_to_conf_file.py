@@ -40,13 +40,6 @@ json_.update(
 
 # COMMAND ----------
 
-from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
-
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
-loggr = LoggingUtils.get_logger()
-
-# COMMAND ----------
-
 import json
 
 dbutils.notebook.run(

@@ -546,6 +546,14 @@ def isEmpty(df: DataFrame):
 
 # COMMAND ----------
 
+
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
+
+LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
+loggr = LoggingUtils.get_logger()
+
+# COMMAND ----------
+
 # For testing
 JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": false, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false}'
 

@@ -48,17 +48,6 @@ json_.update(
 
 # COMMAND ----------
 
-import logging
-
-from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
-
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
-loggr = LoggingUtils.get_logger()
-
-use_parallel_runs = json_.get("use_parallel_runs", False)
-
-# COMMAND ----------
-
 if cloud_type == "gcp":
     # refresh account level tokens
     gcp_status1 = dbutils.notebook.run(

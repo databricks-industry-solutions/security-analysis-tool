@@ -18,13 +18,18 @@ class LoggingUtils():
     @classmethod
     def get_logger(cls, modname='_profiler_'):
         '''get logger object'''
-        log_base_dir = f"{cls.basePath()}/Logs"
+        log_base_dir = f"{cls.basePath()}/logs"
 
         if not os.path.isdir(log_base_dir):
             os.makedirs(log_base_dir)
 
         # logpath='/var/log/dbrprofiler.log'
-        logpath = f"{log_base_dir}/dbrprofiler.log"
+        logpath = f"{log_base_dir}/sat.log"
+
+        if not os.path.exists(logpath):
+            with open(logpath, 'w') as f:
+                f.write("")
+        
 
         # Create a custom logger
         logger = logging.getLogger(modname)
@@ -68,4 +73,4 @@ class LoggingUtils():
             .get()
         )
         path = path[: path.find("/notebooks")]
-        return f"/Workspace{path}/notebooks"
+        return f"/Workspace{path}"
