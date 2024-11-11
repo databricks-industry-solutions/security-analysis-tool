@@ -36,8 +36,15 @@ else:
 
 # COMMAND ----------
 
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
+import logging
+LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
+loggr = LoggingUtils.get_logger()
+
+# COMMAND ----------
+
 import requests, json, re
-from core.dbclient import SatDBClient
+from src.securityanalysistoolproject.core.dbclient import SatDBClient
 
 # if (json_['use_mastercreds']) is False:
 #     tokenscope = json_['workspace_pat_scope']

@@ -4,8 +4,8 @@ import base64
 import time
 import urllib3
 import requests
-from core.logging_utils import LoggingUtils
-from core import parser as pars
+from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
+from src.securityanalysistoolproject.core import parser as pars
 import msal
 
 urllib3.disable_warnings(category = urllib3.exceptions.InsecureRequestWarning)

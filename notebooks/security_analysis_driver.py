@@ -44,6 +44,10 @@ json_.update(
 
 # COMMAND ----------
 
+use_parallel_runs = json_.get("use_parallel_runs", False)
+
+# COMMAND ----------
+
 if cloud_type == "gcp":
     # refresh account level tokens
     gcp_status1 = dbutils.notebook.run(
@@ -187,12 +191,12 @@ def combine(ws):
 
 if use_parallel_runs == True:
     loggr.info("Running in parallel")
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         futures = []
         for workspace in workspaces:
             future = executor.submit(combine, workspace)
             futures.append(future)
-            time.sleep(10)  # Adding time between submissions as concurrent 
+            time.sleep(20)  # Adding time between submissions as concurrent 
 
         try:
             for future in futures:
