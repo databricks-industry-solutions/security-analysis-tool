@@ -58,15 +58,6 @@ except Exception as e:
 
 # COMMAND ----------
 
-import requests,json
-
-
-# Define the URL and headers
-workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
-  .getContext().toJson())['tags']['browserHostName']
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ### Check to see if the PAT token is valid
 

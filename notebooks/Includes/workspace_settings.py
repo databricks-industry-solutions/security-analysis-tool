@@ -58,7 +58,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableJobViewAcls(df): #Job View Acls
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -81,7 +81,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enforceClusterViewAcls(df): #Cluster View Acls
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -104,7 +104,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enforceWorkspaceViewAcls(df): #Workspace View Acls
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -129,7 +129,7 @@ import json
 def enableProjectTypeInWorkspace(df): #Project Type In Workspace
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn.replace("'", '')}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -153,7 +153,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableResultsDownloading(df): #Results Downloading
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -177,7 +177,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def maximumLifetimeNewTokens(df): #Max life time for tokens
     value = 0
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value is not None and value != "null" and int(value) > 0):
@@ -201,7 +201,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enforceUserIsolation(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'): 
@@ -225,7 +225,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableEnforceImdsV2(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -249,7 +249,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableExportNotebook(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -273,7 +273,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableNotebookTableClipboard(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -297,7 +297,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableXFrameOptions(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -321,7 +321,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableXContentTypeOptions(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -345,7 +345,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableXXSSProtection(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -369,7 +369,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def storeInteractiveNotebookResultsInCustomerAccount(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -393,7 +393,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableVerboseAuditLogs(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -417,7 +417,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableFileStoreEndpoint(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'false'):
@@ -441,7 +441,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableDeprecatedGlobalInitScripts(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -465,7 +465,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableDeprecatedClusterNamedInitScripts(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
