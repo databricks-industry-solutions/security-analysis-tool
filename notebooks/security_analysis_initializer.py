@@ -45,60 +45,30 @@ if cloud_type == "gcp":
 
 # COMMAND ----------
 
+def run_notebook(notebook_path, timeout):
+    status = dbutils.notebook.run(f"{basePath()}/notebooks/Setup/{notebook_path}", timeout)
+    if status != "OK":
+        loggr.exception(f"Error Encountered in {notebook_path}", status)
+        dbutils.notebook.exit()
 
-status1 = dbutils.notebook.run(
-    f"{basePath()}/notebooks/Setup/1. list_account_workspaces_to_conf_file", 3000
-)
-if status1 != "OK":
-    loggr.exception("Error Encountered in Step#1", status1)
-    dbutils.notebook.exit()
-status3 = dbutils.notebook.run(
-    f"{basePath()}/notebooks/Setup/3. test_connections", 12000
-)
-if status3 != "OK":
-    loggr.exception("Error Encountered in Step#3", status3)
-    dbutils.notebook.exit()
+notebooks = [
+    ("1. list_account_workspaces_to_conf_file", 3000),
+    ("3. test_connections", 12000),
+    ("4. enable_workspaces_for_sat", 3000),
+    ("5. import_dashboard_template", 3000),
+    ("5. import_dashboard_template_lakeview", 3000),
+    ("6. configure_alerts_template", 3000),
+    ("9. self_assess_workspace_configuration", 3000),
+]
 
-status4 = dbutils.notebook.run(
-    f"{basePath()}/notebooks/Setup/4. enable_workspaces_for_sat", 3000
-)
-if status4 != "OK":
-    loggr.exception("Error Encountered in Step#4", status4)
-    dbutils.notebook.exit()
+for notebook, timeout in notebooks:
+    run_notebook(notebook, timeout)
 
-status5 = dbutils.notebook.run(
-    f"{basePath()}/notebooks/Setup/5. import_dashboard_template", 3000
-)
-if status5 != "OK":
-    loggr.exception("Error Encountered in Step#5", status5)
-    dbutils.notebook.exit()
+# COMMAND ----------
 
-status5_1 = dbutils.notebook.run(
-    f"{basePath()}/notebooks/Setup/5. import_dashboard_template_lakeview", 3000
-)
-if status5_1 != "OK":
-    loggr.exception("Error Encountered in Step#5_1", status5_1)
-    dbutils.notebook.exit()
-
-status6 = dbutils.notebook.run(
-    f"{basePath()}/notebooks/Setup/6. configure_alerts_template", 3000
-)
-if status6 != "OK":
-    loggr.exception("Error Encountered in Step#6", status6)
-    dbutils.notebook.exit()
+spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC Read manual self assesment file and load workspace configurations for analysis
-
-# COMMAND ----------
-
-# DBTITLE 0,%md Running Manual SAT Checks here (/notebooks/setup/update_workspace_configurations)
-
-status9 = dbutils.notebook.run(
-    f"{basePath()}/notebooks/Setup/9. self_assess_workspace_configuration", 3000
-    )
-if (status9 != 'OK'):
-    loggr.exception('Error Encountered in Step#9', status9)
-    dbutils.notebook.exit()

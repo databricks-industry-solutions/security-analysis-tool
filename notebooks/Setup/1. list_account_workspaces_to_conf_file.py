@@ -117,6 +117,10 @@ def generateWorkspaceConfigFile(workspace_prefix):
 
 # COMMAND ----------
 
+spark.sql(f"USE {json_['intermediate_schema']}")
+
+# COMMAND ----------
+
 generateWorkspaceConfigFile(json_["workspace_pat_token_prefix"])
 dbutils.notebook.exit("OK")
 
