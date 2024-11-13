@@ -33,6 +33,10 @@ cloud_type = getCloudType(hostname)
 
 # COMMAND ----------
 
+spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
+
+# COMMAND ----------
+
 if cloud_type == "gcp":
     # generate account level tokens for GCP for connection
     gcp_status1 = dbutils.notebook.run(
