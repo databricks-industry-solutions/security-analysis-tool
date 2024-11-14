@@ -158,6 +158,10 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
+spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
+
+# COMMAND ----------
+
 create_schema()
 create_security_checks_table()
 create_account_info_table()

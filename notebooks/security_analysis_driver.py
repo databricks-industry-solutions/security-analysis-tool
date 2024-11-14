@@ -44,10 +44,6 @@ json_.update(
 
 # COMMAND ----------
 
-spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
-
-# COMMAND ----------
-
 use_parallel_runs = json_.get("use_parallel_runs", False)
 
 # COMMAND ----------
