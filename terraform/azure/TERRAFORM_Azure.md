@@ -4,36 +4,39 @@
 
 > **Note**: SAT requires at least one SAT set up in a workspace per Azure **subscription**. 
 
-Step 1: [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
+<b>Step 1</b>: [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli).
 
-Step 2: [Install Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on local machine
+<b>Step 2</b>: [Install Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on local machine.
 
-Step 3: Git Clone Repo
+<b>Step 3</b>: Git Clone Repo.
 
 ```sh
 git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
 ``` 
 
-Step 4: Change Directories
+<b>Step 4</b>: Change Directories.
 
 ```sh
 cd security-analysis-tool/terraform/<cloud>/
 ``` 
 
-Step 5: Generate a `terraform.tfvars` file base on `template.tfvars`
+<b>Step 5</b>: Generate a `terraform.tfvars` file base on `template.tfvars`.
 
-Using any editor set the values in the `terraform.tfvars` file. The descriptions of all the variables are located in the `variables.tf` file. Once the variables are set you are ready to run Terraform.
+The descriptions of all the variables are located in the `variables.tf` file. Once the variables are set you are ready to run Terraform.
 
-Further Documentation for some of the variables:
+Azure specific variables can be obtained by following the [Azure Setup Guide](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup/azure.md).
+>[!Note]
+> The Service Principal requires:
+> * "Reader" role into the subscription level via Access control (IAM).
+> * [Accounts Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--assign-account-admin-roles-to-a-service-principal)
+> * [Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace**
+> * Member of the [metastore admin group](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges#who-has-metastore-admin-privileges)
 
-[workspace_id](https://learn.microsoft.com/en-us/azure/databricks/workspace/workspace-details#--workspace-instance-names-urls-and-ids)
+Further Documentation for some of the variables: [workspace_url](https://learn.microsoft.com/en-us/azure/databricks/workspace/workspace-details#workspace-instance-names-urls-and-ids), [workspace_id](https://learn.microsoft.com/en-us/azure/databricks/workspace/workspace-details#--workspace-instance-names-urls-and-ids), and [account_console_id](https://learn.microsoft.com/en-us/azure/databricks/administration-guide/account-settings/#locate-your-account-id)
 
-[account_console_id](https://learn.microsoft.com/en-us/azure/databricks/administration-guide/account-settings/#locate-your-account-id)
 
-[Azure Specific variables](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md#authentication-information) and navigate to the Azure section
-Note: Please notice the instruction in the above link about adding the service principle with "Reader" role into the subscription level via Access control (IAM) using Role assignments under your subscription, Access control (IAM) section
 
-Step 6: Set up [Azure CLI credentials](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli#sign-in-interactively) for the provider block in `provider.tf`
+<b>Step 6</b>: Set up [Azure CLI credentials](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli#sign-in-interactively) for the provider block in `provider.tf`
 
 The Azure CLI's default authentication method for logins uses a web browser and access token to sign in.
 
@@ -53,7 +56,7 @@ az login
 
 ## Run Terraform
 
-Step 7: Terraform [Init](https://developer.hashicorp.com/terraform/cli/commands/init)
+<b>Step 7</b>: Terraform [Init](https://developer.hashicorp.com/terraform/cli/commands/init)
 
 The terraform init command initializes a working directory containing configuration files and installs plugins for required providers.
 
@@ -61,7 +64,7 @@ The terraform init command initializes a working directory containing configurat
 terraform init
 ```
 
-Step 8: Terraform [Plan](https://developer.hashicorp.com/terraform/cli/commands/plan)
+<b>Step 8</b>: Terraform [Plan](https://developer.hashicorp.com/terraform/cli/commands/plan)
 
 The terraform plan command creates an execution plan, which lets you preview the changes that Terraform plans to make to your infrastructure. By default, when Terraform creates a plan it:
 
@@ -73,7 +76,7 @@ The terraform plan command creates an execution plan, which lets you preview the
 terraform plan
 ```
 
-Step 9: Terraform [Apply](https://developer.hashicorp.com/terraform/cli/commands/apply)
+<b>Step 9</b>: Terraform [Apply](https://developer.hashicorp.com/terraform/cli/commands/apply)
 
 The terraform apply command executes the actions proposed in a Terraform plan.
 
@@ -81,11 +84,11 @@ The terraform apply command executes the actions proposed in a Terraform plan.
 terraform apply
 ```
 
-Step 10: Run Jobs
+<b>Step 10</b>: Run Jobs
 
 You now have two jobs ("SAT Initializer Notebook" & "SAT Driver Notebook"). Run "SAT Initializer Notebook" and when it completes run "SAT Driver Notebook". "SAT Initializer Notebook" should only be run once (although you can run it multiple times, it only needs to be run successfully one time), and "SAT Driver Notebook" can be run periodically (its scheduled to run once every Monday, Wednesday, and Friday). 
 
-Step 11: SAT Dashboard
+<b>Step 11</b>: SAT Dashboard
 
 Go to the SQL persona, select the Dashboard icon in the left menu and then select the SAT Dashboard. Once the dashboard loads pick the Workspace from the dropdown and refresh the dashboard
 
