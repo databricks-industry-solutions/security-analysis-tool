@@ -21,12 +21,6 @@ pip install --upgrade google-auth  gcsfs
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
-loggr = LoggingUtils.get_logger()
-
-# COMMAND ----------
-
 import json
 #Get current workspace id
 context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())

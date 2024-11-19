@@ -8,7 +8,7 @@ class DBSQLClient(SatDBClient):
         """
         Returns an array of json objects for alerts.
         """
-        alertslist = self.get(f"/preview/sql/alerts", version='2.0')
+        alertslist = self.get(f"/preview/sql/alerts", version='2.0').get("elements",[])
         return alertslist
 
     def get_alert(self, alert_id):

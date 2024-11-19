@@ -58,15 +58,6 @@ except Exception as e:
 
 # COMMAND ----------
 
-import requests,json
-
-
-# Define the URL and headers
-workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
-  .getContext().toJson())['tags']['browserHostName']
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ### Check to see if the PAT token is valid
 
@@ -318,9 +309,3 @@ openssl_connect(workspaceUrl, 443)
 # COMMAND ----------
 
 openssl_connect('accounts.gcp.databricks.com', 443)
-
-# COMMAND ----------
-
-# MAGIC %sh
-# MAGIC
-# MAGIC tail -100 /var/log/dbrprofiler.log

@@ -96,7 +96,7 @@ def get_all_sat_checks():
     )
 
     all_checks = spark.sql(s_sql)
-    checks = all_checks.rdd.map(lambda row: row[0]).collect()
+    checks = [row[0] for row in all_checks.collect()]
 
     checks.sort()
     first_check = str(checks[0])
@@ -254,7 +254,7 @@ def get_all_workspaces():
         analysis_schema_name=json_["analysis_schema_name"]
     )
     all_workspaces = spark.sql(s_sql)
-    workspaces = all_workspaces.rdd.map(lambda row: row[0]).collect()
+    workspaces = [row[0] for row in all_workspaces.collect()]
     first_ws = str(workspaces[0])
 
     # Define Driver Widgets

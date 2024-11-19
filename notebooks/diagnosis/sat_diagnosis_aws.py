@@ -37,13 +37,6 @@ if not found:
 
 # COMMAND ----------
 
-import json
-#Get current workspace id
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ### Let us check if there are required configs in the SAT scope
 

@@ -28,12 +28,6 @@ json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
-loggr = LoggingUtils.get_logger()
-
-# COMMAND ----------
-
 dfexist = readWorkspaceConfigFile()
 dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceTempView('configured_workspaces') 
 
