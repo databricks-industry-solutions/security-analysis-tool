@@ -86,6 +86,10 @@ dfexist.filter(dfexist.analysis_enabled == True).createOrReplaceTempView(
 
 # COMMAND ----------
 
+dfexist.columns
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### These are the workspaces we will run the analysis on
 # MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace

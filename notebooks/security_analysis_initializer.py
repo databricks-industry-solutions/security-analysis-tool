@@ -65,10 +65,6 @@ notebooks = [
 
 for notebook, timeout in notebooks:
     status=run_notebook(f"{basePath()}/notebooks/Setup/{notebook}", timeout)
-    if status != "OK":
-        loggr.exception(f"Error Encountered in {notebook_path}", status)
-        dbutils.notebook.exit()
-
 
 # COMMAND ----------
 
