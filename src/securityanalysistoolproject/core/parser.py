@@ -2,7 +2,7 @@
 import json
 import re
 from itertools import cycle
-from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
+from logging_utils import LoggingUtils
 LOGGR=None
 
 if LOGGR is None:

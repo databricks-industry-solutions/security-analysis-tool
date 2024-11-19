@@ -150,8 +150,17 @@ if cloud_type == "aws":
 
 # COMMAND ----------
 
+basePath()
 
-from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
+# COMMAND ----------
+
+sdk_path = basePath() + "notebooks/Includes/install_sat_sdk"
+%run $sdk_path
+
+# COMMAND ----------
+
+
+from core.logging_utils import LoggingUtils
 
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
 loggr = LoggingUtils.get_logger()
