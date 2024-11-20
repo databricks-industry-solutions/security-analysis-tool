@@ -5,11 +5,18 @@ from setuptools import setup
 
 DESCRIPTION = "Databricks Security Analysis Tool"
 
-__version__ = "0.1.37"
+# testing 0.0.102
+# main 0.1.37
+
+__version__ = "0.0.102" #"0.1.37" #0.0.102
 
 this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, "README.md"), encoding="utf-8") as f:
     LONG_DESCRIPTION = f.read()
+
+def read_text(file_name: str):
+    v=open(path.join(this_directory, '../..', file_name), encoding="utf-8").read()
+    print(v)
 
 VERSION = __version__
 
@@ -33,6 +40,5 @@ setup(
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
-    url="https://databricks.com/learn/labs",
-    license="https://github.com/databrickslabs/profile/blob/master/LICENSE"
+    url="https://databricks.com/learn/labs",  
 )
