@@ -69,6 +69,7 @@ workspaceId = workspace_id
 
 # COMMAND ----------
 
+from pyspark.sql.functions import regexp_replace,col
 spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
@@ -996,9 +997,9 @@ def log_check(df):
         return (check_id, 1, {})   
 
 if enabled:   
-    tbl_name = 'global_temp.acctlogdelivery' 
+    tbl_name = 'acctlogdelivery' 
     sql=f'''
-        SELECT config_name, config_id from  
+        SELECT config_name, config_id  
         FROM {tbl_name} 
         WHERE log_type="AUDIT_LOGS" and status="ENABLED" 
         '''
