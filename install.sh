@@ -576,11 +576,11 @@ uninstall() {
     select opt in "${options[@]}"
     do
       if [[ -n "$opt" ]]; then
-        selected_name="$opt"
+        selected_profile="$opt"
         clear
         echo "Uninstalling Databricks resources"
-        databricks bundle destroy --auto-approve --force-lock -p "$selected_name" || {
-          echo "Failed to destroy the Databricks resources."
+        databricks bundle destroy --auto-approve --force-lock -p "$selected_profile" || {
+          echo "Failed to destroy the Databricks resources. Please check the confirm you are using the correct Profile."
           exit 1
         }
         cd ../ && rm -rf tmp .env
