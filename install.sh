@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# sh <(curl -fsSL https://raw.githubusercontent.com/jgarciaf106/jgarciaf106/main/install.sh)
+# sh <(curl -fsSL https://raw.githubusercontent.com/jgarciaf106/security-analysis-tool/main/install.sh)
 
 # TUI settings
 COLUMNS=12
@@ -12,6 +12,7 @@ RUNNING_MODE="remote"
 SAT_INSTALLED=0
 #REPO="databricks-industry-solutions/security-analysis-tool"
 REPO="jgarciaf106/security-analysis-tool"
+PREFIX=$(echo "$REPO" | cut -d'/' -f1)
 DOWNLOAD_DIR="./"
 INSTALLATION_DIR="sat-installer"
 PYTHON_BIN="python3.11"
@@ -70,7 +71,7 @@ setup_sat() {
         echo "Extracting SAT..."
         unzip -q "$file_path" -d "$temp_dir" || { echo "Error: Failed to extract $file_path"; exit 1; }
 
-        solution_dir=$(find "$temp_dir" -type d -name "databricks-industry-solutions*")
+        solution_dir=$(find "$temp_dir" -type d -name "$PREFIX*")
 
         if [[ -d "$solution_dir" ]]; then
             for folder in terraform src notebooks dashboards dabs configs; do
