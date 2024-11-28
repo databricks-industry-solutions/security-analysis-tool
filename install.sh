@@ -25,18 +25,19 @@ running_mode() {
   fi
 }
 
-find_install(){
+is_sat_installed(){
+  if [[ -n $(find . -type f -name "tfplan" | head -n 1) || -n $(find . -type d -name ".databricks" | head -n 1) ]]; then
+    SAT_INSTALLED=1
+  fi
+}
+
+get_github_project(){
   if [[ "$RUNNING_MODE" == "remote" ]]; then
     if [[ ! -d "config" && ! -d "dabs" && ! -d "dashboards" && ! -d "notebooks" && ! -d "src" && ! -d "terraform" ]]; then
       setup_sat
       cd "$INSTALLATION_DIR" || { echo "Failed to change directory to $INSTALLATION_DIR"; exit 1; }
     fi
   fi
-
-  if [[ -n $(find . -type f -name "tfplan" | head -n 1) || -n $(find . -type d -name ".databricks" | head -n 1) ]]; then
-    SAT_INSTALLED=1
-  fi
-
 }
 
 download_latest_release() {
@@ -596,6 +597,11 @@ uninstall() {
 }
 
 install_sat(){
+
+  if [[ "$RUNNING_MODE" == "remote" ]]; then
+    get_github_project || { echo "Failed to setup SAT."; exit 1; }
+  fi
+
   clear
 
   options=("Terraform" "CLI")
@@ -635,15 +641,9 @@ install_sat(){
 }
 
 main(){
-    running_mode
-
-    if [[ "$RUNNING_MODE" == "local" ]]; then
-        install_sat || { echo "Failed to install SAT."; exit 1; }
-    else
-        find_install || { echo "Failed to setup SAT."; exit 1; }
-        install_sat || { echo "Failed to install SAT."; exit 1; }
-    fi
-    exit 0
+    running_mode || { echo "Failed to determine the running mode."; exit 1; }
+    is_sat_installed || { echo "Failed to determine if SAT is installed."; exit 1; }
+    install_sat || { echo "Failed to install SAT."; exit 1; }
 }
 
 # run script
