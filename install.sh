@@ -543,6 +543,7 @@ uninstall() {
     terraform_files=(
       ".terraform"
       ".terraform.lock.hcl"
+      ".terraform.tfstate.lock.info"
       "terraform.tfstate"
       "terraform.tfstate.backup"
       "terraform.tfvars"
