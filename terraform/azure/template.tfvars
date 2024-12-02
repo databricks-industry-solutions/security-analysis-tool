@@ -20,3 +20,6 @@ subscription_id = ""
 #   "https": "http://proxy.example.com:8080"
 # }
 proxies = {}
+
+#Flag to run SAT initializer/Driver on Serverless
+run_on_serverless = false
