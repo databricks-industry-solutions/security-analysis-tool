@@ -17,13 +17,20 @@
 
 # COMMAND ----------
 
-dfexist = readWorkspaceConfigFile()
-dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceTempView('all_workspaces') 
+from core.logging_utils import LoggingUtils
+LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
+loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-from dbruntime.databricks_repl_context import get_context
-current_workspace = get_context().workspaceId
+dfexist = readWorkspaceConfigFile()
+dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceGlobalTempView('all_workspaces') 
+
+# COMMAND ----------
+
+import json
+context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
+current_workspace = context['tags']['orgId']
 
 # COMMAND ----------
 
@@ -33,8 +40,8 @@ clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 
 # COMMAND ----------
 
-workspacedf = spark.sql("select * from `all_workspaces` where workspace_id='" + current_workspace + "'" )
-if len(workspacedf.take(1))==0:
+workspacedf = spark.sql("select * from `global_temp`.`all_workspaces` where workspace_id='" + current_workspace + "'" )
+if (workspacedf.rdd.isEmpty()):
     dbutils.notebook.exit("The current workspace is not found in configured list of workspaces for analysis.")
 display(workspacedf)
 ws = (workspacedf.collect())[0]
@@ -211,10 +218,51 @@ exists = False
 
 if 'RESOURCE_ALREADY_EXISTS' not in response.text:
     json_response = response.json()
-    dashboard_id = json_response['dashboard_id']  
+    dashboard_id = json_response['dashboard_id']
+    serialized_dashboard = json_response['serialized_dashboard']
 else:
     exists = True
     print("Lakeview Dashboard already exists")  
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # Update the Dashboard internal links to point to the right URL
+
+# COMMAND ----------
+
+
+# Path to the JSON file
+file_path = f'{basePath()}/dashboards/SAT_Dashboard_definition.json'
+
+# String to search and replace
+old_string = 'dashboard_id'
+new_string = dashboard_id
+
+# Modify the dashboard by replacing the string
+# Traverse the JSON object and replace the string when found
+updated_dashboard = serialized_dashboard.replace(old_string, new_string)
+
+# COMMAND ----------
+
+import requests
+import json
+
+if exists != True:
+
+    URL = "https://"+DOMAIN+"/api/2.0/lakeview/dashboards/"+dashboard_id
+    BODY = {'dashboard_id': dashboard_id, 'serialized_dashboard': updated_dashboard}
+
+    loggr.info(f"Publishing the Dashboard using the SAT SQL Warehouse")
+    response = requests.patch(
+            URL,
+            headers={'Authorization': 'Bearer %s' % token},
+            json=BODY,
+            timeout=60
+            )
+
+else:
+    print("Dashboard already exists")
 
 # COMMAND ----------
 
