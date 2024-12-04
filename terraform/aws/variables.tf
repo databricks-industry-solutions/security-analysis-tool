@@ -64,3 +64,9 @@ variable "proxies" {
   type        = map
   description = "Proxies to be used for Databricks API calls"
 }
+
+variable "run_on_serverless" {
+  type        = bool
+  description = "Flag to run SAT initializer/Driver on Serverless"
+  default     = false
+}

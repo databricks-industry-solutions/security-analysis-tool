@@ -69,6 +69,7 @@ workspaceId = workspace_id
 
 # COMMAND ----------
 
+from pyspark.sql.functions import regexp_replace,col
 spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
@@ -391,7 +392,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 expiry_limit_evaluation_value = sbp_rec['evaluation_value']
 def token_rule(df):
     #Check for count of tokens that expiring in expiry_limit_evaluation_value days from today. 
-    if df is not None and not isEmpty(df) and len(df.collect()) > 1:
+    if df is not None and not isEmpty(df) and len(df.collect()) >= 1:
         df = df.select(F.col('created_by_username'),F.regexp_replace(F.col('comment'), '[\"\'\\\\]', '_').alias('comment'),F.col("token_id"))             
         tokenslst = df.collect()
         tokens_dict = {i.token_id : [i.created_by_username, i.comment] for i in tokenslst}
@@ -996,9 +997,9 @@ def log_check(df):
         return (check_id, 1, {})   
 
 if enabled:   
-    tbl_name = 'global_temp.acctlogdelivery' 
+    tbl_name = 'acctlogdelivery' 
     sql=f'''
-        SELECT config_name, config_id from  
+        SELECT config_name, config_id  
         FROM {tbl_name} 
         WHERE log_type="AUDIT_LOGS" and status="ENABLED" 
         '''
