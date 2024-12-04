@@ -46,10 +46,12 @@ if cloud_type == "gcp":
 # COMMAND ----------
 
 def run_notebook(notebook_path, timeout):
-    status = dbutils.notebook.run(f"{basePath()}/notebooks/Setup/{notebook_path}", timeout)
+    status = dbutils.notebook.run(notebook_path, timeout)
     if status != "OK":
         loggr.exception(f"Error Encountered in {notebook_path}", status)
         dbutils.notebook.exit()
+
+# COMMAND ----------
 
 notebooks = [
     ("1. list_account_workspaces_to_conf_file", 3000),
@@ -62,7 +64,7 @@ notebooks = [
 ]
 
 for notebook, timeout in notebooks:
-    run_notebook(notebook, timeout)
+    status=run_notebook(f"{basePath()}/notebooks/Setup/{notebook}", timeout)
 
 # COMMAND ----------
 

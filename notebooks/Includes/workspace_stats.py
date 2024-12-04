@@ -46,7 +46,7 @@ workspace_id = json_['workspace_id']
 
 # COMMAND ----------
 
-from src.securityanalysistoolproject.core.logging_utils import LoggingUtils
+from core.logging_utils import LoggingUtils
 import logging
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
