@@ -2,7 +2,8 @@
 import json
 import re
 from itertools import cycle
-from logging_utils import LoggingUtils
+from core.logging_utils import LoggingUtils
+
 LOGGR=None
 
 if LOGGR is None:
