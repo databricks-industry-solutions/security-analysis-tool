@@ -608,7 +608,7 @@ uninstall() {
     cd "$bundle_path" && cd .. || { echo "Failed to change directory to $bundle_path"; exit 1; }
 
     # shellcheck disable=SC2207
-    options=($(databricks auth profiles | awk 'NR > 1 {print $1}'))
+    options=($(databricks auth profiles | awk 'NR > 1 {print $1}' | grep -v "accounts"))
 
     echo "========================================"
     echo "Select the Profile used to installed SAT"
