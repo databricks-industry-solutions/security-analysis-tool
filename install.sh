@@ -62,6 +62,12 @@ running_mode() {
 }
 
 is_sat_installed(){
+  if [[ "$RUNNING_MODE" == "remote" ]]; then
+    if [[ -n $(find "$INSTALLATION_DIR" -type f -name "tfplan" -print -quit) || -n $(find "$INSTALLATION_DIR" -type d -name ".databricks" -print -quit) ]]; then
+      SAT_INSTALLED=1
+    fi
+  fi
+
   if [[ -n $(find . -type f -name "tfplan" | head -n 1) || -n $(find . -type d -name ".databricks" | head -n 1) ]]; then
     SAT_INSTALLED=1
   fi
