@@ -343,7 +343,7 @@ azure_validation() {
   read -sp "Enter Azure Client Secret: " AZURE_CLIENT_SECRET
   while ! validate_client_secret "$AZURE_CLIENT_SECRET"; do
     printf "\nInvalid Client Secret.\n"
-    read -p "Enter Azure Client Secret: " AZURE_CLIENT_SECRET
+    read -sp "Enter Azure Client Secret: " AZURE_CLIENT_SECRET
   done
   printf "\n"
 
@@ -432,7 +432,7 @@ gcp_validation() {
   read -sp "Enter Databricks Client Secret: " DATABRICKS_CLIENT_SECRET
   while ! validate_client_secret "$DATABRICKS_CLIENT_SECRET"; do
     printf "\nInvalid Client Secret.\n"
-    read -p "Enter Databricks Client Secret: " DATABRICKS_CLIENT_SECRET
+    read -sp "Enter Databricks Client Secret: " DATABRICKS_CLIENT_SECRET
   done
   printf "\n"
 
@@ -534,12 +534,15 @@ terraform_install(){
     case $opt in
       "AWS")
         terraform_actions "aws"
+        break
         ;;
       "Azure")
         terraform_actions "azure"
+        break
         ;;
       "GCP")
         terraform_actions "gcp"
+        break
         ;;
       "Quit")
         echo "Exiting SAT Installation..."
