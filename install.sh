@@ -643,8 +643,6 @@ install_sat(){
 
   clear_screen
 
-
-
   options=("Terraform" "CLI")
   echo "==============================="
   echo "How do you want to install SAT?"
