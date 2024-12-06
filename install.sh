@@ -55,8 +55,8 @@ is_sat_installed(){
 
 get_github_project(){
   if [[ "$RUNNING_MODE" == "remote" ]]; then
+    running_location || { echo "Failed to change to the running location."; exit 1; }
     if [[ ! -d "config" && ! -d "dabs" && ! -d "dashboards" && ! -d "notebooks" && ! -d "src" && ! -d "terraform" ]]; then
-      running_location || { echo "Failed to determine the running location."; exit 1; }
       setup_sat
       cd "$INSTALLATION_DIR" || { echo "Failed to change directory to $INSTALLATION_DIR"; exit 1; }
     fi
