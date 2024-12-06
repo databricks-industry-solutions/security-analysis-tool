@@ -19,7 +19,31 @@ PYTHON_BIN="python3.11"
 ENV_NAME=".env"
 
 # Functions
+running_location(){
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    desktop_path="$HOME/Desktop"
+    if [[ -d "$desktop_path" ]]; then
+        cd "$desktop_path" || { echo "Error: Failed to change directory to $desktop_path on macOS"; exit 1; }
+    else
+        echo "Error: Desktop directory not found at $desktop_path on macOS"
+        exit 1
+    fi
+elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+    desktop_path="$USERPROFILE/Desktop"
+    if [[ -d "$desktop_path" ]]; then
+        cd "$desktop_path" || { echo "Error: Failed to change directory to $desktop_path on Windows"; exit 1; }
+    else
+        echo "Error: Desktop directory not found at $desktop_path on Windows"
+        exit 1
+    fi
+else
+    echo "Error: Unsupported operating system ($OSTYPE)"
+    exit 1
+fi
+}
 running_mode() {
+  running_location || { echo "Failed to determine the running location."; exit 1; }
+
   if [[ -d "docs" || -d "images" || -n "$(find . -maxdepth 1 -name '*.md' -o -name 'LICENSE' -o -name 'NOTICE')" ]]; then
     RUNNING_MODE="local"
   fi
