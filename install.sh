@@ -9,7 +9,7 @@ COLUMNS=12
 VERBOSE=true
 CLEAR_SCREEN=true
 
- clear_screen() {
+clear_screen() {
   [[ "$CLEAR_SCREEN" == "true" ]] &&  clear
 }
 
@@ -35,21 +35,21 @@ running_location(){
   if [[ "$RUNNING_MODE" == "remote" ]]; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
       if [[ -d "$RUNNING_LOCATION_MACOS" ]]; then
-          cd "$RUNNING_LOCATION_MACOS" || { echo "Error: Failed to change directory to $RUNNING_LOCATION_MACOS on macOS"; exit 1; }
+        cd "$RUNNING_LOCATION_MACOS" || { echo "Error: Failed to change directory to $RUNNING_LOCATION_MACOS on macOS"; exit 1; }
       else
-          echo "Error: Desktop directory not found at $RUNNING_LOCATION_MACOS on macOS"
-          exit 1
+        echo "Error: Desktop directory not found at $RUNNING_LOCATION_MACOS on macOS"
+        exit 1
       fi
     elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
         if [[ -d "$RUNNING_LOCATION_WINOS" ]]; then
-            cd "$RUNNING_LOCATION_WINOS" || { echo "Error: Failed to change directory to $RUNNING_LOCATION_WINOS on Windows"; exit 1; }
+          cd "$RUNNING_LOCATION_WINOS" || { echo "Error: Failed to change directory to $RUNNING_LOCATION_WINOS on Windows"; exit 1; }
         else
-            echo "Error: Desktop directory not found at $RUNNING_LOCATION_WINOS on Windows"
-            exit 1
+          echo "Error: Desktop directory not found at $RUNNING_LOCATION_WINOS on Windows"
+          exit 1
         fi
     else
-        echo "Error: Unsupported operating system ($OSTYPE)"
-        exit 1
+      echo "Error: Unsupported operating system ($OSTYPE)"
+      exit 1
     fi
   fi
 }
@@ -57,7 +57,6 @@ running_mode() {
   if [[ -d "docs" || -d "images" || -n "$(find . -maxdepth 1 -name '*.md' -o -name 'LICENSE' -o -name 'NOTICE')" ]]; then
     RUNNING_MODE="local"
   fi
-
   running_location || { echo "Failed to determine the running location."; exit 1; }
 }
 
@@ -79,93 +78,93 @@ get_github_project(){
 }
 
 download_latest_release() {
-    local release_info file_name file_path
+  local release_info file_name file_path
 
-    release_info=$(curl --silent "https://api.github.com/repos/$REPO/releases/latest")
-    url=$(echo "$release_info" | grep '"zipball_url"' | sed -E 's/.*"([^"]+)".*/\1/')
+  release_info=$(curl --silent "https://api.github.com/repos/$REPO/releases/latest")
+  url=$(echo "$release_info" | grep '"zipball_url"' | sed -E 's/.*"([^"]+)".*/\1/')
 
-    if [[ -z "$url" ]]; then
-        echo "Failed to fetch the latest release URL for SAT."
-        exit 1
-    fi
+  if [[ -z "$url" ]]; then
+    echo "Failed to fetch the latest release URL for SAT."
+    exit 1
+  fi
 
-    # shellcheck disable=SC2155
-    file_name="$(basename "$url").zip"
-    file_path="$DOWNLOAD_DIR/$file_name"
-    curl -s -L "$url" -o "$file_path" || { echo "Error: Failed to download $url"; exit 1; }
+  # shellcheck disable=SC2155
+  file_name="$(basename "$url").zip"
+  file_path="$DOWNLOAD_DIR/$file_name"
+  curl -s -L "$url" -o "$file_path" || { echo "Error: Failed to download $url"; exit 1; }
 
-    echo "$file_path"
+  echo "$file_path"
 }
 
 setup_sat() {
-    log "Downloading the latest release of SAT..."
-    local file_path
-    file_path=$(download_latest_release)
+  log "Downloading the latest release of SAT..."
+  local file_path
+  file_path=$(download_latest_release)
 
-    mkdir -p "$INSTALLATION_DIR"
+  mkdir -p "$INSTALLATION_DIR"
 
-    if [[ "$file_path" == *.zip ]]; then
-        temp_dir=$(mktemp -d)
+  if [[ "$file_path" == *.zip ]]; then
+    temp_dir=$(mktemp -d)
 
-        log "Extracting SAT..."
-        unzip -q "$file_path" -d "$temp_dir" || { echo "Error: Failed to extract $file_path"; exit 1; }
+    log "Extracting SAT..."
+    unzip -q "$file_path" -d "$temp_dir" || { echo "Error: Failed to extract $file_path"; exit 1; }
 
-        solution_dir=$(find "$temp_dir" -type d -name "$PREFIX*")
+    solution_dir=$(find "$temp_dir" -type d -name "$PREFIX*")
 
-        if [[ -d "$solution_dir" ]]; then
-            for folder in terraform src notebooks dashboards dabs configs; do
-                if [[ -d "$solution_dir/$folder" ]]; then
-                    cp -r "$solution_dir/$folder" "$INSTALLATION_DIR"
-                fi
-            done
-
-            install_file=$(find "$solution_dir" -type f -name "install.sh")
-            if [[ -f "$install_file" ]]; then
-                cp "$install_file" "$INSTALLATION_DIR"
-            else
-                echo "Warning: install.sh not found in the release."
-            fi
-        else
-            echo "Error: No 'databricks-industry-solutions' folder found in the extracted contents."
-            rm -rf "$temp_dir"
-            exit 1
+    if [[ -d "$solution_dir" ]]; then
+      for folder in terraform src notebooks dashboards dabs configs; do
+        if [[ -d "$solution_dir/$folder" ]]; then
+          cp -r "$solution_dir/$folder" "$INSTALLATION_DIR"
         fi
+      done
 
-        rm -rf "$temp_dir"
+      install_file=$(find "$solution_dir" -type f -name "install.sh")
+      if [[ -f "$install_file" ]]; then
+        cp "$install_file" "$INSTALLATION_DIR"
+      else
+        echo "Warning: install.sh not found in the release."
+      fi
+    else
+      echo "Error: No 'databricks-industry-solutions' folder found in the extracted contents."
+      rm -rf "$temp_dir"
+      exit 1
     fi
 
-    rm "$file_path"
+    rm -rf "$temp_dir"
+  fi
+
+  rm "$file_path"
 }
 
 setup_env(){
-    # Check  if Python is installed
-    if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
-        echo "Python 3.11 not found. Trying to find another Python 3 interpreter..."
-        PYTHON_BIN="python3"
-        if ! command_exists "$PYTHON_BIN"; then
-            echo "No suitable Python interpreter found. Please install Python 3.11 or Python 3."
-            exit 1
-        fi
-        echo "Using $PYTHON_BIN as a fallback."
+  # Check  if Python is installed
+  if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    echo "Python 3.11 not found. Trying to find another Python 3 interpreter..."
+    PYTHON_BIN="python3"
+    if ! command_exists "$PYTHON_BIN"; then
+      echo "No suitable Python interpreter found. Please install Python 3.11 or Python 3."
+      exit 1
     fi
+    echo "Using $PYTHON_BIN as a fallback."
+  fi
 
-    # Create virtual environment
-    log "Creating virtual environment $ENV_NAME..."
+  # Create virtual environment
+  log "Creating virtual environment $ENV_NAME..."
 
-    if ! "$PYTHON_BIN" -m venv "$ENV_NAME"; then
-        echo "Failed to create virtual environment. Ensure Python 3.11 or Python 3 is properly installed."
-        exit 1
-    fi
+  if ! "$PYTHON_BIN" -m venv "$ENV_NAME"; then
+    echo "Failed to create virtual environment. Ensure Python 3.11 or Python 3 is properly installed."
+    exit 1
+  fi
 
-    # Activate the virtual environment
-    source "$ENV_NAME/bin/activate" || { echo "Failed to activate virtual env."; exit 1; }
+  # Activate the virtual environment
+  source "$ENV_NAME/bin/activate" || { echo "Failed to activate virtual env."; exit 1; }
 
-    # Update pip, setuptools, and wheel
-    log "Updating pip, setuptools, and wheel..."
-    if ! pip install --upgrade pip setuptools wheel -qqq; then
-        echo "Failed to update libraries. Check your network connection and try again."
-        exit 1
-    fi
+  # Update pip, setuptools, and wheel
+  log "Updating pip, setuptools, and wheel..."
+  if ! pip install --upgrade pip setuptools wheel -qqq; then
+    echo "Failed to update libraries. Check your network connection and try again."
+    exit 1
+  fi
 }
 
 update_tfvars() {
@@ -199,7 +198,7 @@ validate_analysis_schema_name() {
 }
 
 validate_guid() {
-    [[ "$1" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ && "${#1}" -eq 36 ]]
+  [[ "$1" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ && "${#1}" -eq 36 ]]
 }
 
 validate_client_secret() {
@@ -208,9 +207,9 @@ validate_client_secret() {
 }
 
 validate_databricks_url() {
-    [[ "$1" =~ ^https://.*\.azuredatabricks\.net(/.*)?$ || \
-       "$1" =~ ^https://.*\.cloud\.databricks\.com(/.*)?$ || \
-       "$1" =~ ^https://.*\.gcp\.databricks\.com(/.*)?$ ]]
+  [[ "$1" =~ ^https://.*\.azuredatabricks\.net(/.*)?$ || \
+     "$1" =~ ^https://.*\.cloud\.databricks\.com(/.*)?$ || \
+     "$1" =~ ^https://.*\.gcp\.databricks\.com(/.*)?$ ]]
 }
 
 validate_gcp_sa() {
@@ -242,7 +241,7 @@ aws_validation() {
   echo
 
   # Prompt user and validate inputs
-   read -p "Enter Databricks Account ID: " DATABRICKS_ACCOUNT_ID
+  read -p "Enter Databricks Account ID: " DATABRICKS_ACCOUNT_ID
   while ! validate_guid "$DATABRICKS_ACCOUNT_ID"; do
     echo "Invalid Databricks Account ID."
     read -p "Enter Databricks Account ID: " DATABRICKS_ACCOUNT_ID
@@ -275,8 +274,8 @@ aws_validation() {
 
   read -p "Enter Analysis Schema Name (e.g., 'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
   while ! validate_analysis_schema_name "$ANALYSIS_SCHEMA_NAME"; do
-      echo "Invalid Analysis Schema Name. It must be either 'catalog.schema' or 'hive_metastore.schema'."
-      read -p "Enter Analysis Schema Name (e.g.,'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
+    echo "Invalid Analysis Schema Name. It must be either 'catalog.schema' or 'hive_metastore.schema'."
+    read -p "Enter Analysis Schema Name (e.g.,'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
   done
 
   read -p "Enter Proxy Details ({} or JSON with 'http' and 'https' keys): " AWS_PROXIES
@@ -313,7 +312,7 @@ azure_validation() {
   local ANALYSIS_SCHEMA_NAME
   local AZURE_PROXIES
 
- clear_screen
+  clear_screen
 
   cd azure || { echo "Failed to change directory to azure"; exit 1; }
 
@@ -368,8 +367,8 @@ azure_validation() {
 
   read -p "Enter Analysis Schema Name (e.g., 'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
   while ! validate_analysis_schema_name "$ANALYSIS_SCHEMA_NAME"; do
-      echo "Invalid Analysis Schema Name. It must be either 'catalog.schema' or 'hive_metastore.schema'."
-      read -p "Enter Analysis Schema Name (e.g.,'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
+    echo "Invalid Analysis Schema Name. It must be either 'catalog.schema' or 'hive_metastore.schema'."
+    read -p "Enter Analysis Schema Name (e.g.,'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
   done
 
   read -p "Enter Proxy Details ({} or JSON with 'http' and 'https' keys): " AZURE_PROXIES
@@ -451,8 +450,8 @@ gcp_validation() {
 
   read -p "Enter Analysis Schema Name (e.g., 'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
   while ! validate_analysis_schema_name "$ANALYSIS_SCHEMA_NAME"; do
-      echo "Invalid Analysis Schema Name. It must be either 'catalog.schema' or 'hive_metastore.schema'."
-      read -p "Enter Analysis Schema Name (e.g.,'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
+    echo "Invalid Analysis Schema Name. It must be either 'catalog.schema' or 'hive_metastore.schema'."
+    read -p "Enter Analysis Schema Name (e.g.,'catalog.schema' or 'hive_metastore.schema'): " ANALYSIS_SCHEMA_NAME
   done
 
   read -p "Enter GCP Key json path: " GCP_PATH_TO_JSON
@@ -573,6 +572,7 @@ uninstall() {
   if [[ -n "$tfplan_path" ]]; then
     # If a tfplan file is found
     cd "$tfplan_path" || { echo "Failed to change directory to $tfplan_path"; exit 1; }
+
     clear_screen
     log "Uninstalling Terraform resources..."
     terraform destroy -auto-approve -lock=false || { echo "Failed to destroy the Terraform resources."; exit 1; }
