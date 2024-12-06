@@ -19,6 +19,8 @@ log() {
 
 # variables
 RUNNING_MODE="remote"
+RUNNING_LOCATION_MACOS="$HOME/Desktop"
+RUNNING_LOCATION_WINOS="$USERPROFILE/Desktop"
 SAT_INSTALLED=0
 #REPO="databricks-industry-solutions/security-analysis-tool"
 REPO="jgarciaf106/security-analysis-tool"
@@ -32,19 +34,17 @@ ENV_NAME=".env"
 running_location(){
   if [[ "$RUNNING_MODE" == "remote" ]]; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
-      desktop_path="$HOME/Desktop"
-      if [[ -d "$desktop_path" ]]; then
-          cd "$desktop_path" || { echo "Error: Failed to change directory to $desktop_path on macOS"; exit 1; }
+      if [[ -d "$RUNNING_LOCATION_MACOS" ]]; then
+          cd "$RUNNING_LOCATION_MACOS" || { echo "Error: Failed to change directory to $RUNNING_LOCATION_MACOS on macOS"; exit 1; }
       else
-          echo "Error: Desktop directory not found at $desktop_path on macOS"
+          echo "Error: Desktop directory not found at $RUNNING_LOCATION_MACOS on macOS"
           exit 1
       fi
     elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
-        desktop_path="$USERPROFILE/Desktop"
-        if [[ -d "$desktop_path" ]]; then
-            cd "$desktop_path" || { echo "Error: Failed to change directory to $desktop_path on Windows"; exit 1; }
+        if [[ -d "$RUNNING_LOCATION_WINOS" ]]; then
+            cd "$RUNNING_LOCATION_WINOS" || { echo "Error: Failed to change directory to $RUNNING_LOCATION_WINOS on Windows"; exit 1; }
         else
-            echo "Error: Desktop directory not found at $desktop_path on Windows"
+            echo "Error: Desktop directory not found at $RUNNING_LOCATION_WINOS on Windows"
             exit 1
         fi
     else
@@ -52,9 +52,6 @@ running_location(){
         exit 1
     fi
   fi
-
-  pwd
-  echo "Running mode: $desktop_path"
 }
 running_mode() {
   if [[ -d "docs" || -d "images" || -n "$(find . -maxdepth 1 -name '*.md' -o -name 'LICENSE' -o -name 'NOTICE')" ]]; then
@@ -63,7 +60,36 @@ running_mode() {
 }
 
 is_sat_installed(){
-  if [[ -n $(find . -type f -name "tfplan" | head -n 1) || -n $(find . -type d -name ".databricks" | head -n 1) ]]; then
+  # Function to check for required directories
+  check_directories() {
+    local base_dir="$1"
+    [[ -d "$base_dir/config" && -d "$base_dir/dabs" && -d "$base_dir/dashboards" && -d "$base_dir/notebooks" && -d "$base_dir/src" && -d "$base_dir/terraform" ]]
+  }
+
+  if [[ "$RUNNING_MODE" == "remote" && "$OSTYPE" == "darwin"* ]]; then
+    if cd "$RUNNING_LOCATION_MACOS" 2>/dev/null; then
+      if check_directories "."; then
+        SAT_INSTALLED=1
+      fi
+    else
+      echo "Error: Failed to change directory to $RUNNING_LOCATION_MACOS on macOS" >&2
+      exit 1
+    fi
+  fi
+
+
+  if [[ "$RUNNING_MODE" == "remote" && ( "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ) ]]; then
+    if cd "$RUNNING_LOCATION_WINOS" 2>/dev/null; then
+      if check_directories "."; then
+        SAT_INSTALLED=1
+      fi
+    else
+      echo "Error: Failed to change directory to $RUNNING_LOCATION_WINOS on Windows" >&2
+      exit 1
+    fi
+  fi
+
+  if [[ -n $(find . -type f -name "tfplan" -print -quit) || -n $(find . -type d -name ".databricks" -print -quit) ]]; then
     SAT_INSTALLED=1
   fi
 }
