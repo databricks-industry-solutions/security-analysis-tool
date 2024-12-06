@@ -641,9 +641,14 @@ install_sat(){
 
   if [[ "$RUNNING_MODE" == "remote" ]]; then
     get_github_project || { echo "Failed to setup SAT."; exit 1; }
+
+    log "Checking if SAT is already installed..."
+    is_sat_installed || { echo "Failed to determine if SAT is installed."; exit 1; }
   fi
 
   clear_screen
+
+
 
   options=("Terraform" "CLI")
   echo "==============================="
@@ -684,9 +689,6 @@ install_sat(){
 main(){
     log "Determining running mode..."
     running_mode || { echo "Failed to determine the running mode."; exit 1; }
-
-    log "Checking if SAT is already installed..."
-    is_sat_installed || { echo "Failed to determine if SAT is installed."; exit 1; }
 
     log "Starting SAT installation..."
     install_sat || { echo "Failed to install SAT."; exit 1; }
