@@ -87,7 +87,7 @@ download_latest_release() {
 }
 
 setup_sat() {
-    echo "Downloading the latest release of SAT..."
+    log "Downloading the latest release of SAT..."
     local file_path
     file_path=$(download_latest_release)
 
@@ -96,7 +96,7 @@ setup_sat() {
     if [[ "$file_path" == *.zip ]]; then
         temp_dir=$(mktemp -d)
 
-        echo "Extracting SAT..."
+        log "Extracting SAT..."
         unzip -q "$file_path" -d "$temp_dir" || { echo "Error: Failed to extract $file_path"; exit 1; }
 
         solution_dir=$(find "$temp_dir" -type d -name "$PREFIX*")
@@ -110,7 +110,7 @@ setup_sat() {
 
             install_file=$(find "$solution_dir" -type f -name "install.sh")
             if [[ -f "$install_file" ]]; then
-                echo "Downloading install.sh..."
+                log "Downloading install.sh..."
                 cp "$install_file" "$INSTALLATION_DIR"
             else
                 echo "Warning: install.sh not found in the release."
@@ -140,7 +140,7 @@ setup_env(){
     fi
 
     # Create virtual environment
-    echo "Creating virtual environment $ENV_NAME..."
+    log "Creating virtual environment $ENV_NAME..."
 
     if ! "$PYTHON_BIN" -m venv "$ENV_NAME"; then
         echo "Failed to create virtual environment. Ensure Python 3.11 or Python 3 is properly installed."
@@ -151,7 +151,7 @@ setup_env(){
     source "$ENV_NAME/bin/activate" || { echo "Failed to activate virtual env."; exit 1; }
 
     # Update pip, setuptools, and wheel
-    echo "Updating pip, setuptools, and wheel..."
+    log "Updating pip, setuptools, and wheel..."
     if ! pip install --upgrade pip setuptools wheel -qqq; then
         echo "Failed to update libraries. Check your network connection and try again."
         exit 1
@@ -549,7 +549,7 @@ shell_install(){
   cd dabs || { echo "Failed to change directory to dabs"; exit 1; }
   setup_env || { echo "Failed to setup virtual environment."; exit 1; }
 
-  echo "Installing SAT dependencies..."
+  log "Installing SAT dependencies..."
   pip install -r requirements.txt -qqq || { echo "Failed to install Python dependencies."; exit 1; }
   python main.py || { echo "Failed to run the main script."; exit 1; }
 }
@@ -564,7 +564,7 @@ uninstall() {
     # If a tfplan file is found
     cd "$tfplan_path" || { echo "Failed to change directory to $tfplan_path"; exit 1; }
     clear
-    echo "Uninstalling Terraform resources..."
+    log "Uninstalling Terraform resources..."
     terraform destroy -auto-approve -lock=false || { echo "Failed to destroy the Terraform resources."; exit 1; }
 
     # Remove Terraform files
@@ -607,7 +607,7 @@ uninstall() {
       if [[ -n "$opt" ]]; then
         selected_profile="$opt"
         clear
-        echo "Uninstalling Databricks resources"
+        log "Uninstalling Databricks resources"
         databricks bundle destroy --auto-approve --force-lock -p "$selected_profile" || {
           echo "Failed to destroy the Databricks resources. Please check the confirm you are using the correct Profile."
           exit 1
@@ -668,10 +668,19 @@ install_sat(){
 }
 
 main(){
+    log "Determining running mode..."
     running_mode || { echo "Failed to determine the running mode."; exit 1; }
+
+    log "Checking running location..."
     running_location || { echo "Failed to determine the running location."; exit 1; }
+
+    log "Checking if SAT is already installed..."
     is_sat_installed || { echo "Failed to determine if SAT is installed."; exit 1; }
+
+    log "Starting SAT installation..."
     install_sat || { echo "Failed to install SAT."; exit 1; }
+
+    log "SAT installation completed successfully."
 }
 
 # run script
