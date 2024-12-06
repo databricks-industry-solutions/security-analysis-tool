@@ -57,39 +57,12 @@ running_mode() {
   if [[ -d "docs" || -d "images" || -n "$(find . -maxdepth 1 -name '*.md' -o -name 'LICENSE' -o -name 'NOTICE')" ]]; then
     RUNNING_MODE="local"
   fi
+
+  running_location || { echo "Failed to determine the running location."; exit 1; }
 }
 
 is_sat_installed(){
-  # Function to check for required directories
-  check_directories() {
-    local base_dir="$1"
-    [[ -d "$base_dir/config" && -d "$base_dir/dabs" && -d "$base_dir/dashboards" && -d "$base_dir/notebooks" && -d "$base_dir/src" && -d "$base_dir/terraform" ]]
-  }
-
-  if [[ "$RUNNING_MODE" == "remote" && "$OSTYPE" == "darwin"* ]]; then
-    if cd "$RUNNING_LOCATION_MACOS" 2>/dev/null; then
-      if check_directories "."; then
-        SAT_INSTALLED=1
-      fi
-    else
-      echo "Error: Failed to change directory to $RUNNING_LOCATION_MACOS on macOS" >&2
-      exit 1
-    fi
-  fi
-
-
-  if [[ "$RUNNING_MODE" == "remote" && ( "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ) ]]; then
-    if cd "$RUNNING_LOCATION_WINOS" 2>/dev/null; then
-      if check_directories "."; then
-        SAT_INSTALLED=1
-      fi
-    else
-      echo "Error: Failed to change directory to $RUNNING_LOCATION_WINOS on Windows" >&2
-      exit 1
-    fi
-  fi
-
-  if [[ -n $(find . -type f -name "tfplan" -print -quit) || -n $(find . -type d -name ".databricks" -print -quit) ]]; then
+  if [[ -n $(find . -type f -name "tfplan" | head -n 1) || -n $(find . -type d -name ".databricks" | head -n 1) ]]; then
     SAT_INSTALLED=1
   fi
 }
@@ -705,9 +678,6 @@ install_sat(){
 main(){
     log "Determining running mode..."
     running_mode || { echo "Failed to determine the running mode."; exit 1; }
-
-    log "Checking running location..."
-    running_location || { echo "Failed to determine the running location."; exit 1; }
 
     log "Checking if SAT is already installed..."
     is_sat_installed || { echo "Failed to determine if SAT is installed."; exit 1; }
