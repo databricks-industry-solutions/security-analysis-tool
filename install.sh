@@ -42,8 +42,6 @@ else
 fi
 }
 running_mode() {
-  running_location || { echo "Failed to determine the running location."; exit 1; }
-
   if [[ -d "docs" || -d "images" || -n "$(find . -maxdepth 1 -name '*.md' -o -name 'LICENSE' -o -name 'NOTICE')" ]]; then
     RUNNING_MODE="local"
   fi
@@ -58,6 +56,7 @@ is_sat_installed(){
 get_github_project(){
   if [[ "$RUNNING_MODE" == "remote" ]]; then
     if [[ ! -d "config" && ! -d "dabs" && ! -d "dashboards" && ! -d "notebooks" && ! -d "src" && ! -d "terraform" ]]; then
+      running_location || { echo "Failed to determine the running location."; exit 1; }
       setup_sat
       cd "$INSTALLATION_DIR" || { echo "Failed to change directory to $INSTALLATION_DIR"; exit 1; }
     fi
