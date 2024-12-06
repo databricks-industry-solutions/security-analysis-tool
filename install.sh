@@ -62,12 +62,6 @@ running_mode() {
 }
 
 is_sat_installed(){
-  if [[ "$RUNNING_MODE" == "remote" ]]; then
-    if [[ -n $(find "$INSTALLATION_DIR" -type f -name "tfplan" -print -quit) || -n $(find "$INSTALLATION_DIR" -type d -name ".databricks" -print -quit) ]]; then
-      SAT_INSTALLED=1
-    fi
-  fi
-
   if [[ -n $(find . -type f -name "tfplan" | head -n 1) || -n $(find . -type d -name ".databricks" | head -n 1) ]]; then
     SAT_INSTALLED=1
   fi
@@ -78,6 +72,8 @@ get_github_project(){
     if [[ ! -d "config" && ! -d "dabs" && ! -d "dashboards" && ! -d "notebooks" && ! -d "src" && ! -d "terraform" ]]; then
       setup_sat
       cd "$INSTALLATION_DIR" || { echo "Failed to change directory to $INSTALLATION_DIR"; exit 1; }
+      log "Checking if SAT is already installed..."
+      is_sat_installed || { echo "Failed to determine if SAT is installed."; exit 1; }
     fi
   fi
 }
@@ -641,10 +637,9 @@ install_sat(){
 
   if [[ "$RUNNING_MODE" == "remote" ]]; then
     get_github_project || { echo "Failed to setup SAT."; exit 1; }
-
-    log "Checking if SAT is already installed..."
-    is_sat_installed || { echo "Failed to determine if SAT is installed."; exit 1; }
   fi
+
+  is_sat_installed || { echo "Failed to determine if SAT is installed."; exit 1; }
 
   clear_screen
 
