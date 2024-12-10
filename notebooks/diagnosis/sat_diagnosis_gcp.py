@@ -67,8 +67,10 @@ import requests,json
 
 
 # Define the URL and headers
-workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
-  .getContext().toJson())['tags']['browserHostName']
+#workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+
+workspaceUrl =  "<>" #without http
+
 
 # COMMAND ----------
 
@@ -236,9 +238,6 @@ print(identity_token)
 import requests,json
 
 
-# Define the URL and headers
-workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
-  .getContext().toJson())['tags']['browserHostName']
 
 
 url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
@@ -265,9 +264,9 @@ print(response.json())
 
 # COMMAND ----------
 
-#%sh 
-
-#curl -X GET --header 'Authorization: Bearer access_token' 'https://<workspace_id>.gcp.databricks.com/api/2.0/clusters/list'
+# MAGIC %sh 
+# MAGIC
+# MAGIC curl -X GET --header 'Authorization: Bearer <identity_token>' 'https://<worspace_rul>/api/2.0/clusters/list'
 
 # COMMAND ----------
 

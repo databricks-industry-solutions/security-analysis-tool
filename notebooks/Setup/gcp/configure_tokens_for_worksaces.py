@@ -22,9 +22,9 @@ pip install --upgrade google-auth  gcsfs
 # COMMAND ----------
 
 import json
+from dbruntime.databricks_repl_context import get_context
 #Get current workspace id
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
+current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
