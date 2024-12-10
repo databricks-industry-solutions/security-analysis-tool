@@ -153,7 +153,7 @@ if json_['analysis_schema_name'] != 'hive_metastore.security_analysis':
 
 import requests
 
-BODY = {'path': f'{basePath()}/[SAT] Security Analysis Tool - Workspace In-Depth.lvdash.json'}
+BODY = {'path': f'{basePath()}/[SAT] Security Analysis Tool - Assessment Results.lvdash.json'}
 
 loggr.info(f"Getting Dashboard")
 response = requests.get(
@@ -204,7 +204,7 @@ with open(json_file_path) as json_file:
 
 json_string = json_string = json.dumps(json_data)
 
-BODY = {'display_name': '[SAT] Security Analysis Tool - Workspace In-Depth','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
+BODY = {'display_name': '[SAT] Security Analysis Tool - Assessment Results','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
 
 loggr.info(f"Creating Dashboard")
 response = requests.post(
@@ -223,46 +223,6 @@ if 'RESOURCE_ALREADY_EXISTS' not in response.text:
 else:
     exists = True
     print("Lakeview Dashboard already exists")  
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # Update the Dashboard internal links to point to the right URL
-
-# COMMAND ----------
-
-
-# Path to the JSON file
-file_path = f'{basePath()}/dashboards/SAT_Dashboard_definition.json'
-
-# String to search and replace
-old_string = 'dashboard_id'
-new_string = dashboard_id
-
-# Modify the dashboard by replacing the string
-# Traverse the JSON object and replace the string when found
-updated_dashboard = serialized_dashboard.replace(old_string, new_string)
-
-# COMMAND ----------
-
-import requests
-import json
-
-if exists != True:
-
-    URL = "https://"+DOMAIN+"/api/2.0/lakeview/dashboards/"+dashboard_id
-    BODY = {'dashboard_id': dashboard_id, 'serialized_dashboard': updated_dashboard}
-
-    loggr.info(f"Publishing the Dashboard using the SAT SQL Warehouse")
-    response = requests.patch(
-            URL,
-            headers={'Authorization': 'Bearer %s' % token},
-            json=BODY,
-            timeout=60
-            )
-
-else:
-    print("Dashboard already exists")
 
 # COMMAND ----------
 
