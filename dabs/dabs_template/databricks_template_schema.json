@@ -20,6 +20,10 @@
         "node_type": {
             "type": "string",
             "description": "Node Type"
+        },
+        "serverless": {
+            "type": "boolean",
+            "description": "Serverless"
         }
     },
     "success_message": ""

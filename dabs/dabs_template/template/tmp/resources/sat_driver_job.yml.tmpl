@@ -7,13 +7,16 @@ resources:
         timezone_id: "America/New_York"
       tasks:
         - task_key: "sat_initializer"
+          {{- if eq .serverless false }}
           job_cluster_key: job_cluster
           libraries:
             - pypi:
                 package: dbl-sat-sdk
+          {{- end }}
           notebook_task:
             notebook_path: "../notebooks/security_analysis_driver.py"
 
+      {{- if eq .serverless false }}
       job_clusters:
         - job_cluster_key: job_cluster
           new_cluster:
@@ -26,3 +29,4 @@ resources:
             gcp_attributes:
               google_service_account: {{.google_service_account}}
             {{- end }}
+      {{- end }}
