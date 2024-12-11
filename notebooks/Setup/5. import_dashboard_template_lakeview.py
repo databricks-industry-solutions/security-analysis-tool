@@ -17,10 +17,6 @@
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
-loggr = LoggingUtils.get_logger()
-
 # COMMAND ----------
 
 dfexist = readWorkspaceConfigFile()
@@ -81,7 +77,6 @@ token = db_client.get_temporary_oauth_token()
 import requests
 
 DOMAIN = ws.deployment_url
-loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!")
 response = requests.get(
           'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % token},
@@ -94,13 +89,11 @@ if response.status_code == 200:
     for resource in resources:
         if resource['endpoint_id'] == json_['sql_warehouse_id']:
             data_source_id = resource['id']
-            loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']}!") 
             found = True
             break
     if (found == False):
         dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
 else:
-    loggr.info(f"Error with token, {response.text}")
     dbutils.notebook.exit("Invalid access token, check configuration value for this workspace.")            
 
 
@@ -154,7 +147,6 @@ import requests
 
 BODY = {'path': f'{basePath()}/[SAT] Security Analysis Tool - Assessment Results.lvdash.json'}
 
-loggr.info(f"Getting Dashboard")
 response = requests.get(
           'https://%s/api/2.0/workspace/get-status' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % token},
@@ -178,7 +170,6 @@ else:
 
 if exists != False:
 
-  loggr.info(f"Deleting Dashboard")
   response = requests.delete(
             'https://%s/api/2.0/lakeview/dashboards/%s' % (DOMAIN, dashboard_id),
             headers={'Authorization': 'Bearer %s' % token},
@@ -205,7 +196,6 @@ json_string = json_string = json.dumps(json_data)
 
 BODY = {'display_name': '[SAT] Security Analysis Tool - Assessment Results','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
 
-loggr.info(f"Creating Dashboard")
 response = requests.post(
           'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % token},
@@ -238,7 +228,6 @@ if exists != True:
     URL = "https://"+DOMAIN+"/api/2.0/lakeview/dashboards/"+dashboard_id+"/published"
     BODY = {'embed_credentials': 'true', 'warehouse_id': json_['sql_warehouse_id']}
 
-    loggr.info(f"Publishing the Dashboard using the SAT SQL Warehouse")
     response = requests.post(
             URL,
             headers={'Authorization': 'Bearer %s' % token},
