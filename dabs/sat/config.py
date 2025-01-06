@@ -50,7 +50,7 @@ def form():
         ),
         Confirm(
             name="enable_serverless",
-            message="Enable serverless?",
+            message="Run on serverless?",
             default=True,
         ),
         List(
