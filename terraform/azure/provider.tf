@@ -15,4 +15,5 @@ module "common" {
   sqlw_id            = var.sqlw_id
   analysis_schema_name = var.analysis_schema_name
   proxies            = var.proxies
+  run_on_serverless  = var.run_on_serverless
 }
