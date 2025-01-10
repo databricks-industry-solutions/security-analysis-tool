@@ -1,3 +1,4 @@
+Note: The manual setup is out dates and is deprecated. Please use [Terraform or Standard](https://github.com/databricks-industry-solutions/security-analysis-tool/tree/main?tab=readme-ov-file#security-analysis-tool-sat) setup. 
 ## Checklist to prepare for SAT setup
 
 **Note**: SAT creates a new **security_analysis** databses and Delta tables. 

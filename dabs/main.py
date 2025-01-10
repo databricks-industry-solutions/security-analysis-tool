@@ -25,6 +25,7 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
             photon_driver_capable=True,
             photon_worker_capable=True,
         ),
+        "serverless": answers.get("enable_serverless", False),
     }
 
     config_file = "tmp_config.json"
