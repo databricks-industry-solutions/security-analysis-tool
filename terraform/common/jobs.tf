@@ -1,7 +1,7 @@
 resource "databricks_job" "initializer" {
   name = "SAT Initializer Notebook (one-time)"
   dynamic "job_cluster" {
-    for_each = var.run_on_serverless == false ? [] : [1]
+    for_each = var.run_on_serverless ? [] : [1]
     content {
       job_cluster_key = "job_cluster"
       new_cluster {
@@ -22,9 +22,9 @@ resource "databricks_job" "initializer" {
 
   task {
     task_key        = "Initializer"
-    job_cluster_key = var.run_on_serverless == false ? null : "job_cluster"
+    job_cluster_key = var.run_on_serverless ? null : "job_cluster"
     dynamic "library" {
-      for_each = var.run_on_serverless == false ? [] : [1]
+      for_each = var.run_on_serverless ? [] : [1]
       content {
         pypi {
           package = "dbl-sat-sdk"
@@ -41,7 +41,7 @@ resource "databricks_job" "initializer" {
 resource "databricks_job" "driver" {
   name = "SAT Driver Notebook"
   dynamic "job_cluster" {
-    for_each = var.run_on_serverless == false ? [] : [1]
+    for_each = var.run_on_serverless ? [] : [1]
     content {
       job_cluster_key = "job_cluster"
       new_cluster {
@@ -63,9 +63,9 @@ resource "databricks_job" "driver" {
 
   task {
     task_key        = "Driver"
-    job_cluster_key = var.run_on_serverless == false ? null : "job_cluster"
+    job_cluster_key = var.run_on_serverless ? null : "job_cluster"
     dynamic "library" {
-      for_each = var.run_on_serverless == false ? [] : [1]
+      for_each = var.run_on_serverless ? [] : [1]
       content {
         pypi {
           package = "dbl-sat-sdk"
