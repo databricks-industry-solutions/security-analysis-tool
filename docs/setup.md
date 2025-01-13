@@ -2,7 +2,7 @@
 
 > **SAT v0.2.0 or higher** brings full support for Unity Catalog. Now you can pick your catalog instead of hive_metastore. Plus, you get to choose your own schema name.
 
-> **Note**: SAT requires at least one SAT set up in a workspace per **account** in AWS or GCP and at least one SAT set up in a workspace per Azure **subscription**.  
+> **Note**: SAT requires at least one SAT set up in a workspace per **account** in AWS or GCP and at least one SAT set up in a workspace per Azure **subscription**. SAT uses the Service Principal configured with SAT to access and analyze configurations by calling account and workspace APIs. Please make sure to add the Service Principal to the workspaces you wish to analyze as instructed in the setup guides below. SAT running on serverless or classic compute can't analyze account and destination workspaces with IP ACLs configured unless the ACLs are updated to allow access from the SAT workspace. SAT running on Serverless compute can't access other workspaces if the SAT workspace has serverless egress controls configured. In these scenarios, a separate SAT can be configured to analyze the respective target workspace by setting up SAT in that workspace.
 
 >  Please make sure to review the SAT report with your business stakeholders, administrators, security team and auditors about SAT report and assess your organizational security requirements before making any security improvements bases on the report, not all deviations required to be mitigated. Some of the recommendations may have cost implications, some of the security features recommended may have dependency feature limitations, please thoroughly review individual feature documentation before making changes to your security configurations.
 
