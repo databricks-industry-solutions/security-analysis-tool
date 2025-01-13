@@ -54,3 +54,9 @@ variable "impersonate_service_account" {
   type        = string
   description = "Impersonate Service Account String (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
 }
+
+variable "run_on_serverless" {
+  type        = bool
+  description = "Flag to run SAT initializer/Driver on Serverless"
+  default     = false
+}

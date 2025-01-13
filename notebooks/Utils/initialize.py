@@ -50,6 +50,26 @@ json_ = {
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ##### Intermediate Schema Creation
+# MAGIC The following section creates an intermediate schema for storing temporary tables. Previously, these were created as global temp views, but since serverless does not support global temp views, they are now created as tables.
+
+# COMMAND ----------
+
+intermediate_schema_name = (
+    f"{json_['analysis_schema_name'].split('.')[0]}.intermediate_schema"
+    if '.' in json_['analysis_schema_name']
+    else "hive_metastore.intermediate_schema"
+)
+json_.update(
+    {
+        "intermediate_schema" : intermediate_schema_name
+    }
+
+)
+
+# COMMAND ----------
+
 json_.update(
     {
         "master_name_scope": "sat_scope",
@@ -127,6 +147,22 @@ if cloud_type == "aws":
     except:
         pass
     json_.update(sp_auth)
+
+# COMMAND ----------
+
+# MAGIC %pip install PyYAML dbl-sat-sdk=="0.0.102"
+
+# COMMAND ----------
+
+
+from core.logging_utils import LoggingUtils
+
+LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
+loggr = LoggingUtils.get_logger()
+
+# COMMAND ----------
+
+spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
 
 # COMMAND ----------
 

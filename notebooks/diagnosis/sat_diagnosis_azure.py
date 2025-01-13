@@ -38,13 +38,6 @@ if not found:
 
 # COMMAND ----------
 
-import json
-#Get current workspace id
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ### Let us check if there are required configs in the SAT scope
 
@@ -285,9 +278,3 @@ openssl_connect(workspaceUrl, 443)
 # COMMAND ----------
 
 openssl_connect('accounts.azuredatabricks.net', 443)
-
-# COMMAND ----------
-
-# MAGIC %sh
-# MAGIC
-# MAGIC tail -100 /var/log/dbrprofiler.log

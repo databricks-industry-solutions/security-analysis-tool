@@ -48,6 +48,11 @@ def form():
             message="Schema name for SAT",
             default="security_analysis",
         ),
+        Confirm(
+            name="enable_serverless",
+            message="Run on serverless?",
+            default=True,
+        ),
         List(
             name="warehouse",
             message="Select warehouse",

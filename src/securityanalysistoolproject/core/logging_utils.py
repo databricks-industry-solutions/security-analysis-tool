@@ -11,19 +11,24 @@ class LoggingUtils():
     @classmethod
     def set_logger_level(cls, loglevel_v):
         '''set the logger level before calling get_logger'''
-        cls.loglevel=loglevel_v
+        cls.loglevel = loglevel_v
 
     #DEBUG < INFO < WARNING < ERROR < CRITICAL
     @classmethod
     def get_logger(cls, modname='_profiler_'):
         '''get logger object'''
-        logpath=''
-        if platform.system()=='Darwin':
-            logpath='./Logs/dbrprofiler.log'
-            if not os.path.isdir('./Logs/'):
-                os.makedirs('./Logs/')
-        else:
-            logpath='/var/log/dbrprofiler.log'
+        log_base_dir = f"{cls.basePath()}/logs"
+
+        if not os.path.isdir(log_base_dir):
+            os.makedirs(log_base_dir)
+
+        # logpath='/var/log/dbrprofiler.log'
+        logpath = f"{log_base_dir}/sat.log"
+
+        if not os.path.exists(logpath):
+            with open(logpath, 'w') as f:
+                f.write("")
+        
 
         # Create a custom logger
         logger = logging.getLogger(modname)
@@ -44,25 +49,35 @@ class LoggingUtils():
         logger.setLevel(cls.loglevel)
         return logger
 
-
     #DEBUG < INFO < WARNING < ERROR < CRITICAL
     # pylint: disable=multiple-statements
     @staticmethod
-    def get_log_level( vloglevel):
+    def get_log_level(vloglevel):
         '''get log level that is set'''
-        vloglevel=vloglevel.upper()
+        vloglevel = vloglevel.upper()
         if vloglevel == "DEBUG": return logging.DEBUG
         elif vloglevel == "INFO": return logging.INFO
         elif vloglevel == "WARNING": return logging.WARNING
         elif vloglevel == "ERROR": return logging.ERROR
         elif vloglevel == "CRITICAL": return logging.CRITICAL
     # pylint: enable=multiple-statements
-
-
-
-    # def check_error(response, ignore_error_list=default_ignore_error_list):
-    #   default_ignore_error_list =['RESOURCE_ALREADY_EXISTS']
-    #   return ('error_code' in response and response['error_code'] not in ignore_error_list) \
-    #             or ('error' in response and response['error'] not in ignore_error_list) \
-    #             or (type(response)==dict and response.get('resultType', None) == 'error' \
-    #                   and 'already exists' not in response.get('summary', None))
+    
+    # @staticmethod
+    # def basePathv2():
+    #     from databricks.sdk.runtime import dbutils
+    #     path = (
+    #         dbutils.notebook.entry_point.getDbutils()
+    #         .notebook()
+    #         .getContext()
+    #         .notebookPath()
+    #         .get()
+    #     )
+    #     path = path[: path.find("/notebooks")]
+    #     return f"/Workspace{path}"
+    
+    @staticmethod
+    def basePath():
+        path = os.getcwd()
+        path = path[: path.find("/notebooks")]
+        return f"{path}"
+ 

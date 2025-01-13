@@ -17,12 +17,6 @@
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
-loggr = LoggingUtils.get_logger()
-
-# COMMAND ----------
-
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
 clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
@@ -98,7 +92,7 @@ dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceTempView('configur
 
 workspacesdf = spark.sql('select * from `configured_workspaces`')
 display(workspacesdf)
-if workspacesdf.rdd.isEmpty():
+if len(workspacesdf.take(1))==0:
     dbutils.notebook.exit("Workspace list is empty. At least one should be configured for analysis")
 workspaces = workspacesdf.collect()
 
@@ -112,7 +106,7 @@ workspaces = workspacesdf.collect()
 def modifyWorkspaceConfigFile(input_connection_arr):
   print(input_connection_arr)
   dfworkspaces = readWorkspaceConfigFile()
-  if dfworkspaces.rdd.isEmpty() or not input_connection_arr:
+  if len(dfworkspaces.take(1))==0 or not input_connection_arr:
     loggr.info('No changes to workspace config file')
     return
   
@@ -142,9 +136,9 @@ def modifyWorkspaceConfigFile(input_connection_arr):
 # COMMAND ----------
 
 import json
+from dbruntime.databricks_repl_context import get_context
 #Get current workspace id
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
+current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 

@@ -35,8 +35,10 @@ else:
 
 # COMMAND ----------
 
+
 from core.logging_utils import LoggingUtils
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
+
+LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
 loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
@@ -93,6 +95,10 @@ except Exception:
 
 if not is_successful_acct:
   raise Exception('Unsuccessful account connection. Verify credentials.')
+
+# COMMAND ----------
+
+spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
 

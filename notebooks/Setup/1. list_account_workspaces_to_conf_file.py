@@ -40,13 +40,6 @@ json_.update(
 
 # COMMAND ----------
 
-from core.logging_utils import LoggingUtils
-
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
-loggr = LoggingUtils.get_logger()
-
-# COMMAND ----------
-
 import json
 
 dbutils.notebook.run(
@@ -74,10 +67,10 @@ def generateWorkspaceConfigFile(workspace_prefix):
     else:
         excluded_configured_workspace = ""  # running first time
     # get current workspaces that are not yet configured for analysis
-    spsql = f"""select workspace_id, deployment_name as deployment_url, workspace_name, workspace_status from `global_temp`.`acctworkspaces` 
+    spsql = f"""select workspace_id, deployment_name as deployment_url, workspace_name, workspace_status from `acctworkspaces` 
             where workspace_status = "RUNNING" {excluded_configured_workspace}"""
     df = spark.sql(spsql)
-    if not df.rdd.isEmpty():
+    if len(df.take(1)) > 0:
         if cloud_type == "azure":
             df = df.withColumn(
                 "deployment_url",
@@ -121,6 +114,10 @@ def generateWorkspaceConfigFile(workspace_prefix):
     else:
         loggr.info("No new workspaces found for appending into configurations")
 
+
+# COMMAND ----------
+
+spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
 

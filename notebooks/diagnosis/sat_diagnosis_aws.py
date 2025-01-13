@@ -37,13 +37,6 @@ if not found:
 
 # COMMAND ----------
 
-import json
-#Get current workspace id
-context = json.loads(dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson())
-current_workspace = context['tags']['orgId']
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ### Let us check if there are required configs in the SAT scope
 
@@ -172,7 +165,8 @@ print(response.json())
 
 # MAGIC %sh 
 # MAGIC
-# MAGIC curl --header 'Authorization: Bearer <token>' -X GET 'https://<workspace>.cloud.databricks.com/api/2.0/clusters/spark-versions'
+# MAGIC curl --header 'Authorization: Bearer <toekn>
+# MAGIC ' -X GET 'https://sfe-plain.cloud.databricks.com/api/2.0/clusters/spark-versions'
 
 # COMMAND ----------
 
@@ -184,7 +178,7 @@ print(access_token)
 
 # MAGIC %sh 
 # MAGIC
-# MAGIC curl -v -H 'Authorization: Bearer <toke>'  'https://accounts.cloud.databricks.com/api/2.0/accounts/<account_console_id>/workspaces'
+# MAGIC curl -v -H 'Authorization: Bearer <token>'  'https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces'
 # MAGIC
 # MAGIC
 
@@ -261,5 +255,15 @@ openssl_connect('accounts.cloud.databricks.com', 443)
 # COMMAND ----------
 
 # MAGIC %sh
+# MAGIC curl -X POST "https://accounts.cloud.databricks.com/oidc/accounts/<account_id>/v1/token" -H "Authorization: Basic $(echo -n '<client_id>:<secet>' | base64)"
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC export CLIENT_ID=<CLIENT_ID>
+# MAGIC export CLIENT_SECRET=<CLIENT_SECRET>
 # MAGIC
-# MAGIC tail -100 /var/log/dbrprofiler.log
+# MAGIC curl -v --request POST \
+# MAGIC --url https://accounts.cloud.databricks.com/oidc/accounts/<account_id>/v1/token \
+# MAGIC --user "$CLIENT_ID:$CLIENT_SECRET" \
+# MAGIC --data 'grant_type=client_credentials&scope=all-apis'

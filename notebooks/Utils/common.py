@@ -5,7 +5,6 @@
 
 # COMMAND ----------
 
-
 def bootstrap(viewname, func, **kwargs):
     """bootstrap with function and store resulting dataframe as a global temp view
     if the function doesnt return a value, creates an empty dataframe and corresponding view
@@ -15,24 +14,28 @@ def bootstrap(viewname, func, **kwargs):
 
     """
     import json
+    import pandas as pd
 
     from pyspark.sql.types import StructType
+    from pyspark.sql.functions import col, schema_of_json, from_json, concat_ws, collect_list
 
     apiDF = None
     try:
         lst = func(**kwargs)
         if lst:
             lstjson = [json.dumps(ifld) for ifld in lst]
-            apiDF = spark.read.json(sc.parallelize(lstjson))
+            apiDF = spark.createDataFrame([(x,) for x in lstjson], ["json_string"])
+            # Parse the JSON strings using the schema string
+            apiDF = apiDF.select(from_json(col("json_string"), process_json_schema(apiDF)).alias("data")).select("data.*")
+            #display(apiDF)
         else:
             apiDF = spark.createDataFrame([], StructType([]))
             loggr.info("No Results!")
-        spark.catalog.dropGlobalTempView(viewname)
-        apiDF.createGlobalTempView(viewname)
-        loggr.info(f"View created. `global_temp`.`{viewname}`")
+        if len(apiDF.take(1)) > 0:
+            apiDF.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable(viewname)
+            loggr.info(f"Table created: `{viewname}`")
     except Exception:
         loggr.exception("Exception encountered")
-
 
 # COMMAND ----------
 
@@ -381,6 +384,7 @@ def basePath():
 
 def create_schema():
     df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {json_["analysis_schema_name"]}')
+    df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {json_["intermediate_schema"]}')
     df = spark.sql(
         f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.run_number_table (
                         runID BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -529,6 +533,34 @@ def generateGCPWSToken(deployment_url, cred_file_path,target_principal):
     resp = authed_session.get(gcp_accounts_url)
     return creds.token
     
+
+# COMMAND ----------
+
+from pyspark.sql import DataFrame
+def isEmpty(df: DataFrame):
+    return len(df.take(1))==0
+
+# COMMAND ----------
+
+def process_json_schema(df):
+    from pyspark.sql.functions import schema_of_json, col, from_json,collect_set,explode
+    #df_with_schemas = df.select(explode(collect_set(schema_of_json(col("json_string")))).alias("schema"))
+    df_with_schemas = df.select(schema_of_json(col("json_string")).alias("schema")).distinct()
+
+    from pyspark.sql.types import StructType
+    from collections import OrderedDict
+
+    all_fields = OrderedDict()
+
+    for row in df_with_schemas.select("schema").collect():
+        schema_str = row.schema
+        # Remove the outer 'STRUCT<' and '>' 
+        inner_schema = schema_str[7:-1]
+        schema = StructType.fromDDL(inner_schema)        
+        for field in schema.fields:
+            all_fields[field.name] = field
+    final_struct = StructType(list(all_fields.values()))
+    return final_struct
 
 # COMMAND ----------
 

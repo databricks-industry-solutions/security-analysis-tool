@@ -56,4 +56,8 @@ variable "subscription_id" {
   type        = string
 }
 
-
+variable "run_on_serverless" {
+  type        = bool
+  description = "Flag to run SAT initializer/Driver on Serverless"
+  default     = false
+}

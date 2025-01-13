@@ -44,13 +44,6 @@ json_.update(
 
 # COMMAND ----------
 
-import logging
-
-from core.logging_utils import LoggingUtils
-
-LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
-loggr = LoggingUtils.get_logger()
-
 use_parallel_runs = json_.get("use_parallel_runs", False)
 
 # COMMAND ----------
@@ -87,7 +80,7 @@ load_sat_dasf_mapping()
 # COMMAND ----------
 
 dfexist = getWorkspaceConfig()
-dfexist.filter(dfexist.analysis_enabled == True).createOrReplaceGlobalTempView(
+dfexist.filter(dfexist.analysis_enabled == True ).createOrReplaceTempView(
     "all_workspaces"
 )
 
@@ -99,7 +92,7 @@ dfexist.filter(dfexist.analysis_enabled == True).createOrReplaceGlobalTempView(
 
 # COMMAND ----------
 
-workspacesdf = spark.sql("select * from `global_temp`.`all_workspaces`")
+workspacesdf = spark.sql("select * from `all_workspaces`")
 display(workspacesdf)
 workspaces = workspacesdf.collect()
 if workspaces is None or len(workspaces) == 0:
@@ -186,6 +179,7 @@ def processWorkspace(wsrow):
 
 # COMMAND ----------
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -197,11 +191,17 @@ def combine(ws):
 
 if use_parallel_runs == True:
     loggr.info("Running in parallel")
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = []
+        for workspace in workspaces:
+            future = executor.submit(combine, workspace)
+            futures.append(future)
+            time.sleep(20)  # Adding time between submissions as concurrent 
+
         try:
-            result = executor.map(combine, workspaces)
-            for r in result:
-                print(r)
+            for future in futures:
+                result = future.result()
+                loggr.info(result)
         except Exception as e:
             loggr.info(e)
 else:
@@ -215,6 +215,10 @@ else:
         except Exception as e:
             loggr.info(e)
             notifyworkspaceCompleted(ws.workspace_id, False)
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 
@@ -232,3 +236,12 @@ display(
         f'select * from {json_["analysis_schema_name"]}.workspace_run_complete order by run_id desc'
     )
 )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Drop the staging database after SAT run that holds temporary tables
+
+# COMMAND ----------
+
+spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")

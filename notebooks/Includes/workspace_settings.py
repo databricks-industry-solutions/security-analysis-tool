@@ -37,6 +37,7 @@ else:
 # COMMAND ----------
 
 from core.logging_utils import LoggingUtils
+import logging
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_['verbosity']))
 loggr = LoggingUtils.get_logger()
 
@@ -47,13 +48,17 @@ workspace_id = json_['workspace_id']
 
 # COMMAND ----------
 
+spark.sql(f"USE {json_['intermediate_schema']}")
+
+# COMMAND ----------
+
 id = '29'
 enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 
 def enableJobViewAcls(df): #Job View Acls
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -61,7 +66,7 @@ def enableJobViewAcls(df): #Job View Acls
     else:
         return (id, 1, defn)
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableJobViewAcls"
@@ -76,7 +81,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enforceClusterViewAcls(df): #Cluster View Acls
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -84,7 +89,7 @@ def enforceClusterViewAcls(df): #Cluster View Acls
     else:
         return (id, 1,  defn)
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enforceClusterViewAcls"
@@ -99,7 +104,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enforceWorkspaceViewAcls(df): #Workspace View Acls
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -108,7 +113,7 @@ def enforceWorkspaceViewAcls(df): #Workspace View Acls
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enforceWorkspaceViewAcls"
@@ -124,7 +129,7 @@ import json
 def enableProjectTypeInWorkspace(df): #Project Type In Workspace
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn.replace("'", '')}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -133,7 +138,7 @@ def enableProjectTypeInWorkspace(df): #Project Type In Workspace
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableProjectTypeInWorkspace"
@@ -148,7 +153,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableResultsDownloading(df): #Results Downloading
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -157,7 +162,7 @@ def enableResultsDownloading(df): #Results Downloading
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableResultsDownloading"
@@ -172,7 +177,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def maximumLifetimeNewTokens(df): #Max life time for tokens
     value = 0
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value is not None and value != "null" and int(value) > 0):
@@ -181,7 +186,7 @@ def maximumLifetimeNewTokens(df): #Max life time for tokens
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="maxTokenLifetimeDays"
@@ -196,7 +201,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enforceUserIsolation(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'): 
@@ -205,7 +210,7 @@ def enforceUserIsolation(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enforceUserIsolation"
@@ -220,7 +225,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableEnforceImdsV2(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -229,7 +234,7 @@ def enableEnforceImdsV2(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableEnforceImdsV2"
@@ -244,7 +249,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableExportNotebook(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -253,7 +258,7 @@ def enableExportNotebook(df):
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableExportNotebook"
@@ -268,7 +273,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableNotebookTableClipboard(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row. defn}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -277,7 +282,7 @@ def enableNotebookTableClipboard(df):
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableNotebookTableClipboard"
@@ -292,7 +297,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableXFrameOptions(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -301,7 +306,7 @@ def enableXFrameOptions(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enable-X-Frame-Options"
@@ -316,7 +321,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableXContentTypeOptions(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -325,7 +330,7 @@ def enableXContentTypeOptions(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enable-X-Content-Type-Options"
@@ -340,7 +345,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableXXSSProtection(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == None or value == 'true'): # if is set or left as default (None)
@@ -349,7 +354,7 @@ def enableXXSSProtection(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings'+ '_' + workspace_id
+    tbl_name = 'workspacesettings'+ '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enable-X-XSS-Protection"
@@ -364,7 +369,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def storeInteractiveNotebookResultsInCustomerAccount(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -373,7 +378,7 @@ def storeInteractiveNotebookResultsInCustomerAccount(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings'+ '_' + workspace_id
+    tbl_name = 'workspacesettings'+ '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="storeInteractiveNotebookResultsInCustomerAccount"
@@ -388,7 +393,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableVerboseAuditLogs(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -397,7 +402,7 @@ def enableVerboseAuditLogs(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableVerboseAuditLogs"
@@ -412,7 +417,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableFileStoreEndpoint(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'false'):
@@ -421,7 +426,7 @@ def enableFileStoreEndpoint(df):
         return (id, 1, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableFileStoreEndpoint"
@@ -436,7 +441,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableDeprecatedGlobalInitScripts(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -445,7 +450,7 @@ def enableDeprecatedGlobalInitScripts(df):
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableDeprecatedGlobalInitScripts"
@@ -460,7 +465,7 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableDeprecatedClusterNamedInitScripts(df): 
     value = 'false'
     defn = {'defn' : ''}
-    for row in df.rdd.collect():
+    for row in df.collect():
         value = row.value
         defn = {'defn' : row.defn.replace("'", '')}
     if(value == 'true'):
@@ -469,7 +474,7 @@ def enableDeprecatedClusterNamedInitScripts(df):
         return (id, 0, defn)
 
 if enabled:
-    tbl_name = 'global_temp.workspacesettings' + '_' + workspace_id
+    tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name} 
         WHERE name="enableDeprecatedClusterNamedInitScripts"

@@ -58,15 +58,6 @@ except Exception as e:
 
 # COMMAND ----------
 
-import requests,json
-
-
-# Define the URL and headers
-workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
-  .getContext().toJson())['tags']['browserHostName']
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ### Check to see if the PAT token is valid
 
@@ -76,8 +67,10 @@ import requests,json
 
 
 # Define the URL and headers
-workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
-  .getContext().toJson())['tags']['browserHostName']
+#workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+
+workspaceUrl =  "<>" #without http
+
 
 # COMMAND ----------
 
@@ -245,9 +238,6 @@ print(identity_token)
 import requests,json
 
 
-# Define the URL and headers
-workspaceUrl = json.loads(dbutils.notebook.entry_point.getDbutils().notebook() \
-  .getContext().toJson())['tags']['browserHostName']
 
 
 url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
@@ -274,9 +264,9 @@ print(response.json())
 
 # COMMAND ----------
 
-#%sh 
-
-#curl -X GET --header 'Authorization: Bearer access_token' 'https://<workspace_id>.gcp.databricks.com/api/2.0/clusters/list'
+# MAGIC %sh 
+# MAGIC
+# MAGIC curl -X GET --header 'Authorization: Bearer <identity_token>' 'https://<worspace_rul>/api/2.0/clusters/list'
 
 # COMMAND ----------
 
@@ -318,9 +308,3 @@ openssl_connect(workspaceUrl, 443)
 # COMMAND ----------
 
 openssl_connect('accounts.gcp.databricks.com', 443)
-
-# COMMAND ----------
-
-# MAGIC %sh
-# MAGIC
-# MAGIC tail -100 /var/log/dbrprofiler.log
