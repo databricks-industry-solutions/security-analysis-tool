@@ -38,7 +38,7 @@ SAT creates a new security_analysis database and Delta tables. If you are an exi
 
 ## Setup
 
-> SAT is a productivity tool to help verify security configurations of Databricks deployments, it's not meant to be used as certification or attestation of your deployments. SAT project is regularly updated to improve the correctness of checks, add new checks, and fix bugs. You will need a single SAT install per Databricks account in AWS and GCP and a single install per azure subscription in Azure. Add the Service principle as mentioned in the detailed steps to analyze the rest of the workspaces from the workspace where SAT is installed. You can choose not to add SP to a given workspace if you wish to ignore a given workspace.
+> SAT is a productivity tool to help verify security configurations of Databricks deployments, it's not meant to be used as certification or attestation of your deployments. SAT project is regularly updated to improve the correctness of checks, add new checks, and fix bugs. You will need a single SAT install per Databricks account in AWS and GCP and a single install per azure subscription in Azure. Add the Service principal as mentioned in the detailed steps to analyze the rest of the workspaces from the workspace where SAT is installed. You can choose not to add SP to a given workspace if you wish to ignore a given workspace.
 > Please send your feedback and comments to sat@databricks.com. 
 
 SAT can be setup on any of the cloud providers where Databricks is hosted. Follow the setup guide for the cloud provider you are using:
@@ -79,7 +79,7 @@ You now have two jobs (SAT Initializer Notebook & SAT Driver Notebook). Run SAT 
 
    > **Note:** You can use Lakeview Dashboards to view the results.
  
-The Dashboard is, by default, owned by the profile you used to set up SAT or the Service Principle. If you see errors running the dashboard, you are likely running into permissions issues. 
+The Dashboard is, by default, owned by the profile you used to set up SAT or the Service Principal. If you see errors running the dashboard, you are likely running into permissions issues. 
  1. Go over to the dashboard and click on the "Share" button in the top right.
  2. Click on the cogwheel and select the option "Assign new owner"
  3. Assign yourself as the new owner of the dashboard. You can also assign this to someone who has access to the SAT catalog/schema and tables.

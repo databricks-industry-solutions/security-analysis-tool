@@ -228,12 +228,12 @@ get_msal_token()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##Put MSAL access_token from above output and replace "blahblahblah" below and replace the <sbuscription_id> with your sbuscription_id
+# MAGIC ##Put MSAL access_token from above output and replace the <subscription_id> with your subscription_id
 
 # COMMAND ----------
 
 # MAGIC %sh 
-# MAGIC #curl -X GET 'https://management.azure.com/subscriptions/<sbuscription_id>/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01' -H "Accept: application/json" -H "Authorization: Bearer blah"
+# MAGIC #curl -X GET 'https://management.azure.com/subscriptions/<subscription_id>/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01' -H "Accept: application/json" -H "Authorization: Bearer token"
 # MAGIC
 
 # COMMAND ----------
