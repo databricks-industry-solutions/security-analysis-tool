@@ -8,15 +8,17 @@
 
     It is likely that the Dashboard cached the workspaces in the pulldown. You can go to SQL view of your workspace -> Queries -> find `workspace_ids` query and run it, that should refresh and have the new workspaces in the pull-down.
 
-## Troubleshooting
+# Troubleshooting
+---
 
 We created diagnosis notebooks for respective clouds to help troubleshoot your SAT setup. Please go to Workspace -> Applications -> SAT -> files -> notebooks -> diagnosis/ folder and run the respective cloud `sat_diagnosis_` notebook.
 
 * [SAT AWS troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_aws.py)
 * [SAT Azure troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_azure.py)
 * [SAT GCP troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_gcp.py)
+---
 
-### Incorrectly configured secrets
+## Incorrectly configured secrets
 
 * **Error:**
 
@@ -30,8 +32,9 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
     ```
     databricks --profile e2-sat secrets list-secrets sat_scope
     ```
+##
 
-### Firewall blocking Databricks accounts console
+## Firewall blocking Databricks accounts console
 
 * **Error:**
 
@@ -73,8 +76,9 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
     ```
 
     If you don’t see a JSON with a clean listing of workspaces, you are likely having a firewall issue that is blocking calls to the accounts console. Please have your infrastructure team add `accounts.cloud.databricks.com` to the allow-list. Ensure that the private IPv4 address from the NAT gateway is added to the IP allow list.
+##
 
-### Offline install of libraries in case of no PyPI access
+## Offline install of libraries in case of no PyPI access
 
 * **Steps:**
 
@@ -122,3 +126,5 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
         ```
 
     7. Make sure the versions for the above libraries match.
+##
+---
