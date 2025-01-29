@@ -13,7 +13,7 @@ Refer to specific use-case:
    - [AWS](./terraform/aws/TERRAFORM_AWS.md)
    - [Azure](./terraform/azure/TERRAFORM_Azure.md)
    - [GCP](./terraform/gcp/TERRAFORM_GCP.md)
-- [Frequently Asked Questions (FAQs) and Troubleshooting Guide](./setup/faqs_and_troubleshooting.md)
+- [Frequently Asked Questions (FAQs) and Troubleshooting Guide](./docs/setup/faqs_and_troubleshooting.md)
 
 ## Introduction
 
@@ -96,7 +96,7 @@ Note: SAT requires at least one SAT set up in a workspace per **account** in AWS
 
 
 ## Frequently Asked Questions
-Refer this document for [Frequently Asked Questions (FAQs) and Troubleshooting Guide](./setup/faqs_and_troubleshooting.md)
+Refer this document for [Frequently Asked Questions (FAQs) and Troubleshooting Guide](./docs/setup/faqs_and_troubleshooting.md)
 
 
 ## Project support 
