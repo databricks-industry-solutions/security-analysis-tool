@@ -30,7 +30,7 @@ checks_data=get_workspace_self_assessment_check_config()
 
 # COMMAND ----------
 
-#Updates Database with user self asseements to all workspace level checks
+#Updates Database with user self assessments to all workspace-level checks
 set_workspace_self_assessment_check_config(checks_data)
 
 
