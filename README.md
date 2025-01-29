@@ -13,7 +13,7 @@ Refer to specific use-case:
    - [AWS](./terraform/aws/TERRAFORM_AWS.md)
    - [Azure](./terraform/azure/TERRAFORM_Azure.md)
    - [GCP](./terraform/gcp/TERRAFORM_GCP.md)
-- [Deprecated: Manual setup](./docs/deprecated_old_setup.md)
+- [Frequently Asked Questions (FAQs) and Troubleshooting Guide](./setup/faqs_and_troubleshooting.md)
 
 ## Introduction
 
@@ -94,8 +94,12 @@ For example, The diagram below shows the individual checks in various categories
 Refer to [Standard setup guide](./docs/setup.md) or [Terraform](./terraform) to setup  
 Note: SAT requires at least one SAT set up in a workspace per **account** in AWS or GCP and at least one SAT set up in a workspace per Azure **subscription**. 
 
-## Project support 
 
+## Frequently Asked Questions
+Refer this document for [Frequently Asked Questions (FAQs) and Troubleshooting Guide](./setup/faqs_and_troubleshooting.md)
+
+
+## Project support 
 Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks [License](./LICENSE). All included or referenced third party libraries are subject to the licenses set forth below.
 
 Any issues discovered through the use of this project should be filed as GitHub Issues on the Repo. They will be reviewed as time permits, but there are no formal SLAs for support. 
