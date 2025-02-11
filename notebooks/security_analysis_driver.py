@@ -191,17 +191,11 @@ def combine(ws):
 
 if use_parallel_runs == True:
     loggr.info("Running in parallel")
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = []
-        for workspace in workspaces:
-            future = executor.submit(combine, workspace)
-            futures.append(future)
-            time.sleep(20)  # Adding time between submissions as concurrent 
-
+    with ThreadPoolExecutor(max_workers=4) as executor:
         try:
-            for future in futures:
-                result = future.result()
-                loggr.info(result)
+            result = executor.map(combine, workspaces)
+            for r in result:
+                print(r)
         except Exception as e:
             loggr.info(e)
 else:
