@@ -53,7 +53,7 @@ dbutils.notebook.run(
 
 # this logic does not overwrite the previous config file. It just appends new lines so users can
 # easily modify the new lines for new workspaces.
-def generateWorkspaceConfigFile(workspace_prefix):
+def generateWorkspaceConfigFile():
     from pyspark.sql.functions import col, concat, lit
 
     dfexist = readWorkspaceConfigFile()
@@ -87,9 +87,6 @@ def generateWorkspaceConfigFile(workspace_prefix):
                 concat(col("deployment_url"), lit(".gcp.databricks.com")),
             )  # GCP
 
-        df = df.withColumn(
-            "ws_token", concat(lit(workspace_prefix), lit("-"), col("workspace_id"))
-        )  # added with workspace prfeix
         #both azure and gcp require sso
         if cloud_type == "azure" or cloud_type == "gcp" :
             df = df.withColumn("sso_enabled", lit(True))
@@ -121,7 +118,7 @@ spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
 
-generateWorkspaceConfigFile(json_["workspace_pat_token_prefix"])
+generateWorkspaceConfigFile()
 dbutils.notebook.exit("OK")
 
 # COMMAND ----------

@@ -209,7 +209,7 @@ def readWorkspaceConfigFile():
     prefix = getConfigPath()
 
     dfa = pd.DataFrame()
-    schema = "workspace_id string, deployment_url string, workspace_name string,workspace_status string, ws_token string,  sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encrypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean"
+    schema = "workspace_id string, deployment_url string, workspace_name string,workspace_status string, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encrypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean"
     dfexist = spark.createDataFrame([], schema)
     try:
         dict = {
@@ -471,7 +471,6 @@ def create_account_workspaces_table():
             deployment_url string,
             workspace_name string,
             workspace_status string,
-            ws_token string,
             analysis_enabled boolean,
             sso_enabled boolean,
             scim_enabled boolean,
