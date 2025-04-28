@@ -153,6 +153,13 @@ loggr.info(f"Current workspace URL : {gcp_workspace_url}")
 
 # COMMAND ----------
 
+#if the analysis is happening on serverless compute let us ignore all workspaces except the current workspace
+serverless_filter=""
+if is_serverless:
+    workspace_id = current_workspace
+
+# COMMAND ----------
+
 import requests
 
 response = requests.get(
