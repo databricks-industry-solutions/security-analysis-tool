@@ -5,6 +5,21 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ### Widget to provide specific workspace URL for connectivity tests
+# MAGIC If you need to test connectivity to specific workspaces, the following code would create a new widget to accept the workspace URL as a parameter. A sample workspace URL that can be provided through the widget (if needed) is given below.
+# MAGIC
+# MAGIC * 1234567899876543.7.gcp.databricks.com
+
+# COMMAND ----------
+
+# Create the text input widget for workspace url, assign it to a variable and print it
+dbutils.widgets.text("workspaceUrl", "")
+userWorkspaceUrl = dbutils.widgets.get("workspaceUrl")
+print("User provided workspace URL ->", userWorkspaceUrl)
+
+# COMMAND ----------
+
 # MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------
@@ -69,8 +84,9 @@ import requests,json
 # Define the URL and headers
 #workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
 
-workspaceUrl =  "<>" #without http
-
+#workspaceUrl =  "<>" #without http
+# Use the workspace variable provided
+workspaceUrl = userWorkspaceUrl
 
 # COMMAND ----------
 
