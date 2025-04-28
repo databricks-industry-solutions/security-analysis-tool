@@ -14,6 +14,11 @@
 
 # COMMAND ----------
 
+sat_version = json_['sat_version']
+print("Current SAT version ->", sat_version)
+
+# COMMAND ----------
+
 secret_scopes = dbutils.secrets.listScopes()
 display(secret_scopes)
 
