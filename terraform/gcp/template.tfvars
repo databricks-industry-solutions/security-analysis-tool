@@ -22,4 +22,4 @@ impersonate_service_account = ""
 proxies = {}
 
 #Flag to run SAT initializer/Driver on Serverless
-run_on_serverless = false
+run_on_serverless = false # [Only monitor current workspace]

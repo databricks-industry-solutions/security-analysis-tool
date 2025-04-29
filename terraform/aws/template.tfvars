@@ -20,4 +20,4 @@ client_secret = "" //Databricks Service Principal ID Secret
 proxies = {} 
 
 #Flag to run SAT initializer/Driver on Serverless
-run_on_serverless = false
+run_on_serverless = false # [Only monitor current workspace]
