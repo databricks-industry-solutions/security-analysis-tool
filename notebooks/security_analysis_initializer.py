@@ -57,7 +57,6 @@ notebooks = [
     ("1. list_account_workspaces_to_conf_file", 3000),
     ("3. test_connections", 12000),
     ("4. enable_workspaces_for_sat", 3000),
-    ("5. import_dashboard_template", 3000),
     ("5. import_dashboard_template_lakeview", 3000),
     ("6. configure_alerts_template", 3000),
     ("9. self_assess_workspace_configuration", 3000),
