@@ -6,9 +6,6 @@ class TokensClient(SatDBClient):
 
     #permissions in permissions_client.py
 
-    /api/2.0/token-management/tokens/{token_id}
-
-
     def get_tokens_list_mgmt(self):
         """
         Returns an array of json objects for tokens.
