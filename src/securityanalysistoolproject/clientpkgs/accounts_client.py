@@ -2,6 +2,10 @@
 from core.dbclient import SatDBClient
 import clientpkgs.azure_accounts_client as azfunc
 
+#account_provisioning_client has the same methods as accounts_client
+# deprecate this at some point.
+
+
 class AccountsClient(SatDBClient):
     '''accounts helper'''
     subslist=[]
@@ -16,7 +20,7 @@ class AccountsClient(SatDBClient):
             workspaces_list = azfunc.remap_workspace_list(self.subslist)
         else:
             accountid=self._account_id
-            workspaces_list = self.get(f"/accounts/{accountid}/workspaces", master_acct=True).get('elements',[])
+            workspaces_list = self.get(f"/accounts/{accountid}/workspaces", master_acct=True).get('satelements',[])
         return workspaces_list
 
     def get_credentials_list(self):
@@ -28,7 +32,7 @@ class AccountsClient(SatDBClient):
             pass
         else:
             accountid=self._account_id
-            credentials_list = self.get(f"/accounts/{accountid}/credentials", master_acct=True).get('elements',[])
+            credentials_list = self.get(f"/accounts/{accountid}/credentials", master_acct=True).get('satelements',[])
         return credentials_list
 
     def get_storage_list(self):
@@ -42,7 +46,7 @@ class AccountsClient(SatDBClient):
             storage_list = azfunc.remap_storage_list(self.subslist)         
         else:    
             accountid=self._account_id
-            storage_list = self.get(f"/accounts/{accountid}/storage-configurations", master_acct=True).get('elements',[])
+            storage_list = self.get(f"/accounts/{accountid}/storage-configurations", master_acct=True).get('satelements',[])
         return storage_list
 
     def get_network_list(self):
@@ -54,7 +58,7 @@ class AccountsClient(SatDBClient):
             pass
         else:          
             accountid=self._account_id
-            network_list = self.get(f"/accounts/{accountid}/networks", master_acct=True).get('elements',[])
+            network_list = self.get(f"/accounts/{accountid}/networks", master_acct=True).get('satelements',[])
         return network_list
 
     def get_cmk_list(self):
@@ -68,7 +72,7 @@ class AccountsClient(SatDBClient):
             cmk_list = azfunc.remap_cmk_list(self.subslist)   
         else:           
             accountid=self._account_id
-            cmk_list = self.get(f"/accounts/{accountid}/customer-managed-keys", master_acct=True).get('elements',[])
+            cmk_list = self.get(f"/accounts/{accountid}/customer-managed-keys", master_acct=True).get('satelements',[])
         return cmk_list
 
     def get_logdelivery_list(self):
@@ -98,7 +102,7 @@ class AccountsClient(SatDBClient):
             pvtlinkinfo = azfunc.remap_pvtlink_list(self.subslist)         
         else:           
             accountid=self._account_id
-            pvtlinkinfo = self.get(f"/accounts/{accountid}/private-access-settings", master_acct=True).get('elements',[])
+            pvtlinkinfo = self.get(f"/accounts/{accountid}/private-access-settings", master_acct=True).get('satelements',[])
         return pvtlinkinfo
 
 

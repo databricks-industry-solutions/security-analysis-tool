@@ -7,6 +7,7 @@ import requests
 from core.logging_utils import LoggingUtils
 from core import parser as pars
 import msal
+import re
 
 urllib3.disable_warnings(category = urllib3.exceptions.InsecureRequestWarning)
 
@@ -166,37 +167,205 @@ class SatDBClient:
         return True
 
 
+    @staticmethod
+    def debugminijson(jsonelem, title=''):
+        '''debugging function to print limited json'''
+        debugs=json.dumps(jsonelem, indent=1, sort_keys=True)
+        LOGGR.debug(f"{title}-=-=-{debugs[:1250]}-=-=-{type(jsonelem)}") 
 
-    def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
-        '''http get helper'''
-        if master_acct:
-            self._update_token_master()
-        else:
-            self._update_token()
+    @staticmethod
+    def getNumLists(resp):
+        '''We expect one list in the response. If not, return the whole response'''
+        numlists=0
+        numdicts=0
+        #check if error message
+        if 'error_code' in resp and 'message' in resp:
+            LOGGR.debug(f"\t\t\t$error_code={resp['error_code']} {resp['message']}")
+            return numlists, numdicts
+        if isinstance(resp, list): # some like in accounts return a list as outer
+            return numlists, numdicts
+        for ielem in resp:
+            if isinstance(resp[ielem], list):
+                numlists+=1
+            if isinstance(resp[ielem], dict):
+                numdicts+=1
+        LOGGR.debug(f"\t\t\t$numlists={numlists}") #getNumLists-20-type-<class 'dict'>
+        return numlists, numdicts       
 
-        while True:
-            if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different
-                full_endpoint = f"{self._url}/{endpoint}"
-            else:
-                full_endpoint = f"{self._url}/api/{version}{endpoint}"
-            
-            LOGGR.debug(f"Get: {full_endpoint}")
-
-            if json_params:
-                raw_results = requests.get(full_endpoint, headers=self._token, params=json_params, timeout=60, proxies=self._proxies)
-            else:
-                raw_results = requests.get(full_endpoint, headers=self._token, timeout=60, proxies=self._proxies)
+    @staticmethod
+    def getRespArray(resp):
+        '''if the response contains one list we are in the majority situation. 
+        If not, return the whole response wrapped in a list'''
+        arrdict=[]
+        numlists, numdicts=SatDBClient.getNumLists(resp)
+        if numlists == 1 and numdicts == 0: #one list and no dict
+            for ielem in resp:
+                if isinstance(resp[ielem], list):
+                    LOGGR.debug(f"\t\t%getRespArray-{len(resp[ielem])}-type-{type(resp[ielem][0])}") #getRespArray-20-type-<class 'dict'>
+                    return ielem, resp[ielem]
+        else:    #add the whole resp if there is more than one dict and one list or no lists
+            if not resp:
+                resp={}
+            arrdict.append(resp)
+        return 'satelements', arrdict
+  
+    # tuple with dict {elem:[..]}, http_status_code
+    def flatten(nestarr):
+        flatarr=[]
+        flatelem=''
+        flathttpstatuscode=200
+        LOGGR.debug(f"\t\t*flatten1-{len(nestarr)}-type-{type(nestarr)}") #flatten1-10-type-<class 'list'>
+        LOGGR.debug(f"\t\t*flatten2-{len(nestarr[0])}-type-{type(nestarr[0])}") #flatten2-2-type-<class 'tuple'>
+        for tup_elem in nestarr:
+            for dictkey in tup_elem[0]:
+                if flatelem and flatelem != dictkey:
+                    LOGGR.debug(f"\t\t*different keys detected {flatelem}-{dictkey}")
+                flatelem=dictkey
+                flathttpstatuscode=tup_elem[1]
+                LOGGR.debug(f"\t\t*flatten3-{len(tup_elem[0][dictkey])}-type-{type(tup_elem[0][dictkey])}") #flatten3-20-type-<class 'list'>
+                flatarr.append(tup_elem[0][dictkey]) #append lists
+        flatarr_1 = [fl0 for xs in flatarr for fl0 in xs] #flatten list of lists.
+        LOGGR.debug(f"\t\t*flatten4-{len(flatarr_1)}-type-{type(flatarr_1)}-type-{type(flatarr_1[0])}") #flatten4-200-type-<class 'list'>-type-<class 'dict'>
+        return flatelem, flatarr_1, flathttpstatuscode
+    
+    #return dictionary of elem and list of values
+    def get_paginated(self, endpoint, reqtype="get", json_params=None, files_json=None, is_paginated=False):
+        NUM_PAGES=10 #throttle as needed
+        resultsArray=[]
+        elementName=''
+        for i in range(NUM_PAGES):
+            LOGGR.debug(f"{endpoint}---{json_params}")
+            if 'get' in reqtype:
+                raw_results = requests.get(endpoint, headers=self._token, params=json_params, timeout=60, proxies=self._proxies)
+            elif 'post' in reqtype:
+                if json_params is None:
+                    LOGGR.info("Must have a payload in json_args param.")
+                if files_json:
+                    raw_results = requests.post(endpoint, headers=self._token,
+                                                data=json_params, files=files_json, timeout=60, proxies=self._proxies)
+                else:
+                    raw_results = requests.post(endpoint, headers=self._token,
+                                                json=json_params, timeout=60, proxies=self._proxies)
+            elif 'put' in reqtype:
+                if json_params is None:
+                    LOGGR.info("Must have a payload in json_args param.")                
+                raw_results = requests.put(endpoint, headers=self._token,
+                                        json=json_params, timeout=60, proxies=self._proxies)                    
+            elif 'patch' in reqtype:
+                if json_params is None:
+                    LOGGR.info("Must have a payload in json_args param.")                
+                raw_results = requests.patch(endpoint, headers=self._token,
+                                json=json_params, timeout=60, proxies=self._proxies)   
 
             http_status_code = raw_results.status_code
             if http_status_code in SatDBClient.http_error_codes:
-                raise Exception(f"Error: GET request failed with code {http_status_code}\n{raw_results.text}")
+                raise Exception(f"Error: request failed with code {http_status_code}\n{raw_results.text}")
             results = raw_results.json()
-            LOGGR.debug(json.dumps(results, indent=4, sort_keys=True))
+            #LOGGR.debug('-------------')
+            #LOGGR.debug(json.dumps(results, indent=4, sort_keys=True)) #for debug
+            elementName, resultsArray=SatDBClient.getRespArray(results)
+            retdict={elementName:resultsArray}
+            yield (retdict, http_status_code)
+            
+            
+            LOGGR.debug(f'\t\tyielding-{retdict}')
+            
+            if http_status_code < 200 or http_status_code > 299:
+                break
+            
+            if not is_paginated: #not paginated
+                break
+            
+            if 'next_page_token' not in results or not results['next_page_token']: #first condition should not happen. But assume end.
+                #LOGGR.debug(f'\t\t{json.dumps(results, indent=4, sort_keys=True)}')
+                break
 
-            if isinstance(results, list):
-                results = {'elements': results}
-            results['http_status_code'] = http_status_code
-            return results
+            if json_params is None:
+                json_params = {}
+            page_token=results['next_page_token']
+            json_params.update({'page_token':page_token})
+
+   
+
+    @staticmethod
+    def ispaginatedCall(endpoint):
+        paginatedurls = [
+            '/api/2.0/accounts/.+/federationPolicies',
+            '/api/2.0/accounts/.+/network-connectivity-configs',
+            '/api/2.0/accounts/.+/network-connectivity-configs/.+/private-endpoint-rules',
+            '/api/2.0/accounts/.+/servicePrincipals/.+/credentials/secrets',
+            '/api/2.0/accounts/.+/oauth2/custom-app-integrations',
+            '/api/2.0/accounts/.+/oauth2/published-app-integrations',
+            '/api/2.0/apps',
+            '/api/2.0/apps/.+/deployments',
+            '/api/2.0/clean-rooms',
+            '/api/2.0/clean-rooms/.+/runs',
+            '/api/2.0/fs/directories/.+',
+            '/api/2.0/lakeview/dashboards',
+            '/api/2.0/lakeview/dashboards/.+/schedules',
+            '/api/2.0/lakeview/dashboards/.+/schedules/.+/subscriptions',
+            '/api/2.0/marketplace-exchange/exchanges-for-listing',
+            '/api/2.0/marketplace-exchange/filters',
+            '/api/2.0/marketplace-exchange/listings-for-exchange',
+            '/api/2.0/marketplace-provider/providers'
+            '/api/2.0/marketplace-provider/files',
+            '/api/2.0/marketplace-provider/listings',
+            '/api/2.0/marketplace-provider/personalization-requests',
+            '/api/2.0/mlflow/artifacts/list',
+            '/api/2.0/mlflow/experiments/list',
+            '/api/2.0/mlflow/registered-models/list',
+            '/api/2.0/mlflow/registry-webhooks/list',
+            '/api/2.0/mlflow/runs/search',
+            '/api/2.0/pipelines',
+            '/api/2.0/pipelines/.+/events',
+            '/api/2.0/pipelines/.+/updates',
+            '/api/2.0/policies/clusters/list-compliance',
+            '/api/2.0/policies/jobs/list-compliance',
+            '/api/2.0/policy-families',
+            '/api/2.0/repos',
+            '/api/2.0/sql/history/queries',
+            '/api/2.0/sql/queries',
+            '/api/2.0/vector-search/endpoints',
+            '/api/2.0/vector-search/indexes',
+            '/api/2.0/vector-search/indexes/.+/query', #not used
+            '/api/2.0/vector-search/indexes/.+/query-next-page', #not used
+            '/api/2.1/accounts/.+/budget-policies',
+            '/api/2.1/clusters/events',
+            '/api/2.1/clusters/list',
+            '/api/2.1/marketplace-consumer/installations',
+            '/api/2.1/marketplace-consumer/listings',
+            '/api/2.1/marketplace-consumer/listings/.+/content',
+            '/api/2.1/marketplace-consumer/listings/.+/fulfillments',
+            '/api/2.1/marketplace-consumer/listings/.+/installations',
+            '/api/2.1/marketplace-consumer/personalization-requests',
+            '/api/2.1/marketplace-consumer/providers',
+            '/api/2.1/unity-catalog/bindings/.+/.+',
+            '/api/2.1/unity-catalog/catalogs',
+            '/api/2.1/unity-catalog/connections',
+            '/api/2.1/unity-catalog/credentials'
+            '/api/2.1/unity-catalog/external-locations',
+            '/api/2.1/unity-catalog/functions',
+            '/api/2.1/unity-catalog/metastores/.+/systemschemas',#not used
+            '/api/2.1/unity-catalog/models',
+            '/api/2.1/unity-catalog/models/.+/versions',
+            '/api/2.1/unity-catalog/providers',
+            '/api/2.1/unity-catalog/recipients',
+            '/api/2.1/unity-catalog/recipients/.+/share-permissions',
+            '/api/2.1/unity-catalog/schemas',
+            '/api/2.1/unity-catalog/tables',
+            '/api/2.1/unity-catalog/volumes',
+            '/api/2.2/jobs/get',
+            '/api/2.2/jobs/list',
+            '/api/2.2/jobs/runs/get',
+            '/api/2.2/jobs/runs/list'
+            ]
+        for url in paginatedurls:
+            if re.search(url, endpoint, flags=re.IGNORECASE) is not None:
+                LOGGR.debug("Paginated call...")
+                return True
+        return False
+
+
 
     def http_req(self, http_type, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
         '''helpers for http post put patch'''
@@ -204,66 +373,41 @@ class SatDBClient:
             self._update_token_master()
         else:
             self._update_token()
-        if version:
-            ver = version
-        while True:
-            full_endpoint = f"{self._url}/api/{ver}{endpoint}"
-            LOGGR.debug(f"http type endpoint -> {http_type}: {full_endpoint}")
-            if json_params:
-                if http_type == 'post':
-                    if files_json:
-                        raw_results = requests.post(full_endpoint, headers=self._token,
-                                                    data=json_params, files=files_json, timeout=60, proxies=self._proxies)
-                    else:
-                        raw_results = requests.post(full_endpoint, headers=self._token,
-                                                    json=json_params, timeout=60, proxies=self._proxies)
-                if http_type == 'put':
-                    raw_results = requests.put(full_endpoint, headers=self._token,
-                                               json=json_params, timeout=60, proxies=self._proxies)
-                if http_type == 'patch':
-                    raw_results = requests.patch(full_endpoint, headers=self._token,
-                                                 json=json_params, timeout=60, proxies=self._proxies)
-            else:
-                LOGGR.info("Must have a payload in json_args param.")
-                return {}
 
+        if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different
+            full_endpoint = f"{self._url}/{endpoint}"
+        else:
+            full_endpoint = f"{self._url}/api/{version}{endpoint}"
 
-            http_status_code = raw_results.status_code
-            if http_status_code in SatDBClient.http_error_codes:
-                raise Exception(f"Error: {http_type} request failed with code {http_status_code}\n{raw_results.text}")
-            results = raw_results.json()
+        LOGGR.debug(f"http type endpoint -> {http_type}: {full_endpoint}")
+        is_paginated = True if SatDBClient.ispaginatedCall(full_endpoint)== True else False
+        respageslst = list(self.get_paginated(full_endpoint, http_type, json_params, files_json, is_paginated))
+        LOGGR.debug(f"get1-{len(respageslst)}-type-{type(respageslst)}-type-{type(respageslst[0])}") #get1-10-type-<class 'list'>-type-<class 'tuple'>
+        for i in respageslst:
+            LOGGR.debug(f"get2-{len(i)}-type-{type(i)}-{len(i[0])}-{type(i[0])}") #get2-2-type-<class 'tuple'>
+        reselement, resflattenpages, http_status_code = SatDBClient.flatten(respageslst)
+        LOGGR.debug(f"get3-{len(resflattenpages)}") #get3-200
+        #SatDBClient.debugminijson(resflattenpages, "l1resflattenpages")
+        #print(f"l2-{len(resflattenpages[0])}-type-{type(resflattenpages[0])}")
+        #SatDBClient.debugminijson(resflattenpages[0], "l2resflattenpages")
+        results = {reselement:resflattenpages, 'http_status_code': http_status_code}
+        return results
 
-            LOGGR.debug(json.dumps(results, indent=4, sort_keys=True))
-            # if results are empty, let's return the return status
-            if results:
-                results['http_status_code'] = raw_results.status_code
-                return results
-            else:
-                return {'http_status_code': raw_results.status_code}
+    def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
+        '''get'''
+        return self.http_req('get', endpoint, json_params, version, None, master_acct)        
 
     def post(self, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
         '''post'''
-        if master_acct:
-            self._update_token_master()
-        else:
-            self._update_token()
-        return self.http_req('post', endpoint, json_params, version, files_json)
+        return self.http_req('post', endpoint, json_params, version, files_json, master_acct)
 
     def put(self, endpoint, json_params, version='2.0', master_acct=False):
         '''put'''
-        if master_acct:
-            self._update_token_master()
-        else:
-            self._update_token()
-        return self.http_req('put', endpoint, json_params, version)
+        return self.http_req('put', endpoint, json_params, version, None, master_acct)
 
     def patch(self, endpoint, json_params, version='2.0', master_acct=False):
         '''patch'''
-        if master_acct:
-            self._update_token_master()
-        else:
-            self._update_token()
-        return self.http_req('patch', endpoint, json_params, version)
+        return self.http_req('patch', endpoint, json_params, version, None, master_acct)
 
 
     def get_execution_context(self):
@@ -463,3 +607,46 @@ class SatDBClient:
     #         to_return.append(F(elem))
     #     return to_return
 
+    # def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
+    #     '''http get helper'''
+    #     if master_acct:
+    #         self._update_token_master()
+    #     else:
+    #         self._update_token()
+
+
+    #     while True:
+    #         if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different
+    #             full_endpoint = f"{self._url}/{endpoint}"
+    #         else:
+    #             full_endpoint = f"{self._url}/api/{version}{endpoint}"
+            
+    #         LOGGR.debug(f"Get: {full_endpoint}")
+
+    #         if SatDBClient.ispaginatedCall(full_endpoint):
+    #             respageslst = list(self.get_paginated(full_endpoint, json_params))
+    #             LOGGR.debug(f"get1-{len(respageslst)}-type-{type(respageslst)}-type-{type(respageslst[0])}") #get1-10-type-<class 'list'>-type-<class 'tuple'>
+    #             for i in respageslst:
+    #                 LOGGR.debug(f"get2-{len(i)}-type-{type(i)}-{len(i[0])}-{type(i[0])}") #get2-2-type-<class 'tuple'>
+    #             reselement, resflattenpages = SatDBClient.flatten(respageslst)
+    #             LOGGR.debug(f"get3-{len(resflattenpages)}") #get3-200
+    #             #SatDBClient.debugminijson(resflattenpages, "l1resflattenpages")
+    #             #print(f"l2-{len(resflattenpages[0])}-type-{type(resflattenpages[0])}")
+    #             #SatDBClient.debugminijson(resflattenpages[0], "l2resflattenpages")
+    #             results = {reselement:resflattenpages}
+
+    #         else:    
+    #             if json_params:
+    #                 raw_results = requests.get(full_endpoint, headers=self._token, params=json_params, timeout=60, proxies=self._proxies)
+    #             else:
+    #                 raw_results = requests.get(full_endpoint, headers=self._token, timeout=60, proxies=self._proxies)
+
+    #             http_status_code = raw_results.status_code
+    #             if http_status_code in SatDBClient.http_error_codes:
+    #                 raise Exception(f"Error: GET request failed with code {http_status_code}\n{raw_results.text}")
+    #             results = raw_results.json()
+    #             LOGGR.debug(json.dumps(results, indent=4, sort_keys=True))
+    #             if isinstance(results, list):
+    #                 results = {'elements': results}
+    #             results['http_status_code'] = http_status_code
+    #         return results

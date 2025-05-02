@@ -33,41 +33,6 @@ def test_get_functions(get_db_client):
     sList = catalogslist.get_functions('akangsha_catalog', 'akangsha_schema')
     print(sList)
 
-def test_get_sharing_providers_list(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    catalogslist = UnityCatalogClient(jsonstr)
-    sList = catalogslist.get_sharing_providers_list()
-    print(sList)
-
-def test_get_sharing_recepients_list(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    catalogslist = UnityCatalogClient(jsonstr)
-    sList = catalogslist.get_sharing_recepients_list()
-    print(sList)
-
-def test_get_sharing_recepient_permissions(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    catalogslist = UnityCatalogClient(jsonstr)
-    sList = catalogslist.get_sharing_recepient_permissions('azure-field-eng-east')
-    print(sList)
-
-def test_get_list_shares(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    catalogslist = UnityCatalogClient(jsonstr)
-    sList = catalogslist.get_list_shares()
-    print(sList)
-
-def test_get_share_permissions(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    catalogslist = UnityCatalogClient(jsonstr)
-    sList = catalogslist.get_share_permissions('abc_to_mediacorp_share')
-    print(sList)
-
 def test_get_external_locations(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
@@ -90,6 +55,7 @@ def test_get_workspace_metastore_summary(get_db_client):
     sList = catalogslist.get_workspace_metastore_summary()
     print(sList)     
 
+#account admin
 def test_get_metastore_list(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
@@ -104,6 +70,7 @@ def test_credentials(get_db_client):
     sList = catalogslist.get_credentials()
     print(sList)   
            
+#not implemented           
 def test_grants_permissions(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
@@ -122,6 +89,7 @@ def test_grants_effective_permissions(get_db_client):
     print('--------------------')
     print(sList) 
 
+#account admin
 def test_grants_effective_permissions_ext(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 

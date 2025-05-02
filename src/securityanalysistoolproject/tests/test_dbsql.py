@@ -14,7 +14,7 @@ def test_get_alerts_list(get_db_client):
 def test_get_alert(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
-    dbsqlobj = DBSQLClient(jsonstr)
+    dbsqlobj = DBSQLClient(jsonstr) 
     settingsList = dbsqlobj.get_alert('aa69d805-7821-4923-8197-02f3574b31f3')
     print(settingsList)
 
@@ -80,6 +80,14 @@ def test_get_queries_list(get_db_client):
     dbsqlobj = DBSQLClient(jsonstr)
     settingsList = dbsqlobj.get_queries_list(order='name', page='1',page_size='25', q='' )
     print(settingsList)
+
+def test_get_queries_listv20(get_db_client):
+    LOGGR = LoggingUtils.get_logger()
+    jsonstr = get_db_client 
+    dbsqlobj = DBSQLClient(jsonstr)
+    queriesList = dbsqlobj.get_queries_listv20()
+    print(queriesList)
+
 
 def test_get_querydefinition(get_db_client):
     LOGGR = LoggingUtils.get_logger()

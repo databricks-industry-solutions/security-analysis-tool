@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import platform
+from databricks.sdk.runtime import dbutils
 
 class LoggingUtils():
     '''Logging utils helper'''
@@ -62,22 +63,23 @@ class LoggingUtils():
         elif vloglevel == "CRITICAL": return logging.CRITICAL
     # pylint: enable=multiple-statements
     
-    # @staticmethod
-    # def basePathv2():
-    #     from databricks.sdk.runtime import dbutils
-    #     path = (
-    #         dbutils.notebook.entry_point.getDbutils()
-    #         .notebook()
-    #         .getContext()
-    #         .notebookPath()
-    #         .get()
-    #     )
-    #     path = path[: path.find("/notebooks")]
-    #     return f"/Workspace{path}"
-    
+
+
     @staticmethod
     def basePath():
-        path = os.getcwd()
+        path=''
+        try:
+            path = (
+                dbutils.notebook.entry_point.getDbutils()
+                .notebook()
+                .getContext()
+                .notebookPath()
+                .get()
+            )
+        except ValueError as e:
+            if 'cluster_id' in str(e):
+                path='~/temp'
+                return path
+            
         path = path[: path.find("/notebooks")]
-        return f"{path}"
- 
+        return f"/Workspace{path}"
