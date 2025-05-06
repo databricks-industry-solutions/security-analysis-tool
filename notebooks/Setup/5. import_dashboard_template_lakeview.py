@@ -173,7 +173,6 @@ if exists != False:
   response = requests.delete(
             'https://%s/api/2.0/lakeview/dashboards/%s' % (DOMAIN, dashboard_id),
             headers={'Authorization': 'Bearer %s' % token},
-            json=BODY,
             timeout=60
           )
 
