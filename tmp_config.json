@@ -1,0 +1,1 @@
+{"catalog": "shashank_catalog", "cloud": "aws", "google_service_account": "", "latest_lts": "16.4.x-scala2.12", "node_type": "c4a-highmem-4-lssd", "serverless": false}

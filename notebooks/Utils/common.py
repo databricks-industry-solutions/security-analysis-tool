@@ -5,6 +5,7 @@
 
 # COMMAND ----------
 
+
 def bootstrap(viewname, func, **kwargs):
     """bootstrap with function and store resulting dataframe as a global temp view
     if the function doesnt return a value, creates an empty dataframe and corresponding view
@@ -14,10 +15,16 @@ def bootstrap(viewname, func, **kwargs):
 
     """
     import json
-    import pandas as pd
 
+    import pandas as pd
+    from pyspark.sql.functions import (
+        col,
+        collect_list,
+        concat_ws,
+        from_json,
+        schema_of_json,
+    )
     from pyspark.sql.types import StructType
-    from pyspark.sql.functions import col, schema_of_json, from_json, concat_ws, collect_list
 
     apiDF = None
     try:
@@ -26,16 +33,21 @@ def bootstrap(viewname, func, **kwargs):
             lstjson = [json.dumps(ifld) for ifld in lst]
             apiDF = spark.createDataFrame([(x,) for x in lstjson], ["json_string"])
             # Parse the JSON strings using the schema string
-            apiDF = apiDF.select(from_json(col("json_string"), process_json_schema(apiDF)).alias("data")).select("data.*")
-            #display(apiDF)
+            apiDF = apiDF.select(
+                from_json(col("json_string"), process_json_schema(apiDF)).alias("data")
+            ).select("data.*")
+            # display(apiDF)
         else:
             apiDF = spark.createDataFrame([], StructType([]))
             loggr.info("No Results!")
         if len(apiDF.take(1)) > 0:
-            apiDF.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable(viewname)
+            apiDF.write.option("delta.columnMapping.mode", "name").mode(
+                "overwrite"
+            ).saveAsTable(viewname)
             loggr.info(f"Table created: `{viewname}`")
     except Exception:
         loggr.exception("Exception encountered")
+
 
 # COMMAND ----------
 
@@ -246,7 +258,9 @@ def getWorkspaceConfig():
 # This is needed only on bootstrap, subsequetly the database is the master copy of the user configuration
 # Every time the values are altered, the _user file can be regenerated - but it is more as FYI
 def readBestPracticesConfigsFile():
-    security_best_practices_exists = spark.catalog.tableExists( f'{json_["analysis_schema_name"]}.security_best_practices')
+    security_best_practices_exists = spark.catalog.tableExists(
+        f'{json_["analysis_schema_name"]}.security_best_practices'
+    )
     if not security_best_practices_exists:
         import shutil
         from os.path import exists
@@ -265,7 +279,7 @@ def readBestPracticesConfigsFile():
 
         prefix = getConfigPath()
         origfile = f"{prefix}/security_best_practices.csv"
-        
+
         schema_list = [
             "id",
             "check_id",
@@ -290,7 +304,7 @@ def readBestPracticesConfigsFile():
         security_best_practices_pd = pd.read_csv(
             origfile, header=0, usecols=schema_list
         ).rename(columns={doc_url: "doc_url"})
-        
+
         security_best_practices = spark.createDataFrame(
             security_best_practices_pd, schema
         ).select(
@@ -318,27 +332,31 @@ def readBestPracticesConfigsFile():
 
 # COMMAND ----------
 
+
 # Read and load the SAT and DASF mapping file. (SAT_DASF_mapping.csv)
 def load_sat_dasf_mapping():
-  import pandas as pd
-  from os.path import exists
-  import shutil
+    import shutil
+    from os.path import exists
 
-  
-  prefix = getConfigPath()
-  origfile = f'{prefix}/sat_dasf_mapping.csv'
-    
-  schema_list = ['sat_id', 'dasf_control_id','dasf_control_name']
+    import pandas as pd
 
-  schema = '''sat_id int, dasf_control_id string,dasf_control_name string'''
+    prefix = getConfigPath()
+    origfile = f"{prefix}/sat_dasf_mapping.csv"
 
-  sat_dasf_mapping_pd = pd.read_csv(origfile, header=0, usecols=schema_list)
-    
-  sat_dasf_mapping = (spark.createDataFrame(sat_dasf_mapping_pd, schema)
-                            .select('sat_id', 'dasf_control_id','dasf_control_name'))
-    
-  sat_dasf_mapping.write.format('delta').mode('overwrite').saveAsTable(json_["analysis_schema_name"]+'.sat_dasf_mapping')
-  display(sat_dasf_mapping) 
+    schema_list = ["sat_id", "dasf_control_id", "dasf_control_name"]
+
+    schema = """sat_id int, dasf_control_id string,dasf_control_name string"""
+
+    sat_dasf_mapping_pd = pd.read_csv(origfile, header=0, usecols=schema_list)
+
+    sat_dasf_mapping = spark.createDataFrame(sat_dasf_mapping_pd, schema).select(
+        "sat_id", "dasf_control_id", "dasf_control_name"
+    )
+
+    sat_dasf_mapping.write.format("delta").mode("overwrite").saveAsTable(
+        json_["analysis_schema_name"] + ".sat_dasf_mapping"
+    )
+    display(sat_dasf_mapping)
 
 
 # COMMAND ----------
@@ -366,6 +384,7 @@ def getConfigPath():
 
 
 # COMMAND ----------
+
 
 def basePath():
     path = (
@@ -501,66 +520,86 @@ def create_workspace_run_complete_table():
 
 # COMMAND ----------
 
-def generateGCPWSToken(deployment_url, cred_file_path,target_principal):
-    from google.oauth2 import service_account
+
+def generateGCPWSToken(deployment_url, cred_file_path, target_principal):
+    import json
+
     import gcsfs
-    import json 
-    gcp_accounts_url = 'https://accounts.gcp.databricks.com'
+    from google.oauth2 import service_account
+
+    gcp_accounts_url = "https://accounts.gcp.databricks.com"
     target_scopes = [deployment_url]
     print(target_scopes)
     # Reading gcs files with gcsfs
     gcs_file_system = gcsfs.GCSFileSystem(project="gcp_project_name")
     gcs_json_path = cred_file_path
     with gcs_file_system.open(gcs_json_path) as f:
-      json_dict = json.load(f)
-      key = json.dumps(json_dict) 
-    source_credentials = service_account.Credentials.from_service_account_info(json_dict,scopes=target_scopes)
+        json_dict = json.load(f)
+        key = json.dumps(json_dict)
+    source_credentials = service_account.Credentials.from_service_account_info(
+        json_dict, scopes=target_scopes
+    )
     from google.auth import impersonated_credentials
     from google.auth.transport.requests import AuthorizedSession
 
     target_credentials = impersonated_credentials.Credentials(
-      source_credentials=source_credentials,
-      target_principal=target_principal,
-      target_scopes = target_scopes,
-      lifetime=36000)
+        source_credentials=source_credentials,
+        target_principal=target_principal,
+        target_scopes=target_scopes,
+        lifetime=36000,
+    )
 
     creds = impersonated_credentials.IDTokenCredentials(
-                                      target_credentials,
-                                      target_audience=deployment_url,
-                                      include_email=True)
+        target_credentials, target_audience=deployment_url, include_email=True
+    )
 
     authed_session = AuthorizedSession(creds)
     resp = authed_session.get(gcp_accounts_url)
     return creds.token
-    
+
 
 # COMMAND ----------
 
 from pyspark.sql import DataFrame
+
+
 def isEmpty(df: DataFrame):
-    return len(df.take(1))==0
+    return len(df.take(1)) == 0
+
 
 # COMMAND ----------
 
+
 def process_json_schema(df):
-    from pyspark.sql.functions import schema_of_json, col, from_json,collect_set,explode
-    #df_with_schemas = df.select(explode(collect_set(schema_of_json(col("json_string")))).alias("schema"))
-    df_with_schemas = df.select(schema_of_json(col("json_string")).alias("schema")).distinct()
+    from pyspark.sql.functions import (
+        col,
+        collect_set,
+        explode,
+        from_json,
+        schema_of_json,
+    )
+
+    # df_with_schemas = df.select(explode(collect_set(schema_of_json(col("json_string")))).alias("schema"))
+    df_with_schemas = df.select(
+        schema_of_json(col("json_string")).alias("schema")
+    ).distinct()
+
+    from collections import OrderedDict
 
     from pyspark.sql.types import StructType
-    from collections import OrderedDict
 
     all_fields = OrderedDict()
 
     for row in df_with_schemas.select("schema").collect():
         schema_str = row.schema
-        # Remove the outer 'STRUCT<' and '>' 
+        # Remove the outer 'STRUCT<' and '>'
         inner_schema = schema_str[7:-1]
-        schema = StructType.fromDDL(inner_schema)        
+        schema = StructType.fromDDL(inner_schema)
         for field in schema.fields:
             all_fields[field.name] = field
     final_struct = StructType(list(all_fields.values()))
     return final_struct
+
 
 # COMMAND ----------
 

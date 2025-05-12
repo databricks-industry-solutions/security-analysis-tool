@@ -30,7 +30,7 @@ def cloud_validation(client, cloud):
     if "azure" in client.config.host:
         cloud_type = "azure"
     elif "gcp" in client.config.host:
-        cloud_type = "gcp"
+        cloud_type = "aws"
     else:
         cloud_type = "aws"
 
@@ -42,8 +42,6 @@ def cloud_validation(client, cloud):
 def cloud_type(client: WorkspaceClient):
     if "azure" in client.config.host:
         return "azure"
-    elif "gcp" in client.config.host:
-        return "gcp"
     else:
         return "aws"
 

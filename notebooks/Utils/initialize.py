@@ -58,15 +58,10 @@ json_ = {
 
 intermediate_schema_name = (
     f"{json_['analysis_schema_name'].split('.')[0]}.intermediate_schema"
-    if '.' in json_['analysis_schema_name']
+    if "." in json_["analysis_schema_name"]
     else "hive_metastore.intermediate_schema"
 )
-json_.update(
-    {
-        "intermediate_schema" : intermediate_schema_name
-    }
-
-)
+json_.update({"intermediate_schema": intermediate_schema_name})
 
 # COMMAND ----------
 
@@ -90,18 +85,18 @@ json_.update(
 # COMMAND ----------
 
 # DBTITLE 1,GCP configurations
-if cloud_type == "gcp":
-    json_.update(
-        {
-            "service_account_key_file_path": dbutils.secrets.get(
-                scope="sat_scope", key="gs-path-to-json"
-            ),
-            "impersonate_service_account": dbutils.secrets.get(
-                scope="sat_scope", key="impersonate-service-account"
-            ),
-            "use_mastercreds": False,
-        }
-    )
+# if cloud_type == "gcp":
+#     json_.update(
+#         {
+#             "service_account_key_file_path": dbutils.secrets.get(
+#                 scope="sat_scope", key="gs-path-to-json"
+#             ),
+#             "impersonate_service_account": dbutils.secrets.get(
+#                 scope="sat_scope", key="impersonate-service-account"
+#             ),
+#             "use_mastercreds": False,
+#         }
+#     )
 
 
 # COMMAND ----------
@@ -129,7 +124,7 @@ if cloud_type == "azure":
 # COMMAND ----------
 
 # DBTITLE 1,AWS configurations
-if cloud_type == "aws":
+if cloud_type == "aws" or cloud_type == "gcp":
     sp_auth = {
         "use_sp_auth": "False",
         "client_id": "",
