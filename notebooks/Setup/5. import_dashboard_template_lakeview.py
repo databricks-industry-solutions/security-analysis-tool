@@ -76,23 +76,23 @@ import requests
 
 DOMAIN = ws.deployment_url
 response = requests.get(
-          'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
+          'https://%s/api/2.0/sql/warehouses' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % token},
           json=None,
           timeout=60 
         )
+        
 if response.status_code == 200:
     resources = json.loads(response.text)
     found = False
-    for resource in resources:
-        if resource['endpoint_id'] == json_['sql_warehouse_id']:
-            data_source_id = resource['id']
+    for warehouse in resources["warehouses"]:
+        if warehouse["id"] == json_['sql_warehouse_id']:
+            data_source_id = warehouse['id']
             found = True
             break
-    if (found == False):
-        dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
-else:
-    dbutils.notebook.exit("Invalid access token, check configuration value for this workspace.")            
+    else:
+        dbutils.notebook.exit("The configured SQL Warehouse is not found.")            
+          
 
 
 # COMMAND ----------
