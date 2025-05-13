@@ -28,7 +28,7 @@ class DeltaSharingClient(SatDBClient):
         sharingjsonlist = self.get(f"/unity-catalog/providers/{sharename}", version='2.1').get('satelements', [])
         return sharingjsonlist  
 
-    def get_sharing_providers_list(self, name):
+    def get_sharing_providers_info(self, name):
         """
         Returns an array of json objects for sharing providers
         """

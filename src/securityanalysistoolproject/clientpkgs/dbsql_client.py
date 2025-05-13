@@ -56,6 +56,10 @@ class DBSQLClient(SatDBClient):
         sqlwarehouselist = self.get(f"/sql/warehouses", version='2.0').get('warehouses', [])
         return sqlwarehouselist   
     
+    #for backwards compatibility
+    def get_sql_warehouse_listv2(self):  
+        return self.get_sql_warehouse_list()
+    
     def get_sql_warehouse_info(self, warehouse_id):
         """
         Returns an array of json objects for sql warehouse.

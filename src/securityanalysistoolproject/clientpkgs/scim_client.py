@@ -10,20 +10,31 @@ class ScimClient(SatDBClient):
 
     def get_users(self, filter=None):
         '''get list of users'''
-        json_params = {filter: filter}
+        if filter:
+            json_params = {filter: filter}
+        else:
+            json_params = {}
         user_list = self.get('/preview/scim/v2/Users', json_params=json_params).get('Resources', None)
         return user_list if user_list else None
 
     def get_groups(self, filter=None):
         '''get list of groups'''
-        json_params = {filter: filter}
+        if filter:
+            json_params = {filter: filter}
+        else:
+            json_params = {}
+
         group_list = self.get("/preview/scim/v2/Groups", json_params=json_params).get('Resources', [])
         return group_list if group_list else None
 
 
     def get_serviceprincipals(self, filter=None):
         '''get list of spns'''
-        json_params = {filter: filter}
+        if filter:
+            json_params = {filter: filter}
+        else:
+            json_params = {}
+            
         spn_list = self.get("/preview/scim/v2/ServicePrincipals", json_params=json_params).get('Resources', [])
         return spn_list if spn_list else None       
 

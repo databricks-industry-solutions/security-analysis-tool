@@ -1,19 +1,21 @@
 from core.logging_utils import LoggingUtils
+from clientpkgs.permissions_client import UserGroupObjectsClient
 from clientpkgs.jobs_client import JobsClient
 
 def test_get_job_permissions(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
-    jobsClient = JobsClient(jsonstr)
-    permissions = jobsClient.get_job_permissions("439931807662384")
+    permClient = UserGroupObjectsClient(jsonstr)
+    permissions = permClient.get_object_permissions("jobs", "439931807662384")
     LOGGR.debug(permissions)
 
 def test_get_job_permission_levels(get_db_client):
     LOGGR = LoggingUtils.get_logger()
+    LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
-    jobsClient = JobsClient(jsonstr)
-    permissionLevels = jobsClient.get_job_permission_levels("439931807662384")
-    LOGGR.debug(permissionLevels)
+    permClient = UserGroupObjectsClient(jsonstr)
+    permissions = permClient.get_object_permission_levels("jobs", "439931807662384")
+    LOGGR.debug(permissions)
 
 def test_get_jobs_list(get_db_client):
     LOGGR = LoggingUtils.get_logger()

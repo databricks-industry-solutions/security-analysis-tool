@@ -4,7 +4,7 @@ from core.dbclient import SatDBClient
 class IPAccessClient(SatDBClient):
     ''' ip access list helper'''
 
-    def get_ip_access_lists(self):
+    def get_ip_access_list(self):
         """
         Returns an array of json objects for compliance security profile update.
         """

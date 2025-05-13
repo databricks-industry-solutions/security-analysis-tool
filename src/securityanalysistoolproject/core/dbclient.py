@@ -1,6 +1,5 @@
 '''dbclient'''
 import json
-import base64
 import time
 import urllib3
 import requests
@@ -37,101 +36,87 @@ class SatDBClient:
         LoggingUtils.set_logger_level(self._verbosity)
         self._cluster_id=configs['clusterid'].strip()
         self._token = ''
-        self._raw_token = configs['token'].strip()
-        if isinstance(configs['use_mastercreds'], str):
-            self._use_mastercreds = pars.str2bool(configs['use_mastercreds'])
-        else:
-            self._use_mastercreds = configs['use_mastercreds']
+        #self._raw_token = '' #for gcp this was populated in bootstrap notebook. Not anymore.
+        # mastercreds not used anymore
         self._proxies = configs.get('proxies', {})
-
-        #Azure
+        #self._use_sp_auth = True #always use sp auth by default
+        
+        #common for all clouds
+        #AWS and GCP pass in secret generated in accounts console
+        #Azure pass in secret generated in azure portal
+        self._client_id = configs['client_id'].strip()
+        self._client_secret = configs['client_secret'].strip()        
+        #Azure msmgmt urls need these
         if 'azure' in self._cloud_type:
             self._subscription_id = configs['subscription_id'].strip()
-            self._client_id = configs['client_id'].strip()
-            self._client_secret = configs['client_secret'].strip()
-            self._tenant_id = configs['tenant_id'].strip()
-        elif 'gcp' in self._cloud_type: #gcp
-            self._master_name = configs['mastername'].strip()
-            self._master_password = configs['masterpwd'].strip()
-        elif 'aws' in self._cloud_type: #aws
-            self._master_name = configs['mastername'].strip()
-            self._master_password = configs['masterpwd'].strip()
-            self._use_sp_auth = pars.str2bool(configs['use_sp_auth'])
-            self._client_id = configs['client_id'].strip()
-            self._client_secret = configs['client_secret'].strip()   
+            self._tenant_id = configs['tenant_id'].strip().strip()   
+        
 
-
-    def _update_token_master(self):
+    def _update_token_master(self,endpoint=None):
         '''update token master in http header'''
+        '''endpoint passed for azure since some go to accounts and some to azure mgmt'''
         LOGGR.info("in _update_token_master")
+        self._url=self._raw_url
         if(self._cloud_type == 'gcp'):
-            self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
+            #self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
+            #old way
+            # self._token = {
+            #     "Authorization": f"Bearer {self._master_name}",
+            #     "X-Databricks-GCP-SA-Access-Token": f"{self._master_password}",
+            #     "User-Agent": "databricks-sat/0.1.0"
+            # }
+            oauth = self.getGCPTokenwithOAuth(True, self._client_id, self._client_secret)
+            self._url="https://accounts.gcp.databricks.com"
             self._token = {
-                "Authorization": f"Bearer {self._master_name}",
-                "X-Databricks-GCP-SA-Access-Token": f"{self._master_password}",
+                "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
-            }
-            LOGGR.info(f'GCP self._token {self._token}')
+            } 
+            LOGGR.info(f'GCP self._token {oauth}')
         elif(self._cloud_type == 'azure'):
-            self._url = "https://management.azure.com"
-            self._master_password = self.getAzureTokenWithMSAL('msmgmt')
+            #azure is only oauth to accounts/msmgmt
+            oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
+            self._url="https://accounts.azuredatabricks.net"
             self._token = {
-                "Authorization": f"Bearer {self._master_password}",
+                "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
             }
-        else:     #AWS
+        elif (self._cloud_type == 'aws'):     #AWS
+            oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
             self._url = "https://accounts.cloud.databricks.com" #url for accounts api
-            if (self._use_sp_auth): # Service Principal authentication flow
-                oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
-                self._token = {
-                    "Authorization": f"Bearer {oauth}",
-                    "User-Agent": "databricks-sat/0.1.0"
-                } 
-            else:
-                LOGGR.info('OAuth flow for master')
-                user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
-                self._token = {
-                    "Authorization" : f"Basic {user_pass}",
-                    "User-Agent": "databricks-sat/0.1.0"
-                }
+            self._token = {
+                "Authorization": f"Bearer {oauth}",
+                "User-Agent": "databricks-sat/0.1.0"
+            } 
+        LOGGR.info(f'Master Account Token Updated!')
 
-    def _update_token(self):
+    def _update_token(self,endpoint=None):
         '''update token in http header'''
-        self._url=self._raw_url #accounts api uses a different url
-        if self._cloud_type == 'aws' and self._use_sp_auth is True:# AWS Service Principal authentication flow
-            LOGGR.info("OAuth flow for workspace")
+        '''endpoint passed for azure since some go to accounts and some to azure mgmt'''
+        #only use the sp auth workflow
+        #self._url=self._raw_url #accounts api uses a different url
+        self._url=self._raw_url
+        if self._cloud_type == 'aws':
             oauth = self.getAWSTokenwithOAuth(False, self._client_id, self._client_secret)
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
             } 
-        elif self._use_mastercreds is False:
+        elif self._cloud_type == 'azure':
+            oauth = self.getAzureToken(False, endpoint, self._client_id, self._client_secret)
             self._token = {
-                "Authorization": f"Bearer {self._raw_token}",
-                "User-Agent": "databricks-sat/0.1.0"
-            }
-        else: # use master creds for workspaces also
-            if(self._cloud_type == 'gcp'):
-                self._token = {
-                "Authorization": f"Bearer {self._raw_token}",
-                "User-Agent": "databricks-sat/0.1.0"
-                }   
-                LOGGR.info(f'In GCP  self._url {self._url}')
-            elif (self._cloud_type == 'azure'):
-                self._raw_token = self.getAzureTokenWithMSAL('dbmgmt')
+            "Authorization": f"Bearer {oauth}",
+            "User-Agent": "databricks-sat/0.1.0"
+            }                
+        elif self._cloud_type == 'gcp':
+            oauth = self.getGCPTokenwithOAuth(False, self._client_id, self._client_secret)
+            self._token = {
+            "Authorization": f"Bearer {oauth}",
+            "User-Agent": "databricks-sat/0.1.0"
+            }   
+        LOGGR.info(f'Token Updated!')
 
-                self._token = {
-                "Authorization": f"Bearer {self._raw_token}",
-                "User-Agent": "databricks-sat/0.1.0"
-                }      
-            else:    
-                user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
-                self._token = {
-                    "Authorization" : f"Basic {user_pass}",
-                    "User-Agent": "databricks-sat/0.1.0"
-                }
-        return None
-    
+
+
     def get_temporary_oauth_token(self):
         self._update_token()
         if self._token is None:
@@ -157,6 +142,7 @@ class SatDBClient:
             self._update_token()
             results = requests.get(f'{self._url}/api/2.0/clusters/spark-versions',
                 headers=self._token, timeout=60, proxies=self._proxies)
+            
         http_status_code = results.status_code
         if http_status_code != 200:
             LOGGR.info("Error. Either the credentials have expired or the \
@@ -210,6 +196,7 @@ class SatDBClient:
         return 'satelements', arrdict
   
     # tuple with dict {elem:[..]}, http_status_code
+    @staticmethod
     def flatten(nestarr):
         flatarr=[]
         flatelem=''
@@ -369,14 +356,18 @@ class SatDBClient:
 
     def http_req(self, http_type, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
         '''helpers for http post put patch'''
+        #Azure has two different account api strategies. one goes direct to azure management and 
+        # the other one goes to databricks.
+       
         if master_acct:
-            self._update_token_master()
+            self._update_token_master(endpoint)
         else:
-            self._update_token()
+            self._update_token(endpoint)
 
-        if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different
+        if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different        
+            endpoint = endpoint[1:] if endpoint.startswith('/') else endpoint #remove leading /
             full_endpoint = f"{self._url}/{endpoint}"
-        else:
+        else: #all databricks apis
             full_endpoint = f"{self._url}/api/{version}{endpoint}"
 
         LOGGR.debug(f"http type endpoint -> {http_type}: {full_endpoint}")
@@ -395,6 +386,7 @@ class SatDBClient:
 
     def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
         '''get'''
+        print(f"get {endpoint} {json_params}") 
         return self.http_req('get', endpoint, json_params, version, None, master_acct)        
 
     def post(self, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
@@ -419,11 +411,11 @@ class SatDBClient:
         #time.sleep(5)
         ec_payload = {"language": "python",
                     "clusterId": cid}
-        ec_var = self.post('/contexts/create', json_params=ec_payload, version="1.2")
-        # Grab the execution context ID
-        ec_id = ec_var.get('id', None)
+        ec_var = self.post('/contexts/create', json_params=ec_payload, version="1.2").get('satelements',[])
+        ec_id=None
+        ec_id = ec_var[0].get('id', None)
         if ec_id is None:
-            LOGGR.info('Remote session error. Cluster may not be started')
+            LOGGR.info('Get execution context failed...')
             LOGGR.info(ec_var)
             raise Exception("Remote session error. Cluster may not be started.")
         return ec_id
@@ -440,26 +432,28 @@ class SatDBClient:
                         'command': cmd}
         command = self.post('/commands/execute',
                             json_params=command_payload,
-                            version="1.2")
-
-        com_id = command.get('id', None)
+                            version="1.2").get('satelements',[])
+        com_id = command[0].get('id', None)
         if com_id is None:
             LOGGR.error(command)
         # print('command_id : ' + com_id)
         result_payload = {'clusterId': cid, 'contextId': ec_id, 'commandId': com_id}
 
-        resp = self.get('/commands/status', json_params=result_payload, version="1.2")
+        resp = self.get('/commands/status', json_params=result_payload, version="1.2").get('satelements',[])
+        resp = resp[0]
         is_running = self.get_key(resp, 'status')
 
         # loop through the status api to check for the 'running' state call and sleep 1 second
         while (is_running == "Running") or (is_running == 'Queued'):
-            resp = self.get('/commands/status', json_params=result_payload, version="1.2")
+            resp = self.get('/commands/status', json_params=result_payload, version="1.2").get('satelements', [])
+            resp=resp[0]
             is_running = self.get_key(resp, 'status')
             time.sleep(1)
         _ = self.get_key(resp, 'status')
         end_results = self.get_key(resp, 'results')
         if end_results.get('resultType', None) == 'error':
             LOGGR.error(end_results.get('summary', None))
+            raise Exception("Error in Submit Command")
         return end_results
 
 
@@ -509,6 +503,29 @@ class SatDBClient:
             cloudtype='gcp'
         return cloudtype
 
+    def getAzureToken(self, baccount, endpoint, client_id, client_secret):
+        LOGGR.debug(f"getAzureToken {endpoint} {baccount}")
+        databrickstype=True
+        #microsft apis have the api-version string
+        if endpoint is None or '?api-version=' in endpoint:
+            databrickstype=False
+
+        if not databrickstype and baccount: #master and to microsoft
+            oauthtok=self.getAzureTokenwithMSAL("msmgmt")
+            LOGGR.debug(f"msmgmt1 {oauthtok}")
+            return oauthtok #account dbtype
+        elif databrickstype and baccount:  #master but databricks
+            oauthtok=self.getAzureTokenwithMSAL("dbmgmt")
+            LOGGR.debug(f"dbmgmt1 {oauthtok}")
+            return oauthtok #account dbtype  
+        elif databrickstype and not baccount: #not master has to be databricks
+            oauthtok=self.getAzureTokenwithMSAL("dbmgmt")
+            LOGGR.debug(f"dbmgmt1 {oauthtok}")
+            return oauthtok #account dbtype  
+        else:
+            LOGGR.debug(f"This condition should never happen getAzureToken")
+            return None, None #account dbtype              
+
     def getAzureTokenWithMSAL(self, scopeType):
         """
         validate client id and secret from microsoft and google
@@ -527,7 +544,7 @@ class SatDBClient:
 
             app = msal.ConfidentialClientApplication(
                 client_id=self._client_id,
-                client_credential=self._client_secret,
+                client_credential=self._azure_client_secret,
                 authority=f"https://login.microsoftonline.com/{self._tenant_id}",
             )
 
@@ -540,10 +557,11 @@ class SatDBClient:
                 token = app.acquire_token_for_client(scopes=scopes)
             
             if token.get("access_token") is None:
-                print(['no token'])
+                LOGGR.debug('no token')
+                raise Exception('No token')
             else:
                 return(token.get("access_token"))
-                print(token.get("access_token"))
+
 
 
         except Exception as error:
@@ -555,7 +573,7 @@ class SatDBClient:
         '''generates OAuth token for Service Principal authentication flow'''
         '''baccount if generating for account. False for workspace'''
         response = None
-        user_pass = (self._client_id,self._client_secret)
+        user_pass = (client_id, client_secret)
         oidc_token = {
             "User-Agent": "databricks-sat/0.1.0"
         }
@@ -577,7 +595,38 @@ class SatDBClient:
         LOGGR.debug(json.dumps(response.json()))
         return None
 
+    def getGCPTokenwithOAuth(self, baccount, client_id, client_secret):
+        '''generates OAuth token for Service Principal authentication flow'''
+        '''baccount if generating for account. False for workspace'''
+        response = None
+        user_pass = (client_id, client_secret)
+        oidc_token = {
+            "User-Agent": "databricks-sat/0.1.0"
+        }
+        json_params = {
+            "grant_type": "client_credentials",
+            "scope": "all-apis"
+        }
+              
+        if baccount is True:
+            full_endpoint = f"https://accounts.gcp.databricks.com/oidc/accounts/{self._account_id}/v1/token" #url for accounts api  
+        else: #workspace
+            full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
+        response = requests.post(full_endpoint, headers=oidc_token,
+                                    auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)  
+
+        if response is not None and response.status_code == 200:
+            return response.json()['access_token']
+        LOGGR.debug(json.dumps(response.json()))
+        return None
+
+
+
+
+#----------------------------------------------------
+#old code discard after Dec 2025
+#----------------------------------------------------
     # @staticmethod
     # def listdir(f_path):
     #     ls = os.listdir(f_path)
@@ -650,3 +699,101 @@ class SatDBClient:
     #                 results = {'elements': results}
     #             results['http_status_code'] = http_status_code
     #         return results
+
+    #    def _update_token_master_old(self):
+    #     '''update token master in http header'''
+    #     LOGGR.info("in _update_token_master")
+    #     if(self._cloud_type == 'gcp'):
+    #         self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
+    #         self._token = {
+    #             "Authorization": f"Bearer {self._master_name}",
+    #             "X-Databricks-GCP-SA-Access-Token": f"{self._master_password}",
+    #             "User-Agent": "databricks-sat/0.1.0"
+    #         }
+    #         LOGGR.info(f'GCP self._token {self._token}')
+    #     elif(self._cloud_type == 'azure'):
+    #         #azure is only oauth to accounts/msmgmt
+    #         self._url, self._master_password = self.getAzureToken('msmgmt')
+    #         self._token = {
+    #             "Authorization": f"Bearer {self._master_password}",
+    #             "User-Agent": "databricks-sat/0.1.0"
+    #         }
+    #     else:     #AWS
+    #         self._url = "https://accounts.cloud.databricks.com" #url for accounts api
+    #         if (self._use_sp_auth): # Service Principal authentication flow
+    #             oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
+    #             self._token = {
+    #                 "Authorization": f"Bearer {oauth}",
+    #                 "User-Agent": "databricks-sat/0.1.0"
+    #             } 
+    #         else:
+    #             LOGGR.info('OAuth flow for master')
+    #             user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+    #             self._token = {
+    #                 "Authorization" : f"Basic {user_pass}",
+    #                 "User-Agent": "databricks-sat/0.1.0"
+    #             }
+
+    # def _update_token_old(self):
+    #     '''update token in http header'''
+    #     self._url=self._raw_url #accounts api uses a different url
+
+    #     if self._cloud_type == 'aws' and self._use_sp_auth is True:# AWS Service Principal authentication flow
+    #         LOGGR.info("OAuth flow for workspace")
+    #         oauth = self.getAWSTokenwithOAuth(False, self._client_id, self._client_secret)
+    #         self._token = {
+    #             "Authorization": f"Bearer {oauth}",
+    #             "User-Agent": "databricks-sat/0.1.0"
+    #         } 
+    #     elif self._use_mastercreds is False:
+    #         self._token = {
+    #             "Authorization": f"Bearer {self._raw_token}",
+    #             "User-Agent": "databricks-sat/0.1.0"
+    #         }
+    #     else: # use master creds for workspaces also
+    #         if(self._cloud_type == 'gcp'):
+    #             self._token = {
+    #             "Authorization": f"Bearer {self._raw_token}",
+    #             "User-Agent": "databricks-sat/0.1.0"
+    #             }   
+    #             LOGGR.info(f'In GCP  self._url {self._url}')
+    #         elif (self._cloud_type == 'azure'):
+    #             self._raw_token = self.getAzureTokenWithMSAL('dbmgmt')
+
+    #             self._token = {
+    #             "Authorization": f"Bearer {self._raw_token}",
+    #             "User-Agent": "databricks-sat/0.1.0"
+    #             }      
+    #         else:    
+    #             user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+    #             self._token = {
+    #                 "Authorization" : f"Basic {user_pass}",
+    #                 "User-Agent": "databricks-sat/0.1.0"
+    #             }
+    #     return None
+
+    # def getAzureTokenwithOAuth(self, baccount):
+    #     '''generates OAuth token for Service Principal authentication flow'''
+    #     '''baccount if generating for account. False for workspace'''
+    #     response = None
+    #     print(f'{self._client_id}========{self._client_secret}')
+    #     user_pass = (self._client_id,self._client_secret)
+    #     oidc_token = {
+    #         "User-Agent": "databricks-sat/0.1.0"
+    #     }
+    #     json_params = {
+    #         "grant_type": "client_credentials",
+    #         "scope": "all-apis"
+    #     }
+    #     if baccount in "msmgmt":
+    #         full_endpoint = f"https://accounts.azuredatabricks.net/oidc/accounts/{self._account_id}/v1/token" #url for accounts api  
+    #     else: #workspace
+    #         full_endpoint = f'{self._raw_url}/oidc/v1/token'
+
+    #     response = requests.post(full_endpoint, headers=oidc_token,
+    #                                 auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)  
+
+    #     if response is not None and response.status_code == 200:
+    #         return response.json()['access_token']
+    #     LOGGR.debug(json.dumps(response.json()))
+    #     return None

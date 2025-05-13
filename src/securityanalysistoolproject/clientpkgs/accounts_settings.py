@@ -64,4 +64,9 @@ class AccountsSettings(SatDBClient):
         nccjsonlist = self.get(f"/accounts/{account_id}/network-connectivity-configs/{ncc_configid}", master_acct=True).get('satelements',[])      
         return nccjsonlist
     
+    def get_networkpolicies(self):
+        account_id=self._account_id
+        ncpoliciesjsonlist = self.get(f"/accounts/{account_id}/network-policies", master_acct=True).get('items',[])      
+        return ncpoliciesjsonlist      
+    
     

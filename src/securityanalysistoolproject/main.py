@@ -6,6 +6,7 @@ from core import parser as pars
 from core.logging_utils import LoggingUtils
 from core.dbclient import SatDBClient
 import requests
+import msal
 import urllib3
 
 

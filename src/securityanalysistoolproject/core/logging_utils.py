@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 import platform
-from databricks.sdk.runtime import dbutils
+#from databricks.sdk.runtime import dbutils
 
 class LoggingUtils():
     '''Logging utils helper'''
@@ -67,19 +67,13 @@ class LoggingUtils():
 
     @staticmethod
     def basePath():
-        path=''
-        try:
-            path = (
-                dbutils.notebook.entry_point.getDbutils()
-                .notebook()
-                .getContext()
-                .notebookPath()
-                .get()
-            )
-        except ValueError as e:
-            if 'cluster_id' in str(e):
-                path='~/temp'
-                return path
-            
-        path = path[: path.find("/notebooks")]
+        path = os.getcwd()
+        ind=path.find("/notebooks")
+        if ind==-1:
+            return("~/temp")
+        path = path[: ind]
+        if path.startswith('/Workspace'):
+            return(f'{path}')
         return f"/Workspace{path}"
+    
+ 

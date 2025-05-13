@@ -136,6 +136,7 @@ def remap_cmk_list(subslist):
         if getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
                 or getItem(rec, ['properties', 'workspaceId'], True) is None \
                 or getItem(rec, ['properties','parameters', 'encryption'], True) is None:
+            print(rec)
             continue
         cmklink = {}
         cmklink['account_id']=getItem(rec, ['properties', 'workspaceId'])
@@ -147,7 +148,7 @@ def remap_cmk_list(subslist):
         keyarn = getItem(rec, ['properties','parameters', 'encryption', 'value', "keySource"])
         cmklink['aws_key_info']={"key_alias": keyalias, "key_arn": keyarn}
         cmklistMapped.append(cmklink)
-    return cmklistMapped
+    return {'satelements':cmklistMapped}
 
    
 

@@ -29,7 +29,7 @@ class AccountsClient(SatDBClient):
         """
         credentials_list = []
         if self._cloud_type == 'azure':
-            pass
+           pass
         else:
             accountid=self._account_id
             credentials_list = self.get(f"/accounts/{accountid}/credentials", master_acct=True).get('satelements',[])
@@ -55,6 +55,7 @@ class AccountsClient(SatDBClient):
         """
         network_list=[]
         if self._cloud_type == 'azure':
+            # this function in accounts_settings.py
             pass
         else:          
             accountid=self._account_id
