@@ -33,6 +33,7 @@ cloud_type = getCloudType(hostname)
 # MAGIC * **workspace_pat_scope** Secret Scope for Workspace PAT
 # MAGIC * **workspace_pat_token_prefix** Secret Key prefix for Workspace PAT. Workspace ID will automatically be appended to this per workspace
 # MAGIC * **use_mastercreds** (optional) Use master account credentials for all workspaces
+# MAGIC * **sat_version** Version of the SAT version being used
 
 # COMMAND ----------
 
@@ -83,6 +84,7 @@ json_.update(
         "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
+        "sat_version": "0.3.4",
     }
 )
 

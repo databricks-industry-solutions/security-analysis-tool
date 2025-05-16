@@ -17,8 +17,6 @@
 
 # COMMAND ----------
 
-# COMMAND ----------
-
 dfexist = readWorkspaceConfigFile()
 dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceTempView('all_workspaces') 
 
@@ -78,23 +76,23 @@ import requests
 
 DOMAIN = ws.deployment_url
 response = requests.get(
-          'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
+          'https://%s/api/2.0/sql/warehouses' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % token},
           json=None,
           timeout=60 
         )
+        
 if response.status_code == 200:
     resources = json.loads(response.text)
     found = False
-    for resource in resources:
-        if resource['endpoint_id'] == json_['sql_warehouse_id']:
-            data_source_id = resource['id']
+    for warehouse in resources["warehouses"]:
+        if warehouse["id"] == json_['sql_warehouse_id']:
+            data_source_id = warehouse['id']
             found = True
             break
-    if (found == False):
-        dbutils.notebook.exit("The configured SQL Warehouse Endpoint is not found.")    
-else:
-    dbutils.notebook.exit("Invalid access token, check configuration value for this workspace.")            
+    else:
+        dbutils.notebook.exit("The configured SQL Warehouse is not found.")            
+          
 
 
 # COMMAND ----------
@@ -143,22 +141,23 @@ if json_['analysis_schema_name'] != 'hive_metastore.security_analysis':
 
 # COMMAND ----------
 
+# DBTITLE 1,Check if Dashboard exists first
 import requests
 
-BODY = {'path': f'{basePath()}/[SAT] Security Analysis Tool - Assessment Results.lvdash.json'}
-
 response = requests.get(
-          'https://%s/api/2.0/workspace/get-status' % (DOMAIN),
+          'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % token},
-          json=BODY,
           timeout=60
         )
 
 exists = True
 
-if 'RESOURCE_DOES_NOT_EXIST' not in response.text:
+if '[SAT] Security Analysis Tool - Assessment Results' in response.text:
     json_response = response.json()
-    dashboard_id = json_response['resource_id']   
+    filtered_dashboard = [d for d in json_response['dashboards'] if d['display_name'] == '[SAT] Security Analysis Tool - Assessment Results']
+
+    dashboard_id = filtered_dashboard[0]['dashboard_id']
+    print("Dashboard already exists")
 else:
     exists = False
     print("Dashboard doesn't exist yet")           
@@ -166,6 +165,7 @@ else:
 
 # COMMAND ----------
 
+# DBTITLE 1,If dashboard exists delete
 #Delete using the API DELETE /api/2.0/lakeview/dashboards/
 
 if exists != False:
@@ -173,7 +173,6 @@ if exists != False:
   response = requests.delete(
             'https://%s/api/2.0/lakeview/dashboards/%s' % (DOMAIN, dashboard_id),
             headers={'Authorization': 'Bearer %s' % token},
-            json=BODY,
             timeout=60
           )
 
@@ -185,6 +184,7 @@ if exists != False:
 
 # COMMAND ----------
 
+# DBTITLE 1,Create new version of dashboard
 import requests
 json_file_path = f"{basePath()}/dashboards/SAT_Dashboard_definition.json"
 

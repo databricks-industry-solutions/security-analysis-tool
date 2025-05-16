@@ -50,7 +50,7 @@ def form():
         ),
         Confirm(
             name="enable_serverless",
-            message="Run on serverless?",
+            message="Run on serverless? [Only monitor current workspace]",
             default=True,
         ),
         List(

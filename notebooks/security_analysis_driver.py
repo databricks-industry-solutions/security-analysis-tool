@@ -86,13 +86,26 @@ dfexist.filter(dfexist.analysis_enabled == True ).createOrReplaceTempView(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ##### These are the workspaces we will run the analysis on
-# MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace
+import json
+from dbruntime.databricks_repl_context import get_context
+#Get current workspace id
+current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
-workspacesdf = spark.sql("select * from `all_workspaces`")
+# MAGIC %md
+# MAGIC ##### These are the workspaces we will run the analysis on
+# MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace
+# MAGIC ##### If the analysis is serverless compute only run the analysis for the current workspace
+
+# COMMAND ----------
+
+#if the analysis is happening on serverless compute let us ignore all workspaces except the current workspace
+serverless_filter=""
+if is_serverless:
+    serverless_filter = " where workspace_id = '" + current_workspace + "'"
+
+workspacesdf = spark.sql(f"select * from `all_workspaces` {serverless_filter}")
 display(workspacesdf)
 workspaces = workspacesdf.collect()
 if workspaces is None or len(workspaces) == 0:
@@ -191,17 +204,11 @@ def combine(ws):
 
 if use_parallel_runs == True:
     loggr.info("Running in parallel")
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = []
-        for workspace in workspaces:
-            future = executor.submit(combine, workspace)
-            futures.append(future)
-            time.sleep(20)  # Adding time between submissions as concurrent 
-
+    with ThreadPoolExecutor(max_workers=4) as executor:
         try:
-            for future in futures:
-                result = future.result()
-                loggr.info(result)
+            result = executor.map(combine, workspaces)
+            for r in result:
+                print(r)
         except Exception as e:
             loggr.info(e)
 else:

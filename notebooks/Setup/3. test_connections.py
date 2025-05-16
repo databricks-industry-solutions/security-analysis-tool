@@ -90,15 +90,22 @@ dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceTempView('configur
 
 # COMMAND ----------
 
-workspacesdf = spark.sql('select * from `configured_workspaces`')
+import json
+from dbruntime.databricks_repl_context import get_context
+#Get current workspace id
+current_workspace = get_context().workspaceId
+
+# COMMAND ----------
+
+#if the analysis is happening on serverless compute let us ignore all workspaces except the current workspace
+serverless_filter=""
+if is_serverless:
+    serverless_filter = " where workspace_id = '" + current_workspace + "'"
+workspacesdf = spark.sql(f"select * from `configured_workspaces` {serverless_filter}")
 display(workspacesdf)
 if len(workspacesdf.take(1))==0:
     dbutils.notebook.exit("Workspace list is empty. At least one should be configured for analysis")
 workspaces = workspacesdf.collect()
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 
@@ -119,7 +126,6 @@ def modifyWorkspaceConfigFile(input_connection_arr):
           allwsm.deployment_url,
           allwsm.workspace_name,
           allwsm.workspace_status,
-          allwsm.ws_token,
           allwsm.sso_enabled,
           allwsm.scim_enabled,
           allwsm.vpc_peering_done,
@@ -132,13 +138,6 @@ def modifyWorkspaceConfigFile(input_connection_arr):
   display(dfmerge)
   prefix = getConfigPath()
   dfmerge.toPandas().to_csv(f'{prefix}/workspace_configs.csv', mode='w', index=False, header=True) #Databricks Runtime 11.2 or above.
-
-# COMMAND ----------
-
-import json
-from dbruntime.databricks_repl_context import get_context
-#Get current workspace id
-current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
