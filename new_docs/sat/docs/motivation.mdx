@@ -1,0 +1,21 @@
+---
+sidebar_position: 1
+---
+import useBaseUrl from '@docusaurus/useBaseUrl';
+
+# Motivation
+
+Security Analysis Tool (SAT) analyzes customer's Databricks account and workspace security configurations and provides recommendations that help them follow Databrick's security best practices. 
+When a customer runs SAT, it will compare their workspace configurations against a set of security best practices and delivers a report for their Databricks (AWS, Azure, and GCP) workspaces. 
+These checks identify recommendations to harden Databricks configurations, services, and resources.
+
+Databricks has worked with thousands of customers to securely deploy the Databricks platform, with the appropriate security features that meet their architecture requirements. 
+While many organizations deploy security differently, there are guidelines and features that are commonly used by organizations that need a high level of security. 
+This tool checks for typical security features that are deployed by most high-security organizations, and reviews the largest risks and the risks that customers ask about most often. 
+It will then provide a security configuration reference link to Databricks documentation along with a recommendation. 
+
+SAT is a productivity tool to help verify security configurations against security best practices of Databricks, its not meant to be used as a certification or an attestation of your deployments. 
+Please review the SAT report with your business stakeholders, administrators, security team and auditors about SAT report and assess your organizational security requirements before making any security improvements bases on the report, not all deviations required to be mitigated. 
+Some of the recommendations may have cost implications, some of the security features recommended may have dependency feature limitations, please thoroughly review individual feature documentation before making changes to your security configurations. 
+SAT project is being regularly updated to improve correctness of checks, add new checks, fix bugs. 
+Please send your feedback and comments to sat@databricks.com or open a git issue.

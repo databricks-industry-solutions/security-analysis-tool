@@ -1,0 +1,18 @@
+---
+sidebar_position: 2
+---
+import Admonition from '@theme/Admonition';
+
+# Standard Install
+
+<Admonition type="note" title="Note">
+
+SAT is a productivity tool to help verify security configurations of Databricks deployments, it's not meant to be used as certification or attestation of your deployments. SAT project is regularly updated to improve the correctness of checks, add new checks, and fix bugs. You will need a single SAT install per Databricks account in AWS and GCP and a single install per azure subscription in Azure. Add the Service principal as mentioned in the detailed steps to analyze the rest of the workspaces from the workspace where SAT is installed. You can choose not to add SP to a given workspace if you wish to ignore a given workspace. Please send your feedback and comments to sat@databricks.com.
+
+</Admonition>
+
+SAT can be setup on any of the cloud providers where Databricks is hosted. Follow the setup guide for the cloud provider you are using:
+
+- [AWS Setup Guide](./aws.mdx)
+- [Azure Setup Guide](./azure.mdx)
+- [GCP Setup Guide](./gcp.mdx)
