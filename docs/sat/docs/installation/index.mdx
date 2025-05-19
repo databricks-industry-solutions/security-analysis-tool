@@ -20,6 +20,12 @@ Follow this guide to setup the Security Analysis Tool (SAT) on your Databricks w
 
 ## Prerequisites
 
+<Admonition type="note" title="Note">
+
+SAT is beneficial to customers on **Databrics Premium** or **Enterprise** as most of the checks and recommendations involve security features available in tiers higher than the Standard.
+
+</Admonition>
+
 Before proceeding with the installation, make sure you have the following prerequisites:
 
 - Python 3.9 or higher
@@ -28,11 +34,7 @@ Before proceeding with the installation, make sure you have the following prereq
 - Databricks SQL Warehouse (To run the SQL dashboard)
 - Pypi access from your workspace (To install the SAT utility library)
 
-<Admonition type="note" title="Note">
 
-SAT is beneficial to customers on **Databrics Premium** or **Enterprise** as most of the checks and recommendations involve security features available in tiers higher than the Standard.
-
-</Admonition>
 
 <Admonition type="note" title="Considerations">
 
@@ -49,5 +51,22 @@ SAT creates a new **security_analysis** schema and Delta tables. If you are an e
 ```sql
   drop  database <uc_catalog_name>.<schema_name> cascade;
 ```
+
+</Admonition>
+
+SAT can be setup on any of the cloud providers where Databricks is hosted. Follow the setup guide for the cloud provider you are using:
+
+- [AWS Setup Guide](./standard/aws.mdx)
+- [Azure Setup Guide](./standard/azure.mdx)
+- [GCP Setup Guide](./standard/gcp.mdx)
+
+<Admonition type="note" title="Terraform Install">
+
+SAT can be setup as Terraform based deployment, if you use Terraform in your organization please prefer Terraform instructions: 
+
+
+* [SAT AWS Terraform deployment](./terraform/aws.mdx) 
+* [SAT Azure Terraform deployment](./terraform/azure.mdx) 
+* [SAT GCP Terraform deployment](./terraform/gcp.mdx)
 
 </Admonition>
