@@ -60,25 +60,17 @@ const Hero = () => {
         <Button
           variant="secondary"
           outline={true}
-          link="/docs/guide"
-          size="large"
-          label={"User guide"}
-          className="w-full md:w-auto"
-        />
-        <Button
-          variant="secondary"
-          outline={true}
-          link="/docs/functionality"
-          size="large"
-          label={"Troubleshooting"}
-          className="w-full md:w-auto"
-        />
-        <Button
-          variant="secondary"
-          outline={true}
-          link="/docs/functionality"
+          link="/docs/faq"
           size="large"
           label={"FAQ"}
+          className="w-full md:w-auto"
+        />
+        <Button
+          variant="secondary"
+          outline={true}
+          link="/docs/troubleshooting"
+          size="large"
+          label={"Troubleshooting"}
           className="w-full md:w-auto"
         />
       </div>
