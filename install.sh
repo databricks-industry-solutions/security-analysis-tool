@@ -18,4 +18,4 @@ fi
 
 cd $folder
 pip install -r requirements.txt
-python main.py
+python3.9 main.py
