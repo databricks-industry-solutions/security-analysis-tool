@@ -179,7 +179,7 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
             string_value="{}",
         )
 
-    if cloud_type == "aws":
+    if cloud_type == "aws" or cloud_type == "gcp":
         client.secrets.put_secret(
             scope=scope_name,
             key="use-sp-auth",
