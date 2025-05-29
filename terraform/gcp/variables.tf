@@ -35,6 +35,13 @@ variable "proxies" {
 
 ### GCP Specific Variables
 
+variable "use_sp_auth" {
+  description = "Authenticate with Service Principal OAuth tokens instead of user and password"
+  type        = bool
+  default     = true
+}
+
+
 variable "client_id" {
   description = "Service Principal (client) ID"
   type        = string

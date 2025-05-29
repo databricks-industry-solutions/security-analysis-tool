@@ -84,7 +84,7 @@ json_.update(
         "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
-        "sat_version": "0.3.4",
+        "sat_version": "0.4.0",
     }
 )
 
@@ -93,18 +93,23 @@ json_.update(
 
 # DBTITLE 1,GCP configurations
 if cloud_type == "gcp":
-    json_.update(
-        {
-            "service_account_key_file_path": dbutils.secrets.get(
-                scope="sat_scope", key="gs-path-to-json"
-            ),
-            "impersonate_service_account": dbutils.secrets.get(
-                scope="sat_scope", key="impersonate-service-account"
-            ),
-            "use_mastercreds": False,
-        }
-    )
-
+    sp_auth = {
+        "use_sp_auth": "False",
+        "client_id": "",
+        "client_secret_key": "client-secret",
+    }
+    try:
+        use_sp_auth = (
+            dbutils.secrets.get(scope="sat_scope", key="use-sp-auth").lower() == "true"
+        )
+        if use_sp_auth:
+            sp_auth["use_sp_auth"] = "True"
+            sp_auth["client_id"] = dbutils.secrets.get(
+                scope="sat_scope", key="client-id"
+            )
+    except:
+        pass
+    json_.update(sp_auth)
 
 # COMMAND ----------
 
