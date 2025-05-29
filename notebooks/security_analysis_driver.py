@@ -48,18 +48,6 @@ use_parallel_runs = json_.get("use_parallel_runs", False)
 
 # COMMAND ----------
 
-if cloud_type == "gcp":
-    # refresh account level tokens
-    gcp_status1 = dbutils.notebook.run(
-        f"{basePath()}/notebooks/Setup/gcp/configure_sa_auth_tokens", 3000
-    )
-    if gcp_status1 != "OK":
-        loggr.exception("Error Encountered in GCP Step#1", gcp_status1)
-        dbutils.notebook.exit()
-
-
-# COMMAND ----------
-
 import json
 
 out = dbutils.notebook.run(
@@ -115,22 +103,6 @@ if workspaces is None or len(workspaces) == 0:
         + ".account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. "
     )
     # dbutils.notebook.exit("Unsuccessful analysis.")
-
-# COMMAND ----------
-
-
-def renewWorkspaceTokens(workspace_id):
-    if cloud_type == "gcp":
-        # refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
-        gcp_status2 = dbutils.notebook.run(
-            f"{basePath()}/notebooks/Setup/gcp/configure_tokens_for_worksaces",
-            3000,
-            {"workspace_id": workspace_id},
-        )
-        if gcp_status2 != "OK":
-            loggr.exception("Error Encountered in GCP Step#2", gcp_status2)
-            dbutils.notebook.exit()
-
 
 # COMMAND ----------
 
@@ -197,7 +169,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def combine(ws):
-    renewWorkspaceTokens(ws.workspace_id)
     processWorkspace(ws)
     notifyworkspaceCompleted(ws.workspace_id, True)
 
@@ -215,17 +186,12 @@ else:
     loggr.info("Running in sequence")
     for ws in workspaces:
         try:
-            renewWorkspaceTokens(ws.workspace_id)
             processWorkspace(ws)
             notifyworkspaceCompleted(ws.workspace_id, True)
             loggr.info(f"Completed analyzing {ws.workspace_id}!")
         except Exception as e:
             loggr.info(e)
             notifyworkspaceCompleted(ws.workspace_id, False)
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 

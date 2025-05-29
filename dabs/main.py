@@ -13,7 +13,6 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
     config = {
         "catalog": answers.get("catalog", None),
         "cloud": cloud,
-        "google_service_account": answers.get("gcp-impersonate-service-account", None),
         "latest_lts": client.clusters.select_spark_version(
             long_term_support=True,
             latest=True,

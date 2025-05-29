@@ -87,8 +87,8 @@ def generateWorkspaceConfigFile():
                 concat(col("deployment_url"), lit(".gcp.databricks.com")),
             )  # GCP
 
-        #both azure and gcp require sso
-        if cloud_type == "azure" or cloud_type == "gcp" :
+        # both azure and gcp require sso
+        if cloud_type == "azure" or cloud_type == "gcp":
             df = df.withColumn("sso_enabled", lit(True))
         else:
             df = df.withColumn("sso_enabled", lit(False))

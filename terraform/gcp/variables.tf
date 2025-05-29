@@ -45,16 +45,6 @@ variable "client_secret" {
   type        = string
 }
 
-variable "gs_path_to_json" {
-  type        = string
-  description = "File path to this resource in Cloud Storage (as gs://<bucket>/<folder>/<file>.json)"
-}
-
-variable "impersonate_service_account" {
-  type        = string
-  description = "Impersonate Service Account String (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
-}
-
 variable "run_on_serverless" {
   type        = bool
   description = "Flag to run SAT initializer/Driver on Serverless"
