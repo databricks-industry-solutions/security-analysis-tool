@@ -17,7 +17,7 @@ const config: Config = {
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'marco-ferraro-db', // Usually your GitHub org/user name.
+  organizationName: 'industry-solutions', // Usually your GitHub org/user name.
   projectName: 'security-analysis-tool', // Usually your repo name.
   deploymentBranch: 'gh-pages',
 
