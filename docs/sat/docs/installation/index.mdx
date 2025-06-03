@@ -74,11 +74,9 @@ SAT can be deployed using Terraform. If your organization uses Terraform, it is 
 
 
 ## Uninstalling SAT
-### Standard Setup
+<Admonition type="note" title="Note">
 
-<Admonition type="note" title="Considerations">
-
-SAT creates a new **security_analysis** schema and Delta tables. If you are an existing SAT user please run the following command:
+SAT creates a new **security_analysis** schema along with Delta tables. If you are an existing SAT user please run the following command:
 
 ### Hive Metastore Based Schema
 
@@ -93,6 +91,9 @@ SAT creates a new **security_analysis** schema and Delta tables. If you are an e
 ```
 
 </Admonition>
+### Standard Setup
+
+
 
 * Delete the **/Workspace/Applications/SAT** folder
 * Delete the following workflows:
