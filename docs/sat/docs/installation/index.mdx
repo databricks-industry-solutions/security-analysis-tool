@@ -52,23 +52,7 @@ Before proceeding with the installation, make sure you have the following prereq
 
 
 
-<Admonition type="note" title="Considerations">
 
-SAT creates a new **security_analysis** schema and Delta tables. If you are an existing SAT user please run the following command:
-
-### Hive Metastore Based Schema
-
-```sql
-  drop database security_analysis cascade;
-```
-
-### Unity Catalog Based Schema
-
-```sql
-  drop database <uc_catalog_name>.<schema_name> cascade;
-```
-
-</Admonition>
 
 SAT can be set up on any of the cloud platforms where Databricks is hosted. Please follow the setup guide specific to your cloud provider:
 
@@ -91,6 +75,25 @@ SAT can be deployed using Terraform. If your organization uses Terraform, it is 
 
 ## Uninstalling SAT
 ### Standard Setup
+
+<Admonition type="note" title="Considerations">
+
+SAT creates a new **security_analysis** schema and Delta tables. If you are an existing SAT user please run the following command:
+
+### Hive Metastore Based Schema
+
+```sql
+  drop database security_analysis cascade;
+```
+
+### Unity Catalog Based Schema
+
+```sql
+  drop database <uc_catalog_name>.<schema_name> cascade;
+```
+
+</Admonition>
+
 * Delete the **/Workspace/Applications/SAT** folder
 * Delete the following workflows:
   * **SAT Initializer Notebook**

@@ -4,7 +4,7 @@ Security Analysis Tool (SAT) analyzes customer's Databricks account and workspac
 
 ## Documentation
 
-Refer to the [SAT documentation](https://docs.databricks.com/sat/index.html) for detailed information on how to use SAT, its features, and configuration options.
+Refer to the [SAT documentation](https://databricks-industry-solutions.github.io/security-analysis-tool/) for detailed information on how to use SAT, its features, and configuration options.
 
 ## Project Support
 
