@@ -99,7 +99,7 @@ const config: Config = {
     footer: {
       links: [
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Databricks Industry Solution. Docs built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Databricks Industry Solutions. Docs built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.oneLight,

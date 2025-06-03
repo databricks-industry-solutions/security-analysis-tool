@@ -10,80 +10,78 @@ import Admonition from '@theme/Admonition';
 ---
 1. **Is SAT an officially supported tool?**
 
-    SAT is not an officially supported tool. Any issues discovered through the use of this project should be filed as GitHub Issues on the repository. They will be reviewed as time permits, but there are no formal SLAs for support.
-    Please note that the code in the SAT project is provided for your exploration only and is not formally supported by Databricks with Service Level Agreements (SLAs). It is provided AS-IS, and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License.
-    All included or referenced third-party libraries are subject to the licenses set forth in the project license.
-Any issues discovered through the use of this project should be filed as GitHub Issues on the repository. They will be reviewed as time permits, but there are no formal SLAs for support.
+    The **Security Assessment Tool (SAT)** is not officially supported by Databricks. It is provided **as-is** under the Databricks License, with no guarantees or Service Level Agreements (SLAs). Please do not open support tickets for issues related to SAT. Instead, report any problems or feature requests by creating a GitHub Issue on the project's repository. Issues will be reviewed as time permits. All third-party libraries referenced are subject to their respective licenses.
 
 2. **Can I open Databricks support tickets if I encounter issues with SAT?**
 
-    Currently, SAT is a self-service tool which is developed and maintained by Databricks field team. Please contact your Databricks account team and open a git issue if you run into issues.
+    Currently, SAT is a self-service tool which is developed and maintained by the Databricks field team. If you encounter any issues, please contact your Databricks account team and submit a GitHub issue on the project's repository.
 
 3. **Can SAT be configured on an independent virtual machine?**
 
-    SAT needs to be deployed in one of your Databricks workspaces and run as a workflow. You can trigger the SAT installation process from any machine (Preferably Linux) where Databricks CLI and other prerequisites are available, installed and configured.
+    SAT needs to be deployed in one of your Databricks workspaces and run as a workflow. You can trigger the SAT installation process from any machine (preferably Linux) where the Databricks CLI and other prerequisites are available, installed and configured.
 
 4. **Does SAT automatically update once I set up?**
 
-    SAT is frequently upgraded and the latest versions are made available in the official Git repository. SAT deployments do not automatically update on their own. To upgrade or update SAT deployments in your environment, you need to perform the update manually. This is a design decision, so that customers have full control on the upgrade process of SAT. 
+    SAT is frequently updated and the latest versions are made available in the official GitHub repository. SAT deployments do not automatically update on their own. To upgrade or update SAT deployments in your environment, you will need to perform the update manually. This design decision is by choice, so that customers have full control on the upgrade process of SAT. 
 
 
 5. **Can SAT make modifications to my workspaces and account?**
 
-    SAT is meant to be a readonly analysis tool, it does not make changes to your workspace or account configurations.
+    SAT is meant to be a read-only analysis tool - it does not make changes to your workspace or account configurations.
 
 
 6. **I am seeing errors when I run the SAT. How can I validate my SAT configuration?**
 
-    We have created diagnostic notebooks to help you verify if your SAT setup has the necessary configurations, permissions, and network paths to run the REST API calls. Please use “Workspace -> Applications -> SAT/TF -> Files -> Notebooks -> Diagnosis” to find the appropriate notebook for your cloud.
+    There are diagnostic notebooks available to help you verify if your SAT setup has the necessary configurations, permissions, and network paths to run the REST API calls. Please use “Workspace -> Applications -> SAT/TF -> Files -> Notebooks -> Diagnosis” to find the appropriate notebook for your cloud provider.
 
 
 7. **If SAT is already configured, how do we add/remove other workspaces in the same account/subscription?**
 
-    If the service principal configured to be used by SAT (credentials) is added to any workspace in the account/subscription, SAT will automatically collect details for all those workspaces as well. To achieve this, add or remove the credentials used by SAT to or from the workspace, and run the initialization job to register the new workspaces under SAT.
-
+    If the service principal configured for SAT has access to any workspaces in the account or subscription, SAT will automatically collect data from those workspaces. To include or exclude workspaces, simply add or remove the service principal from the desired workspaces and rerun the initialization job to update SAT's workspace list.
 
 8. **If a workspace is deleted after the SAT is set up, is there a way to get the initializer to run without error without a full reinstall of the tool?**
 
-    You need to re-run the initializer, that will mark the workspace connection test as failed and will not be assessed in future. 
-Another option is run this step if you want to manually remove the workspace 
+    To stop assessing a workspace, you can re-run the initializer. This will mark the workspace connection test as failed, and it will no longer be included in future assessments.
+Alternatively, you can run the removal step to manually remove the workspace from SAT. 
 
 
 9. **I added a new workspace for analysis, re-ran steps under initialize and driver, but the dashboard is not updated with the new workspace in the pulldown even though I see new data generated by the analysis scan for the new workspace in SAT database. What should I do?**
 
-    It is likely that the dashboard cached the workspaces in the pulldown. You can go to SQL view of your workspace -> Queries -> find `workspace_ids` query and run it. This process should refresh the cache and you should have the new workspaces in the pull-down.
+    It is likely that the dashboard cached the workspaces in the pulldown. You can go to the SQL view of your workspace -> Queries -> find `workspace_ids` query and run it. This process should refresh the cache and you should have the new workspaces in the pull-down.
 
 
 10. **Can I use one deployment of SAT to monitor all my workspaces across different clouds, like AWS and Azure?**
 
-    Currently one deployment of SAT in AWS can be used for monitoring all the workspaces in that AWS account. Similarly, one deployment of SAT in Azure can be used for monitoring all the workspaces in that Azure subscription. One deployment of SAT to monitor workspaces deployed across different clouds is currently not supported.
-
+    A single SAT deployment in AWS can monitor all workspaces within the same AWS account. Similarly, a single SAT deployment in Azure can monitor all workspaces within the same Azure subscription. Monitoring workspaces across multiple cloud platforms with a single SAT deployment is currently not supported.
 
 11. **Do I need different SAT deployment to monitor workspaces in different regions?**
 
-    One deployment of SAT in AWS can be used for monitoring all the workspaces (in any region) in that AWS account . Similarly, one deployment of SAT in Azure can be used for monitoring all the workspaces (in any region) in that Azure subscription.
+    A single SAT deployment in AWS can monitor all workspaces — regardless of region — within the same AWS account. Similarly, a single SAT deployment in Azure can monitor all workspaces across any region within the same Azure subscription.
 
 
 12. **Can SAT be integrated with other cloud based monitoring tools?**
 
-    This is not supported at this time. SAT is a security monitoring tool used specifically for Databricks workspaces. There is an export notebook you can use to export the results of SAT that you can consider using with other tools.
+    This is not currently supported. SAT is a security monitoring tool designed specifically for Databricks workspaces. However, you can use the provided export notebook to extract SAT results, which may be used with other tools as needed.
 
 ---
 
 ## SAT Checks
 ---
 
-1. **Does SAT test for all of the Databricks Security Best practices?**
+1. **Does SAT test for all of the Databricks Security best practices?**
 
-    We are continuously making improvements to SAT, and the majority of the checks are based on Security Best Practices. However, not all recommendations are covered, as some best practices are specific to cloud configuration, and a few practices can't be automatically checked due to the absence of REST APIs.
+    We are continuously improving SAT, with most checks aligned to security best practices. However, not all recommendations are included — some are cloud-specific, and others cannot be automated due to the lack of supporting REST APIs.
 
 2. **What do the severity labels specifically mean on the SAT configs?  How does one interpret them?**
 
-    Severity in the SAT report is our general assessment of what a given check means for most customers, allowing them to prioritize mitigating deviations starting with the 'High' severity ones first. However, each customer can assess the applicability of the severity and prioritize according to their own security needs.
-##
+    The severity levels in the SAT report reflect our general assessment of the potential impact of each check, helping most customers prioritize remediation—starting with those marked as **High** severity. However, individual organizations should evaluate the relevance of each finding and adjust prioritization based on their specific security requirements.
 
 3. **Can I disable a check for my assessment?**
-    Yes, this is possible. Please follow the optional step, you can modify security best practices for the SAT checks. Go to “Workspace -> Applications -> SAT/TF -> Files -> Notebooks -> Setup -> 7. update_sat_check_configuration” and use this utility to enable/disable a check, modify evaluation value, and alert configuration value for each check. You can update this file at any time, and any analysis from then on will take these values into consideration.
+
+    Yes, this is possible. To modify the security best practices checked by SAT, follow the optional step:
+Navigate to Workspace > Applications > SAT/TF > Files > Notebooks > Setup > 7. update_sat_check_configuration.
+Use this notebook to enable or disable checks, and adjust evaluation and alert configuration values. You can update this configuration at any time, and all subsequent analyses will reflect your changes.
+
 
 ---
 
@@ -92,10 +90,10 @@ Another option is run this step if you want to manually remove the workspace
 
 1. **Do we need to address all of the deviations reported by SAT?**
 
-    Not necessarily. Please make sure to review the SAT report with your business stakeholders, administrators, security team, auditors, and other relevant parties. Assess your organizational security requirements before making any security improvements based on the report, as not all deviations need to be mitigated by all customers. Some of the recommendations may have cost implications, and some of the recommended security features may have dependencies or feature limitations. Please thoroughly review individual feature documentation before making changes to your security configurations
+    Please review the SAT report with your business stakeholders, administrators, security team and auditors. Assess your organizational security requirements carefully before making changes based on the report - not all deviations require mitigation. Some recommendations may have cost implications, and some of the security recommendations may have dependency limitations. Always thoroughly review the associated feature documentation before modifying your security configurations.
 
 
 2. **Why are SSO, SCIM, Table ACLs etc not properly reflected in the SAT report?**
 
-    Please refer to the usage section of the setup guide. There are a few checks that rely on self-assessment due to the lack of REST APIs to automatically check them. Please go to “Workspace -> Applications -> SAT -> Files -> self_assessment_checks.yaml” and ensure the 'enabled' values reflect your environment for the listed manual checks with either true or false. SAT will automatically check the rest of the configurations. Rerun the SAT jobs.
+    There are a few checks that rely on self-assessment due to the lack of REST APIs to automatically check them. Please go to “Workspace -> Applications -> SAT -> Files -> self_assessment_checks.yaml” and ensure the 'enabled' values reflect your environment for the listed manual checks with either true or false. SAT will automatically check the rest of the configurations. Rerun the SAT jobs.
 ---

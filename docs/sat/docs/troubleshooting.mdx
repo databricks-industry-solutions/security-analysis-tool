@@ -6,14 +6,18 @@ import Admonition from '@theme/Admonition';
 
 # Troubleshooting
 
-We created diagnosis notebooks for respective clouds to help troubleshoot your SAT setup. Please go to Workspace -> Applications -> SAT -> files -> notebooks -> diagnosis/ folder and run the respective cloud `sat_diagnosis_` notebook.
+Diagnosis notebooks for each cloud platform are available to help troubleshoot your SAT setup. 
 
+To run the appropriate diagnostic notebook:
+    1. Navigate to Workspace → Applications → SAT → files → notebooks → diagnosis folder
+    2. Open and run the notebook corresponding to your cloud provider. 
+    
 * [SAT AWS troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_aws.py)
 * [SAT Azure troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_azure.py)
 * [SAT GCP troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_gcp.py)
 ---
 
-## Incorrectly configured secrets
+## Misconfigured Secrets
 
 * **Error:**
 
@@ -29,7 +33,7 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
     ```
 ##
 
-## Firewall blocking Databricks accounts console
+## Firewall Blocking Databricks Accounts Console
 
 * **Error:**
 
@@ -71,9 +75,9 @@ We created diagnosis notebooks for respective clouds to help troubleshoot your S
     ```
 
     If you don’t see a JSON with a clean listing of workspaces, you are likely having a firewall issue that is blocking calls to the accounts console. Please have your infrastructure team add `accounts.cloud.databricks.com` to the allow-list. Ensure that the private IPv4 address from the NAT gateway is added to the IP allow list.
-##
 
-## Offline install of libraries in case of no PyPI access
+
+## Offline Library Install (In case of No PyPI access)
 
 * **Steps:**
 

@@ -28,7 +28,7 @@ const Hero = () => {
 
       {/* Description */}
       <p className="text-lg text-center text-balance mb-8">
-        SAT analyses your Databricks account and workspace configurations and provides recommendations to help you follow Databrick's security best practices.
+        SAT analyzes your Databricks account and workspace configurations, providing recommendations to help you follow Databricks' security best practices.
       </p>
 
       {/* Call to Action Buttons */}
@@ -38,15 +38,7 @@ const Hero = () => {
           outline={true}
           link="/docs/motivation"
           size="large"
-          label={"Motivation"}
-          className="w-full md:w-auto"
-        />
-        <Button
-          variant="secondary"
-          outline={true}
-          link="/docs/installation"
-          size="large"
-          label={"Installation"}
+          label={"Overview"}
           className="w-full md:w-auto"
         />
         <Button
@@ -55,6 +47,14 @@ const Hero = () => {
           link="/docs/functionality"
           size="large"
           label={"Functionality"}
+          className="w-full md:w-auto"
+        />
+        <Button
+          variant="secondary"
+          outline={true}
+          link="/docs/installation"
+          size="large"
+          label={"Installation"}
           className="w-full md:w-auto"
         />
         <Button

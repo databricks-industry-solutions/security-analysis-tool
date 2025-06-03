@@ -3,19 +3,28 @@ sidebar_position: 1
 ---
 import useBaseUrl from '@docusaurus/useBaseUrl';
 
-# Motivation
+# Overview
 
-Security Analysis Tool (SAT) analyzes customer's Databricks account and workspace security configurations and provides recommendations that help them follow Databrick's security best practices. 
-When a customer runs SAT, it will compare their workspace configurations against a set of security best practices and delivers a report for their Databricks (AWS, Azure, and GCP) workspaces. 
-These checks identify recommendations to harden Databricks configurations, services, and resources.
+**Security Analysis Tool (SAT)** analyzes customer's Databricks account and workspace security configurations and provides recommendations that help them follow Databrick's security best practices. 
 
-Databricks has worked with thousands of customers to securely deploy the Databricks platform, with the appropriate security features that meet their architecture requirements. 
-While many organizations deploy security differently, there are guidelines and features that are commonly used by organizations that need a high level of security. 
-This tool checks for typical security features that are deployed by most high-security organizations, and reviews the largest risks and the risks that customers ask about most often. 
-It will then provide a security configuration reference link to Databricks documentation along with a recommendation. 
+When a customer runs SAT, it compares their workspace configurations against a set of security best practices and delivers a report for their Databricks workspaces on AWS, Azure, and GCP. 
+These checks identify opportunities and provide recommendations to harden Databricks configurations, services, and resources.
 
-SAT is a productivity tool to help verify security configurations against security best practices of Databricks, its not meant to be used as a certification or an attestation of your deployments. 
-Please review the SAT report with your business stakeholders, administrators, security team and auditors about SAT report and assess your organizational security requirements before making any security improvements bases on the report, not all deviations required to be mitigated. 
-Some of the recommendations may have cost implications, some of the security features recommended may have dependency feature limitations, please thoroughly review individual feature documentation before making changes to your security configurations. 
-SAT project is being regularly updated to improve correctness of checks, add new checks, fix bugs. 
-Please send your feedback and comments to sat@databricks.com or open a git issue.
+Databricks has worked with thousands of customers to securely deploy its platform, leveraging security features that meet their architectural requirements. 
+While security implementations may vary across organizations, there are commonly used guidelines and features adopted by organizations with high security standards. 
+
+SAT checks for typical security configurations deployed by most high-security organizations. It highlights the most significant risks, and those most frequently asked about by customers. 
+Each recommendation will include a security configuration reference link to the relevant Databricks documentation. 
+
+
+>**Note:** SAT is a productivity tool designed to help verify your security configurations against Databricks’ best practices. It is *not* intended to serve as a certification or formal attestation of your deployment's security posture.
+
+ 
+Please review the SAT report with your business stakeholders, administrators, security team and auditors. Assess your organizational security requirements carefully before making changes based on the report - not all deviations require mitigation.
+Some recommendations may have cost implications, and some of the security recommendations may have dependency limitations. Always thoroughly review the associated feature documentation before modifying your security configurations. 
+
+Refer to the Databricks [Security and Trust Center](https://www.databricks.com/trust) for additional resources and best practices. 
+
+The SAT project is regularly updated to improve check accuracy, add new checks, and fix bugs. 
+
+For feedback and comments, contact us at sat@databricks.com or open a GitHub issue.

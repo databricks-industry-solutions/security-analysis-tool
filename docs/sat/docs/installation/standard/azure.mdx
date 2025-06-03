@@ -6,7 +6,7 @@ import Admonition from '@theme/Admonition';
 
 # Azure
 
-This guide will help you setup the Security Analysis Tool (SAT) on Azure Databricks.
+This guide will help you setup the **Security Analysis Tool (SAT)** on Azure Databricks.
 
 <Admonition type="note" title="Note">
 SAT requires at least one SAT set up in a workspace per Azure **subscription**. 
@@ -16,7 +16,7 @@ SAT requires at least one SAT set up in a workspace per Azure **subscription**.
 
 There are some pre-requisites that need to be met before you can setup SAT on Azure. Make sure you have the appropriate permissions in your Azure cloud account to create the resources mentioned below.
 
-> SAT is beneficial to customers on **Databricks Premium or Enterprise** as most of the checks and recommendations involve security features available in tiers higher than the Standard.
+> SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers,  as most of the checks and recommendations involve security features that are only available in tiers above Standard.
 
 
 ### App Registration
@@ -108,9 +108,13 @@ Congratulations! 🎉 You are now ready to start using the SAT. Please click [he
 
 
 ## Troubleshooting
-Please review the FAQs and Troubleshooting resources documented here including a notebook to help diagnose your SAT setup.
-If any issues arise during the installation process, please check your credentials and ensure that you have the appropriate permissions in your Azure cloud account. If you are still facing issues, please send your feedback and comments to sat@databricks.com. 
+Please review the FAQs and troubleshooting resources, including the diagnostic notebook provided to help verify your SAT setup.
 
+If you encounter issues during installation:
+  * Double-check your credentials.
+  * Ensure you have the correct configurations and permissions for your Databricks environment.
+  
+If problems persist, feel free to contact us with your feedback or questions at sat@databricks.com.
 ## References
 
 - [Azure App Registration](https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)
