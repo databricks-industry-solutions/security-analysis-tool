@@ -60,6 +60,14 @@ const Hero = () => {
         <Button
           variant="secondary"
           outline={true}
+          link="/docs/usage"
+          size="large"
+          label={"Usage"}
+          className="w-full md:w-auto"
+        />
+        <Button
+          variant="secondary"
+          outline={true}
           link="/docs/faq"
           size="large"
           label={"FAQ"}

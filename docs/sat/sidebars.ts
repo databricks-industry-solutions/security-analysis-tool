@@ -50,6 +50,7 @@ const sidebars = {
         },
       ],
     },
+    'usage',
     'faq',
     'troubleshooting',
   ],
