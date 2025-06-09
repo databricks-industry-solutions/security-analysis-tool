@@ -26,11 +26,14 @@ def url_validation(url):
     # pylint: disable=anomalous-backslash-in-string
     if '/?o=' in url:
         # if the workspace_id exists, lets remove it from the URL
-        url = re.sub("\/\?o=.*", '', url)
-    elif 'net/' == url[-4:]:
-        url = url[:-1]
-    elif 'com/' == url[-4:]:
-        url = url[:-1]
+        url = re.sub(r"/\?o=.*", '', url)
+    # if '/?o=' in url:
+    #     # if the workspace_id exists, lets remove it from the URL
+    #     url = re.sub("\/\?o=.*", '', url)
+    # elif 'net/' == url[-4:]:
+    #     url = url[:-1]
+    # elif 'com/' == url[-4:]:
+    #     url = url[:-1]
     return url.rstrip("/")
     # pylint: enable=anomalous-backslash-in-string
 
@@ -66,27 +69,7 @@ def parse_input_jsonargs(inp_configs):
     set_defaults(inp_configs)
     url = url_validation(inp_configs['url'])
     inp_configs.update({'url':url})
-    ## validate values are present
-    ## These checks now done in notebook.
-    # if 'azuredatabricks.net' not in inp_configs['url']: #aws and gcp
-    #     if 'mastername' in inp_configs and inp_configs['mastername'] == '' :
-    #         raise ValueError('Master name cannot be empty')
-    #     if 'masterpwd' in inp_configs and inp_configs['masterpwd'] == '' :
-    #         raise ValueError('Master pwd cannot be empty')
-    #     if 'account_id' in inp_configs and inp_configs['account_id']== '' :
-    #         raise ValueError('Account ID cannot be empty')        
-    # else: #azure
-    #     if 'subscription_id' in inp_configs and inp_configs['subscription_id'] == '':
-    #         raise ValueError('Pass valid Subscription ID')
-    #     if 'client_id' in inp_configs and inp_configs['client_id'] == '':
-    #         raise ValueError('Pass valid Client ID')        
-    #     if 'tenant_id' in inp_configs and inp_configs['tenant_id'] == '':
-    #         raise ValueError('Pass valid Tenant ID')        
-    #     if 'client_secret' in inp_configs and inp_configs['client_secret'] == '':
-    #         raise ValueError('Pass valid Client Secret')                   
-    
-    # if ('token' in inp_configs) and (inp_configs['token'] == '') and (inp_configs['use_mastercreds'] is False) :
-    #         raise ValueError('Pass valid Token')
+
     if 'clusterid' in inp_configs and inp_configs['clusterid'] == '':
         raise ValueError('Cluster ID cannot be empty')
 

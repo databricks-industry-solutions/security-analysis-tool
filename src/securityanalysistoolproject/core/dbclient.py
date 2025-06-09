@@ -46,8 +46,14 @@ class SatDBClient:
         #Azure pass in secret generated in azure portal
         self._client_id = configs['client_id'].strip()
         self._client_secret = configs['client_secret'].strip()        
+        if 'aws' in self._cloud_type:
+            self._ACCTURL="https://accounts.cloud.databricks.com"
+        if "gcp" in self._cloud_type:
+            self._ACCTURL="https://accounts.gcp.databricks.com"
         #Azure msmgmt urls need these
         if 'azure' in self._cloud_type:
+            self._ACCTURL="https://accounts.azuredatabricks.net"
+            self._MGMTURL= "https://management.azure.com"
             self._subscription_id = configs['subscription_id'].strip()
             self._tenant_id = configs['tenant_id'].strip().strip()   
 
@@ -58,15 +64,8 @@ class SatDBClient:
         LOGGR.info("in _update_token_master")
         self._url=self._raw_url
         if(self._cloud_type == 'gcp'):
-            #self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
-            #old way
-            # self._token = {
-            #     "Authorization": f"Bearer {self._master_name}",
-            #     "X-Databricks-GCP-SA-Access-Token": f"{self._master_password}",
-            #     "User-Agent": "databricks-sat/0.1.0"
-            # }
             oauth = self.getGCPTokenwithOAuth(True, self._client_id, self._client_secret)
-            self._url="https://accounts.gcp.databricks.com"
+            self._url=self._ACCTURL
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -75,16 +74,16 @@ class SatDBClient:
         elif(self._cloud_type == 'azure'):
             #azure is only oauth to accounts/msmgmt
             oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
-            self._url="https://accounts.azuredatabricks.net"
+            self._url=self._ACCTURL
             if endpoint is None or "?api-version=" in endpoint:
-                self._url = "https://management.azure.com"
+                self._url = self._MGMTURL
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
             }
         elif (self._cloud_type == 'aws'):     #AWS
             oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
-            self._url = "https://accounts.cloud.databricks.com" #url for accounts api
+            self._url = self._ACCTURL #url for accounts api
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -569,20 +568,21 @@ class SatDBClient:
         for scopes https://learn.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/app-aad-token#get-azure-ad-tokens-by-using-a-web-browser-and-curl
         microsoft scope for management api 'https://management.azure.com/.default'
         databricks scope for rest api '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'
+        some of these will change for govcloud or DoD
         """
         try:
             if self._cloud_type != 'azure':
                 raise Exception('works only for Azure')
             scopes=[]
             if 'msmgmt' in scopeType.lower():
-                scopes = ['https://management.azure.com/.default'] #ms scope 
+                scopes = [f'{self._MGMTURL}/.default'] #ms scope 
             else:
                 scopes = ['2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'] #databricks scope
 
             app = msal.ConfidentialClientApplication(
                 client_id=self._client_id,
                 client_credential=self._client_secret,
-                authority=f"https://login.microsoftonline.com/{self._tenant_id}",
+                authority=f"https://login.microsoftonline.com/{self._tenant_id}", #might need to change for govcloud
             )
 
             # The pattern to acquire a token looks like this.
@@ -620,7 +620,7 @@ class SatDBClient:
         }
               
         if baccount is True:
-            full_endpoint = f"https://accounts.cloud.databricks.com/oidc/accounts/{self._account_id}/v1/token" #url for accounts api  
+            full_endpoint = f"{self._ACCTURL}/oidc/accounts/{self._account_id}/v1/token" #url for accounts api  
         else: #workspace
             full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
@@ -646,7 +646,7 @@ class SatDBClient:
         }
               
         if baccount is True:
-            full_endpoint = f"https://accounts.gcp.databricks.com/oidc/accounts/{self._account_id}/v1/token" #url for accounts api  
+            full_endpoint = f"{self._ACCTURL}/oidc/accounts/{self._account_id}/v1/token" #url for accounts api  
         else: #workspace
             full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
