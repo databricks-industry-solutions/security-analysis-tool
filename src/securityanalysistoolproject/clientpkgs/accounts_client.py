@@ -115,7 +115,7 @@ class AccountsClient(SatDBClient):
         if self._cloud_type!='azure':
             return subscriptions_list
         subscriptions_list = self.get(f"/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01",
-                    master_acct=True).get('value', [])     
+                    master_acct=True).get('value', [])    
         return(subscriptions_list)
 
     def get_azure_resource_list(self, urlFromSubscription):
@@ -140,7 +140,8 @@ class AccountsClient(SatDBClient):
                     or azfunc.getItem(rec, ['id'], True) is None:
                 continue
             diagresid = azfunc.getItem(rec, ['id'], True)
-
+            if diagresid.startswith('/'):
+                diagresid = diagresid[1:]
             diag_subs_list = self.get(f"/{diagresid}/providers/microsoft.insights/diagnosticSettings?api-version=2021-05-01-preview",
                         master_acct=True).get('value', [])            
             if bool(diag_subs_list) is False:

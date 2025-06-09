@@ -60,6 +60,7 @@ class DBSQLClient(SatDBClient):
     def get_sql_warehouse_listv2(self):  
         return self.get_sql_warehouse_list()
     
+
     def get_sql_warehouse_info(self, warehouse_id):
         """
         Returns an array of json objects for sql warehouse.
@@ -68,7 +69,16 @@ class DBSQLClient(SatDBClient):
         return sqlwarehouselist      
 
 
+    def get_query_history(self, include_metrics=False):
+        """
+        Returns an array of history objects
+        """
+        json_params = {}
+        json_params.update({'include_metrics':include_metrics})
+         
+        queryhistorylist = self.get(f"/sql/history/queries", json_params=json_params, version='2.0').get('res', [])
 
+        return queryhistorylist
 
     # def get_dashboards_list(self, page_size, page, order, q):
     #     """
@@ -156,14 +166,5 @@ class DBSQLClient(SatDBClient):
 
 
 
-    def get_query_history(self, include_metrics=False):
-        """
-        Returns an array of history objects
-        """
-        json_params = {}
-        json_params.append('include_metrics', include_metrics)
-         
-        queryhistorylist = self.get(f"/sql/history/queries", json_params=json_params, version='2.0').get('res', [])
 
-        return queryhistorylist
 

@@ -16,8 +16,6 @@ def get_db_client():
     jsonstr = configParser['MEISTERSTUFF']['json']
     json_ = json.loads(jsonstr)
 
-    #workspace_id = json_['workspace_id']
-
     LOGGR.info(jsonstr)
     #sat_db_client = SatDBClient(jsonstr)
     return jsonstr

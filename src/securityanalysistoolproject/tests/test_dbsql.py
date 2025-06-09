@@ -15,35 +15,7 @@ def test_get_alert(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
     dbsqlobj = DBSQLClient(jsonstr) 
-    settingsList = dbsqlobj.get_alert('aa69d805-7821-4923-8197-02f3574b31f3')
-    print(settingsList)
-
-def test_get_dashboards_list(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_dashboards_list(page_size='25', page='1', order='name', q='')
-    print(settingsList)
-
-def test_get_dashboard(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_dashboard(dashboard_id='6c76b851-0d29-4329-a082-b4b8ad331ba0')
-    print(settingsList)
-
-def test_get_sql_warehouse_permission(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_sql_warehouse_permissions(warehouse_id='475b94ddc7cd5211')
-    print(settingsList)
-
-def test_get_sql_warehouse_permission_level(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_sql_warehouse_permission_level(warehouse_id='475b94ddc7cd5211')
+    settingsList = dbsqlobj.get_alert('1f33040c-4ca6-4971-afc0-bff88df620da')
     print(settingsList)
 
 def test_get_sql_warehouse_configuration(get_db_client):
@@ -64,42 +36,28 @@ def test_get_sql_warehouse(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
     dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_sql_warehouse(warehouseid='38c315c073481654')
-    print(settingsList)
-
-def test_get_sql_acl(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_sql_acl(objectType='alerts',objectId='aa69d805-7821-4923-8197-02f3574b31f3' )
+    settingsList = dbsqlobj.get_sql_warehouse_info('7385da041ce9b8f6')
     print(settingsList)
 
 def test_get_queries_list(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
     dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_queries_list(order='name', page='1',page_size='25', q='' )
+    settingsList = dbsqlobj.get_queries_list( )
     print(settingsList)
 
-def test_get_queries_listv20(get_db_client):
+
+def test_get_query(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
     dbsqlobj = DBSQLClient(jsonstr)
-    queriesList = dbsqlobj.get_queries_listv20()
-    print(queriesList)
-
-
-def test_get_querydefinition(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client 
-    dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_querydefinition(query_id='ed45e6b0-d6f7-43b3-a60a-dae44023c994')
+    settingsList = dbsqlobj.get_query('70b0f51e-3dfe-4818-8b9f-fb9fe21577d3')
     print(settingsList)
 
 def test_get_query_history(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
     dbsqlobj = DBSQLClient(jsonstr)
-    settingsList = dbsqlobj.get_query_history(filter_by='', include_metrics='true', max_results='10', page_token='')
+    settingsList = dbsqlobj.get_query_history()
     print(settingsList)
 

@@ -50,7 +50,8 @@ def remap_workspace_list(subslist):
         rec['aws_region']=getItem(rec, ['location'])
         rec['region']=getItem(rec, ['location'])
         rec['creation_time']=str2time(getItem(rec, ['properties', 'createdDateTime']))
-        regex = "([\S]+).azuredatabricks.+"
+        #regex = "([\S]+).azuredatabricks.+"
+        regex = "(?:(\\S*).azuredatabricks.(\\S*))+"
         dn=re.findall(regex, getItem(rec, ['properties', 'workspaceUrl']))
         if dn is None or dn is False:
             rec['deployment_name']=''
@@ -136,7 +137,6 @@ def remap_cmk_list(subslist):
         if getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
                 or getItem(rec, ['properties', 'workspaceId'], True) is None \
                 or getItem(rec, ['properties','parameters', 'encryption'], True) is None:
-            print(rec)
             continue
         cmklink = {}
         cmklink['account_id']=getItem(rec, ['properties', 'workspaceId'])

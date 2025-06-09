@@ -9,7 +9,7 @@ def test_cluster_events(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     clustersClient = ClustersClient(jsonstr)
-    eventsList = clustersClient.get_cluster_events("0709-132523-cnhxf2p6", "1700000000000", "1744890000000")
+    eventsList = clustersClient.get_cluster_events("0503-220034-577mz9je", "1647020543000", "1844890000000")
     LOGGR.debug(eventsList)
 
 
@@ -17,9 +17,8 @@ def test_get_cluster_info(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     clustersClient = ClustersClient(jsonstr)
-    clusterInfo = clustersClient.get_cluster_info("0709-132523-cnhxf2p6")
+    clusterInfo = clustersClient.get_cluster_info("0503-220034-577mz9je")
     LOGGR.debug(clusterInfo)
-
 
 def test_listclusters(get_db_client):
     LOGGR = LoggingUtils.get_logger()
@@ -39,7 +38,7 @@ def test_get_cluster_acls(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     clustersClient = ClustersClient(jsonstr)
-    clusterAcls = clustersClient.get_cluster_acls("0709-132523-cnhxf2p6", "test_cluster")
+    clusterAcls = clustersClient.get_cluster_acls("0503-220034-577mz9je", "test_cluster")
     LOGGR.debug(clusterAcls)
 
 

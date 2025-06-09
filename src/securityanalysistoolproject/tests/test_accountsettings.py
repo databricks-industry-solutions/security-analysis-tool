@@ -50,14 +50,7 @@ def test_acget_workspace_list(get_db_client):
     accountobj = AccountsClient(jsonstr)
     ncclist = accountobj.get_workspace_list()
     print(ncclist)    
-
-
-def test_acget_workspace_list(get_db_client):
-    LOGGR = LoggingUtils.get_logger()
-    jsonstr = get_db_client
-    accountobj = AccountsClient(jsonstr)
-    ncclist = accountobj.get_workspace_list()
-    print(ncclist)   
+ 
 
 def test_acget_credentials_list(get_db_client):
     LOGGR = LoggingUtils.get_logger()

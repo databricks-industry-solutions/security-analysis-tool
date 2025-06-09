@@ -18,7 +18,7 @@ class AccountsBilling(SatDBClient):
         Returns an array of json objects for ip access
         """
         account_id=self._account_id
-        policies_lst = self.get(f"/accounts/{account_id}/budget-policies/{policy_id}", version='2.1', master_acct=True).get('binding_workspace_ids',[])
+        policies_lst = self.get(f"/accounts/{account_id}/budget-policies/{policy_id}", version='2.1', master_acct=True).get('satelements',[])
         return policies_lst
 
     def get_logdelivery_config_list(self):

@@ -14,7 +14,11 @@ class AppsClient(SatDBClient):
         ''' List apps deployments'''
         apps_list = self.get(f'/apps/{app_name}/deployments').get('app_deployments', "")
         return apps_list
-
+    
+    def get_app(self, app_name):
+        ''' Get app '''
+        apps_list = self.get(f'/apps/{app_name}').get('active_deployment', "")
+        return apps_list
 
     # permissions are implemented in the permissions_client.py
     # def get_apps_permissions(self, app_name):

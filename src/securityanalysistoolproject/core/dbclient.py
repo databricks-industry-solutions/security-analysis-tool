@@ -50,7 +50,7 @@ class SatDBClient:
         if 'azure' in self._cloud_type:
             self._subscription_id = configs['subscription_id'].strip()
             self._tenant_id = configs['tenant_id'].strip().strip()   
-        
+
 
     def _update_token_master(self,endpoint=None):
         '''update token master in http header'''
@@ -76,6 +76,8 @@ class SatDBClient:
             #azure is only oauth to accounts/msmgmt
             oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
             self._url="https://accounts.azuredatabricks.net"
+            if endpoint is None or "?api-version=" in endpoint:
+                self._url = "https://management.azure.com"
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -94,6 +96,7 @@ class SatDBClient:
         '''endpoint passed for azure since some go to accounts and some to azure mgmt'''
         #only use the sp auth workflow
         #self._url=self._raw_url #accounts api uses a different url
+        LOGGR.info("in _update_token")
         self._url=self._raw_url
         if self._cloud_type == 'aws':
             oauth = self.getAWSTokenwithOAuth(False, self._client_id, self._client_secret)
@@ -131,7 +134,7 @@ class SatDBClient:
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
         if master_acct: #master acct may use a different credential
-            self._update_token_master()
+            self._update_token_master(endpoint='workspaces?api-version=2018-04-01')
             if (self._cloud_type == 'azure'):
                 results = requests.get(f'{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
                             headers=self._token, timeout=60, proxies=self._proxies)
@@ -160,39 +163,56 @@ class SatDBClient:
         LOGGR.debug(f"{title}-=-=-{debugs[:1250]}-=-=-{type(jsonelem)}") 
 
     @staticmethod
-    def getNumLists(resp):
-        '''We expect one list in the response. If not, return the whole response'''
+    def getNumLists(resp, endpoint):
+        '''
+        Used to check if the response is a satelements type of output.
+        We expect one list in the response. If not, return the whole response as a satelements
+        '''
         numlists=0
-        numdicts=0
-        #check if error message
+        innerisdict=False
+        #check if resp is error message
         if 'error_code' in resp and 'message' in resp:
             LOGGR.debug(f"\t\t\t$error_code={resp['error_code']} {resp['message']}")
-            return numlists, numdicts
+            return numlists, innerisdict        
+        
+        # some of the ones which cannot be auto-inferred we put in an esception list.
+        exceptionlist=['/budget-policies/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-']
+        for srch in exceptionlist:
+            if re.search(srch, endpoint) is not None:
+                LOGGR.debug(f"explicit match found... returning 0, False")
+                return numlists, innerisdict
+        #try auto inferring.
         if isinstance(resp, list): # some like in accounts return a list as outer
-            return numlists, numdicts
+            return numlists, innerisdict
         for ielem in resp:
             if isinstance(resp[ielem], list):
                 numlists+=1
-            if isinstance(resp[ielem], dict):
-                numdicts+=1
-        LOGGR.debug(f"\t\t\t$numlists={numlists}") #getNumLists-20-type-<class 'dict'>
-        return numlists, numdicts       
+                for i in resp[ielem]:
+                    if isinstance(i, dict):
+                        innerisdict=True
+        LOGGR.debug(f"\t\t\t$numlists={numlists} $innerisdict={innerisdict}") #getNumLists-20-type-<class 'dict'>
+        return numlists, innerisdict
 
     @staticmethod
-    def getRespArray(resp):
+    def getRespArray(resp, endpoint):
         '''if the response contains one list we are in the majority situation. 
         If not, return the whole response wrapped in a list'''
+
         arrdict=[]
-        numlists, numdicts=SatDBClient.getNumLists(resp)
-        if numlists == 1 and numdicts == 0: #one list and no dict
+        numlists, innerisdict=SatDBClient.getNumLists(resp,endpoint)
+        #SatDBClient.debugminijson(resp, "getRespArray")
+        if numlists == 1 and innerisdict == True : #one list and within list we have a dict
             for ielem in resp:
                 if isinstance(resp[ielem], list):
-                    LOGGR.debug(f"\t\t%getRespArray-{len(resp[ielem])}-type-{type(resp[ielem][0])}") #getRespArray-20-type-<class 'dict'>
+                    LOGGR.debug(f"\t\tgetRespArray-{len(resp[ielem])}") #getRespArray-20-type-<class 'dict'>
+                    if len(resp[ielem]) > 0:
+                        LOGGR.debug(f"\t\tgetRespArray-type-{type(resp[ielem][0])}")
                     return ielem, resp[ielem]
         else:    #add the whole resp if there is more than one dict and one list or no lists
             if not resp:
                 resp={}
             arrdict.append(resp)
+
         return 'satelements', arrdict
   
     # tuple with dict {elem:[..]}, http_status_code
@@ -202,7 +222,8 @@ class SatDBClient:
         flatelem=''
         flathttpstatuscode=200
         LOGGR.debug(f"\t\t*flatten1-{len(nestarr)}-type-{type(nestarr)}") #flatten1-10-type-<class 'list'>
-        LOGGR.debug(f"\t\t*flatten2-{len(nestarr[0])}-type-{type(nestarr[0])}") #flatten2-2-type-<class 'tuple'>
+        if(len(nestarr) > 0):
+            LOGGR.debug(f"\t\t*flatten2-{len(nestarr[0])}-type-{type(nestarr[0])}") #flatten2-2-type-<class 'tuple'>
         for tup_elem in nestarr:
             for dictkey in tup_elem[0]:
                 if flatelem and flatelem != dictkey:
@@ -212,7 +233,10 @@ class SatDBClient:
                 LOGGR.debug(f"\t\t*flatten3-{len(tup_elem[0][dictkey])}-type-{type(tup_elem[0][dictkey])}") #flatten3-20-type-<class 'list'>
                 flatarr.append(tup_elem[0][dictkey]) #append lists
         flatarr_1 = [fl0 for xs in flatarr for fl0 in xs] #flatten list of lists.
-        LOGGR.debug(f"\t\t*flatten4-{len(flatarr_1)}-type-{type(flatarr_1)}-type-{type(flatarr_1[0])}") #flatten4-200-type-<class 'list'>-type-<class 'dict'>
+
+        LOGGR.debug(f"\t\t*flatten4-{len(flatarr_1)}-type-{type(flatarr_1)}")
+        if len(flatarr_1)>0:
+            LOGGR.debug(f"type-{type(flatarr_1[0])}") #flatten4-200-type-<class 'list'>-type-<class 'dict'>
         return flatelem, flatarr_1, flathttpstatuscode
     
     #return dictionary of elem and list of values
@@ -247,15 +271,22 @@ class SatDBClient:
             http_status_code = raw_results.status_code
             if http_status_code in SatDBClient.http_error_codes:
                 raise Exception(f"Error: request failed with code {http_status_code}\n{raw_results.text}")
+            #print(f'===={http_status_code}{raw_results.text}') #REMOVE
+            #LOGGR.debug(f'===={http_status_code}{raw_results.text}') #REMOVE
             results = raw_results.json()
+            #with GCP an empty result with only prev_page_token is returned.
+            if len(results)==1 and "prev_page_token" in results:
+                LOGGR.debug(f"\t\tEmpty result with prev_page_token. Breaking out of loop.")
+                break
+
             #LOGGR.debug('-------------')
             #LOGGR.debug(json.dumps(results, indent=4, sort_keys=True)) #for debug
-            elementName, resultsArray=SatDBClient.getRespArray(results)
+            elementName, resultsArray=SatDBClient.getRespArray(results, endpoint)
             retdict={elementName:resultsArray}
             yield (retdict, http_status_code)
             
-            
-            LOGGR.debug(f'\t\tyielding-{retdict}')
+            #for debug.
+            #LOGGR.debug(f'\t\tyielding-{retdict}')
             
             if http_status_code < 200 or http_status_code > 299:
                 break
@@ -358,13 +389,13 @@ class SatDBClient:
         '''helpers for http post put patch'''
         #Azure has two different account api strategies. one goes direct to azure management and 
         # the other one goes to databricks.
-       
+        LOGGR.debug(f"endpoint -> {endpoint}")
         if master_acct:
             self._update_token_master(endpoint)
         else:
             self._update_token(endpoint)
 
-        if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different        
+        if self._cloud_type == 'azure' and master_acct and "?api-version=" in endpoint: #Azure accounts API format is different        
             endpoint = endpoint[1:] if endpoint.startswith('/') else endpoint #remove leading /
             full_endpoint = f"{self._url}/{endpoint}"
         else: #all databricks apis
@@ -374,8 +405,12 @@ class SatDBClient:
         is_paginated = True if SatDBClient.ispaginatedCall(full_endpoint)== True else False
         respageslst = list(self.get_paginated(full_endpoint, http_type, json_params, files_json, is_paginated))
         LOGGR.debug(f"get1-{len(respageslst)}-type-{type(respageslst)}-type-{type(respageslst[0])}") #get1-10-type-<class 'list'>-type-<class 'tuple'>
+        if len(respageslst) > 0:
+            LOGGR.debug(f"get1-type-{type(respageslst[0])}")
         for i in respageslst:
-            LOGGR.debug(f"get2-{len(i)}-type-{type(i)}-{len(i[0])}-{type(i[0])}") #get2-2-type-<class 'tuple'>
+            LOGGR.debug(f"get2-{len(i)}-type-{type(i)}") #get2-2-type-<class 'tuple'>
+            if len(i) > 0:
+                LOGGR.debug(f"get2-{len(i[0])}-{type(i[0])}")
         reselement, resflattenpages, http_status_code = SatDBClient.flatten(respageslst)
         LOGGR.debug(f"get3-{len(resflattenpages)}") #get3-200
         #SatDBClient.debugminijson(resflattenpages, "l1resflattenpages")
@@ -387,7 +422,8 @@ class SatDBClient:
     def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
         '''get'''
         print(f"get {endpoint} {json_params}") 
-        return self.http_req('get', endpoint, json_params, version, None, master_acct)        
+        return self.http_req('get', endpoint, json_params, version, None, master_acct) 
+   
 
     def post(self, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
         '''post'''
@@ -507,23 +543,24 @@ class SatDBClient:
         LOGGR.debug(f"getAzureToken {endpoint} {baccount}")
         databrickstype=True
         #microsft apis have the api-version string
-        if endpoint is None or '?api-version=' in endpoint:
+        if endpoint is not None and '?api-version=' in endpoint:
             databrickstype=False
-
+        if endpoint is None:
+            databrickstype=True
         if not databrickstype and baccount: #master and to microsoft
-            oauthtok=self.getAzureTokenwithMSAL("msmgmt")
+            oauthtok=self.getAzureTokenWithMSAL("msmgmt")
             LOGGR.debug(f"msmgmt1 {oauthtok}")
             return oauthtok #account dbtype
         elif databrickstype and baccount:  #master but databricks
-            oauthtok=self.getAzureTokenwithMSAL("dbmgmt")
+            oauthtok=self.getAzureTokenWithMSAL("dbmgmt")
             LOGGR.debug(f"dbmgmt1 {oauthtok}")
             return oauthtok #account dbtype  
         elif databrickstype and not baccount: #not master has to be databricks
-            oauthtok=self.getAzureTokenwithMSAL("dbmgmt")
+            oauthtok=self.getAzureTokenWithMSAL("dbmgmt")
             LOGGR.debug(f"dbmgmt1 {oauthtok}")
             return oauthtok #account dbtype  
         else:
-            LOGGR.debug(f"This condition should never happen getAzureToken")
+            LOGGR.debug(f"This condition should never happen getAzureToken {endpoint} {baccount}")
             return None, None #account dbtype              
 
     def getAzureTokenWithMSAL(self, scopeType):
@@ -544,7 +581,7 @@ class SatDBClient:
 
             app = msal.ConfidentialClientApplication(
                 client_id=self._client_id,
-                client_credential=self._azure_client_secret,
+                client_credential=self._client_secret,
                 authority=f"https://login.microsoftonline.com/{self._tenant_id}",
             )
 
@@ -592,7 +629,7 @@ class SatDBClient:
 
         if response is not None and response.status_code == 200:
             return response.json()['access_token']
-        LOGGR.debug(json.dumps(response.json()))
+        #LOGGR.debug(json.dumps(response.json()))
         return None
 
     def getGCPTokenwithOAuth(self, baccount, client_id, client_secret):
@@ -618,7 +655,7 @@ class SatDBClient:
 
         if response is not None and response.status_code == 200:
             return response.json()['access_token']
-        LOGGR.debug(json.dumps(response.json()))
+        #LOGGR.debug(json.dumps(response.json()))
         return None
 
 

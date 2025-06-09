@@ -12,7 +12,7 @@ def test_get_clean_room_info(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     cleanRoomsClient = CleanRoomsClient(jsonstr)
-    cleanRoomInfo = cleanRoomsClient.get_clean_room_info("retail_audience_overlap")
+    cleanRoomInfo = cleanRoomsClient.get_clean_room_info("rkm")
     LOGGR.debug(cleanRoomInfo)
 
 
@@ -20,5 +20,5 @@ def test_list_clean_room_task_runs(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     cleanRoomsClient = CleanRoomsClient(jsonstr)
-    taskRunsList = cleanRoomsClient.list_clean_room_task_runs("retail_audience_overlap")
+    taskRunsList = cleanRoomsClient.list_clean_room_task_runs("rkm")
     LOGGR.debug(taskRunsList)

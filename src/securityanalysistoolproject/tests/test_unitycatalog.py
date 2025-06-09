@@ -203,7 +203,7 @@ def test_get_credential(get_db_client):
     LOGGR.info('---------------------')
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_credential('ram-test-bucket')
+    artifactsList = unitycatalogobj.get_credential('vlad')
     print(artifactsList)  
 
 def test_get_tablesummaries(get_db_client):

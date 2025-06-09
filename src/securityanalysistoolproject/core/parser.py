@@ -42,23 +42,23 @@ def str2bool(vinput):
 
 #dummy values. Not real values
 
-{"account_id": "ccb842e7-2376", "sql_warehouse_id": "966f94",
-  "analysis_schema_name": "`hive_metastore`.security_analysis", "verbosity": "info", "proxies": {}, 
-  "intermediate_schema": "`hive_metastore`.intermediate_schema", 
-  "master_name_scope": "sat_scope", "master_name_key": "user", #used?
-  "master_pwd_scope": "sat_scope", "master_pwd_key": "pass",   #used?
-  "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat-token", #used?
-  "dashboard_id": "317f4812217", "dashboard_folder": "/Workspace/Users/ramdas.murali@databricks.com", 
-  "dashboard_tag": "SAT", "use_parallel_runs": true, "sat_version": "0.3.4", 
-  "subscription_id": "edd4cc45-85c7-4aec-8bf5-648062d519bf", 
-  "tenant_id": "bf465dc7-3bc8-4944-b018-092572b5c20d", 
-  "client_id": "2df864fe-30df-4f69-a680-967144bb1d09", 
-  "client_secret_key": "client-secret", 
-  "url": "https://adb-3850794576023421.1.azuredatabricks.net/", 
-  "workspace_id": "3836674955606356", "cloud_type": "azure", "clusterid": "0510-171242-vqha0apn", 
-  "sso": true, "scim": false, "object_storage_encryption": true, "vpc_peering": true, "table_access_control_enabled": false, 
-  "token": "dapijedi", #used?
-  "client_secret": "d"}
+# {"account_id": "ccb842e7-2376", "sql_warehouse_id": "966f94",
+#   "analysis_schema_name": "`hive_metastore`.security_analysis", "verbosity": "info", "proxies": {}, 
+#   "intermediate_schema": "`hive_metastore`.intermediate_schema", 
+#   "master_name_scope": "sat_scope", "master_name_key": "user", #used?
+#   "master_pwd_scope": "sat_scope", "master_pwd_key": "pass",   #used?
+#   "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat-token", #used?
+#   "dashboard_id": "317f4812217", "dashboard_folder": "/Workspace/Users/ramdas.murali@databricks.com", 
+#   "dashboard_tag": "SAT", "use_parallel_runs": true, "sat_version": "0.3.4", 
+#   "subscription_id": "edd4cc45-85c7-4aec-8bf5-648062d519bf", 
+#   "tenant_id": "bf465dc7-3bc8-4944-b018-092572b5c20d", 
+#   "client_id": "2df864fe-30df-4f69-a680-967144bb1d09", 
+#   "client_secret_key": "client-secret", 
+#   "url": "https://adb-3850794576023421.1.azuredatabricks.net/", 
+#   "workspace_id": "3836674955606356", "cloud_type": "azure", "clusterid": "0510-171242-vqha0apn", 
+#   "sso": true, "scim": false, "object_storage_encryption": true, "vpc_peering": true, "table_access_control_enabled": false, 
+#   "token": "dapijedi", #used?
+#   "client_secret": "d"}
 def parse_input_jsonargs(inp_configs):
     '''parse and validate incoming json string and return json'''
     if isinstance(inp_configs, str):
