@@ -420,7 +420,6 @@ class SatDBClient:
 
     def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
         '''get'''
-        print(f"get {endpoint} {json_params}") 
         return self.http_req('get', endpoint, json_params, version, None, master_acct) 
    
 

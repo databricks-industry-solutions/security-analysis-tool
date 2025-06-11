@@ -10,7 +10,7 @@ def test_ws_settings_globalinitscripts(get_db_client):
     jsonstr = get_db_client
     wsclient = WSSettingsClient(jsonstr)
     tokensList=wsclient.get_wssettings_list()
-    print(tokensList)
+    LOGGR.debug(tokensList)
 
 
 def test_get_wssettings_listv2(get_db_client):
