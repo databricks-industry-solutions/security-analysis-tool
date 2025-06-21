@@ -49,7 +49,13 @@ except Exception:
     loggr.exception("Exception encountered")
 loggr.info(f"Renewing token for workspace")
 
-hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+hostname = (
+  dbutils.notebook.entry_point.getDbutils()
+  .notebook()
+  .getContext()
+  .browserHostName()
+  .getOrElse(None)
+)
 cloud_type = getCloudType(hostname)
 
 # COMMAND ----------
@@ -59,7 +65,13 @@ mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_
 masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
 account_id=json_["account_id"]
 #replace values for accounts exec
-hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+hostname = (
+  dbutils.notebook.entry_point.getDbutils()
+  .notebook()
+  .getContext()
+  .browserHostName()
+  .getOrElse(None)
+)
 cloud_type = getCloudType(hostname)
 gcp_accounts_url = 'https://accounts.'+cloud_type+'.databricks.com'
 
