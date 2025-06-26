@@ -190,7 +190,7 @@ if enabled:
     sql = f'''
         SELECT *
         FROM {tbl_name}
-        WHERE network_id is not null AND workspace_id ="{workspaceId}"
+        WHERE network_id is not null AND network_id != '' AND workspace_id ="{workspaceId}"
     '''
     sqlctrl(workspace_id, sql, byopc)
 
