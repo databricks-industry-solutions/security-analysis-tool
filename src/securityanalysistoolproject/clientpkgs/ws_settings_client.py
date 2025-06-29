@@ -59,7 +59,10 @@ class WSSettingsClient(SatDBClient):
         for keyn in ws_keymap:
             valn={}
             try:
-                valn = self.get("/preview/workspace-conf?keys="+keyn['name'], version='2.0')
+                valn = self.get("/preview/workspace-conf?keys="+keyn['name'], version='2.0').get('satelements', [])
+                if not valn:
+                    raise Exception("no values")
+                valn = valn[0]
             except Exception as e:
                 #get exceptions like these 'unauthorized to perform ReadAction on /org_admin_conf/jobsListBackendPaginationEnabled'
                 valn[keyn['name']] = None
@@ -76,6 +79,37 @@ class WSSettingsClient(SatDBClient):
         '''flatten the structure'''
         return [item for sublist in tvarlist for item in sublist]
     
+    def get_wssettings_listv2(self):
+        '''Gets the configuration status for a workspace.'''
+        json_params={'keys': 'enforceUserIsolation,enforceWorkspaceViewAcls,enforceClusterViewAcls,'
+        'enableJobViewAcls,enableHlsRuntime,enableDcs,enableGp3,enableEnforceImdsV2,enableJobsEmailsV2,'
+        'enableProjectTypeInWorkspace,enableWorkspaceFilesystem,enableProjectsAllowList,'
+        'intercomAdminConsent,enable-X-Frame-Options,enable-X-Content-Type-Options,'
+        'enable-X-XSS-Protection,enableResultsDownloading,enableUploadDataUis,enableExportNotebook,'
+        'enableNotebookGitVersioning,enableNotebookTableClipboard,enableWebTerminal,enableDbfsFileBrowser,'
+        'enableDatabricksAutologgingAdminConf,mlflowRunArtifactDownloadEnabled,mlflowModelServingEndpointCreationEnabled,'
+        'mlflowModelRegistryEmailNotificationsEnabled,heapAnalyticsAdminConsent,storeInteractiveNotebookResultsInCustomerAccount,'
+        'enableVerboseAuditLogs,enableFileStoreEndpoint,jobsListBackendPaginationEnabled,'
+        'maxTokenLifetimeDays,enableDeprecatedGlobalInitScripts,enableLibraryAndInitScriptOnSharedCluster'}
+        endpointlist= self.get(f"/workspace-conf", json_params=json_params, version='2.0').get('satelements', [])
+        return endpointlist   
+
+
+    def get_aibi_dashboard_embedding_policy(self):
+        """
+        Returns an array of json objects for compliance security profile update.
+        """
+        # fetch all endpoints
+        endpointlist= self.get(f"/settings/types/aibi_dash_embed_ws_acc_policy/names/default", version='2.0').get('satelements', [])
+        return endpointlist  
+
+    def get_aibi_dashboard_approved_host_embedding_policy(self):
+        """
+        Returns an array of json objects for compliance security profile update.
+        """
+        # fetch all endpoints
+        endpointlist= self.get(f"/settings/types/aibi_dash_embed_ws_apprvd_domains/names/default", version='2.0').get('satelements', [])
+        return endpointlist  
 
     
     def get_automatic_cluster_update(self):
@@ -83,30 +117,16 @@ class WSSettingsClient(SatDBClient):
         Returns an array of json objects for auto cluster update.
         """
         # fetch all endpoints
-        endpointjson= self.get(f"/settings/types/automatic_cluster_update/names/default", version='2.0')
-        endpointlist = []
-        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        endpointlist= self.get(f"/settings/types/automatic_cluster_update/names/default", version='2.0').get('satelements', [])
         return endpointlist   
     
-    
+
     def get_compliance_security_profile(self):
         """
         Returns an array of json objects for compliance security profile update.
         """
         # fetch all endpoints
-        endpointjson= self.get(f"/settings/types/shield_csp_enablement_ws_db/names/default", version='2.0')
-        endpointlist = []
-        endpointlist.append(json.loads(json.dumps(endpointjson)))
-        return endpointlist  
-    
-    def get_enhanced_security_monitoring(self):
-        """
-        Returns an array of json objects for compliance security profile update.
-        """
-        # fetch all endpoints
-        endpointjson= self.get(f"/settings/types/shield_esm_enablement_ws_db/names/default", version='2.0')
-        endpointlist = []
-        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        endpointlist= self.get(f"/settings/types/shield_csp_enablement_ws_db/names/default", version='2.0').get('satelements', [])
         return endpointlist  
 
 
@@ -115,18 +135,31 @@ class WSSettingsClient(SatDBClient):
         Returns an array of json objects for default namespace
         """
         # fetch all endpoints
-        endpointjson= self.get(f"/settings/types/default_namespace_ws/names/default", version='2.0')
-        endpointlist = []
-        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        endpointlist= self.get(f"/settings/types/default_namespace_ws/names/default", version='2.0').get('satelements', [])
         return endpointlist  
     
-        
+    def get_legacy_access_disablement_setting(self):
+        """
+        Returns an array of json objects for default namespace
+        """
+        # fetch all endpoints
+        endpointlist= self.get(f"/settings/types/disable_legacy_access/names/default", version='2.0').get('satelements', [])
+        return endpointlist      
+
+    def get_enhanced_security_monitoring(self):
+        """
+        Returns an array of json objects for compliance security profile update.
+        """
+        # fetch all endpoints
+        endpointlist= self.get(f"/settings/types/shield_esm_enablement_ws_db/names/default", version='2.0').get('satelements', [])
+        return endpointlist  
+
+
+
     def get_restrict_workspace_admin_settings(self):
         """
         Returns an array of json objects for workspace admin settings.
         """
         # fetch all endpoints
-        endpointjson= self.get(f"/settings/types/restrict_workspace_admins/names/default", version='2.0')
-        endpointlist = []
-        endpointlist.append(json.loads(json.dumps(endpointjson)))
+        endpointlist= self.get(f"/settings/types/restrict_workspace_admins/names/default", version='2.0').get('satelements', [])
         return endpointlist  
