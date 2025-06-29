@@ -62,10 +62,11 @@ class SatDBClient:
         '''update token master in http header'''
         '''endpoint passed for azure since some go to accounts and some to azure mgmt'''
         LOGGR.info("in _update_token_master")
-        self._url=self._raw_url
+        #self._url=self._raw_url
         if(self._cloud_type == 'gcp'):
-            oauth = self.getGCPTokenwithOAuth(True, self._client_id, self._client_secret)
             self._url=self._ACCTURL
+            LOGGR.debug(f'GCP self._url {self._url} {self._client_id} {self._client_secret}') ##Remove
+            oauth = self.getGCPTokenwithOAuth(True, self._client_id, self._client_secret)
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -73,8 +74,8 @@ class SatDBClient:
             LOGGR.info(f'GCP self._token {oauth}')
         elif(self._cloud_type == 'azure'):
             #azure is only oauth to accounts/msmgmt
-            oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
             self._url=self._ACCTURL
+            oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
             if endpoint is None or "?api-version=" in endpoint:
                 self._url = self._MGMTURL
             self._token = {
@@ -82,8 +83,8 @@ class SatDBClient:
                 "User-Agent": "databricks-sat/0.1.0"
             }
         elif (self._cloud_type == 'aws'):     #AWS
-            oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
             self._url = self._ACCTURL #url for accounts api
+            oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -649,6 +650,7 @@ class SatDBClient:
         else: #workspace
             full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
+        LOGGR.debug(f"getGCPTokenwithOAuth {full_endpoint} {json_params} {oidc_token}")
         response = requests.post(full_endpoint, headers=oidc_token,
                                     auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)  
 
