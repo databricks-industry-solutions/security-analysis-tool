@@ -169,7 +169,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('ipaccesslist'+ '_' + workspace_id, ip_access_client.get_ipaccess_list)
+bootstrap('ipaccesslist'+ '_' + workspace_id, ip_access_client.get_ip_access_list)
 
 # COMMAND ----------
 

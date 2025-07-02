@@ -205,4 +205,8 @@ bootstrap('account_ncc', acct_settings.get_networkconnectivityconfigurations)
 
 # COMMAND ----------
 
+bootstrap('account_networkpolicies', acct_settings.get_networkpolicies)
+
+# COMMAND ----------
+
 print(f"Account Bootstrap - {time.time() - start_time} seconds to run")
