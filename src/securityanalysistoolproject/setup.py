@@ -8,7 +8,7 @@ DESCRIPTION = "Databricks Security Analysis Tool"
 # testing 0.0.104
 # main 0.1.37
 
-__version__ = "0.0.109" 
+__version__ = "0.0.110" 
 
 this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, "README.md"), encoding="utf-8") as f:
