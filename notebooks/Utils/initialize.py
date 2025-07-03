@@ -157,7 +157,7 @@ if cloud_type == "aws":
 
 # COMMAND ----------
 
-# MAGIC ##%pip install PyYAML dbl-sat-sdk=="0.0.102"
+# MAGIC ###%pip install PyYAML dbl-sat-sdk=="0.0.109"
 
 # COMMAND ----------
 
