@@ -29,6 +29,7 @@ class DbfsClient(SatDBClient):
                 '"encryptionType": x.encryptionType} for x in dbutils.fs.mounts() if "/mnt/" in x.mountPoint]'
         results = self.submit_command(ec_id, all_mounts_cmd)
         results = self.submit_command(ec_id, 'print(all_mounts)')
+        resultsdict=results.get('satelements', [])
         dataresults = ast.literal_eval(results['data'])
         return dataresults
 

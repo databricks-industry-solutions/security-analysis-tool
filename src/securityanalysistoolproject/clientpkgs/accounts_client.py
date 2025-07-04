@@ -2,6 +2,10 @@
 from core.dbclient import SatDBClient
 import clientpkgs.azure_accounts_client as azfunc
 
+#account_provisioning_client has the same methods as accounts_client
+# deprecate this at some point.
+
+
 class AccountsClient(SatDBClient):
     '''accounts helper'''
     subslist=[]
@@ -16,7 +20,7 @@ class AccountsClient(SatDBClient):
             workspaces_list = azfunc.remap_workspace_list(self.subslist)
         else:
             accountid=self._account_id
-            workspaces_list = self.get(f"/accounts/{accountid}/workspaces", master_acct=True).get('elements',[])
+            workspaces_list = self.get(f"/accounts/{accountid}/workspaces", master_acct=True).get('satelements',[])
         return workspaces_list
 
     def get_credentials_list(self):
@@ -25,10 +29,10 @@ class AccountsClient(SatDBClient):
         """
         credentials_list = []
         if self._cloud_type == 'azure':
-            pass
+           pass
         else:
             accountid=self._account_id
-            credentials_list = self.get(f"/accounts/{accountid}/credentials", master_acct=True).get('elements',[])
+            credentials_list = self.get(f"/accounts/{accountid}/credentials", master_acct=True).get('satelements',[])
         return credentials_list
 
     def get_storage_list(self):
@@ -42,7 +46,7 @@ class AccountsClient(SatDBClient):
             storage_list = azfunc.remap_storage_list(self.subslist)         
         else:    
             accountid=self._account_id
-            storage_list = self.get(f"/accounts/{accountid}/storage-configurations", master_acct=True).get('elements',[])
+            storage_list = self.get(f"/accounts/{accountid}/storage-configurations", master_acct=True).get('satelements',[])
         return storage_list
 
     def get_network_list(self):
@@ -51,10 +55,11 @@ class AccountsClient(SatDBClient):
         """
         network_list=[]
         if self._cloud_type == 'azure':
+            # this function in accounts_settings.py
             pass
         else:          
             accountid=self._account_id
-            network_list = self.get(f"/accounts/{accountid}/networks", master_acct=True).get('elements',[])
+            network_list = self.get(f"/accounts/{accountid}/networks", master_acct=True).get('satelements',[])
         return network_list
 
     def get_cmk_list(self):
@@ -68,7 +73,7 @@ class AccountsClient(SatDBClient):
             cmk_list = azfunc.remap_cmk_list(self.subslist)   
         else:           
             accountid=self._account_id
-            cmk_list = self.get(f"/accounts/{accountid}/customer-managed-keys", master_acct=True).get('elements',[])
+            cmk_list = self.get(f"/accounts/{accountid}/customer-managed-keys", master_acct=True).get('satelements',[])
         return cmk_list
 
     def get_logdelivery_list(self):
@@ -98,7 +103,7 @@ class AccountsClient(SatDBClient):
             pvtlinkinfo = azfunc.remap_pvtlink_list(self.subslist)         
         else:           
             accountid=self._account_id
-            pvtlinkinfo = self.get(f"/accounts/{accountid}/private-access-settings", master_acct=True).get('elements',[])
+            pvtlinkinfo = self.get(f"/accounts/{accountid}/private-access-settings", master_acct=True).get('satelements',[])
         return pvtlinkinfo
 
 
@@ -110,7 +115,7 @@ class AccountsClient(SatDBClient):
         if self._cloud_type!='azure':
             return subscriptions_list
         subscriptions_list = self.get(f"/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01",
-                    master_acct=True).get('value', [])     
+                    master_acct=True).get('value', [])    
         return(subscriptions_list)
 
     def get_azure_resource_list(self, urlFromSubscription):
@@ -135,7 +140,8 @@ class AccountsClient(SatDBClient):
                     or azfunc.getItem(rec, ['id'], True) is None:
                 continue
             diagresid = azfunc.getItem(rec, ['id'], True)
-
+            if diagresid.startswith('/'):
+                diagresid = diagresid[1:]
             diag_subs_list = self.get(f"/{diagresid}/providers/microsoft.insights/diagnosticSettings?api-version=2021-05-01-preview",
                         master_acct=True).get('value', [])            
             if bool(diag_subs_list) is False:
