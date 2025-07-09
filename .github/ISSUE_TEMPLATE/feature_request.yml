@@ -1,5 +1,3 @@
-# See https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
-# and https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-githubs-form-schema
 name: Feature Request
 description: Propose a new check, feature or enhancement for the Security Analysis Tool
 title: "[Feature]: "

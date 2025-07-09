@@ -1,0 +1,39 @@
+name: Documentation Request
+description: Request additions or improvements to the Security Analysis Tool documentation.
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: checkboxes
+    id: existing-issue-search
+    attributes:
+      label: Prior Issue Search
+      description: Please confirm that you have searched existing documentation and issues to avoid duplicates.
+      options:
+        - label: I have searched existing documentation and issues and confirmed this is not a duplicate.
+          required: true
+
+  - type: textarea
+    id: doc-description
+    attributes:
+      label: Documentation Request Description
+      description: Clearly describe what documentation is missing or needs improvement.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-docs
+    attributes:
+      label: Current Documentation
+      description: Provide links or references to existing documentation that is incomplete or unclear.
+
+  - type: textarea
+    id: proposed-changes
+    attributes:
+      label: Proposed Changes
+      description: Describe the changes or additions you propose to the documentation.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other relevant context, references, or examples to support your request.

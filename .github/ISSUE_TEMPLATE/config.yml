@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: General Databricks Questions
+    url: https://help.databricks.com/
+    about: Issues related to Databricks and not specific to the Security Analysis Tool.
+
+  - name: Security Analysis Tool Documentation
+    url: https://databricks-industry-solutions.github.io/security-analysis-tool/
+    about: Documentation about the SAT
+    
+  - name: Databricks Security & Trust Center
+    url: https://www.databricks.com/trust
+    about: Learn more about Databricks security and compliance best practices.
