@@ -46,7 +46,7 @@ hostname = (
     dbutils.notebook.entry_point.getDbutils()
     .notebook()
     .getContext()
-    .apiUrl()
+    .browserHostName()
     .getOrElse(None)
 )
 cloud_type = getCloudType(hostname)

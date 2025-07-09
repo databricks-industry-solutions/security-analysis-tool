@@ -27,7 +27,13 @@ current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
-hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+hostname = (
+    dbutils.notebook.entry_point.getDbutils()
+    .notebook()
+    .getContext()
+    .browserHostName()
+    .getOrElse(None)
+)
 cloud_type = getCloudType(hostname)
 clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 
