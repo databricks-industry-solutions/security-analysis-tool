@@ -7,7 +7,7 @@ contact_links:
 
   - name: Security Analysis Tool Documentation
     url: https://databricks-industry-solutions.github.io/security-analysis-tool/
-    about: Documentation about the SAT
+    about: Documentation and Guide on how to install and use the Security Analysis Tool.
     
   - name: Databricks Security & Trust Center
     url: https://www.databricks.com/trust
