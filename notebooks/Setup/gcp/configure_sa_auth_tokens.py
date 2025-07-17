@@ -48,7 +48,13 @@ secret_scope_initial_manage_principal ='users'
 account_id = json_["account_id"] 
 
 
-hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+hostname = (
+    dbutils.notebook.entry_point.getDbutils()
+    .notebook()
+    .getContext()
+    .browserHostName()
+    .getOrElse(None)
+)
 cloud_type = getCloudType(hostname)
 gcp_accounts_url = 'https://accounts.'+cloud_type+'.databricks.com'
 loggr.info(f" GCP account URL: {gcp_accounts_url}")
