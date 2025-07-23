@@ -1,7 +1,7 @@
 
 from core.dbclient import SatDBClient
 import clientpkgs.azure_accounts_client as azfunc
-
+from core.logging_utils import LoggingUtils
 #account_provisioning_client has the same methods as accounts_client
 # deprecate this at some point.
 
@@ -127,16 +127,16 @@ class AccountsClient(SatDBClient):
             resource_list = self.get(f"{urlFromSubscription}?api-version=2018-04-01",
                     master_acct=True).get('value', [])
         return(resource_list)
-
+#or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
     def get_azure_diagnostic_logs(self, subslist):
         diag_list = []
         if bool(self.subslist) is False:
             self.subslist = self.get_azure_subscription_list()
-
+        LOGGR = LoggingUtils.get_logger()
+        LOGGR.debug(f".........subslist: {self.subslist}")
         for rec in self.subslist:
             if azfunc.getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
                     or azfunc.getItem(rec, ['properties', 'workspaceId'], True) is None \
-                    or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
                     or azfunc.getItem(rec, ['id'], True) is None:
                 continue
             diagresid = azfunc.getItem(rec, ['id'], True)
@@ -146,7 +146,6 @@ class AccountsClient(SatDBClient):
                         master_acct=True).get('value', [])            
             if bool(diag_subs_list) is False:
                 continue
-
             diag = {}
             diag['account_id']=azfunc.getItem(rec, ['properties', 'workspaceId'])
             diag['workspace_id']=azfunc.getItem(rec, ['properties', 'workspaceId'])        
@@ -155,6 +154,7 @@ class AccountsClient(SatDBClient):
             diag['config_id']=azfunc.getItem(diag_subs_list[0], ['id'])
             diag['location']=azfunc.getItem(diag_subs_list[0], ['location']) #just the first one will do
             diag['log_type']='AUDIT_LOGS'
+            #LOGGR.debug(f"....diag: {diag}")
             diag_list.append(diag)
 
         return diag_list   
