@@ -24,7 +24,7 @@ def test_getendpoint_byname(get_db_client):
     jsonstr = get_db_client
     dbvectorobj = VectorSearch(jsonstr)
     
-    endpointlst = dbvectorobj.get_endpoint('one-env-shared-endpoint-6')
+    endpointlst = dbvectorobj.get_endpoint('one-env-shared-endpoint-1')
     print(endpointlst)
 
 def test_getindices(get_db_client):
@@ -32,7 +32,7 @@ def test_getindices(get_db_client):
     jsonstr = get_db_client
     dbvectorobj = VectorSearch(jsonstr)
     
-    indexlst = dbvectorobj.get_index_list('one-env-shared-endpoint-6')
+    indexlst = dbvectorobj.get_index_list('one-env-shared-endpoint-1')
     print(indexlst)
 
 def test_getindex(get_db_client):

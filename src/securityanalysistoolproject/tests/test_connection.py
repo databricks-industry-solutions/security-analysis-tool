@@ -20,7 +20,7 @@ def test_connection(get_db_client):
             LOGGR.info("Workspace Connection successful!")
         else:
             LOGGR.info("Unsuccessful connection. Verify credentials.")
-
+        LOGGR.info("---------------------------------------")
         is_successful = sat_db_client.test_connection(master_acct=True)
 
         if is_successful:
