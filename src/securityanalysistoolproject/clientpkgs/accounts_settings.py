@@ -9,11 +9,17 @@ class AccountsSettings(SatDBClient):
         """
         Returns an array of json objects for ip access
         """
-        ipaccess_list=[]
-        #if self._cloud_type=='azure':
-        #    pass
-        accountid=self._account_id
-        ipaccess_list = self.get(f"/accounts/{accountid}/ip-access-lists", master_acct=True).get('ip_access_lists',[])
+
+        account_id=self._account_id
+        ipaccess_list = self.get(f"/accounts/{account_id}/ip-access-lists", master_acct=True).get('ip_access_lists',[])
+        return ipaccess_list
+
+    def get_ipaccess_info(self, ip_access_list_id):
+        """
+        Returns an array of json objects for ip access
+        """
+        account_id=self._account_id
+        ipaccess_list = self.get(f"/accounts/{account_id}/ip-access-lists/{ip_access_list_id}", master_acct=True).get('ip_access_list',[])
         return ipaccess_list
 
     def get_compliancesecurityprofile(self):
@@ -22,11 +28,20 @@ class AccountsSettings(SatDBClient):
         """
         #if self._cloud_type=='azure':
         #    pass
-        accountid=self._account_id
-        cspjson = self.get(f"/accounts/{accountid}/settings/types/shield_csp_enablement_ac/names/default", master_acct=True)
-        cspjsonlist = []
-        cspjsonlist.append(json.loads(json.dumps(cspjson)))        
+        account_id=self._account_id
+        cspjsonlist = self.get(f"/accounts/{account_id}/settings/types/shield_csp_enablement_ac/names/default", master_acct=True).get("satelements", [])   
         return cspjsonlist
+
+    def get_enhancedsecuritymonitoringprofile(self):
+        """
+        Returns an array of json objects for compliance security
+        """
+        #if self._cloud_type=='azure':
+        #    pass
+        account_id=self._account_id
+        esmjsonlist = self.get(f"/accounts/{account_id}/settings/types/shield_esm_enablement_ac/names/default", master_acct=True).get("satelements", [])   
+        return esmjsonlist    
+
 
     def get_networkconnectivityconfigurations(self, pageToken=None):
         """
@@ -45,10 +60,13 @@ class AccountsSettings(SatDBClient):
         """
         #if self._cloud_type=='azure':
         #    pass
-        accountid=self._account_id
-        nccjson = self.get(f"/accounts/{accountid}/network-connectivity-configs/{ncc_configid}", master_acct=True)
-        nccjsonlist = []
-        nccjsonlist.append(json.loads(json.dumps(nccjson)))        
+        account_id=self._account_id
+        nccjsonlist = self.get(f"/accounts/{account_id}/network-connectivity-configs/{ncc_configid}", master_acct=True).get('satelements',[])      
         return nccjsonlist
+    
+    def get_networkpolicies(self):
+        account_id=self._account_id
+        ncpoliciesjsonlist = self.get(f"/accounts/{account_id}/network-policies", master_acct=True).get('items',[])      
+        return ncpoliciesjsonlist      
     
     
