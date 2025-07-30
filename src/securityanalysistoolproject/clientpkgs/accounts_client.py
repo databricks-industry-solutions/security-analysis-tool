@@ -127,13 +127,14 @@ class AccountsClient(SatDBClient):
             resource_list = self.get(f"{urlFromSubscription}?api-version=2018-04-01",
                     master_acct=True).get('value', [])
         return(resource_list)
-#or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
+    
+    # fixed this check jul 28 2025
+    # or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
     def get_azure_diagnostic_logs(self, subslist):
         diag_list = []
         if bool(self.subslist) is False:
             self.subslist = self.get_azure_subscription_list()
-        LOGGR = LoggingUtils.get_logger()
-        LOGGR.debug(f".........subslist: {self.subslist}")
+
         for rec in self.subslist:
             if azfunc.getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
                     or azfunc.getItem(rec, ['properties', 'workspaceId'], True) is None \
@@ -154,7 +155,7 @@ class AccountsClient(SatDBClient):
             diag['config_id']=azfunc.getItem(diag_subs_list[0], ['id'])
             diag['location']=azfunc.getItem(diag_subs_list[0], ['location']) #just the first one will do
             diag['log_type']='AUDIT_LOGS'
-            #LOGGR.debug(f"....diag: {diag}")
+
             diag_list.append(diag)
 
         return diag_list   

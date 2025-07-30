@@ -134,11 +134,13 @@ class SatDBClient:
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
         if master_acct: #master acct may use a different credential
-            self._update_token_master(endpoint='workspaces?api-version=2018-04-01')
+            
             if (self._cloud_type == 'azure'):
+                self._update_token_master(endpoint='workspaces?api-version=2018-04-01')
                 results = requests.get(f'{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
                             headers=self._token, timeout=60, proxies=self._proxies)
-            else:    
+            else:   
+                self._update_token_master() 
                 results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
                             headers=self._token, timeout=60, proxies=self._proxies)
         else:
@@ -166,7 +168,11 @@ class SatDBClient:
     def getNumLists(resp, endpoint):
         '''
         Used to check if the response is a satelements type of output.
-        We expect one list in the response. If not, return the whole response as a satelements
+        We expect one list in the response. 
+        {'key':['key1':'value1']}
+        If not, return the whole response as a satelements
+        This is a very tricky one. Cant come up with one pattern to rule them all.
+        Hence the exception list.
         '''
         numlists=0
         innerisdict=False
@@ -175,7 +181,7 @@ class SatDBClient:
             LOGGR.debug(f"\t\t\t$error_code={resp['error_code']} {resp['message']}")
             return numlists, innerisdict        
         
-        # some of the ones which cannot be auto-inferred we put in an esception list.
+        # some of the ones which cannot be auto-inferred we put in an exception list.
         exceptionlist=['/budget-policies/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-']
         for srch in exceptionlist:
             if re.search(srch, endpoint) is not None:
@@ -183,6 +189,7 @@ class SatDBClient:
                 return numlists, innerisdict
         #try auto inferring.
         if isinstance(resp, list): # some like in accounts return a list as outer
+            numlists=-1 #like for list of workspaces from accounts api
             return numlists, innerisdict
         for ielem in resp:
             if isinstance(resp[ielem], list):
@@ -211,8 +218,13 @@ class SatDBClient:
         else:    #add the whole resp if there is more than one dict and one list or no lists
             if not resp:
                 resp={}
-            arrdict.append(resp)
-
+            if numlists == -1: #strip the outer list and only add the dicts
+                for ielem in resp:
+                    if isinstance(ielem, dict):
+                        arrdict.append(ielem)
+            else:
+                arrdict.append(resp)
+        
         return 'satelements', arrdict
   
     # tuple with dict {elem:[..]}, http_status_code
@@ -383,7 +395,11 @@ class SatDBClient:
                 return True
         return False
 
-
+    '''
+    http_req => get_paginated and flatten
+    get_paginated => getRespArray
+    getRespArray => getNumLists
+    '''
 
     def http_req(self, http_type, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
         '''helpers for http post put patch'''
