@@ -5,6 +5,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ../Includes/install_sat_sdk
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/initialize
 
 # COMMAND ----------
