@@ -7,6 +7,7 @@ from core.logging_utils import LoggingUtils
 from core import parser as pars
 import msal
 import re
+from enum import Enum
 
 urllib3.disable_warnings(category = urllib3.exceptions.InsecureRequestWarning)
 
@@ -14,6 +15,12 @@ LOGGR=None
 
 if LOGGR is None:
     LOGGR = LoggingUtils.get_logger()
+
+class PatternType(Enum):
+    PATTERN_1 = 1  # dict with 1 list of dicts
+    PATTERN_2 = 2  # Dict with multiple lists of dicts
+    PATTERN_3 = 3  # dict with 1 or more dicts
+    PATTERN_4 = 4  # list with dicts
 
 
 class SatDBClient:
@@ -45,14 +52,16 @@ class SatDBClient:
         #AWS and GCP pass in secret generated in accounts console
         #Azure pass in secret generated in azure portal
         self._client_id = configs['client_id'].strip()
-        self._client_secret = configs['client_secret'].strip()        
+        self._client_secret = configs['client_secret'].strip() 
+        #take care of gov cloud domains
+        domain= pars.get_domain(self._raw_url)       
         if 'aws' in self._cloud_type:
-            self._ACCTURL="https://accounts.cloud.databricks.com"
+            self._ACCTURL=f"https://accounts.cloud.databricks.{domain}"
         if "gcp" in self._cloud_type:
-            self._ACCTURL="https://accounts.gcp.databricks.com"
+            self._ACCTURL=f"https://accounts.gcp.databricks.{domain}"
         #Azure msmgmt urls need these
         if 'azure' in self._cloud_type:
-            self._ACCTURL="https://accounts.azuredatabricks.net"
+            self._ACCTURL=f"https://accounts.azuredatabricks.{domain}"
             self._MGMTURL= "https://management.azure.com"
             self._subscription_id = configs['subscription_id'].strip()
             self._tenant_id = configs['tenant_id'].strip().strip()   
@@ -165,74 +174,88 @@ class SatDBClient:
         LOGGR.debug(f"{title}-=-=-{debugs[:1250]}-=-=-{type(jsonelem)}") 
 
     @staticmethod
-    def getNumLists(resp, endpoint):
+    def getNumLists(resp)->PatternType:
         '''
         Used to check if the response is a satelements type of output.
         We expect one list in the response. 
         {'key':['key1':'value1']}
         If not, return the whole response as a satelements
-        This is a very tricky one. Cant come up with one pattern to rule them all.
-        Hence the exception list.
+
         '''
         numlists=0
-        innerisdict=False
-        #check if resp is error message
-        if 'error_code' in resp and 'message' in resp:
-            LOGGR.debug(f"\t\t\t$error_code={resp['error_code']} {resp['message']}")
-            return numlists, innerisdict        
+        numdicts=0
+
+        # #moved to get_paginated
+        # if 'error_code' in resp and 'message' in resp:
+        #     LOGGR.debug(f"\t\t\t$error_code={resp['error_code']} {resp['message']}")
+        #     return numlists, innerisdict        
         
         # some of the ones which cannot be auto-inferred we put in an exception list.
-        exceptionlist=['/budget-policies/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-']
-        for srch in exceptionlist:
-            if re.search(srch, endpoint) is not None:
-                LOGGR.debug(f"explicit match found... returning 0, False")
-                return numlists, innerisdict
-        #try auto inferring.
+        # exceptionlist=['/budget-policies/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-']
+        # for srch in exceptionlist:
+        #     if re.search(srch, endpoint) is not None:
+        #         LOGGR.debug(f"explicit match found... returning 0, False")
+        #         return numlists, innerisdict
+
         if isinstance(resp, list): # some like in accounts return a list as outer
-            numlists=-1 #like for list of workspaces from accounts api
-            return numlists, innerisdict
+            LOGGR.debug(f"\t\t\tPattern4")
+            return PatternType.PATTERN_4
+
         for ielem in resp:
             if isinstance(resp[ielem], list):
                 numlists+=1
-                for i in resp[ielem]:
-                    if isinstance(i, dict):
-                        innerisdict=True
-        LOGGR.debug(f"\t\t\t$numlists={numlists} $innerisdict={innerisdict}") #getNumLists-20-type-<class 'dict'>
-        return numlists, innerisdict
-
+            if isinstance(resp[ielem], dict):
+                numdicts+=1
+        
+        LOGGR.debug(f"\t\t\t$numlists={numlists} $numdict={numdicts}") 
+ 
+        if numlists == 1 and numdicts == 0:
+            LOGGR.debug(f"\t\t\tPattern1")
+            return PatternType.PATTERN_1
+        if numlists > 1 and numdicts == 0:
+            LOGGR.debug(f"\t\t\tPattern2")
+            return PatternType.PATTERN_2
+        LOGGR.debug(f"\t\t\tPattern3")
+        return PatternType.PATTERN_3        
+ 
     @staticmethod
-    def getRespArray(resp, endpoint):
-        '''if the response contains one list we are in the majority situation. 
-        If not, return the whole response wrapped in a list'''
+    def getRespArray(resp):
+        '''
+        if the response contains one list we are in the majority situation. 
+        return a elementname, list
+        '''
 
         arrdict=[]
-        numlists, innerisdict=SatDBClient.getNumLists(resp,endpoint)
+        if not resp:
+            emptydict={}
+            arrdict.append(emptydict)
+            return 'satelements', arrdict
+        patterntype = SatDBClient.getNumLists(resp)
+
         #SatDBClient.debugminijson(resp, "getRespArray")
-        if numlists == 1 and innerisdict == True : #one list and within list we have a dict
+        if patterntype==PatternType.PATTERN_1 : #one list and within list we have a dict
             for ielem in resp:
                 if isinstance(resp[ielem], list):
                     LOGGR.debug(f"\t\tgetRespArray-{len(resp[ielem])}") #getRespArray-20-type-<class 'dict'>
                     if len(resp[ielem]) > 0:
                         LOGGR.debug(f"\t\tgetRespArray-type-{type(resp[ielem][0])}")
                     return ielem, resp[ielem]
-        else:    #add the whole resp if there is more than one dict and one list or no lists
-            if not resp:
-                resp={}
-            if numlists == -1: #strip the outer list and only add the dicts
-                for ielem in resp:
-                    if isinstance(ielem, dict):
-                        arrdict.append(ielem)
-            else:
-                arrdict.append(resp)
+                
+        if patterntype==PatternType.PATTERN_2 or patterntype==PatternType.PATTERN_3:
+            arrdict.append(resp)
+            return 'satelements', arrdict
+        if patterntype==PatternType.PATTERN_4: 
+            return 'satelements', resp #return the list as is
         
-        return 'satelements', arrdict
+
   
-    # tuple with dict {elem:[..]}, http_status_code
+    # tuple with dict ({elem:[..]}, http_status_code)
     @staticmethod
     def flatten(nestarr):
         flatarr=[]
         flatelem=''
         flathttpstatuscode=200
+        #SatDBClient.debugminijson(nestarr, "flattennestarr")
         LOGGR.debug(f"\t\t*flatten1-{len(nestarr)}-type-{type(nestarr)}") #flatten1-10-type-<class 'list'>
         if(len(nestarr) > 0):
             LOGGR.debug(f"\t\t*flatten2-{len(nestarr[0])}-type-{type(nestarr[0])}") #flatten2-2-type-<class 'tuple'>
@@ -282,10 +305,24 @@ class SatDBClient:
 
             http_status_code = raw_results.status_code
             if http_status_code in SatDBClient.http_error_codes:
-                raise Exception(f"Error: request failed with code {http_status_code}\n{raw_results.text}")
-            #print(f'===={http_status_code}{raw_results.text}') #REMOVE
-            #LOGGR.debug(f'===={http_status_code}{raw_results.text}') #REMOVE
+                errtext = ''
+                errmesg = ''
+                errtext= raw_results.text if raw_results.text else ''
+                errmesg = raw_results.reason if raw_results.reason else ''
+                
+                LOGGR.debug(f"Error: request1 failed with code {http_status_code}\n{errtext}\n{errmesg}")
+                raise Exception(f"Error: request failed with code {http_status_code}--{errtext}--{errmesg}")
             results = raw_results.json()
+            
+            #check if resp is error message. Added Aug 3. 
+            if 'error_code' in results and 'message' in results:
+                errtext = ''
+                errmesg = ''
+                errtext= raw_results.text if raw_results.text else ''
+                errmesg = raw_results.reason if raw_results.reason else ''
+                LOGGR.debug(f"Error: request2 failed with code {http_status_code}\n{errtext}\n{errmesg}")
+                raise Exception(f"Error: request failed with code {http_status_code}--{errtext}--{errmesg}")
+
             #with GCP an empty result with only prev_page_token is returned.
             if len(results)==1 and "prev_page_token" in results:
                 LOGGR.debug(f"\t\tEmpty result with prev_page_token. Breaking out of loop.")
@@ -293,7 +330,10 @@ class SatDBClient:
 
             #LOGGR.debug('-------------')
             #LOGGR.debug(json.dumps(results, indent=4, sort_keys=True)) #for debug
-            elementName, resultsArray=SatDBClient.getRespArray(results, endpoint)
+            #SatDBClient.debugminijson(results, "get_paginated1") #for debug
+            #LOGGR.debug('-------------')
+
+            elementName, resultsArray=SatDBClient.getRespArray(results)
             retdict={elementName:resultsArray}
             yield (retdict, http_status_code)
             
@@ -674,6 +714,116 @@ class SatDBClient:
             return response.json()['access_token']
         #LOGGR.debug(json.dumps(response.json()))
         return None
+
+
+#----------------------------------------------------
+# notes
+#----------------------------------------------------
+# pattern 1 - Dict with 1 list of dicts.
+# {
+#   "apps": [
+#     {
+#       "client_id": "string",
+#       ...
+#   ],
+#   "next_page_token": "string"
+# }
+
+#pattern 2 Dict with multiple lists of dicts
+# {
+#   "active": true,
+#   "applicationId": "97ab27fa-30e2-43e3-92a3-160e80f4c0d5",
+#   "displayName": "etl-service",
+#   "entitlements": [
+#     {
+#       "$ref": "string",
+#       "display": "string",
+#       "primary": true,
+#       "type": "string",
+#       "value": "string"
+#     }
+#   ],
+#   "externalId": "string",
+#   "groups": [
+#     {
+#       "$ref": "string",
+#       "display": "string",
+#       "primary": true,
+#       "type": "string",
+#       "value": "string"
+#     }
+#   ],
+#   "id": "string",
+#   "roles": [
+#     {
+#       "$ref": "string",
+#       "display": "string",
+#       "primary": true,
+#       "type": "string",
+#       "value": "string"
+#     }
+#   ],
+#   "schemas": [
+#     "urn:ietf:params:scim:schemas:core:2.0:ServicePrincipal"
+#   ]
+# }
+
+# pattern 3 dict with one dict
+# {
+#   "log_delivery_configuration": {
+#     "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+#     ...
+#     "delivery_start_time": "string",
+#     "log_delivery_status": {
+#       "last_attempt_time": "string",
+#       "last_successful_attempt_time": "string",
+#       "message": "string",
+#       "status": "CREATED"
+#     },
+#     "log_type": "BILLABLE_USAGE",
+#     ....
+#     "workspace_ids_filter": [
+#       0
+#     ]
+#   }
+# }
+
+# pattern 3.1 dict with multiple dicts.
+# {
+#   "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+#   "aws_region": "string",
+#   "creation_time": 0,
+#   "credentials_id": "c7814269-df58-4ca3-85e9-f6672ef43d77",
+#   "custom_tags": {
+#     "property1": "string",
+#     "property2": "string"
+#   },
+#   "custom_attribs": {
+#     "property1": "string",
+#     "property2": "string"
+#   },
+#   "deployment_name": "string",
+#   ....
+#   "workspace_status_message": "Workspace resources are being set up."
+# }
+
+# pattern 4 List with 1 or more dicts
+# [
+#   {
+#     "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+#     "aws_region": "string",
+#     "creation_time": 0,
+#     "credentials_id": "c7814269-df58-4ca3-85e9-f6672ef43d77",
+#     "custom_tags": {
+#       "property1": "string",
+#       "property2": "string"
+#     },
+#     "deployment_name": "string",
+#      ...
+#   }
+# ]
+
+
 
 
 

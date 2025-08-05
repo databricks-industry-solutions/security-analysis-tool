@@ -40,6 +40,13 @@ def test_get_external_locations(get_db_client):
     sList = catalogslist.get_external_locations()
     print(sList)
 
+def test_get_models(get_db_client):
+    LOGGR = LoggingUtils.get_logger()
+    jsonstr = get_db_client 
+    modelslist = UnityCatalogClient(jsonstr)
+    sList = modelslist.get_registered_models()
+    print(sList)
+
 
 def test_get_workspace_metastore_assignments(get_db_client):
     LOGGR = LoggingUtils.get_logger()

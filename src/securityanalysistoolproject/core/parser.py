@@ -75,5 +75,12 @@ def parse_input_jsonargs(inp_configs):
 
     return inp_configs
 
-
-
+@staticmethod
+def get_domain(url):
+    '''get domain from url'''
+    regex = "https:\/\/.*databricks\.(.*)"
+    match = re.match(regex, url)
+    if match:
+        domain = match.group(0)
+        return domain
+    raise ValueError('Invalid URL')

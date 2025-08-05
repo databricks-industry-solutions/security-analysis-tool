@@ -148,7 +148,8 @@ def remap_cmk_list(subslist):
         keyarn = getItem(rec, ['properties','parameters', 'encryption', 'value', "keySource"])
         cmklink['aws_key_info']={"key_alias": keyalias, "key_arn": keyarn}
         cmklistMapped.append(cmklink)
-    return {'satelements':cmklistMapped}
+    return cmklistMapped
+    #return {'satelements':cmklistMapped}
 
    
 

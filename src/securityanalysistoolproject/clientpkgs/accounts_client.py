@@ -129,6 +129,7 @@ class AccountsClient(SatDBClient):
         return(resource_list)
     
     # fixed this check jul 28 2025
+    #added this back. Remove once we finalize
     # or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
     def get_azure_diagnostic_logs(self, subslist):
         diag_list = []
@@ -138,6 +139,7 @@ class AccountsClient(SatDBClient):
         for rec in self.subslist:
             if azfunc.getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
                     or azfunc.getItem(rec, ['properties', 'workspaceId'], True) is None \
+                    or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
                     or azfunc.getItem(rec, ['id'], True) is None:
                 continue
             diagresid = azfunc.getItem(rec, ['id'], True)

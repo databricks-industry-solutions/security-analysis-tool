@@ -345,7 +345,13 @@ class UnityCatalogClient(SatDBClient):
         arrlist = self.get_metastore_list()
         for meta in arrlist:
             metastore_id = meta['metastore_id']
-            effperms = self.get_grants_effective_permissions('METASTORE', metastore_id)
+            try:
+                effperms = self.get_grants_effective_permissions('METASTORE', metastore_id)
+            except Exception as e:
+                #sometimes the metastore is not present.
+                effperms = []
+                LOGGR.exception(f"Error getting effective permissions for metastore {metastore_id}: {e}")
+                continue
             for effpermselem in effperms:
                 effpermselem['metastore_id'] = meta['metastore_id']
                 effpermselem['metastore_name'] = meta['name']
