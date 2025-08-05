@@ -63,12 +63,12 @@ elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):
   json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
 else: #lets populate master key for accounts api
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':token, 'client_secret': client_secret})
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
   mastername = ' '
   masterpwd = ' '
   #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
   #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-  json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
+  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
 
 db_client = SatDBClient(json_)
 
