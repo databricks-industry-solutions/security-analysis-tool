@@ -40,6 +40,20 @@ json_.update(
 
 # COMMAND ----------
 
+from urllib.parse import urlparse
+domain = "com"
+try:
+    parsed_url = urlparse(hostname)
+    domain_parts = parsed_url.netloc.split('.')
+    if len(domain_parts) < 2:
+        raise ValueError("Invalid hostname: cannot extract domain part.")
+    domain = domain_parts[-1]
+except Exception as e:
+    print(f"Error extracting domain: {e}")
+print(domain)
+
+# COMMAND ----------
+
 import json
 
 dbutils.notebook.run(
@@ -79,7 +93,7 @@ def generateWorkspaceConfigFile():
         elif cloud_type == "aws":
             df = df.withColumn(
                 "deployment_url",
-                concat(col("deployment_url"), lit(".cloud.databricks.com")),
+                concat(col("deployment_url"), lit(".cloud.databricks."), lit(domain)),
             )  # AWS
         else:
             df = df.withColumn(

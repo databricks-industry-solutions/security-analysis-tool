@@ -157,7 +157,7 @@ if cloud_type == "aws":
 
 # COMMAND ----------
 
-# MAGIC ###%pip install PyYAML dbl-sat-sdk=="0.0.109"
+###%pip install PyYAML dbl-sat-sdk=="0.0.109"
 
 # COMMAND ----------
 
@@ -169,7 +169,7 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
+#spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
 
 # COMMAND ----------
 
