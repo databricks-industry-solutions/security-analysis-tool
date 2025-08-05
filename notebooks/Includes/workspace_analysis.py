@@ -981,7 +981,7 @@ if enabled:
 # COMMAND ----------
 
 # DBTITLE 1,Get all audit log delivery configurations. Should be enabled.
-check_id='8' #Log delivery configurations
+check_id='8' #GOV-3 Log delivery configurations
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 workspaceId = workspace_id
 
