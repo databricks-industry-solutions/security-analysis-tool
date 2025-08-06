@@ -88,7 +88,7 @@ def generateWorkspaceConfigFile():
         if cloud_type == "azure":
             df = df.withColumn(
                 "deployment_url",
-                concat(col("deployment_url"), lit(".azuredatabricks.net")),
+                concat(col("deployment_url"), lit(".azuredatabricks."), lit(domain)),
             )  # Azure
         elif cloud_type == "aws":
             df = df.withColumn(
@@ -98,7 +98,7 @@ def generateWorkspaceConfigFile():
         else:
             df = df.withColumn(
                 "deployment_url",
-                concat(col("deployment_url"), lit(".gcp.databricks.com")),
+                concat(col("deployment_url"), lit(".gcp.databricks."), lit(domain)),
             )  # GCP
 
         # both azure and gcp require sso
