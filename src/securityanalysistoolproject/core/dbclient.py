@@ -80,7 +80,7 @@ class SatDBClient:
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
             } 
-            LOGGR.info(f'GCP self._token {oauth}')
+            #LOGGR.info(f'GCP self._token {oauth}')
         elif(self._cloud_type == 'azure'):
             #azure is only oauth to accounts/msmgmt
             self._url=self._ACCTURL
