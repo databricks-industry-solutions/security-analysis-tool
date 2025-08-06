@@ -21,8 +21,10 @@ start_time = time.time()
 test=False #local testing
 if test:
     jsonstr = JSONLOCALTEST
+    originstr = 'driver'
 else:
     jsonstr = dbutils.widgets.get('json_')
+    originstr = dbutils.widgets.get('origin')
 
 # COMMAND ----------
 
@@ -608,6 +610,26 @@ except:
 # COMMAND ----------
 
  bootstrap('vector_search_endpoint_list' + '_' + workspace_id, vector_search.get_endpoint_list)
+
+# COMMAND ----------
+
+from clientpkgs.accounts_client import AccountsClient
+
+try:
+    acct_client = AccountsClient(json_)
+except Exception:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Get Log Delivery Configurations
+
+# COMMAND ----------
+
+# only for azure. we go through the management api that does it on a workspace level
+if cloud_type == 'azure':
+    bootstrap('acctlogdelivery' + '_' + workspace_id, acct_client.get_logdelivery_list)
 
 # COMMAND ----------
 

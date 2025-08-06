@@ -53,7 +53,7 @@ import json
 out = dbutils.notebook.run(
     f"{basePath()}/notebooks/Utils/accounts_bootstrap",
     300,
-    {"json_": json.dumps(json_)},
+    {"json_": json.dumps(json_), "origin": "driver"},
 )
 loggr.info(out)
 

@@ -983,7 +983,6 @@ if enabled:
 # DBTITLE 1,Get all audit log delivery configurations. Should be enabled.
 check_id='8' #GOV-3 Log delivery configurations
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-workspaceId = workspace_id
 
 def log_check(df):
     if df is not None and not isEmpty(df) and len(df.collect())>=1:
@@ -997,13 +996,14 @@ def log_check(df):
         return (check_id, 1, {})   
 
 if enabled:   
-    tbl_name = 'acctlogdelivery' 
+    tbl_name = 'acctlogdelivery' if cloud_type != 'azure' else 'acctlogdelivery' + '_' + workspace_id 
     sql=f'''
         SELECT config_name, config_id  
         FROM {tbl_name} 
         WHERE log_type="AUDIT_LOGS" and status="ENABLED" 
         '''
     sqlctrl(workspace_id, sql, log_check)
+
 
 # COMMAND ----------
 

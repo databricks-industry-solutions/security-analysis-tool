@@ -21,8 +21,10 @@ start_time = time.time()
 test=False #local testing
 if test:
     jsonstr = JSONLOCALTEST
+    originstr = 'driver'
 else:
     jsonstr = dbutils.widgets.get('json_')
+    originstr = dbutils.widgets.get('origin')
 
 # COMMAND ----------
 
@@ -130,7 +132,14 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('acctworkspaces', acct_client.get_workspace_list)
+# if azure then get workspaces and exit. We will do the rest during the driver run
+# if local testing then lets run it and not exit.
+if originstr == 'initializer' and not test:
+    bootstrap('acctworkspaces', acct_client.get_workspace_list)
+    dbutils.notebook.exit('Account Initialization Complete')
+if test:
+    bootstrap('acctworkspaces', acct_client.get_workspace_list)
+
 
 # COMMAND ----------
 
@@ -175,7 +184,9 @@ bootstrap('acctcmk', acct_client.get_cmk_list)
 
 # COMMAND ----------
 
-bootstrap('acctlogdelivery', acct_client.get_logdelivery_list)
+# only for azure. we go through the management api that does it on a workspace level
+if cloud_type !='azure':
+    bootstrap('acctlogdelivery', acct_client.get_logdelivery_list)
 
 # COMMAND ----------
 
