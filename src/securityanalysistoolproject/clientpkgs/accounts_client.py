@@ -128,29 +128,70 @@ class AccountsClient(SatDBClient):
                     master_acct=True).get('value', [])
         return(resource_list)
     
-    # fixed this check jul 28 2025
-    #added this back. Remove once we finalize
-    # or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
-    def get_azure_diagnostic_logs(self, subslist):
+    
+    # Refactored to do a single workspace.
+
+    # # fixed this check jul 28 2025
+    # #added this back. Remove once we finalize
+    # # or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
+    # def get_azure_diagnostic_logs(self, subslist):
+    #     diag_list = []
+    #     if bool(self.subslist) is False:
+    #         self.subslist = self.get_azure_subscription_list()
+
+    #     for rec in self.subslist:
+    #         if azfunc.getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
+    #                 or azfunc.getItem(rec, ['properties', 'workspaceId'], True) is None \
+    #                 or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
+    #                 or azfunc.getItem(rec, ['id'], True) is None:
+    #             continue
+    #         diagresid = azfunc.getItem(rec, ['id'], True)
+    #         if diagresid.startswith('/'):
+    #             diagresid = diagresid[1:]
+    #         diag_subs_list = self.get(f"/{diagresid}/providers/microsoft.insights/diagnosticSettings?api-version=2021-05-01-preview",
+    #                     master_acct=True).get('value', [])            
+    #         if bool(diag_subs_list) is False:
+    #             continue
+    #         diag = {}
+    #         diag['account_id']=azfunc.getItem(rec, ['properties', 'workspaceId'])
+    #         diag['workspace_id']=azfunc.getItem(rec, ['properties', 'workspaceId'])        
+    #         diag['status']="ENABLED"
+    #         diag['config_name']=azfunc.getItem(diag_subs_list[0], ['name']) #just the first one will do
+    #         diag['config_id']=azfunc.getItem(diag_subs_list[0], ['id'])
+    #         diag['location']=azfunc.getItem(diag_subs_list[0], ['location']) #just the first one will do
+    #         diag['log_type']='AUDIT_LOGS'
+
+    #         diag_list.append(diag)
+
+    #     return diag_list   
+
+    #if workspace_id is None, then use the one coming in from the workspace.
+    # workspace_id useful for testing only
+    def get_azure_diagnostic_logs(self, subslist, workspace_id=None):
         diag_list = []
+        if workspace_id is None:       
+            workspace_id = self._workspace_id
         if bool(self.subslist) is False:
             self.subslist = self.get_azure_subscription_list()
-
         for rec in self.subslist:
             if azfunc.getItem(rec, ['type']) != 'Microsoft.Databricks/workspaces' \
                     or azfunc.getItem(rec, ['properties', 'workspaceId'], True) is None \
-                    or azfunc.getItem(rec, ['properties','parameters', 'encryption'], True) is None \
                     or azfunc.getItem(rec, ['id'], True) is None:
                 continue
+            lworkspaceId = azfunc.getItem(rec, ['properties', 'workspaceId'])
+            if lworkspaceId != str(workspace_id):  
+                continue           
+            
             diagresid = azfunc.getItem(rec, ['id'], True)
             if diagresid.startswith('/'):
                 diagresid = diagresid[1:]
             diag_subs_list = self.get(f"/{diagresid}/providers/microsoft.insights/diagnosticSettings?api-version=2021-05-01-preview",
                         master_acct=True).get('value', [])            
             if bool(diag_subs_list) is False:
-                continue
+                continue #maybe break here since only one workspace is being checked
+
             diag = {}
-            diag['account_id']=azfunc.getItem(rec, ['properties', 'workspaceId'])
+            diag['account_id']=self._account_id
             diag['workspace_id']=azfunc.getItem(rec, ['properties', 'workspaceId'])        
             diag['status']="ENABLED"
             diag['config_name']=azfunc.getItem(diag_subs_list[0], ['name']) #just the first one will do
@@ -159,6 +200,4 @@ class AccountsClient(SatDBClient):
             diag['log_type']='AUDIT_LOGS'
 
             diag_list.append(diag)
-
-        return diag_list   
-
+        return diag_list  

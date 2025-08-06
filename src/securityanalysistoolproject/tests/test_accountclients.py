@@ -80,5 +80,5 @@ def test_get_azure_diagnostic_logs(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     accountsClient = AccountsClient(jsonstr)
-    azureDiagnosticLogs = accountsClient.get_azure_diagnostic_logs([])
+    azureDiagnosticLogs = accountsClient.get_azure_diagnostic_logs([], '5635596728267912') #'5635596728267912'
     LOGGR.debug(azureDiagnosticLogs)
