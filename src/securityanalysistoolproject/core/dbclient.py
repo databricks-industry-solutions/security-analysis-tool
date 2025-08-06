@@ -202,7 +202,8 @@ class SatDBClient:
             return PatternType.PATTERN_4
 
         for ielem in resp:
-            if isinstance(resp[ielem], list):
+            #ignore schema list as in scim.groups or scim.users
+            if isinstance(resp[ielem], list) and ielem != 'schemas': 
                 numlists+=1
             if isinstance(resp[ielem], dict):
                 numdicts+=1
@@ -235,7 +236,8 @@ class SatDBClient:
         #SatDBClient.debugminijson(resp, "getRespArray")
         if patterntype==PatternType.PATTERN_1 : #one list and within list we have a dict
             for ielem in resp:
-                if isinstance(resp[ielem], list):
+                #ignore schema list as present in scim.groups or scim.users
+                if isinstance(resp[ielem], list) and ielem != 'schemas': 
                     LOGGR.debug(f"\t\tgetRespArray-{len(resp[ielem])}") #getRespArray-20-type-<class 'dict'>
                     if len(resp[ielem]) > 0:
                         LOGGR.debug(f"\t\tgetRespArray-type-{type(resp[ielem][0])}")
@@ -469,9 +471,11 @@ class SatDBClient:
                 LOGGR.debug(f"get2-{len(i[0])}-{type(i[0])}")
         reselement, resflattenpages, http_status_code = SatDBClient.flatten(respageslst)
         LOGGR.debug(f"get3-{len(resflattenpages)}") #get3-200
+        #--------remove for non debug (start)------------
         #SatDBClient.debugminijson(resflattenpages, "l1resflattenpages")
         #print(f"l2-{len(resflattenpages[0])}-type-{type(resflattenpages[0])}")
         #SatDBClient.debugminijson(resflattenpages[0], "l2resflattenpages")
+        #-------remove for non debug (end)------------
         results = {reselement:resflattenpages, 'http_status_code': http_status_code}
         return results
 
