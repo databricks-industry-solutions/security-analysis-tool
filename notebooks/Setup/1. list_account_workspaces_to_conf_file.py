@@ -69,7 +69,6 @@ dbutils.notebook.run(
 # easily modify the new lines for new workspaces.
 def generateWorkspaceConfigFile():
     from pyspark.sql.functions import col, concat, lit
-
     dfexist = readWorkspaceConfigFile()
     excluded_configured_workspace = ""
     header_value = True
@@ -80,10 +79,14 @@ def generateWorkspaceConfigFile():
         header_value = False
     else:
         excluded_configured_workspace = ""  # running first time
+
     # get current workspaces that are not yet configured for analysis
     spsql = f"""select workspace_id, deployment_name as deployment_url, workspace_name, workspace_status from `acctworkspaces` 
-            where workspace_status = "RUNNING" {excluded_configured_workspace}"""
+            where trim(workspace_status) = "RUNNING" {excluded_configured_workspace}"""
+    #print(spsql)
+
     df = spark.sql(spsql)
+    #display(df)
     if len(df.take(1)) > 0:
         if cloud_type == "azure":
             df = df.withColumn(
