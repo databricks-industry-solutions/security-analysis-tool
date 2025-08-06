@@ -137,7 +137,7 @@ except Exception:
 if originstr == 'initializer' and not test:
     bootstrap('acctworkspaces', acct_client.get_workspace_list)
     dbutils.notebook.exit('Account Initialization Complete')
-if test:
+if originstr == 'driver' or test: # we need this during driver for workspace settings
     bootstrap('acctworkspaces', acct_client.get_workspace_list)
 
 
