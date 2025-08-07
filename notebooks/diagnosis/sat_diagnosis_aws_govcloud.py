@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC **Notebook name:** sat_diagnosis_gcp  
-# MAGIC **Functionality:** Diagnose account and workspace connections for GCP workspaces
+# MAGIC **Notebook name:** sat_diagnosis_aws_govcloud  
+# MAGIC **Functionality:** Diagnose account and workspace connections for AWS Govcloud workspaces
 
 # COMMAND ----------
 
@@ -9,7 +9,7 @@
 # MAGIC ### Widget to provide specific workspace URL for connectivity tests
 # MAGIC If you need to test connectivity to specific workspaces, the following code would create a new widget to accept the workspace URL as a parameter. If this widget is left empty it connects to the current workspace (default). A sample workspace URL that can be provided through the widget (if needed) is given below.
 # MAGIC
-# MAGIC * dbc-xxxxxxxx-xxxx.cloud.databricks.com
+# MAGIC * dbc-xxxxxxxx-xxxx.cloud.databricks.us
 
 # COMMAND ----------
 
@@ -70,7 +70,7 @@ try:
    dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
    dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
    dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-   print("Your SAT configuration is has required secret names")
+   print("Your SAT configuration has required secret names")
 except Exception as e:
    dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
 
@@ -98,7 +98,7 @@ workspaceUrl = userWorkspaceUrl or spark.conf.get("spark.databricks.workspaceUrl
 
 import requests
 
-def getGCPTokenwithOAuth(source, baccount, client_id, client_secret):
+def getAWSTokenwithOAuth(source, baccount, client_id, client_secret):
         '''generates OAuth token for Service Principal authentication flow'''
         '''baccount if generating for account. False for workspace'''
         response = None
@@ -112,7 +112,7 @@ def getGCPTokenwithOAuth(source, baccount, client_id, client_secret):
         }
               
         if baccount is True:
-            full_endpoint = f"https://accounts.gcp.databricks.com/oidc/accounts/{source}/v1/token" #url for accounts api  
+            full_endpoint = f"https://accounts.cloud.databricks.us/oidc/accounts/{source}/v1/token" #url for accounts api  
         else: #workspace
             full_endpoint = f'https://{source}/oidc/v1/token'
 
@@ -132,7 +132,7 @@ def getGCPTokenwithOAuth(source, baccount, client_id, client_secret):
 
 # COMMAND ----------
 
-token = getGCPTokenwithOAuth(workspaceUrl,False, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
+token = getAWSTokenwithOAuth(workspaceUrl,False, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
                              
 print(token)
 
@@ -185,7 +185,7 @@ print(response.json())
 
 # COMMAND ----------
 
-access_token = getGCPTokenwithOAuth(dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id'),True, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
+access_token = getAWSTokenwithOAuth(dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id'),True, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
                              
 print(access_token)
 
@@ -193,7 +193,7 @@ print(access_token)
 
 # MAGIC %sh 
 # MAGIC
-# MAGIC curl -v -H 'Authorization: Bearer <token>'  'https://accounts.gcp.databricks.com/api/2.0/accounts/<account_id>/workspaces'
+# MAGIC curl -v -H 'Authorization: Bearer <token>'  'https://accounts.cloud.databricks.us/api/2.0/accounts/<account_id>/workspaces'
 # MAGIC
 # MAGIC
 
@@ -203,7 +203,7 @@ import requests
 
 # Define the URL and headers
 DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=sat_scope, key="account-console-id")
-url = f'https://accounts.gcp.databricks.com/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
+url = f'https://accounts.cloud.databricks.us/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
 
 ## Note: The access token should be generated for a SP which is an account admin to run this command.  
 
@@ -265,12 +265,12 @@ openssl_connect(workspaceUrl, 443)
 
 # COMMAND ----------
 
-openssl_connect('accounts.cloud.databricks.com', 443)
+openssl_connect('accounts.cloud.databricks.us', 443)
 
 # COMMAND ----------
 
 # MAGIC %sh
-# MAGIC curl -X POST "https://accounts.gcp.databricks.com/oidc/accounts/<account_id>/v1/token" -H "Authorization: Basic $(echo -n '<client_id>:<secet>' | base64)"
+# MAGIC curl -X POST "https://accounts.cloud.databricks.us/oidc/accounts/<account_id>/v1/token" -H "Authorization: Basic $(echo -n '<client_id>:<secet>' | base64)"
 
 # COMMAND ----------
 
@@ -279,6 +279,6 @@ openssl_connect('accounts.cloud.databricks.com', 443)
 # MAGIC export CLIENT_SECRET=<CLIENT_SECRET>
 # MAGIC
 # MAGIC curl -v --request POST \
-# MAGIC --url https://accounts.gcp.databricks.com/oidc/accounts/<account_id>/v1/token \
+# MAGIC --url https://accounts.cloud.databricks.us/oidc/accounts/<account_id>/v1/token \
 # MAGIC --user "$CLIENT_ID:$CLIENT_SECRET" \
 # MAGIC --data 'grant_type=client_credentials&scope=all-apis'
