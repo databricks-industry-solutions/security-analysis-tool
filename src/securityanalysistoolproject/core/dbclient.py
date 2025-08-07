@@ -478,10 +478,12 @@ class SatDBClient:
         LOGGR.debug(f"http type endpoint -> {http_type}: {full_endpoint}")
         is_paginated = True if SatDBClient.ispaginatedCall(full_endpoint)== True else False
         respageslst = list(self.get_paginated(full_endpoint, http_type, json_params, files_json, is_paginated))
-        LOGGR.debug(f"get1-{len(respageslst)}-type-{type(respageslst)}-type-{type(respageslst[0])}") #get1-10-type-<class 'list'>-type-<class 'tuple'>
-        if not respageslst:
+        
+        if respageslst is None or not respageslst:
             LOGGR.debug(f"get1-empty response")
             return {'satelements': [], 'http_status_code': 200} #return empty list if no results
+        LOGGR.debug(f"get1-{len(respageslst)}-type-{type(respageslst)}-type-{type(respageslst[0])}") #get1-10-type-<class 'list'>-type-<class 'tuple'>
+            
         if len(respageslst) > 0:
             LOGGR.debug(f"get1-type-{type(respageslst[0])}")
         for i in respageslst:
