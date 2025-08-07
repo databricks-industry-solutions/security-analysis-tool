@@ -33,18 +33,6 @@ cloud_type = getCloudType(hostname)
 
 # COMMAND ----------
 
-if cloud_type == "gcp":
-    # generate account level tokens for GCP for connection
-    gcp_status1 = dbutils.notebook.run(
-        f"{basePath()}/notebooks/Setup/gcp/configure_sa_auth_tokens", 3000
-    )
-    if gcp_status1 != "OK":
-        loggr.exception("Error Encountered in GCP Step#1", gcp_status1)
-        dbutils.notebook.exit()
-
-
-# COMMAND ----------
-
 def run_notebook(notebook_path, timeout):
     status = dbutils.notebook.run(notebook_path, timeout)
     if status != "OK":

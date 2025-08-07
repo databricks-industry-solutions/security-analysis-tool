@@ -167,7 +167,7 @@ import requests
 workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
 
 
-url = f'https://{workspaceUrl}/api/2.1/unity-catalog/models'
+url = f'https://{workspaceUrl}/api/2.1/unity-catalog/catalogs'
 headers = {
     'Authorization': f'Bearer {token}'
 }
@@ -182,13 +182,6 @@ print(response.json())
 
 # MAGIC %md
 # MAGIC ### Additional validation   - Execute the curl command to check the token is able to access the workspace.
-
-# COMMAND ----------
-
-# MAGIC %sh 
-# MAGIC
-# MAGIC curl --header 'Authorization: Bearer <toekn>
-# MAGIC ' -X GET 'https://sfe-plain.cloud.databricks.com/api/2.0/clusters/spark-versions'
 
 # COMMAND ----------
 

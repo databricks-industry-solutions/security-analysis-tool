@@ -26,6 +26,8 @@ cloud_type = getCloudType(hostname)
 # MAGIC * **account_id** Account ID. Can get this from the accounts console
 # MAGIC * **sql_warehouse_id** SQL Warehouse ID to import dashboard
 # MAGIC * **verbosity** (optional). debug, info, warning, error, critical
+# MAGIC * **maxpages** for paginated calls, how many max pages to iterate before stopping
+# MAGIC * **timebetweencalls** time in secs between api calls. This is to prevent rejections with too many api calls
 # MAGIC * **master_name_scope** Secret Scope for Account Name
 # MAGIC * **master_name_key** Secret Key for Account Name
 # MAGIC * **master_pwd_scope** Secret Scope for Account Password
@@ -46,6 +48,8 @@ json_ = {
         scope="sat_scope", key="analysis_schema_name"
     ),
     "verbosity": "info",
+    "maxpages":10,
+    "timebetweencalls":1,
     "proxies": json.loads(dbutils.secrets.get(scope="sat_scope", key="proxies")),
 }
 
@@ -84,7 +88,7 @@ json_.update(
         "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
-        "sat_version": "0.3.4",
+        "sat_version": "0.4.0",
     }
 )
 
@@ -93,18 +97,23 @@ json_.update(
 
 # DBTITLE 1,GCP configurations
 if cloud_type == "gcp":
-    json_.update(
-        {
-            "service_account_key_file_path": dbutils.secrets.get(
-                scope="sat_scope", key="gs-path-to-json"
-            ),
-            "impersonate_service_account": dbutils.secrets.get(
-                scope="sat_scope", key="impersonate-service-account"
-            ),
-            "use_mastercreds": False,
-        }
-    )
-
+    sp_auth = {
+        "use_sp_auth": "False",
+        "client_id": "",
+        "client_secret_key": "client-secret",
+    }
+    try:
+        use_sp_auth = (
+            dbutils.secrets.get(scope="sat_scope", key="use-sp-auth").lower() == "true"
+        )
+        if use_sp_auth:
+            sp_auth["use_sp_auth"] = "True"
+            sp_auth["client_id"] = dbutils.secrets.get(
+                scope="sat_scope", key="client-id"
+            )
+    except:
+        pass
+    json_.update(sp_auth)
 
 # COMMAND ----------
 
@@ -112,7 +121,6 @@ if cloud_type == "gcp":
 if cloud_type == "azure":
     json_.update(
         {
-            "account_id": "azure",
             "subscription_id": dbutils.secrets.get(
                 scope="sat_scope", key="subscription-id"
             ),  # Azure subscriptionId
@@ -152,7 +160,7 @@ if cloud_type == "aws":
 
 # COMMAND ----------
 
-# MAGIC %pip install PyYAML dbl-sat-sdk=="0.0.102"
+###%pip install PyYAML dbl-sat-sdk=="0.0.109"
 
 # COMMAND ----------
 
@@ -164,7 +172,7 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
+#spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
 
 # COMMAND ----------
 

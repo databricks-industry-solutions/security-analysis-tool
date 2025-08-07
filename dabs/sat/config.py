@@ -108,15 +108,15 @@ def cloud_specific_questions(client: WorkspaceClient):
     ]
     gcp = [
         Text(
-            name="gcp-gs-path-to-json",
-            message="Path to JSON key file",
+            name="gcp-client-id",
+            message="Client ID",
             ignore=cloud_validation(client, "gcp"),
         ),
-        Text(
-            name="gcp-impersonate-service-account",
-            message="Impersonate Service Account",
+        Password(
+            name="gcp-client-secret",
+            message="Client Secret",
             ignore=cloud_validation(client, "gcp"),
-            default="",
+            echo="",
         ),
     ]
     aws = [
@@ -179,7 +179,7 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
             string_value="{}",
         )
 
-    if cloud_type == "aws":
+    if cloud_type == "aws" or cloud_type == "gcp":
         client.secrets.put_secret(
             scope=scope_name,
             key="use-sp-auth",

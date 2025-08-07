@@ -27,8 +27,4 @@ resources:
             spark_version: {{.latest_lts}}
             runtime_engine: "PHOTON"
             node_type_id: {{.node_type}}
-            {{- if eq .cloud "gcp" }}
-            gcp_attributes:
-              google_service_account: {{.google_service_account}}
-            {{- end }}
       {{- end }}
