@@ -34,9 +34,7 @@ class UnityCatalogClient(SatDBClient):
         Returns an array of json objects for catalogs list
         """
         # fetch all catalogs list
-        catalogjson = self.get(f"/unity-catalog/catalogs/{catalog_name}", version='2.1')
-        cataloglist = []
-        cataloglist.append(json.loads(json.dumps(catalogjson)))
+        cataloglist = self.get(f"/unity-catalog/catalogs/{catalog_name}", version='2.1')
         return cataloglist      
     
     def get_connections_list(self):
@@ -52,10 +50,26 @@ class UnityCatalogClient(SatDBClient):
         Returns an array of json objects for catalogs list
         """
         # fetch all catalogs list
-        connjson = self.get(f"/unity-catalog/connections/{connection_name}", version='2.1')
-        connlist = []
-        connlist.append(json.loads(json.dumps(connjson)))
+        connlist = self.get(f"/unity-catalog/connections/{connection_name}", version='2.1').get('satelements', [])
         return connlist   
+
+    def get_credentials(self):
+        """
+        Returns list of credentials
+        """
+        # fetch all schemaslist
+        credentialslist = self.get(f"/unity-catalog/credentials", version='2.1').get('credentials', [])
+        return credentialslist
+
+    def get_credential(self, name_arg):
+        """
+        Returns list of credentials
+        """
+        # fetch all schemaslist
+        credentiallist = self.get(f"/unity-catalog/credentials/{name_arg}", version='2.1').get('satelements', [])
+        return credentiallist
+
+
 
     def get_external_locations(self):
         """
@@ -70,18 +84,17 @@ class UnityCatalogClient(SatDBClient):
         Returns an array of json objects for catalogs list
         """
         # fetch all catalogs list
-        extlocnjson = self.get(f"/unity-catalog/external-locations/{extlocn}", version='2.1')
-        extlocnlist = []
-        extlocnlist.append(json.loads(json.dumps(extlocnjson)))
-        return extlocnlist   
+        extlocnjsonlist = self.get(f"/unity-catalog/external-locations/{extlocn}", version='2.1').get ('satelements', [])
+        return extlocnjsonlist   
 
     def get_functions(self, catalog_name, schema_name):
         """
         Returns an array of json objects for functions
         """
+        json_params={'catalog_name': catalog_name, 'schema_name': schema_name}
         # fetch all functions
-        query = f"/unity-catalog/functions?catalog_name={catalog_name}&schema_name={schema_name}"
-        funcs = self.get(query, version='2.1').get('schemas', [])
+        query = f"/unity-catalog/functions"
+        funcs = self.get(query, json_params=json_params, version='2.1').get('functions', [])
         return funcs 
     
     def get_function(self, functionname):
@@ -89,12 +102,12 @@ class UnityCatalogClient(SatDBClient):
         Returns an array of json objects for catalogs list
         """
         # fetch all catalogs list
-        funcjson = self.get(f"/unity-catalog/functions/{functionname}", version='2.1')
-        funcjsonlist = []
-        funcjsonlist.append(json.loads(json.dumps(funcjson)))
+        funcjsonlist = self.get(f"/unity-catalog/functions/{functionname}", version='2.1').get('satelements', [])
         return funcjsonlist   
 
-    def get_grants_permissions(self, securable_type, full_name):
+    #for permissions see permissions_client
+
+    def get_grants_effective_permissions(self, securable_type, full_name):
         """
         Returns permissions for securable type
         :param securable_type like METASTORE, CATALOG, SCHEMA
@@ -104,49 +117,16 @@ class UnityCatalogClient(SatDBClient):
         permslist = self.get(f"/unity-catalog/effective-permissions/{securable_type}/{full_name}", version='2.1').get('privilege_assignments', [])
         return permslist    
 
-
-    def get_grants_effective_permissions(self, securable_type, full_name):
-        """
-        Returns effective permissions for securable type
-        :param securable_type like METASTORE, CATALOG, SCHEMA
-        catalog | schema | table | storage_credential | external_location | function | share | provider | recipient | metastore | pipeline | volume | connection
-        :param full_name like metastore guid
-        """
-        # fetch all schemaslist
-        permslist = self.get(f"/unity-catalog/permissions/{securable_type}/{full_name}", version='2.1').get('privilege_assignments', [])
-        return permslist    
-    
-    def get_table_monitor(self, table_name):
-        """
-        Returns an array of json objects for catalogs list
-        """
-        # fetch all catalogs list
-        monitorjson = self.get(f"/unity-catalog/tables/{table_name}/monitor", version='2.1')
-        monitorjsonlist = []
-        monitorjsonlist.append(json.loads(json.dumps(monitorjson)))
-        return monitorjsonlist   
-    
     def get_workspace_metastore_assignments(self):
         """
         Returns  workspace metastore assignment. Typo in function name. Should be singular.
         """
         # fetch all metastore assignment list
-        metastorejson = self.get(f"/unity-catalog/current-metastore-assignment", version='2.1')
-        metastoreassgnlist = []
-        metastoreassgnlist.append(json.loads(json.dumps(metastorejson)))
-        return metastoreassgnlist    
+        metastorejsonlist = self.get(f"/unity-catalog/current-metastore-assignment", version='2.1').get('satelements', [])
+        return metastorejsonlist    
     
 
-    def get_workspace_metastore_summary(self):
-        """
-        Returns  workspace metastore summary
-        """
-        # fetch all metastore assignment list
-        metastoresumjson = self.get(f"/unity-catalog/metastore_summary", version='2.1')
-        metastoresumlist = []
-        metastoresumlist.append(json.loads(json.dumps(metastoresumjson)))
-        return metastoresumlist    
-    
+
     #Has to be an account admin to run this api
     def get_metastore_list(self):
         """
@@ -160,7 +140,27 @@ class UnityCatalogClient(SatDBClient):
             LOGGR.exception(e)
             return []
         return metastores
+    
+    def get_metastore_id(self, id):
+        """
+        Returns  metastore detail
+        """
+        try:
+            metastores = self.get(f"/unity-catalog/metastores/{id}", version='2.1').get('satelements', [])
+        except  Exception as e:
+            LOGGR.exception(e)
+            return []
+        return metastores
+    
 
+    def get_workspace_metastore_summary(self):
+        """
+        Returns  workspace metastore summary
+        """
+        # fetch all metastore assignment list
+        metastoresumlist = self.get(f"/unity-catalog/metastore_summary", version='2.1').get('satelements', [])
+        return metastoresumlist    
+    
     def get_model_versions(self, modelname):
         """
         Returns  workspace metastore summary
@@ -174,21 +174,27 @@ class UnityCatalogClient(SatDBClient):
         Returns  workspace metastore summary
         """
         # fetch all metastore assignment list
-        modelversionjson = self.get(f"/unity-catalog/models/{modelname}/versions/{version}", version='2.1')
-        modelversionjsonlist = []
-        modelversionjsonlist.append(json.loads(json.dumps(modelversionjson)))
+        modelversionjsonlist = self.get(f"/unity-catalog/models/{modelname}/versions/{version}", version='2.1').get('satelements', [])
         return modelversionjsonlist    
-    
+
 
     def get_online_table(self, onlinetable):
         """
-        Returns  workspace metastore summary
+        Returns  online table
         """
-        # fetch all metastore assignment list
-        onlinetbljson = self.get(f"/online-tables/{onlinetable}", version='2.0')
-        onlinetbljsonlist = []
-        onlinetbljsonlist.append(json.loads(json.dumps(onlinetbljson)))
-        return onlinetbljsonlist
+        # return online table
+        onlinetbllist = self.get(f"/online-tables/{onlinetable}", version='2.0').get('satelements', [])
+        return onlinetbllist
+    
+        
+    def get_table_monitor(self, table_name):
+        """
+        Returns an array of json objects for catalogs list
+        """
+        # fetch all catalogs list
+        monitorlist = self.get(f"/unity-catalog/tables/{table_name}/monitor", version='2.1').get('satelements', [])
+        return monitorlist   
+    
 
     def get_registered_models(self):
         """
@@ -203,17 +209,25 @@ class UnityCatalogClient(SatDBClient):
         Returns  workspace metastore summary
         """
         # fetch all metastore assignment list
-        modeljson = self.get(f"/unity-catalog/models/{modelname}", version='2.1')
-        modeljsonlist = []
-        modeljsonlist.append(json.loads(json.dumps(modeljson)))
+        modeljsonlist = self.get(f"/unity-catalog/models/{modelname}", version='2.1').get('satelements', [])
         return modeljsonlist       
+
+    def get_resource_quotas_metastore(self):
+        """
+        Returns resource quota summary
+        """
+        # fetch all metastore assignment list
+        quotajsonlist = self.get(f"/unity-catalog/resource-quotas/all-resource-quotas", version='2.1').get('quotas', [])
+        return quotajsonlist   
+
 
     def get_schemas_list(self, catalogname):
         """
         Returns list of schemas
         """
         # fetch all schemaslist
-        schemaslist = self.get(f"/unity-catalog/schemas?catalog_name={catalogname}", version='2.1').get('schemas', [])
+        json_params={'catalog_name': catalogname}
+        schemaslist = self.get(f"/unity-catalog/schemas", json_params=json_params, version='2.1').get('schemas', [])
         return schemaslist 
 
     def get_schema(self, catalogname, schemaname):
@@ -221,13 +235,11 @@ class UnityCatalogClient(SatDBClient):
         Returns  workspace metastore summary
         """
         # fetch all metastore assignment list
-        schemajson = self.get(f"/unity-catalog/schemas/{catalogname}.{schemaname}", version='2.1')
-        schemajsonlist = []
-        schemajsonlist.append(json.loads(json.dumps(schemajson)))
+        schemajsonlist = self.get(f"/unity-catalog/schemas/{catalogname}.{schemaname}", version='2.1').get('satelements', [])
         return schemajsonlist    
 
     
-    def get_credentials(self):
+    def get_storage_credentials(self):
         """
         Returns list of credentials
         """
@@ -235,17 +247,14 @@ class UnityCatalogClient(SatDBClient):
         credentialslist = self.get(f"/unity-catalog/storage-credentials", version='2.1').get('storage_credentials', [])
         return credentialslist
     
-    def get_credential(self, credname):
+    def get_storage_credential(self, credname):
         """
         Returns  workspace metastore summary
         """
         # fetch all metastore assignment list
-        credentialjson = self.get(f"/unity-catalog/storage-credentials/{credname}", version='2.1')
-        credjsonlist = []
-        credjsonlist.append(json.loads(json.dumps(credentialjson)))
+        credjsonlist = self.get(f"/unity-catalog/storage-credentials/{credname}", version='2.1').get('satelements', [])
         return credjsonlist      
     
-
     def get_systemschemas(self, metastore_id):
         """
         Returns list of credentials
@@ -254,48 +263,31 @@ class UnityCatalogClient(SatDBClient):
         systemschemas = self.get(f"/unity-catalog/metastores/{metastore_id}/systemschemas", version='2.1').get('schemas', [])
         return systemschemas
     
-    def get_tablesummaries(self, catalog_name, schema_name, table_name, page_token ):
+    def get_tablesummaries(self, catalog_name, schema_name=None, table_name=None ):
         """
         Returns list of credentials
         """ 
-        strquery=''
+        json_params={}
+
         if catalog_name:
-            strquery=f'catalog_name={catalog_name}&'
+            json_params.append({'catalog_name': catalog_name})
         if schema_name:
-            strquery=f'{strquery}schema_name={schema_name}&'
+            json_params.append({'schema_name_pattern': schema_name})
         if table_name:
-            strquery=f'{strquery}table_name={table_name}&'
-        if page_token:
-            strquery=f'{strquery}page_token={page_token}&'
-        strurl = f"/unity-catalog/table-summaries?{strquery}"
+            json_params.append({'table_name_pattern': table_name})
+
         # fetch all schemaslist
-        tablesummaries = self.get(strurl, version='2.1').get('tables', [])
+        tablesummaries = self.get(f'/unity-catalog/table-summaries', json_params=json_params, version='2.1').get('tables', [])
         return tablesummaries
 
-    def get_tables(self, catalog_name, schema_name, page_token, include_delta_metadata, omit_columns, omit_properties, include_browse):
+    def get_tables(self, catalog_name, schema_name,include_browse=True):
         """
         Returns list of tables
         """
-        strquery=''
-        if catalog_name:
-            strquery=f'catalog_name={catalog_name}&'
-        if schema_name:
-            strquery=f'{strquery}schema_name={schema_name}&'
-        if page_token:
-            strquery=f'{strquery}page_token={page_token}&'
-        if include_delta_metadata:
-            strquery=f'{strquery}include_delta_metadata={include_delta_metadata}&'
-        if omit_columns:
-            strquery=f'{strquery}omit_columns={omit_columns}&'
-        if omit_properties:
-            strquery=f'{strquery}omit_properties={omit_properties}&'
-        if include_browse:
-            strquery=f'{strquery}include_browse={include_browse}'
-
-
-        strurl = f"/unity-catalog/tables?{strquery}"    
+        json_params={'catalog_name': catalog_name, 'schema_name': schema_name, 'include_browse': include_browse}
+        strurl = f"/unity-catalog/tables"    
         # fetch all schemaslist
-        tableslist = self.get(strurl, version='2.1').get('tables', [])
+        tableslist = self.get(strurl, json_params=json_params, version='2.1').get('tables', [])
         return tableslist
     
     def get_table(self, table_name):
@@ -303,84 +295,48 @@ class UnityCatalogClient(SatDBClient):
         Returns  workspace metastore summary
         """
         # fetch all metastore assignment list
-        tablejson = self.get(f"/unity-catalog/tables/{table_name}", version='2.1')
-        tablejsonlist = []
-        tablejsonlist.append(json.loads(json.dumps(tablejson)))
+        tablejsonlist = self.get(f"/unity-catalog/tables/{table_name}", version='2.1').get('satelements', [])
         return tablejsonlist    
 
-    def get_volumes(self, catalog_name, schema_name, page_token, include_browse):
+    def get_volumes(self, catalog_name, schema_name, page_token, include_browse=False):
         """
         Returns list of credentials
         """
-        strquery=''
+        json_params={}
+
         if catalog_name:
-            strquery=f'catalog_name={catalog_name}&'
+            json_params.update({'catalog_name':catalog_name})
         if schema_name:
-            strquery=f'{strquery}schema_name={schema_name}&'
-        if page_token:
-            strquery=f'{strquery}page_token={page_token}&'
+            json_params.update({'schema_name':schema_name})
         if include_browse:
-            strquery=f'{strquery}include_browse={include_browse}'
+            json_params.update({'include_browse':include_browse})
 
-
-        strurl = f"/unity-catalog/volumes?{strquery}"       
         # fetch all schemaslist
-        volumes = self.get(strurl, version='2.1').get('volumes', [])
+        volumes = self.get(f"/unity-catalog/volumes", json_params=json_params, version='2.1').get('volumes', [])
         return volumes
 
     def get_volume(self, volume_name):
         """
         Returns  workspace metastore summary
         """
-        # fetch all metastore assignment list
-        voljson = self.get(f"/unity-catalog/volumes/{volume_name}", version='2.1')
-        voljsonlist = []
-        voljsonlist.append(json.loads(json.dumps(voljson)))
+        voljsonlist = self.get(f"/unity-catalog/volumes/{volume_name}", version='2.1').get('satelements', [])
         return voljsonlist  
 
+    def get_securable_bindings(self, securable_type, securable_name):
+        """
+        Returns securable bindings summary
+        """
+        secjsonlist = self.get(f"/unity-catalog/bindings/{securable_type}/{securable_name}", version='2.1').get('bindings', [])
+        return secjsonlist  
 
-    def get_sharing_providers_list(self):
+    def get_securable_binding(self, catname):
         """
-        Returns an array of json objects for sharing providers
+        Returns securable bindings summary
         """
-        # fetch all sharing providers list
-        query = f"/unity-catalog/providers"
-        sharingproviderslist = self.get(query, version='2.1').get('providers', [])
-        return sharingproviderslist
+        secjsonlist = self.get(f"/unity-catalog/workspace-bindings/catalogs/{catname}", version='2.1').get('workspaces', [])
+        return secjsonlist  
     
-    def get_sharing_recepients_list(self):
-        """
-        Returns an array of json objects for sharing recepients
-        """
-        # fetch all sharing recepients list
-        sharingrecepientslist = self.get(f"/unity-catalog/recipients", version='2.1').get('recipients', [])
-        return sharingrecepientslist
-    
-    def get_sharing_recepient_permissions(self, sharename):
-        """
-        Returns an array of json objects for sharing recepients permission
-        """
-        # fetch all acls list
-        sharingacl = self.get(f"/unity-catalog/recipients/{sharename}/share-permissions", version='2.1').get('permissions_out', [])
-        return sharingacl
 
-    def get_list_shares(self):
-        """
-        Returns an array of json objects for shares
-        """
-        # fetch all shares 
-        shareslist = self.get(f"/unity-catalog/shares", version='2.1').get('shares', [])
-        return shareslist   
-    
-    def get_share_permissions(self, sharename):
-        """
-        Returns an array of json objects for share permission
-        """
-        # fetch all acls list
-        sharingacl = self.get(f"/unity-catalog/shares/{sharename}/permissions", version='2.1').get('privilege_assignments', [])
-        return sharingacl
-    
- 
 
     
     #the user should have account admin privileges
@@ -389,7 +345,13 @@ class UnityCatalogClient(SatDBClient):
         arrlist = self.get_metastore_list()
         for meta in arrlist:
             metastore_id = meta['metastore_id']
-            effperms = self.get_grants_effective_permissions('METASTORE', metastore_id)
+            try:
+                effperms = self.get_grants_effective_permissions('METASTORE', metastore_id)
+            except Exception as e:
+                #sometimes the metastore is not present.
+                effperms = []
+                LOGGR.exception(f"Error getting effective permissions for metastore {metastore_id}: {e}")
+                continue
             for effpermselem in effperms:
                 effpermselem['metastore_id'] = meta['metastore_id']
                 effpermselem['metastore_name'] = meta['name']

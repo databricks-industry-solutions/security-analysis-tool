@@ -21,8 +21,10 @@ start_time = time.time()
 test=False #local testing
 if test:
     jsonstr = JSONLOCALTEST
+    originstr = 'driver'
 else:
     jsonstr = dbutils.widgets.get('json_')
+    originstr = dbutils.widgets.get('origin')
 
 # COMMAND ----------
 
@@ -68,8 +70,12 @@ elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):
     masterpwd = ' ' # we still need to send empty user/pwd.
     json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
 else: #lets populate master key for accounts api
-    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+    mastername = ' '
+    masterpwd = ' '
+    #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+    #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
     json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
     
 if (json_['use_mastercreds']) is False:
@@ -169,7 +175,7 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('ipaccesslist'+ '_' + workspace_id, ip_access_client.get_ipaccess_list)
+bootstrap('ipaccesslist'+ '_' + workspace_id, ip_access_client.get_ip_access_list)
 
 # COMMAND ----------
 
@@ -209,7 +215,8 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('policies'+ '_' + workspace_id, policies_client.get_policies_list)
+#bootstrap('policies'+ '_' + workspace_id, policies_client.get_policies_list)
+bootstrap('policies'+ '_' + workspace_id, policies_client.get_cluster_policies_list)
 
 # COMMAND ----------
 
@@ -473,15 +480,15 @@ bootstrap('unitycatalogcredentials' + '_' + workspace_id, uc_client.get_credenti
 
 # COMMAND ----------
 
-bootstrap('unitycatalogshares' + '_' + workspace_id, uc_client.get_list_shares)
+#bootstrap('unitycatalogshares' + '_' + workspace_id, uc_client.get_list_shares)
 
 # COMMAND ----------
 
-bootstrap('unitycatalogshareproviders' + '_' + workspace_id, uc_client.get_sharing_providers_list)
+#bootstrap('unitycatalogshareproviders' + '_' + workspace_id, uc_client.get_sharing_providers_list)
 
 # COMMAND ----------
 
-bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_sharing_recepients_list)
+#bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_sharing_recepients_list)
 
 # COMMAND ----------
 
@@ -603,6 +610,26 @@ except:
 # COMMAND ----------
 
  bootstrap('vector_search_endpoint_list' + '_' + workspace_id, vector_search.get_endpoint_list)
+
+# COMMAND ----------
+
+from clientpkgs.accounts_client import AccountsClient
+
+try:
+    acct_client = AccountsClient(json_)
+except Exception:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Get Log Delivery Configurations
+
+# COMMAND ----------
+
+# only for azure. we go through the management api that does it on a workspace level
+if cloud_type == 'azure':
+    bootstrap('acctlogdelivery' + '_' + workspace_id, acct_client.get_logdelivery_list)
 
 # COMMAND ----------
 

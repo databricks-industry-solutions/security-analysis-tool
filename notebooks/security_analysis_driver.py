@@ -53,7 +53,7 @@ import json
 out = dbutils.notebook.run(
     f"{basePath()}/notebooks/Utils/accounts_bootstrap",
     300,
-    {"json_": json.dumps(json_)},
+    {"json_": json.dumps(json_), "origin": "driver"},
 )
 loggr.info(out)
 
@@ -140,7 +140,7 @@ def processWorkspace(wsrow):
     retstr = dbutils.notebook.run(
         f"{basePath()}/notebooks/Utils/workspace_bootstrap",
         3000,
-        {"json_": json.dumps(ws_json)},
+        {"json_": json.dumps(ws_json),"origin": "driver"},
     )
     if "Completed SAT" not in retstr:
         raise Exception("Workspace Bootstrap failed. Skipping workspace analysis")

@@ -26,6 +26,8 @@ cloud_type = getCloudType(hostname)
 # MAGIC * **account_id** Account ID. Can get this from the accounts console
 # MAGIC * **sql_warehouse_id** SQL Warehouse ID to import dashboard
 # MAGIC * **verbosity** (optional). debug, info, warning, error, critical
+# MAGIC * **maxpages** for paginated calls, how many max pages to iterate before stopping
+# MAGIC * **timebetweencalls** time in secs between api calls. This is to prevent rejections with too many api calls
 # MAGIC * **master_name_scope** Secret Scope for Account Name
 # MAGIC * **master_name_key** Secret Key for Account Name
 # MAGIC * **master_pwd_scope** Secret Scope for Account Password
@@ -46,6 +48,8 @@ json_ = {
         scope="sat_scope", key="analysis_schema_name"
     ),
     "verbosity": "info",
+    "maxpages":10,
+    "timebetweencalls":1,
     "proxies": json.loads(dbutils.secrets.get(scope="sat_scope", key="proxies")),
 }
 
@@ -157,7 +161,7 @@ if cloud_type == "aws":
 
 # COMMAND ----------
 
-# MAGIC %pip install PyYAML dbl-sat-sdk=="0.0.102"
+###%pip install PyYAML dbl-sat-sdk=="0.0.109"
 
 # COMMAND ----------
 
@@ -169,7 +173,7 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
+#spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
 
 # COMMAND ----------
 

@@ -11,8 +11,9 @@ class WorkspaceClient(SatDBClient):
         Returns an array of json objects for notebooks in a path
         """
         # fetch all poolslist
-        notebooklist = self.get("/workspace/list", json_params={'path': path}, version='2.0').get('objects', [])
+        notebooklist = self.get(f"/workspace/list", json_params={'path': path}, version='2.0').get('objects', [])
         return notebooklist
+
 
     def get_all_notebooks(self):
         '''get list of notebooks'''
@@ -36,3 +37,16 @@ class WorkspaceClient(SatDBClient):
         # pylint: enable=modified-iterating-list
         LOGGR.info('finished notebooks...')
         return notebooklst
+    
+
+    # permissions are implemented in permissions_client.py
+    # def get_workspace_object_permissions(self,workspace_object_type, workspace_object_id):
+    #     """
+    #     Returns workspace object permissions
+    #     object type: Expected one of {alerts,apps,authorization,clusters,cluster-policies,dashboards,
+    #     dbsql-dashboards,directories,experiments,files,instance-pools,jobs,notebooks,pipelines,queries,
+    #     registered-models,repos,serving-endpoints,warehouses,vector-search-endpoints}
+    #     """
+    #     # fetch all workspacelist
+    #     workspacelist = self.get(f"/permissions/{workspace_object_type}/{workspace_object_id}",  version='2.0').get('access_control_list', [])
+    #     return workspacelist

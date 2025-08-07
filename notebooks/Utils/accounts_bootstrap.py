@@ -21,8 +21,10 @@ start_time = time.time()
 test=False #local testing
 if test:
     jsonstr = JSONLOCALTEST
+    originstr = 'driver'
 else:
     jsonstr = dbutils.widgets.get('json_')
+    originstr = dbutils.widgets.get('origin')
 
 # COMMAND ----------
 
@@ -56,15 +58,19 @@ if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
   json_.update({'token':'dapijedi', 'client_secret': client_secret})
 elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
-    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-    json_.update({'token':'dapijedi', 'client_secret': client_secret})
-    mastername =' ' # this will not be present when using SPs
-    masterpwd = ' '  # we still need to send empty user/pwd.
-    json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
+  mastername =' ' # this will not be present when using SPs
+  masterpwd = ' '  # we still need to send empty user/pwd.
+  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
 else: #lets populate master key for accounts api
-    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-    json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
+  mastername = ' '
+  masterpwd = ' '
+  #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+  #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
 
 db_client = SatDBClient(json_)
 
@@ -126,7 +132,14 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('acctworkspaces', acct_client.get_workspace_list)
+# if azure then get workspaces and exit. We will do the rest during the driver run
+# if local testing then lets run it and not exit.
+if originstr == 'initializer' and not test:
+    bootstrap('acctworkspaces', acct_client.get_workspace_list)
+    dbutils.notebook.exit('Account Initialization Complete')
+if originstr == 'driver' or test: # we need this during driver for workspace settings
+    bootstrap('acctworkspaces', acct_client.get_workspace_list)
+
 
 # COMMAND ----------
 
@@ -171,7 +184,9 @@ bootstrap('acctcmk', acct_client.get_cmk_list)
 
 # COMMAND ----------
 
-bootstrap('acctlogdelivery', acct_client.get_logdelivery_list)
+# only for azure. we go through the management api that does it on a workspace level
+if cloud_type !='azure':
+    bootstrap('acctlogdelivery', acct_client.get_logdelivery_list)
 
 # COMMAND ----------
 
@@ -202,6 +217,10 @@ bootstrap('account_csp', acct_settings.get_compliancesecurityprofile)
 # COMMAND ----------
 
 bootstrap('account_ncc', acct_settings.get_networkconnectivityconfigurations)
+
+# COMMAND ----------
+
+bootstrap('account_networkpolicies', acct_settings.get_networkpolicies)
 
 # COMMAND ----------
 
