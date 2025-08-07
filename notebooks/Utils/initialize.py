@@ -121,7 +121,6 @@ if cloud_type == "gcp":
 if cloud_type == "azure":
     json_.update(
         {
-            "account_id": "azure",
             "subscription_id": dbutils.secrets.get(
                 scope="sat_scope", key="subscription-id"
             ),  # Azure subscriptionId
