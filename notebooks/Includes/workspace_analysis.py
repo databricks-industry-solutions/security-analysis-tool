@@ -190,7 +190,7 @@ if enabled:
     sql = f'''
         SELECT *
         FROM {tbl_name}
-        WHERE network_id is not null AND workspace_id ="{workspaceId}"
+        WHERE network_id is not null AND network_id != '' AND workspace_id ="{workspaceId}"
     '''
     sqlctrl(workspace_id, sql, byopc)
 
@@ -1206,11 +1206,13 @@ def uc_metastore_owner(df):
     else:
         return (check_id, 0, {})   
 if enabled:    
-    tbl_name = 'unitycatalogmsv1' + '_' + workspace_id
+    tbl_name = 'workspace_metastore_summary' + '_' + workspace_id
     sql=f'''
-        SELECT name,owner,created_by
-        FROM {tbl_name} 
-        WHERE securable_type = 'METASTORE' and owner == created_by
+        SELECT m.name, m.owner, m.created_by
+        FROM {tbl_name} m
+        WHERE m.owner == m.created_by 
+           OR m.owner = 'System user'
+           OR m.owner LIKE '%@%'
     '''
     sqlctrl(workspace_id, sql, uc_metastore_owner)
  

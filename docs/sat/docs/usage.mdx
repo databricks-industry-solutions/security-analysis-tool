@@ -1,0 +1,106 @@
+---
+sidebar_position: 2
+---
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
+
+# Usage 
+
+<Admonition type="note" title="Note">
+
+Navigate to **Workspace -> Applications -> SAT -> files ->** `self_assessment_checks.yaml` and ensure that the `"enabled"` values for the listed manual checks are set to either `true` or `false`, based on your environment. The SAT tool will automatically evaluate all other configurations.
+
+</Admonition>
+
+## Running the SAT Workflows
+
+> **Note:** These workflows can take up to 10 mins to run per workspace. 
+
+Within the `Workflows` pane, there should now be two jobs available: **SAT Initializer Notebook** and **SAT Driver Notebook**. 
+    * Run the **SAT Initalizer Notebook** first. It only needs to complete successfully once, though it can be re-run if needed.
+    * Once the initializer completes, run the **SAT Driver Notebook**, which can be executed on a recurring basis. By default, it is scheduled to run every Monday, Wednesday, and Friday.
+
+Once the workflows have finished running, you should see the schema under the catalog that was set at the time of installation for **SAT** within the `Catalog` pane. 
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/catalog_view.png')} alt="Catalog View" />
+</div>
+
+## Accessing and Viewing the SAT Analysis Dashboard
+Within the `Dashboards` pane, look for the  `[SAT] Security Analysis Tool - Assessment Results` dashboard. 
+
+The dashboard is, by default, owned by the user profile or Service Principal used during SAT setup.
+If you encounter errors when running the dashboard, they are most likely due to permissions issues. To update this behavior:
+    * Click on the dashboard and in the top right, click on the "Share" button. 
+    * Click on the cogwheel icon and select "Assign new owner". Choose the new owner of the dashboard. Ownership can also be assigned to someone with access to the **SAT** catalog/schema and the underlying tables. 
+    * Click on the "Published" icon next to the name of the dashboard towards the top of the page, and switch to the "Draft" version. Click on the "Publish" button that is next to the "Share" button. 
+        * Choose from one of the two credential options:
+            * **Embed credentials (default):** All viewers run queries using the owner’s credentials and compute.
+                > This may expose data to users who wouldn't normally have access. 
+            * **Don't embed credentials:** Each viewer must have access to the workspace and associated data to view the dashboard.
+                > We recommend using this option for more secure access control. 
+
+    * The dashboard can be shared with other team members by clicking the "Share" button from the "Published" mode. 
+    * This is what the **SAT** dashboard should look like:
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/sat_dashboard_partial.png')} alt="Security Dashboard" />
+</div>
+
+## Activating Alerts
+Navigate to the `Alerts` from the left-hand pane under the `SQL` section. Click on `All Alerts` to view all of the alerts created by the **SAT** workflows. 
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/alerts_view.png')} alt="Alerts_View" />
+</div>
+
+Click on one of the alerts to see the details. 
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/alert_details.png')} alt="Alerts_Details" />
+</div>
+
+Click on the "Add Schedules" button. From the "Settings" tab, you can define the schedule for the alert to be triggered. 
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/alert_settings.png')} alt="Alerts_Settings" />
+</div>
+
+Next, click on the "Destinations" tab. From here, you can search for a user (email) or a destination object for the alert to be sent to. Click on "Create" to save the schedule with the selected recipient(s) for the alert. 
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/alert_destination.png')} alt="Alerts_Destination" />
+</div>
+
+## Updating Configuration Files (Optional)
+
+* Modifying **security_best_practices** (Optional)
+    * Navigate to `Workspace -> Applications -> SAT -> files -> notebooks -> Setup -> 7. update_sat_check_configuration` 
+    * Use this utility to: 
+        * Enable or disable individual checks
+        * Modify the Evaluation value
+        * Update the Alert Configuration for each check
+    * [Configure widget settings](https://docs.databricks.com/aws/en/notebooks/widgets#configure-widget-settings-1) on "Widget Change" for this notebook to "Do Nothing". 
+ 
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/upate_security_best_practices.png')} alt="update_sat_check_configuration" />
+</div>
+
+* Modify **workspace_configs_file** (Required for manual checks values)
+    * Navigate to `Workspace -> Applications -> SAT -> files -> notebooks -> Setup -> 8. update_workspace_configuration`
+    * Use this utility to: 
+        * Enable analysis for a specific workspace by setting analysis_enabled to `True`, or disable it by setting it to `False`.
+        * Turn on a specific workspace while turning off others for a focused run.
+        * Apply your configuration changes to multiple workspaces using the “Apply Setting to All Workspaces” option.
+    * [Configure widget settings](https://docs.databricks.com/aws/en/notebooks/widgets#configure-widget-settings-1) on "Widget Change" for this notebook to "Do Nothing". 
+    
+    * Update manual check values for each workspace
+        * **sso_enabled**: Set to `True` if Single Sign-On (SSO) is enabled for the workspace.
+        * **scim_enabled**: Set to `True` if SCIM integration is configured for user and group provisioning.
+        * **vpc_peering_done**: Set to `False` if the workspace is not peered with another VPC.
+        * **object_storage_encrypted**: Set to `True` if your object storage buckets are encrypted.
+        * **table_access_control_enabled**: Set to `True` if Table Access Control (ACLs) is enabled to enforce user isolation on clusters.
+    
+        These settings are critical for running manual checks and ensuring accurate **SAT** analysis results.
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/update_workspace_configuration.png')} alt="update_workspace_configuration" />
+</div>
+

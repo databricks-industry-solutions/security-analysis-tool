@@ -1,0 +1,34 @@
+name: Feature Request
+description: Propose a new check, feature or enhancement for the Security Analysis Tool.
+title: "[Feature]: "
+labels: ["feature-request"]
+body:
+  - type: checkboxes
+    id: existing-issue-search
+    attributes:
+      label: Prior Issue Search
+      description: Please confirm that you have searched for existing issues to avoid duplicates.
+      options:
+      - label: I have searched existing issues and confirm this is not a duplicate.
+        required: true
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem Statement
+      description: Clearly describe the problem or limitation you are experiencing that this feature would address.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature you are proposing, including specific functionality and any relevant details.
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Include any relevant context, references, use cases, or screenshots that may support your request.
+    validations:
+      required: false

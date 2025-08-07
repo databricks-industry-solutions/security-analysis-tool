@@ -1,0 +1,93 @@
+---
+sidebar_position: 1
+---
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
+
+# GCP
+
+This guide will help you setup the **Security Analysis Tool (SAT)** on GCP Databricks.
+
+## Prerequisites
+
+There are some [prerequisites](../../installation/index.mdx#prerequisites) that need to be met before you can setup SAT on GCP. Make sure you also have the appropriate permissions in your GCP Cloud account to create the resources mentioned below.
+
+> SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers,  as most of the checks and recommendations involve security features that are only available in tiers above Standard.
+
+### Service Accounts
+
+The first step is to create a Service Principal in GCP. This will allow SAT to authenticate with GCP services. Follow the steps below to create a Service Principal:
+
+- Please follow [this](https://docs.gcp.databricks.com/en/dev-tools/authentication-google-id.html) guide to create the required service accounts.
+- Now upload the SA-1.json file into a GCS bucket.
+- To add the service account to the Account Console:
+  - You will need to create a new user and add the service account email as the user email.
+- The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
+- Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
+- Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions. 
+
+### Databricks Service Principal
+
+The first step is to create a Service Principal in Databricks. This will allow SAT to authenticate with the other workspaces. Follow the steps:
+
+- Go to the [Account Console](https://accounts.gcp.databricks.com)
+- On the left side bar menu, click on `User management`
+- Select `Service Principal` and then `Add service principal`
+- Type a new name for the service principal.
+- The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
+- Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
+- Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions.
+- Create a new OAuth Secret.
+- Save the `Secret` and `Client ID`
+- To analyze a workspace with SAT, you must add the Service Principal to the workspace. Please [add this Service Princple](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals) to **each workspace** so that SAT can access the APIs for analysis.
+
+## Installation
+
+### Credentials Needed
+
+To setup SAT on GCP, you will need the following credentials:
+
+- Databricks Account ID
+- Service Account email
+- gsutil URI from GCS Bucket
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+  <img src={useBaseUrl('/img/gs_path_to_json.png')} alt="GCP Console" />
+</div>
+
+
+To execute the SAT follow these steps on your workstation or a compatible VM that has access to the internet and the Databricks workspace:
+
+- Clone the SAT repository locally
+  
+  ```sh
+    git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+   ```
+
+To ensure that the install.sh script is executable, you need to modify its permissions using the chmod command.
+
+For linux or mac users:
+> ```sh
+> chmod +x install.sh
+>```
+
+Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
+
+- Run the `install.sh` script on your terminal.
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+  <img src={useBaseUrl('/gif/terminal-gcp.gif')} alt="GCP Install" />
+</div>
+
+
+Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../../functionality.mdx) for a detailed description on how to run and use it.
+
+
+## Troubleshooting
+Please review the FAQs and troubleshooting resources, including the diagnostic notebook provided to help verify your SAT setup.
+
+If you encounter issues during installation:
+  * Double-check your credentials.
+  * Ensure you have the correct configurations and permissions for your Databricks environment.
+  
+If problems persist, feel free to contact us with your feedback or questions at sat@databricks.com.
