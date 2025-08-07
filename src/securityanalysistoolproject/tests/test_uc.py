@@ -76,6 +76,13 @@ def test_credentials(get_db_client):
     catalogslist = UnityCatalogClient(jsonstr)
     sList = catalogslist.get_credentials()
     print(sList)   
+
+def test_systemschemas(get_db_client):
+    LOGGR = LoggingUtils.get_logger()
+    jsonstr = get_db_client 
+    catalogslist = UnityCatalogClient(jsonstr)
+    sList = catalogslist.get_systemschemas('61c4bae8-aa87-4945-9cc3-cd06e7594f4e')
+    print(sList)   
            
 
 def test_grants_effective_permissions(get_db_client):

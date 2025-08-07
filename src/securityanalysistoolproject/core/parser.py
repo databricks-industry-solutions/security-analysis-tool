@@ -18,6 +18,10 @@ def set_defaults(args):
         args.update({'client_id':''})
     if 'client_secret' not in args.keys():
         args.update({'client_secret':''})
+    if 'maxpages' not in args.keys():
+        args.update({'maxpages':10})
+    if 'timebetweencalls' not in args.keys():
+        args.update({'timebetweencalls':1})     
     # if 'use_sp_auth' not in args.keys():
     #     args.update({'use_sp_auth':False})
 

@@ -47,7 +47,8 @@ class SatDBClient:
         # mastercreds not used anymore
         self._proxies = configs.get('proxies', {})
         #self._use_sp_auth = True #always use sp auth by default
-        
+        self._maxpages = configs['maxpages'] #max pages to fetch in paginated calls
+        self._timebetweencalls = configs['timebetweencalls'] #seconds to wait between paginated calls
         #common for all clouds
         #AWS and GCP pass in secret generated in accounts console
         #Azure pass in secret generated in azure portal
@@ -185,7 +186,7 @@ class SatDBClient:
         numlists=0
         numdicts=0
 
-        # #moved to get_paginated
+        # #moved to get_paginated REMOVE COMMENT AFTER DEC 2025
         # if 'error_code' in resp and 'message' in resp:
         #     LOGGR.debug(f"\t\t\t$error_code={resp['error_code']} {resp['message']}")
         #     return numlists, innerisdict        
@@ -201,12 +202,21 @@ class SatDBClient:
             LOGGR.debug(f"\t\t\tPattern4")
             return PatternType.PATTERN_4
 
+        bfoundschemas=False
         for ielem in resp:
-            #ignore schema list as in scim.groups or scim.users
-            if isinstance(resp[ielem], list) and ielem != 'schemas': 
+            #ignore schema list as in scim.groups or scim.users      
+            if ielem == 'schemas':
+                bfoundschemas=True
+            if isinstance(resp[ielem], list): 
                 numlists+=1
             if isinstance(resp[ielem], dict):
                 numdicts+=1
+
+        #somethings like uc.get_systemschemas return only schemas this is valid dont touch these.        
+        if bfoundschemas and numlists > 1:
+            numlists -= 1
+            resp.pop('schemas') #remove schemas from solution to make it a PATTERN_1
+
         
         LOGGR.debug(f"\t\t\t$numlists={numlists} $numdict={numdicts}") 
  
@@ -227,6 +237,7 @@ class SatDBClient:
         '''
 
         arrdict=[]
+        #dont think this should ever happen. As it is handled in get_paginated
         if not resp:
             emptydict={}
             arrdict.append(emptydict)
@@ -236,8 +247,7 @@ class SatDBClient:
         #SatDBClient.debugminijson(resp, "getRespArray")
         if patterntype==PatternType.PATTERN_1 : #one list and within list we have a dict
             for ielem in resp:
-                #ignore schema list as present in scim.groups or scim.users
-                if isinstance(resp[ielem], list) and ielem != 'schemas': 
+                if isinstance(resp[ielem], list): 
                     LOGGR.debug(f"\t\tgetRespArray-{len(resp[ielem])}") #getRespArray-20-type-<class 'dict'>
                     if len(resp[ielem]) > 0:
                         LOGGR.debug(f"\t\tgetRespArray-type-{type(resp[ielem][0])}")
@@ -281,10 +291,11 @@ class SatDBClient:
         NUM_PAGES=10 #throttle as needed
         resultsArray=[]
         elementName=''
-        for i in range(NUM_PAGES):
+        for i in range(self._maxpages):
             LOGGR.debug(f"{endpoint}---{json_params}")
             if 'get' in reqtype:
                 raw_results = requests.get(endpoint, headers=self._token, params=json_params, timeout=60, proxies=self._proxies)
+                time.sleep(self._timebetweencalls) #throttle otherwise gives a too many requests error
             elif 'post' in reqtype:
                 if json_params is None:
                     LOGGR.info("Must have a payload in json_args param.")
@@ -325,15 +336,20 @@ class SatDBClient:
                 LOGGR.debug(f"Error: request2 failed with code {http_status_code}\n{errtext}\n{errmesg}")
                 raise Exception(f"Error: request failed with code {http_status_code}--{errtext}--{errmesg}")
 
+            if not results:
+                LOGGR.debug(f"\t\tEmpty result. Breaking out of loop.")
+                break
+
             #with GCP an empty result with only prev_page_token is returned.
             if len(results)==1 and "prev_page_token" in results:
                 LOGGR.debug(f"\t\tEmpty result with prev_page_token. Breaking out of loop.")
                 break
 
-            #LOGGR.debug('-------------')
+            #do not keep this on. only for debug testing
+            #LOGGR.debug('pag - start -------------')
             #LOGGR.debug(json.dumps(results, indent=4, sort_keys=True)) #for debug
             #SatDBClient.debugminijson(results, "get_paginated1") #for debug
-            #LOGGR.debug('-------------')
+            #LOGGR.debug('pag - end -------------')
 
             elementName, resultsArray=SatDBClient.getRespArray(results)
             retdict={elementName:resultsArray}
@@ -463,6 +479,9 @@ class SatDBClient:
         is_paginated = True if SatDBClient.ispaginatedCall(full_endpoint)== True else False
         respageslst = list(self.get_paginated(full_endpoint, http_type, json_params, files_json, is_paginated))
         LOGGR.debug(f"get1-{len(respageslst)}-type-{type(respageslst)}-type-{type(respageslst[0])}") #get1-10-type-<class 'list'>-type-<class 'tuple'>
+        if not respageslst:
+            LOGGR.debug(f"get1-empty response")
+            return {'satelements': [], 'http_status_code': 200} #return empty list if no results
         if len(respageslst) > 0:
             LOGGR.debug(f"get1-type-{type(respageslst[0])}")
         for i in respageslst:
