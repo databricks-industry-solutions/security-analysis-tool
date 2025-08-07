@@ -29,7 +29,7 @@ if is_sat_compatible== False:
 
 # COMMAND ----------
 
-SDK_VERSION='0.0.121' 
+SDK_VERSION='0.0.124' 
 
 # COMMAND ----------
 
