@@ -12,3 +12,13 @@ def test_workspace_settings(get_db_client):
     workspaceClient = WSSettingsClient(jsonstr)
     settingsList = workspaceClient.get_wssettings_list()
     print(settingsList)
+
+
+
+def test_workspace_settingsv2(get_db_client):
+    LOGGR = LoggingUtils.get_logger()
+
+    jsonstr = get_db_client 
+    workspaceClient = WSSettingsClient(jsonstr)
+    settingsList = workspaceClient.get_wssettings_listv2()
+    print(settingsList)

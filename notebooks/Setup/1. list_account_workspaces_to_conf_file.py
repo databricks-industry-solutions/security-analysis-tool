@@ -40,12 +40,26 @@ json_.update(
 
 # COMMAND ----------
 
+from urllib.parse import urlparse
+domain = "com"
+try:
+    parsed_url = urlparse(hostname)
+    domain_parts = parsed_url.netloc.split('.')
+    if len(domain_parts) < 2:
+        raise ValueError("Invalid hostname: cannot extract domain part.")
+    domain = domain_parts[-1]
+except Exception as e:
+    print(f"Error extracting domain: {e}")
+print(domain)
+
+# COMMAND ----------
+
 import json
 
 dbutils.notebook.run(
     f"{basePath()}/notebooks/Utils/accounts_bootstrap",
     300,
-    {"json_": json.dumps(json_)},
+    {"json_": json.dumps(json_), "origin": "initializer"},
 )
 
 # COMMAND ----------
@@ -55,7 +69,6 @@ dbutils.notebook.run(
 # easily modify the new lines for new workspaces.
 def generateWorkspaceConfigFile():
     from pyspark.sql.functions import col, concat, lit
-
     dfexist = readWorkspaceConfigFile()
     excluded_configured_workspace = ""
     header_value = True
@@ -66,29 +79,33 @@ def generateWorkspaceConfigFile():
         header_value = False
     else:
         excluded_configured_workspace = ""  # running first time
+
     # get current workspaces that are not yet configured for analysis
     spsql = f"""select workspace_id, deployment_name as deployment_url, workspace_name, workspace_status from `acctworkspaces` 
-            where workspace_status = "RUNNING" {excluded_configured_workspace}"""
+            where trim(workspace_status) = "RUNNING" {excluded_configured_workspace}"""
+    #print(spsql)
+
     df = spark.sql(spsql)
+    #display(df)
     if len(df.take(1)) > 0:
         if cloud_type == "azure":
             df = df.withColumn(
                 "deployment_url",
-                concat(col("deployment_url"), lit(".azuredatabricks.net")),
+                concat(col("deployment_url"), lit(".azuredatabricks."), lit(domain)),
             )  # Azure
         elif cloud_type == "aws":
             df = df.withColumn(
                 "deployment_url",
-                concat(col("deployment_url"), lit(".cloud.databricks.com")),
+                concat(col("deployment_url"), lit(".cloud.databricks."), lit(domain)),
             )  # AWS
         else:
             df = df.withColumn(
                 "deployment_url",
-                concat(col("deployment_url"), lit(".gcp.databricks.com")),
+                concat(col("deployment_url"), lit(".gcp.databricks."), lit(domain)),
             )  # GCP
 
-        #both azure and gcp require sso
-        if cloud_type == "azure" or cloud_type == "gcp" :
+        # both azure and gcp require sso
+        if cloud_type == "azure" or cloud_type == "gcp":
             df = df.withColumn("sso_enabled", lit(True))
         else:
             df = df.withColumn("sso_enabled", lit(False))

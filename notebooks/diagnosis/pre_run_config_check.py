@@ -92,9 +92,10 @@ if cloud_type == "gcp":
    try:
       dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='gs-path-to-json')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='impersonate-service-account')
+      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
+      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
+      dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
       dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration has required secret names")
+      print("Your SAT configuration is has required secret names")
    except Exception as e:
       dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  

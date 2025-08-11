@@ -43,12 +43,10 @@ ws = (workspacedf.collect())[0]
 
 from core.dbclient import SatDBClient
 json_.update({'url':'https://' + ws.deployment_url, 'workspace_id': ws.workspace_id,  'clusterid':clusterid, 'cloud_type':cloud_type})  
-
-
 token = ''
 if cloud_type =='azure': #client secret always needed
-    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-    json_.update({'token':token, 'client_secret': client_secret})
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':token, 'client_secret': client_secret})
 elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
     client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
     json_.update({'token':token, 'client_secret': client_secret})
@@ -56,8 +54,12 @@ elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):
     masterpwd = ' ' # we still need to send empty user/pwd.
     json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
 else: #lets populate master key for accounts api
-    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+    json_.update({'token':token, 'client_secret': client_secret})
+    mastername = ' '
+    masterpwd = ' '
+    #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+    #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
     json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
     
 if (json_['use_mastercreds']) is False:
@@ -68,6 +70,8 @@ if (json_['use_mastercreds']) is False:
 
 db_client = SatDBClient(json_)
 token = db_client.get_temporary_oauth_token()
+
+
 
 
 # COMMAND ----------

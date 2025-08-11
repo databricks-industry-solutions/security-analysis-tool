@@ -981,9 +981,8 @@ if enabled:
 # COMMAND ----------
 
 # DBTITLE 1,Get all audit log delivery configurations. Should be enabled.
-check_id='8' #Log delivery configurations
+check_id='8' #GOV-3 Log delivery configurations
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-workspaceId = workspace_id
 
 def log_check(df):
     if df is not None and not isEmpty(df) and len(df.collect())>=1:
@@ -997,13 +996,14 @@ def log_check(df):
         return (check_id, 1, {})   
 
 if enabled:   
-    tbl_name = 'acctlogdelivery' 
+    tbl_name = 'acctlogdelivery' if cloud_type != 'azure' else 'acctlogdelivery' + '_' + workspace_id 
     sql=f'''
         SELECT config_name, config_id  
         FROM {tbl_name} 
         WHERE log_type="AUDIT_LOGS" and status="ENABLED" 
         '''
     sqlctrl(workspace_id, sql, log_check)
+
 
 # COMMAND ----------
 
@@ -1140,7 +1140,7 @@ def uc_delta_share_ip_accesslist(df):
     else:
         return (check_id, 0, {})   
 if enabled:    
-    tbl_name = 'unitycatalogsharerecipients' + '_' + workspace_id
+    tbl_name = 'delta_sharing_recepients_list' + '_' + workspace_id
     sql=f'''
         SELECT name, owner
         FROM {tbl_name} 
@@ -1162,7 +1162,7 @@ def uc_delta_share_expiration_time(df):
     else:
         return (check_id, 0, {})   
 if enabled:    
-    tbl_name = 'unitycatalogsharerecipients' + '_' + workspace_id
+    tbl_name = 'delta_sharing_recepients_list' + '_' + workspace_id
     sql=f'''
         SELECT tokens.* FROM (select explode(tokens) as tokens, full_name, owner
         FROM {tbl_name} 
