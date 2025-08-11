@@ -2,6 +2,7 @@
 sidebar_position: 1
 ---
 import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
 
 # AWS
 
@@ -28,13 +29,11 @@ The first step is to create a Service Principal in Databricks. This will allow S
 - Save the `Secret` and `Client ID`
 - To deploy SAT in a workspace, you must add the Service Principal to the workspace.
 
-
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
   <img src={useBaseUrl('/img/aws_ws.png')} alt="Account Console" />
 </div>
 
-
-> The Service Principal requires an [Accounts Admin role](https://docs.gcp.databricks.com/en/admin/users-groups/service-principals.html#assign-account-admin-roles-to-a-service-principal), [Admin role](https://docs.gcp.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** and needs to be a member of the [metastore admin group](https://docs.gcp.databricks.com/en/data-governance/unity-catalog/manage-privileges/admin-privileges.html#who-has-metastore-admin-privileges) is required to analyze many of the APIs. Please [add this Service Princple](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) to **each workspace** so that SAT can access the APIs for analysis.  
+> The Service Principal requires an [Accounts Admin role](https://docs.databricks.com/aws/en/admin/users-groups/service-principals), [Admin role](https://docs.databricks.com/aws/en/admin/users-groups/service-principals) for **each workspace** and needs to be a member of the [metastore admin group](https://docs.databricks.com/aws/en/data-governance/unity-catalog/manage-privileges/admin-privileges) is required to analyze many of the APIs. Please [add this Service Princple](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) to **each workspace** so that SAT can access the APIs for analysis.  
 
 ## Installation
 
