@@ -196,8 +196,8 @@ if enabled:
 
 # COMMAND ----------
 
-# DBTITLE 1,IP Access List
-check_id='37' #IP Access List
+# DBTITLE 1,Workspace IP Access List
+check_id='37' #WorkspaceIP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 workspaceId = workspace_id
@@ -221,6 +221,29 @@ if enabled:
       WHERE enabled=true
     '''
     sqlctrl(workspace_id, sql, public_access_enabled)
+
+# COMMAND ----------
+
+check_id='110' #Accounts Console IP Access List
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+print(enabled)
+def account_console_ip_access_list_configured(df):
+    df.collect()
+    if df is not None and not isEmpty(df):
+        access_list_configured_list = df.collect()
+        access_list_configured = {i.label: [i.list_type, i.address_count] for i in access_list_configured_list}
+      
+        return (check_id, 0, access_list_configured)
+    else:
+        return (check_id, 1, {'IP access lists for the account console not configured':True})   
+if enabled:    
+    tbl_name = 'account_ipaccess_list'
+    sql=f'''
+        SELECT label, list_type, address_count
+        FROM {tbl_name}  WHERE enabled = true
+        
+    '''
+    sqlctrl(workspace_id, sql, account_console_ip_access_list_configured)
 
 # COMMAND ----------
 
