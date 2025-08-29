@@ -197,7 +197,7 @@ if enabled:
 # COMMAND ----------
 
 # DBTITLE 1,Workspace IP Access List
-check_id='37' #WorkspaceIP Access List
+check_id='37' #Workspace IP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 workspaceId = workspace_id
@@ -226,7 +226,7 @@ if enabled:
 
 check_id='110' #Accounts Console IP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-print(enabled)
+
 def account_console_ip_access_list_configured(df):
     df.collect()
     if df is not None and not isEmpty(df):
