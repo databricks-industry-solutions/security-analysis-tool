@@ -3,11 +3,11 @@
   check: Object storage encryption for data sources
 
 - id: 18
-  enabled: false
+  enabled: true
   check: Enable single sign-on
 
 - id: 19
-  enabled: false
+  enabled: true
   check: SCIM for user provisioning
 
 - id: 20
