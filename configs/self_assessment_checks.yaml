@@ -11,7 +11,7 @@
   check: SCIM for user provisioning
 
 - id: 20
-  enabled: false
+  enabled: true
   check: Table Access Control for clusters that don't use Unity Catalog
 
 - id: 28
