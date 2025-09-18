@@ -8,19 +8,19 @@ import Admonition from '@theme/Admonition';
 
 <Admonition type="note" title="Note">
 
-Navigate to **Workspace -> Applications -> SAT -> files ->** `self_assessment_checks.yaml` and ensure that the `"enabled"` values for the listed manual checks are set to either `true` or `false`, based on your environment. The SAT tool will automatically evaluate all other configurations.
+Navigate to **Workspace -> Applications -> SAT -> files -> configs ->** `self_assessment_checks.yaml` and ensure that the `"enabled"` values for the listed manual checks are set to either `true` or `false`, based on your environment. The SAT tool will automatically evaluate all other configurations.
 
 </Admonition>
 
-## Running the SAT Workflows
+## Running the SAT Jobs and Pipelines
 
-> **Note:** These workflows can take up to 10 mins to run per workspace. 
+> **Note:** These jobs can take up to 10 mins to run per workspace. 
 
-Within the `Workflows` pane, there should now be two jobs available: **SAT Initializer Notebook** and **SAT Driver Notebook**. 
+Within the `Jobs and Pipelines` pane, there should now be two jobs available: **SAT Initializer Notebook** and **SAT Driver Notebook**. 
     * Run the **SAT Initalizer Notebook** first. It only needs to complete successfully once, though it can be re-run if needed.
     * Once the initializer completes, run the **SAT Driver Notebook**, which can be executed on a recurring basis. By default, it is scheduled to run every Monday, Wednesday, and Friday.
 
-Once the workflows have finished running, you should see the schema under the catalog that was set at the time of installation for **SAT** within the `Catalog` pane. 
+Once the Jobs and Pipelines have finished running, you should see the schema under the catalog that was set at the time of installation for **SAT** within the `Catalog` pane. 
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
  <img src={useBaseUrl('/img/catalog_view.png')} alt="Catalog View" />
@@ -48,7 +48,7 @@ If you encounter errors when running the dashboard, they are most likely due to 
 </div>
 
 ## Activating Alerts
-Navigate to the `Alerts` from the left-hand pane under the `SQL` section. Click on `All Alerts` to view all of the alerts created by the **SAT** workflows. 
+Navigate to the `Alerts` from the left-hand pane under the `SQL` section. Click on `All Alerts` to view all of the alerts created by the **SAT** jobs. 
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
  <img src={useBaseUrl('/img/alerts_view.png')} alt="Alerts_View" />

@@ -43,18 +43,19 @@ After creating the App Registration, you will need to create a client secret. Th
 - Copy the value of the client secret and save it in a secure location.
 - Please add the created app with "Reader" role into the subscription level via Access control (IAM) using Role assignments under your [subscription, Access control (IAM) section](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal#step-2-open-the-add-role-assignment-page)
 
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
-  <img src={useBaseUrl('/img/azure_role_assignment.png')} alt="Account Console" />
-</div>
+
 
 ### Add Service Principal to Databricks
+
+<Admonition type="note" title="Note">
+Make sure that there is a metastore attached to the workspace where you are going to install SAT.
+</Admonition>
 
 After creating the App Registration and client secret, you will need to add the App Registration as a service principal in Databricks. Follow the steps below to add the service principal:
 
 - Go to the [Account Console](https://accounts.azuredatabricks.net/)
 - On the left side bar menu, click on `User management`
 - Select `Service Principal` and then `Add service principal`
-- Select `Microsoft Entra ID Managed Application` as the service principal type.
 - Paste the App Client ID and create a new name for the service principal.
 - Click Add.
 - The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
@@ -62,7 +63,7 @@ After creating the App Registration and client secret, you will need to add the 
 - Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions.
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
-  <img src={useBaseUrl('/img/azure_ws.png')} alt="Account Console" />
+  <img src={useBaseUrl('/img/azure_role_assignment.png')} alt="Account Console" />
 </div>
 
 
