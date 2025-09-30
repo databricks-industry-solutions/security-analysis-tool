@@ -4,10 +4,18 @@ from core.dbclient import SatDBClient
 class IPAccessClient(SatDBClient):
     ''' ip access list helper'''
 
-    def get_ipaccess_list(self):
+    def get_ip_access_list(self):
         """
-        Returns an array of json objects for ip access list.
+        Returns an array of json objects for compliance security profile update.
         """
-        # fetch all jobsruns
-        endpointslist = self.get("/ip-access-lists", version='2.0').get('ip_access_lists', [])
-        return endpointslist
+        # fetch all endpoints
+        endpointlist= self.get(f"/ip-access-lists", version='2.0').get('ip_access_lists', [])
+        return endpointlist  
+
+    def get_ip_access(self, ip_access_list_id):
+        """
+        Returns an array of json objects for compliance security profile update.
+        """
+        # fetch all endpoints
+        endpointlist= self.get(f"/ip-access-lists/{ip_access_list_id}", version='2.0').get('ip_access_list', [])
+        return endpointlist      

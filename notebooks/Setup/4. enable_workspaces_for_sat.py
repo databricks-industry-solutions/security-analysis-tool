@@ -5,6 +5,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ../Includes/install_sat_sdk
+
+# COMMAND ----------
+
 # MAGIC %run ../Utils/initialize
 
 # COMMAND ----------
@@ -24,7 +28,7 @@ display(dfexist)
 
 # COMMAND ----------
 
-display(spark.sql(f"""insert into {json_["analysis_schema_name"]}.account_workspaces  (select workspace_id, deployment_url, workspace_name, workspace_status, ws_token, analysis_enabled, sso_enabled, scim_enabled, vpc_peering_done, object_storage_encrypted, table_access_control_enabled  from `all_workspaces` where workspace_id not in (select workspace_id from {json_["analysis_schema_name"]}.account_workspaces))"""))
+display(spark.sql(f"""insert into {json_["analysis_schema_name"]}.account_workspaces  (select workspace_id, deployment_url, workspace_name, workspace_status, analysis_enabled, sso_enabled, scim_enabled, vpc_peering_done, object_storage_encrypted, table_access_control_enabled  from `all_workspaces` where workspace_id not in (select workspace_id from {json_["analysis_schema_name"]}.account_workspaces))"""))
 
 # COMMAND ----------
 

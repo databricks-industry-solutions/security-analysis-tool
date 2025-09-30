@@ -28,16 +28,13 @@ token = 'dapijedi'
 if cloud_type =='azure': #use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
   json_.update({'token':token, 'client_secret': client_secret})
-elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+elif ((cloud_type =='aws' or cloud_type =='gcp') and json_['use_sp_auth'].lower() == 'true'):  
     client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
     json_.update({'token':'dapijedi', 'client_secret': client_secret})
     mastername =' ' # this will not be present when using SPs
     masterpwd = ' '  # we still need to send empty user/pwd.
     json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
-else: #lets populate master key for accounts api
-    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-    json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+
 json_.update({'url':hostname, 'workspace_id': 'accounts', 'cloud_type': cloud_type, 'clusterid':clusterid})
 
 
@@ -90,15 +87,22 @@ dfexist.filter(dfexist.analysis_enabled==True).createOrReplaceTempView('configur
 
 # COMMAND ----------
 
-workspacesdf = spark.sql('select * from `configured_workspaces`')
+import json
+from dbruntime.databricks_repl_context import get_context
+#Get current workspace id
+current_workspace = get_context().workspaceId
+
+# COMMAND ----------
+
+#if the analysis is happening on serverless compute let us ignore all workspaces except the current workspace
+serverless_filter=""
+if is_serverless:
+    serverless_filter = " where workspace_id = '" + current_workspace + "'"
+workspacesdf = spark.sql(f"select * from `configured_workspaces` {serverless_filter}")
 display(workspacesdf)
 if len(workspacesdf.take(1))==0:
     dbutils.notebook.exit("Workspace list is empty. At least one should be configured for analysis")
 workspaces = workspacesdf.collect()
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 
@@ -119,7 +123,6 @@ def modifyWorkspaceConfigFile(input_connection_arr):
           allwsm.deployment_url,
           allwsm.workspace_name,
           allwsm.workspace_status,
-          allwsm.ws_token,
           allwsm.sso_enabled,
           allwsm.scim_enabled,
           allwsm.vpc_peering_done,
@@ -135,25 +138,8 @@ def modifyWorkspaceConfigFile(input_connection_arr):
 
 # COMMAND ----------
 
-import json
-from dbruntime.databricks_repl_context import get_context
-#Get current workspace id
-current_workspace = get_context().workspaceId
-
-# COMMAND ----------
-
-def renewWorkspaceTokens():
-  if cloud_type == "gcp":
-    # refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
-    gcp_status2 = dbutils.notebook.run("../Setup/gcp/configure_tokens_for_worksaces", 3000)
-    if gcp_status2 != "OK":
-      loggr.exception("Error Encountered in GCP Step#2", gcp_status2)
-      dbutils.notebook.exit()
-
-# COMMAND ----------
-
 input_status_arr=[]
-renewWorkspaceTokens()
+
 for ws in workspaces:
   import json
   
@@ -166,15 +152,11 @@ for ws in workspaces:
   if cloud_type =='azure': #use client secret
     client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
     json_.update({'token':token, 'client_secret': client_secret})
-  elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+  elif ((cloud_type =='aws' or cloud_type =='gcp') and json_['use_sp_auth'].lower() == 'true'):  
     client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
     json_.update({'token':token, 'client_secret': client_secret})
     mastername =' ' # this will not be present when using SPs
     masterpwd = ' '  # we still need to send empty user/pwd.
-    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-  else: #lets populate master key for accounts api
-    mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-    masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
     json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
       
   if (json_['use_mastercreds']) is False:

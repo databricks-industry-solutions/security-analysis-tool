@@ -1,0 +1,62 @@
+name: Bug Report
+description: Report an unexpected behavior, error, or failure in the Security Analysis Tool.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: issue-confirmation
+    attributes:
+      label: Prior Issue Search
+      description: Please confirm that you have searched existing issues to avoid duplicates.
+      options:
+        - label: I have searched existing issues and confirmed this is not a duplicate.
+          required: true
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Bug Description
+      description: Clearly describe the unexpected behavior or issue you encountered.
+
+        **Important:**  
+        Do not include any personal identifying information (PII), secrets, or credentials when filing a bug report.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Provide a step-by-step guide to reproduce the issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: Describe what you expected to happen.
+  
+  - type: dropdown
+    id: cloud-provider
+    attributes:
+      label: Cloud Provider
+      description: Select the cloud platform where you are running the Security Analysis Tool.
+      options:
+        - AWS
+        - Azure
+        - GCP
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Details
+      description: Include relevant details such as OS, tool version, Python version, Type of Databricks Compute (Classic or Serverless), etc.
+
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: Additional Context
+      description: Add any logs, screenshots, or context that might help us investigate.

@@ -5,11 +5,31 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ### Widget to provide specific workspace URL for connectivity tests
+# MAGIC If you need to test connectivity to specific workspaces, the following code would create a new widget to accept the workspace URL as a parameter. If this widget is left empty it connects to the current workspace (default). A sample workspace URL that can be provided through the widget (if needed) is given below.
+# MAGIC
+# MAGIC * dbc-xxxxxxxx-xxxx.cloud.databricks.com
+
+# COMMAND ----------
+
+# Create the text input widget for workspace url, assign it to a variable and print it
+dbutils.widgets.text("workspaceUrl", "")
+userWorkspaceUrl = dbutils.widgets.get("workspaceUrl")
+print("User provided workspace URL ->", userWorkspaceUrl)
+
+# COMMAND ----------
+
 # MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------
 
 # MAGIC %run ../Utils/initialize
+
+# COMMAND ----------
+
+sat_version = json_['sat_version']
+print("Current SAT version ->", sat_version)
 
 # COMMAND ----------
 
@@ -72,7 +92,9 @@ for key in dbutils.secrets.list(sat_scope):
 # COMMAND ----------
 
 # Define the URL and headers
-workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+#workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+# Use the workspace variable provided or fallback to the default workspace url
+workspaceUrl = userWorkspaceUrl or spark.conf.get("spark.databricks.workspaceUrl")
 
 import requests
 
@@ -145,7 +167,7 @@ import requests
 workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
 
 
-url = f'https://{workspaceUrl}/api/2.1/unity-catalog/models'
+url = f'https://{workspaceUrl}/api/2.1/unity-catalog/catalogs'
 headers = {
     'Authorization': f'Bearer {token}'
 }
@@ -160,13 +182,6 @@ print(response.json())
 
 # MAGIC %md
 # MAGIC ### Additional validation   - Execute the curl command to check the token is able to access the workspace.
-
-# COMMAND ----------
-
-# MAGIC %sh 
-# MAGIC
-# MAGIC curl --header 'Authorization: Bearer <toekn>
-# MAGIC ' -X GET 'https://sfe-plain.cloud.databricks.com/api/2.0/clusters/spark-versions'
 
 # COMMAND ----------
 

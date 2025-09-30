@@ -1,0 +1,88 @@
+---
+sidebar_position: 7
+---
+import Admonition from '@theme/Admonition';
+
+
+# GCP
+
+## Setting Up Terraform
+
+<Admonition type="note" title="Note">
+**SAT v0.2.0** or higher introduces full support for Unity Catalog. You can now pick your own catalog instead of being limited to the hive_metastore. Additionally, you have the flexibility to choose your own schema name.
+</Admonition>
+
+### Step 1: Install Required Tools
+1. Install [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli).
+2. Install [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on your local machine.
+
+### Step 2: Clone the Repository
+Clone the Security Analysis Tool repository using:
+```sh
+git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+``` 
+
+### Step 3: Navigate to the Terraform Directory
+Navigate to the relevant cloud directory:
+```sh
+cd security-analysis-tool/terraform/<cloud>/
+``` 
+
+### Step 4: Configure Variables
+1. Create a `terraform.tfvars` file using the `template.tfvars` file as a base.
+2. Refer to the `variables.tf` for descriptions of the variables.
+3. Set all required variables for your deployment.
+
+Further Documentation for some of the variables:
+
+[workspace_id](https://docs.gcp.databricks.com/workspace/workspace-details.html#workspace-instance-names-urls-and-ids)
+
+[account_console_id](https://docs.gcp.databricks.com/administration-guide/account-settings/#locate-your-account-id)
+
+> **Proxies are now supported as part of SAT. You can add your HTTP and HTTPS links to use your proxies.**
+```json
+{
+    "http": "http://example.com",
+    "https": "https://example.com"
+}
+```
+
+## Run Terraform and SAT Workflows
+
+### Step 5: Run Terraform Commands
+1. Initialize Terraform:
+```sh
+terraform init
+```
+2. Plan Terraform Changes - create a plan to preview changes to your infrastructure:
+```sh
+terraform plan
+```
+3. Apply Terraform Plan - Execute the proposed changes:
+```sh
+terraform apply
+```
+### Step 6: Run Databricks Jobs
+1. Run "SAT Initializer Notebook":
+* This must be run successfully once. While it can be run multiple times, a single successful run is sufficient.
+2. Run "SAT Driver Notebook":
+* This notebook can be scheduled to run periodically (e.g., every Monday, Wednesday, and Friday).
+
+### Step 7: Access the SAT Dashboard
+1. Navigate to the <b>SQL > Dashboard </b> in the left menu from the Databricks workspace.
+2. Select the <b>SAT Dashboard</b>, choose a Workspace from the dropdown, and refresh the dashboard.
+
+### Supplemental Documentation
+
+* [Databricks Documentation Terraform](https://docs.databricks.com/dev-tools/terraform/index.html)
+* [Databricks Terraform Provider Docs](https://registry.terraform.io/providers/databricks/databricks/latest/docs)
+
+### Additional Considerations:
+
+If a pre-existing secret scope named `sat_scope` causes jobs to fail:
+1. Rename the secret scope in `secrets.tf`
+2. Re-run `terraform apply`.
+3. Update the secret scope name in 6 locations (`CMD 4` and `CMD 5`) of `Workspace -> Applications -> SAT-TF/notebooks/Utils/initialize`.
+4. Re-run failed jobs
+
+Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../../functionality.mdx) for a detailed description on how to run and use it.

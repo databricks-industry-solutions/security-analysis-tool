@@ -8,10 +8,9 @@ account_console_id = ""
 analysis_schema_name = ""
 
 ### GCP Specific Variables
-client_id                   = ""
-client_secret               = ""
-gs_path_to_json             = ""
-impersonate_service_account = ""
+### Databricks Service Principal
+client_id     = "" // Databricks Service Principal Application ID
+client_secret = "" //Databricks Service Principal ID Secret
 
 # If you are behind a proxy, you can specify the proxy server here, if not leave this with the default value
 # Example:
@@ -19,7 +18,7 @@ impersonate_service_account = ""
 #   "http": "http://proxy.example.com:8080",
 #   "https": "http://proxy.example.com:8080"
 # }
-proxies = {}
+proxies = {} 
 
 #Flag to run SAT initializer/Driver on Serverless
-run_on_serverless = false
+run_on_serverless = false # [Only monitor current workspace]

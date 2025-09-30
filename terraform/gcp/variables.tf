@@ -35,6 +35,13 @@ variable "proxies" {
 
 ### GCP Specific Variables
 
+variable "use_sp_auth" {
+  description = "Authenticate with Service Principal OAuth tokens instead of user and password"
+  type        = bool
+  default     = true
+}
+
+
 variable "client_id" {
   description = "Service Principal (client) ID"
   type        = string
@@ -43,16 +50,6 @@ variable "client_id" {
 variable "client_secret" {
   description = "SP Secret"
   type        = string
-}
-
-variable "gs_path_to_json" {
-  type        = string
-  description = "File path to this resource in Cloud Storage (as gs://<bucket>/<folder>/<file>.json)"
-}
-
-variable "impersonate_service_account" {
-  type        = string
-  description = "Impersonate Service Account String (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
 }
 
 variable "run_on_serverless" {

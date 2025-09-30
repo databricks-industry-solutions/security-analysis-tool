@@ -48,24 +48,12 @@ use_parallel_runs = json_.get("use_parallel_runs", False)
 
 # COMMAND ----------
 
-if cloud_type == "gcp":
-    # refresh account level tokens
-    gcp_status1 = dbutils.notebook.run(
-        f"{basePath()}/notebooks/Setup/gcp/configure_sa_auth_tokens", 3000
-    )
-    if gcp_status1 != "OK":
-        loggr.exception("Error Encountered in GCP Step#1", gcp_status1)
-        dbutils.notebook.exit()
-
-
-# COMMAND ----------
-
 import json
 
 out = dbutils.notebook.run(
     f"{basePath()}/notebooks/Utils/accounts_bootstrap",
     300,
-    {"json_": json.dumps(json_)},
+    {"json_": json.dumps(json_), "origin": "driver"},
 )
 loggr.info(out)
 
@@ -86,13 +74,26 @@ dfexist.filter(dfexist.analysis_enabled == True ).createOrReplaceTempView(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ##### These are the workspaces we will run the analysis on
-# MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace
+import json
+from dbruntime.databricks_repl_context import get_context
+#Get current workspace id
+current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
-workspacesdf = spark.sql("select * from `all_workspaces`")
+# MAGIC %md
+# MAGIC ##### These are the workspaces we will run the analysis on
+# MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace
+# MAGIC ##### If the analysis is serverless compute only run the analysis for the current workspace
+
+# COMMAND ----------
+
+#if the analysis is happening on serverless compute let us ignore all workspaces except the current workspace
+serverless_filter=""
+if is_serverless:
+    serverless_filter = " where workspace_id = '" + current_workspace + "'"
+
+workspacesdf = spark.sql(f"select * from `all_workspaces` {serverless_filter}")
 display(workspacesdf)
 workspaces = workspacesdf.collect()
 if workspaces is None or len(workspaces) == 0:
@@ -102,22 +103,6 @@ if workspaces is None or len(workspaces) == 0:
         + ".account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. "
     )
     # dbutils.notebook.exit("Unsuccessful analysis.")
-
-# COMMAND ----------
-
-
-def renewWorkspaceTokens(workspace_id):
-    if cloud_type == "gcp":
-        # refesh workspace level tokens if PAT tokens are not used as the temp tokens expire in 10 hours
-        gcp_status2 = dbutils.notebook.run(
-            f"{basePath()}/notebooks/Setup/gcp/configure_tokens_for_worksaces",
-            3000,
-            {"workspace_id": workspace_id},
-        )
-        if gcp_status2 != "OK":
-            loggr.exception("Error Encountered in GCP Step#2", gcp_status2)
-            dbutils.notebook.exit()
-
 
 # COMMAND ----------
 
@@ -155,7 +140,7 @@ def processWorkspace(wsrow):
     retstr = dbutils.notebook.run(
         f"{basePath()}/notebooks/Utils/workspace_bootstrap",
         3000,
-        {"json_": json.dumps(ws_json)},
+        {"json_": json.dumps(ws_json),"origin": "driver"},
     )
     if "Completed SAT" not in retstr:
         raise Exception("Workspace Bootstrap failed. Skipping workspace analysis")
@@ -184,41 +169,29 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def combine(ws):
-    renewWorkspaceTokens(ws.workspace_id)
     processWorkspace(ws)
     notifyworkspaceCompleted(ws.workspace_id, True)
 
 
 if use_parallel_runs == True:
     loggr.info("Running in parallel")
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = []
-        for workspace in workspaces:
-            future = executor.submit(combine, workspace)
-            futures.append(future)
-            time.sleep(20)  # Adding time between submissions as concurrent 
-
+    with ThreadPoolExecutor(max_workers=4) as executor:
         try:
-            for future in futures:
-                result = future.result()
-                loggr.info(result)
+            result = executor.map(combine, workspaces)
+            for r in result:
+                print(r)
         except Exception as e:
             loggr.info(e)
 else:
     loggr.info("Running in sequence")
     for ws in workspaces:
         try:
-            renewWorkspaceTokens(ws.workspace_id)
             processWorkspace(ws)
             notifyworkspaceCompleted(ws.workspace_id, True)
             loggr.info(f"Completed analyzing {ws.workspace_id}!")
         except Exception as e:
             loggr.info(e)
             notifyworkspaceCompleted(ws.workspace_id, False)
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 

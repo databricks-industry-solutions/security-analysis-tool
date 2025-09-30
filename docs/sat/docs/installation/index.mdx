@@ -1,0 +1,105 @@
+---
+sidebar_position: 2
+---
+
+import Admonition from '@theme/Admonition';
+
+# Installation
+
+<Admonition type="note" title="Note">
+
+* **SAT v0.2.0** or higher introduces full support for Unity Catalog. You can now pick your own catalog instead of being limited to the hive_metastore. Additionally, you have the flexibility to choose your own schema name.
+
+* **Deployment Requirements**
+  * **AWS/GCP:** At least one SAT setup in a workspace per **Databricks account**.
+  * **Azure:** At least one SAT setup in a workspace per **Azure subscription**.
+  * SAT uses the configured Service Principal to access and analyze configurations by calling account and workspace APIs. Please ensure that the Service Principal is added to **all** workspaces you intend to analyze, following the instructions in the setup guides linked below. If you choose to **exclude** a specific workspace from analysis, simply do not add the Service Principal to it. 
+  
+* **Networking and Access Considerations**
+
+  * SAT running on Serverless or Classic Compute cannot analyze account and destination workspaces with IP Access Control Lists (ACLs) enabled unless those ACLs are updated to allow access from the SAT workspace.
+    * If IP Access Control Lists (ACLs) are enabled at the account level and you are running SAT on serverless, contact your account team if you need to allowlist account-level APIs. 
+  * SAT running on Serverless Compute cannot access other workspaces if egress controls are configured in the SAT workspace. In this case, you must configure a separate SAT in the target workspace to perform the analysis.
+
+* **Review and Compliance**
+
+  Before implementing any security improvements based on the SAT report:
+    * Review the report with business stakeholders, administrators, security teams, and auditors.
+    * Not all deviations require mitigation — evaluate recommendations based on your organizational security requirements.
+    * Some recommendations may have **cost implications** or **dependency limitations**.
+    * Refer to individual feature documentation to fully understand the impact before making changes to your security configurations.
+    * Keep in mind that SAT is a productivity tool designed to help verify the security configurations of your Databricks deployments. It is not intended to serve as a certification or formal attestation of your deployment's security posture.
+
+</Admonition>
+
+Follow this guide to setup the **Security Analysis Tool (SAT)** on your Databricks workspace(s).
+
+## Prerequisites
+
+<Admonition type="note" title="Note">
+
+SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers,  as most of the checks and recommendations involve security features that are only available in tiers above Standard.
+
+</Admonition>
+
+Before proceeding with the installation, make sure you have the following prerequisites:
+
+- Python 3.9 or higher
+- Databricks CLI installed with a profile logged (See [here](https://docs.databricks.com/en/dev-tools/cli/install.html).)
+- Databricks Account ID
+- Databricks SQL Warehouse (To run the SQL dashboard)
+- PyPI access from your workspace (To install the SAT utility library)
+
+
+
+
+
+SAT can be set up on any of the cloud platforms where Databricks is hosted. Please follow the setup guide specific to your cloud provider:
+
+- [AWS Setup Guide](./standard/aws.mdx)
+- [Azure Setup Guide](./standard/azure.mdx)
+- [GCP Setup Guide](./standard/gcp.mdx)
+
+<Admonition type="note" title="Terraform Install">
+
+SAT can be deployed using Terraform. If your organization uses Terraform, it is recommended to follow the Terraform-based deployment instructions: 
+
+
+* [SAT AWS Terraform deployment](./terraform/aws.mdx) 
+* [SAT Azure Terraform deployment](./terraform/azure.mdx) 
+* [SAT GCP Terraform deployment](./terraform/gcp.mdx)
+
+</Admonition>
+
+
+
+## Uninstalling SAT
+<Admonition type="note" title="Note">
+
+SAT creates a new **security_analysis** schema along with Delta tables. If you are an existing SAT user please run the following command:
+
+### Hive Metastore Based Schema
+
+```sql
+  drop database security_analysis cascade;
+```
+
+### Unity Catalog Based Schema
+
+```sql
+  drop database <uc_catalog_name>.<schema_name> cascade;
+```
+
+</Admonition>
+### Standard Setup
+
+
+
+* Delete the **/Workspace/Applications/SAT** folder
+* Delete the following workflows:
+  * **SAT Initializer Notebook**
+  * **SAT Driver Notebook**
+* Delete the **SAT** Dashboards
+
+### Terraform Setup
+* Run the **terraform destroy** command

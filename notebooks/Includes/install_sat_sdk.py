@@ -10,10 +10,12 @@ import os
 #Get databricks runtime configured to run SAT
 dbr_version = os.environ.get('DATABRICKS_RUNTIME_VERSION','0.0')
 is_sat_compatible = False
+is_serverless= False
 #sanity check in case there is major and minor version
 #strip minor version since we need to compare as number
 if(dbr_version.startswith("client")):
     is_sat_compatible = True
+    is_serverless = True
 else:
     dbrarray = dbr_version.split('.')
     dbr_version =  f'{dbrarray[0]}.{dbrarray[1]}'
@@ -27,7 +29,7 @@ if is_sat_compatible== False:
 
 # COMMAND ----------
 
-SDK_VERSION='0.0.102' 
+SDK_VERSION='0.1.38'
 
 # COMMAND ----------
 

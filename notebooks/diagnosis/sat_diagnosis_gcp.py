@@ -1,7 +1,22 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC **Notebook name:** sat_diagnosis_gcp  
-# MAGIC **Functionality:** Diagnose account and workspace connections for gcp workspaces
+# MAGIC **Functionality:** Diagnose account and workspace connections for GCP workspaces
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Widget to provide specific workspace URL for connectivity tests
+# MAGIC If you need to test connectivity to specific workspaces, the following code would create a new widget to accept the workspace URL as a parameter. If this widget is left empty it connects to the current workspace (default). A sample workspace URL that can be provided through the widget (if needed) is given below.
+# MAGIC
+# MAGIC * dbc-xxxxxxxx-xxxx.cloud.databricks.com
+
+# COMMAND ----------
+
+# Create the text input widget for workspace url, assign it to a variable and print it
+dbutils.widgets.text("workspaceUrl", "")
+userWorkspaceUrl = dbutils.widgets.get("workspaceUrl")
+print("User provided workspace URL ->", userWorkspaceUrl)
 
 # COMMAND ----------
 
@@ -9,11 +24,12 @@
 
 # COMMAND ----------
 
-pip install --upgrade google-auth  gcsfs
+# MAGIC %run ../Utils/initialize
 
 # COMMAND ----------
 
-# MAGIC %run ../Utils/initialize
+sat_version = json_['sat_version']
+print("Current SAT version ->", sat_version)
 
 # COMMAND ----------
 
@@ -31,7 +47,7 @@ found = False
 for secret_scope in secret_scopes:
    
    if secret_scope.name == json_['master_name_scope']:
-      print('Your SAT configuration is has the required scope name')
+      print('Your SAT configuration has the required scope name')
       found=True
       break
 if not found:
@@ -46,128 +62,153 @@ if not found:
 
 # COMMAND ----------
 
+
 try:
    dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
    dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='gs-path-to-json')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='impersonate-service-account')
+   dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
+   dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
+   dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
    dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-   print("Your SAT configuration has required secret names")
+   print("Your SAT configuration is has required secret names")
 except Exception as e:
    dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Check to see if the PAT token is valid
+# MAGIC ### Validate the following values and make sure they are correct
 
 # COMMAND ----------
 
-import requests,json
+sat_scope = json_['master_name_scope']
 
+for key in dbutils.secrets.list(sat_scope):
+    print(key.key)
+    secretvalue = dbutils.secrets.get(scope=sat_scope, key=key.key)
+    print(" ".join(secretvalue))
+
+
+# COMMAND ----------
 
 # Define the URL and headers
 #workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+# Use the workspace variable provided or fallback to the default workspace url
+workspaceUrl = userWorkspaceUrl or spark.conf.get("spark.databricks.workspaceUrl")
 
-workspaceUrl =  "<>" #without http
+import requests
+
+def getGCPTokenwithOAuth(source, baccount, client_id, client_secret):
+        '''generates OAuth token for Service Principal authentication flow'''
+        '''baccount if generating for account. False for workspace'''
+        response = None
+        user_pass = (client_id,client_secret)
+        oidc_token = {
+            "User-Agent": "databricks-sat/0.1.0"
+        }
+        json_params = {
+            "grant_type": "client_credentials",
+            "scope": "all-apis"
+        }
+              
+        if baccount is True:
+            full_endpoint = f"https://accounts.gcp.databricks.com/oidc/accounts/{source}/v1/token" #url for accounts api  
+        else: #workspace
+            full_endpoint = f'https://{source}/oidc/v1/token'
+
+        response = requests.post(full_endpoint, headers=oidc_token,
+                                    auth=user_pass, data=json_params, timeout=60)  
+
+        if response is not None and response.status_code == 200:
+            return response.json()['access_token']
+        display(json.dumps(response.json()))
+        return None
+
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Check to see if the SP client_id and cleint_secret are valid
+
+# COMMAND ----------
+
+token = getGCPTokenwithOAuth(workspaceUrl,False, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
+                             
+print(token)
+
+# COMMAND ----------
+
+import requests
+
+
+# Define the URL and headers
+workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+
+
+url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
+headers = {
+    'Authorization': f'Bearer {token}'
+}
+
+# Make the GET request
+response = requests.get(url, headers=headers)
+
+# Print the response
+print(response.json())
 
 
 # COMMAND ----------
 
-gcp_accounts_url = 'https://accounts.gcp.databricks.com' 
+import requests
+
+
+
+# Define the URL and headers
+workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+
+
+url = f'https://{workspaceUrl}/api/2.1/unity-catalog/catalogs'
+headers = {
+    'Authorization': f'Bearer {token}'
+}
+
+# Make the GET request
+response = requests.get(url, headers=headers)
+
+# Print the response
+print(response.json())
 
 # COMMAND ----------
 
-from google.oauth2 import service_account
-import gcsfs
-import json
-def getGCSIdentityToken(account_id, cred_file_path,target_principal):
-        target_scopes = [gcp_accounts_url]
-        # Reading gcs files with gcsfs
-        gcs_file_system = gcsfs.GCSFileSystem(project="gcp_project_name")
-        gcs_json_path = cred_file_path
-        with gcs_file_system.open(gcs_json_path) as f:
-            json_dict = json.load(f)
-            key = json.dumps(json_dict) 
-            
-        source_credentials = (service_account.Credentials.from_service_account_info(json_dict,scopes=target_scopes))
-        from google.auth import impersonated_credentials
-        from google.auth.transport.requests import AuthorizedSession
-
-        target_credentials = impersonated_credentials.Credentials(
-        source_credentials=source_credentials,
-        target_principal=target_principal,
-        target_scopes = target_scopes,
-        lifetime=36000)
-
-        creds = impersonated_credentials.IDTokenCredentials(
-                                        target_credentials,
-                                        target_audience=gcp_accounts_url,
-                                        include_email=True)
-
-        url = gcp_accounts_url+'/api/2.0/accounts/'+account_id+'/workspaces'
-
-        authed_session = AuthorizedSession(creds)
-
-        # make authenticated request and print the response, status_code
-        resp = authed_session.get(url)
-        identity_token = creds.token
-        return identity_token
+# MAGIC %md
+# MAGIC ### Additional validation   - Execute the curl command to check the token is able to access the workspace.
 
 # COMMAND ----------
 
-identity_token = getGCSIdentityToken(dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='gs-path-to-json'),dbutils.secrets.get(scope=json_['master_name_scope'], key='impersonate-service-account'))
-print(identity_token)
-
-# COMMAND ----------
-
-from google.auth import impersonated_credentials
-from google.auth.transport.requests import AuthorizedSession
-from google.oauth2 import service_account
-
-import gcsfs
-import json
-target_scopes = [gcp_accounts_url]
-def getGCSAccessToken(cred_file_path,target_principal):
-    # Reading gcs files with gcsfs
-    gcs_file_system = gcsfs.GCSFileSystem(project="gcp_project_name")
-    gcs_json_path = cred_file_path
-    with gcs_file_system.open(gcs_json_path) as f:
-        json_dict = json.load(f)
-        key = json.dumps(json_dict) 
-
-    source_credentials = service_account.Credentials.from_service_account_info(json_dict, scopes = ['https://www.googleapis.com/auth/cloud-platform'],)
-
-    target_credentials = impersonated_credentials.Credentials(
-    source_credentials=source_credentials,
-    target_principal=target_principal,
-    target_scopes = ['https://www.googleapis.com/auth/cloud-platform'],
-    lifetime=3600)
-
-    import google.auth.transport.requests
-    request = google.auth.transport.requests.Request()
-    target_credentials.refresh(request)
-    access_token = target_credentials.token
-    return access_token
-
-# COMMAND ----------
-
-access_token = getGCSAccessToken( dbutils.secrets.get(scope=json_['master_name_scope'], key='gs-path-to-json'),dbutils.secrets.get(scope=json_['master_name_scope'], key='impersonate-service-account'))
+access_token = getGCPTokenwithOAuth(dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id'),True, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
+                             
 print(access_token)
+
+# COMMAND ----------
+
+# MAGIC %sh 
+# MAGIC
+# MAGIC curl -v -H 'Authorization: Bearer <token>'  'https://accounts.gcp.databricks.com/api/2.0/accounts/<account_id>/workspaces'
+# MAGIC
+# MAGIC
 
 # COMMAND ----------
 
 import requests
 
 # Define the URL and headers
-DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=json_['master_name_scope'], key="account-console-id")
+DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=sat_scope, key="account-console-id")
 url = f'https://accounts.gcp.databricks.com/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
 
 ## Note: The access token should be generated for a SP which is an account admin to run this command.  
 
 headers = {
-     'Authorization': f'Bearer {identity_token}', 
-     'X-Databricks-GCP-SA-Access-Token':f'{access_token}'
+     'Authorization': f'Bearer {access_token}' 
 }
 
 try:
@@ -182,91 +223,6 @@ try:
     
 except requests.exceptions.RequestException as err:
     print(f"An error occurred: {err}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Additional validation   - Execute the curl command to check the token is able to access the accounts console.
-
-# COMMAND ----------
-
-# MAGIC %sh
-# MAGIC #curl -X GET --header 'Authorization: Bearer <identity_token>' --header 'X-Databricks-GCP-SA-Access-Token: <access_token>' https://accounts.gcp.databricks.com/api/2.0/accounts/<accounts_console_id>/workspaces
-
-# COMMAND ----------
-
-def generateWSToken(deployment_url, cred_file_path,target_principal):
-    from google.oauth2 import service_account
-    import gcsfs
-    import json 
-    
-    target_scopes = [deployment_url]
-    print(target_scopes)
-    # Reading gcs files with gcsfs
-    gcs_file_system = gcsfs.GCSFileSystem(project="gcp_project_name")
-    gcs_json_path = cred_file_path
-    with gcs_file_system.open(gcs_json_path) as f:
-      json_dict = json.load(f)
-      key = json.dumps(json_dict) 
-    source_credentials = service_account.Credentials.from_service_account_info(json_dict,scopes=target_scopes)
-    from google.auth import impersonated_credentials
-    from google.auth.transport.requests import AuthorizedSession
-
-    target_credentials = impersonated_credentials.Credentials(
-      source_credentials=source_credentials,
-      target_principal=target_principal,
-      target_scopes = target_scopes,
-      lifetime=36000)
-
-    creds = impersonated_credentials.IDTokenCredentials(
-                                      target_credentials,
-                                      target_audience=deployment_url,
-                                      include_email=True)
-
-    authed_session = AuthorizedSession(creds)
-    resp = authed_session.get(gcp_accounts_url)
-    return creds.token
-    
-
-# COMMAND ----------
-
-identity_token = generateWSToken(f'https://{workspaceUrl}' ,dbutils.secrets.get(scope=json_['master_name_scope'], key='gs-path-to-json'),dbutils.secrets.get(scope=json_['master_name_scope'], key='impersonate-service-account'))
-print(identity_token)
-
-# COMMAND ----------
-
-import requests,json
-
-
-
-
-url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
-headers = {
-    'Authorization': f'Bearer {identity_token}'
-}
-
-# Make the GET request
-response = requests.get(url, headers=headers)
-
-# Print the response
-print(response.json())
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Additional validation   - Execute the curl command to check the token is able to access the workspace.
-
-# COMMAND ----------
-
-# MAGIC %sh 
-# MAGIC
-# MAGIC curl -X GET --header 'Authorization: Bearer <identity_token>' 'https://<worspace_rul>/api/2.0/clusters/list'
 
 # COMMAND ----------
 
@@ -301,10 +257,28 @@ def openssl_connect(host, port):
 # COMMAND ----------
 
 # Example usage: connect to a server running on localhost at port 443 (HTTPS)
+workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
+
 openssl_connect(workspaceUrl, 443)
 
 
 
 # COMMAND ----------
 
-openssl_connect('accounts.gcp.databricks.com', 443)
+openssl_connect('accounts.cloud.databricks.com', 443)
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC curl -X POST "https://accounts.gcp.databricks.com/oidc/accounts/<account_id>/v1/token" -H "Authorization: Basic $(echo -n '<client_id>:<secet>' | base64)"
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC export CLIENT_ID=<CLIENT_ID>
+# MAGIC export CLIENT_SECRET=<CLIENT_SECRET>
+# MAGIC
+# MAGIC curl -v --request POST \
+# MAGIC --url https://accounts.gcp.databricks.com/oidc/accounts/<account_id>/v1/token \
+# MAGIC --user "$CLIENT_ID:$CLIENT_SECRET" \
+# MAGIC --data 'grant_type=client_credentials&scope=all-apis'
