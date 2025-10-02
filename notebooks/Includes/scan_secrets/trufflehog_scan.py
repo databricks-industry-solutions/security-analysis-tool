@@ -476,7 +476,8 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
     try:
         # Create the table if it doesn't exist
         create_secret_scan_results_table()
-        
+        logger.info(f"Inserting secret scan results for workspace_id: {workspace_id}")
+        logger.info(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
         scan_time = time.time()
         notebook_id = notebook_metadata.get("object_id", "")
         notebook_path = notebook_metadata.get("path", "")
@@ -687,6 +688,8 @@ def process_search_response(response: Dict[str, Any], results_list: List[Dict[st
             # Don't print "No secrets found" to avoid overwhelming output with thousands of notebooks
         
         # Store results in database if run_id and workspace_id are provided
+        logger.info(f"Inserting secret scan results for workspace_id: {workspace_id} and run_id: {run_id}")
+        logger.info(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
         if run_id is not None and workspace_id is not None:
             insert_secret_scan_results(workspace_id, notebook_metadata, run_id)
     
