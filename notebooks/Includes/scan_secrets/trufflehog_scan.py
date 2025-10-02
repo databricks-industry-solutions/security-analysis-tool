@@ -520,12 +520,12 @@ def process_search_response(response: Dict[str, Any], results_list: List[Dict[st
             notebook_metadata["secrets_found"] = len(secret_results)
             notebook_metadata["secret_details"] = secret_results
             
-            # Log summary
+            # Log summary - only show when secrets are found
             print(f"🚨 SECRETS DETECTED in {temp_path}:")
             print(json.dumps(secret_results, indent=2))
         else:
             notebook_metadata["secrets_found"] = 0
-            print(f"✅ No secrets found in {temp_path}")
+            # Don't print "No secrets found" to avoid overwhelming output with thousands of notebooks
     
     # Return next page token for pagination
     return response.get("next_page_token")
@@ -615,11 +615,16 @@ def main_scanning_workflow():
             
             # Count secrets found in this page
             page_secrets = sum(1 for notebook in results_list[-page_notebooks:] if notebook.get("secrets_found", 0) > 0)
+            page_total_secrets = sum(notebook.get("secrets_found", 0) for notebook in results_list[-page_notebooks:])
             notebooks_with_secrets += page_secrets
-            total_secrets_found += sum(notebook.get("secrets_found", 0) for notebook in results_list[-page_notebooks:])
+            total_secrets_found += page_total_secrets
             
-            print(f"   ⏱️  Page {page_number} completed in {page_end_time - page_start_time:.2f} seconds")
-            print(f"   📊 Notebooks processed: {page_notebooks}, Secrets found: {sum(notebook.get('secrets_found', 0) for notebook in results_list[-page_notebooks:])}")
+            # Only show page summary if secrets were found or if it's a significant milestone
+            if page_total_secrets > 0:
+                print(f"   ⚠️  Page {page_number}: {page_notebooks} notebooks processed, {page_total_secrets} secrets found in {page_secrets} notebook(s)")
+            elif page_number % 10 == 0:  # Show progress every 10 pages
+                print(f"   📖 Page {page_number}: {page_notebooks} notebooks processed (no secrets found)")
+            
             print()
             
             page_number += 1
