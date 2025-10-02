@@ -455,6 +455,97 @@ print("✅ Utility functions defined successfully!")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Step 3.5: Database Storage Functions
+# MAGIC 
+# MAGIC This cell contains functions for storing secret scan results in the SAT database.
+
+# COMMAND ----------
+
+def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, Any], run_id: int) -> None:
+    """
+    Insert secret scan results into the secret_scan_results table.
+    
+    Args:
+        workspace_id (str): Workspace ID being scanned
+        notebook_metadata (Dict[str, Any]): Notebook metadata with secret details
+        run_id (int): SAT run ID for tracking
+    """
+    import time
+    
+    try:
+        # Create the table if it doesn't exist
+        create_secret_scan_results_table()
+        
+        scan_time = time.time()
+        notebook_id = notebook_metadata.get("object_id", "")
+        notebook_path = notebook_metadata.get("path", "")
+        notebook_name = notebook_metadata.get("name", "")
+        secrets_found = notebook_metadata.get("secrets_found", 0)
+        
+        if secrets_found > 0:
+            # Insert a record for each detected secret
+            secret_details = notebook_metadata.get("secret_details", [])
+            
+            for secret in secret_details:
+                detector_name = secret.get("DetectorName", "Unknown")
+                secret_sha256 = secret.get("Raw_SHA", "")
+                source_file = secret.get("SourceFile", "")
+                verified = secret.get("Verified", False)
+                
+                # Insert individual secret record
+                sql = f"""
+                INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results 
+                (workspaceid, notebook_id, notebook_path, notebook_name, detector_name, 
+                 secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
+                VALUES ('{workspace_id}', '{notebook_id}', '{notebook_path}', '{notebook_name}', 
+                        '{detector_name}', '{secret_sha256}', '{source_file}', {verified}, 
+                        {secrets_found}, {run_id}, cast({scan_time} as timestamp))
+                """
+                
+                spark.sql(sql)
+                logger.info(f"Inserted secret scan result for notebook {notebook_id}, detector: {detector_name}")
+        else:
+            # Insert a record indicating no secrets found (for completeness)
+            sql = f"""
+            INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results 
+            (workspaceid, notebook_id, notebook_path, notebook_name, detector_name, 
+             secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
+            VALUES ('{workspace_id}', '{notebook_id}', '{notebook_path}', '{notebook_name}', 
+                    'NO_SECRETS_FOUND', '', '', false, 0, {run_id}, cast({scan_time} as timestamp))
+            """
+            
+            spark.sql(sql)
+            logger.info(f"Inserted clean scan result for notebook {notebook_id}")
+            
+    except Exception as e:
+        logger.error(f"Failed to insert secret scan results for notebook {notebook_id}: {str(e)}")
+        # Don't raise exception to avoid stopping the scan process
+
+def get_current_run_id() -> int:
+    """
+    Get the current SAT run ID for tracking scan results.
+    
+    Returns:
+        int: Current run ID from SAT run tracking system
+    """
+    try:
+        result = spark.sql(f'SELECT max(runID) FROM {json_["analysis_schema_name"]}.run_number_table').collect()
+        if result and result[0][0] is not None:
+            return result[0][0]
+        else:
+            # If no run ID exists, create a new one
+            insertNewBatchRun()
+            result = spark.sql(f'SELECT max(runID) FROM {json_["analysis_schema_name"]}.run_number_table').collect()
+            return result[0][0] if result and result[0][0] is not None else 1
+    except Exception as e:
+        logger.error(f"Failed to get run ID: {str(e)}")
+        return 1  # Default run ID
+
+print("✅ Database storage functions defined successfully!")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Step 4: Main Scanning Functions
 # MAGIC
 # MAGIC This cell contains the main functions for processing notebooks and orchestrating the secret scanning workflow.
@@ -538,7 +629,8 @@ def scan_notebook_for_secrets(notebook_path: str, object_id: str) -> Optional[Li
         return None
 
 def process_search_response(response: Dict[str, Any], results_list: List[Dict[str, Any]], 
-                          output_filename: Optional[str] = None) -> Optional[str]:
+                          output_filename: Optional[str] = None, run_id: Optional[int] = None, 
+                          workspace_id: Optional[str] = None) -> Optional[str]:
     """
     Process search API response and scan notebooks for secrets.
     
@@ -546,6 +638,8 @@ def process_search_response(response: Dict[str, Any], results_list: List[Dict[st
         response (Dict[str, Any]): API response from unified search
         results_list (List[Dict[str, Any]]): List to store notebook metadata
         output_filename (Optional[str]): File to log notebook metadata
+        run_id (Optional[int]): SAT run ID for database tracking
+        workspace_id (Optional[str]): Workspace ID for database storage
         
     Returns:
         Optional[str]: Next page token for pagination or None if no more pages
@@ -599,6 +693,10 @@ def process_search_response(response: Dict[str, Any], results_list: List[Dict[st
         else:
             notebook_metadata["secrets_found"] = 0
             # Don't print "No secrets found" to avoid overwhelming output with thousands of notebooks
+        
+        # Store results in database if run_id and workspace_id are provided
+        if run_id is not None and workspace_id is not None:
+            insert_secret_scan_results(workspace_id, notebook_metadata, run_id)
     
     # Return next page token for pagination
     return response.get("next_page_token")
@@ -622,6 +720,12 @@ def main_scanning_workflow():
     """
     print("🔍 Starting TruffleHog Secret Scanning Workflow")
     print("=" * 60)
+    
+    # Get current workspace ID and run ID for database storage
+    workspace_id = json_.get("workspace_id", "unknown")
+    current_run_id = get_current_run_id()
+    
+    logger.info(f"TruffleHog scan starting for workspace: {workspace_id}, run_id: {current_run_id}")
     
     # Get time range for notebook search
     # Use environment variable TIME if provided, otherwise use yesterday's midnight
@@ -679,7 +783,8 @@ def main_scanning_workflow():
             
             # Process response and scan notebooks
             page_start_time = time.time()
-            next_page_token = process_search_response(response, results_list, Config.RESULTS_LOG_FILE)
+            next_page_token = process_search_response(response, results_list, Config.RESULTS_LOG_FILE, 
+                                                     current_run_id, workspace_id)
             page_end_time = time.time()
             
             # Update counters
