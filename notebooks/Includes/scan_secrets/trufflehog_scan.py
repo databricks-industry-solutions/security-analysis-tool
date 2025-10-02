@@ -464,6 +464,7 @@ print("✅ Utility functions defined successfully!")
 def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, Any], run_id: int) -> None:
     """
     Insert secret scan results into the secret_scan_results table.
+    Only inserts records when secrets are actually found to avoid database bloat.
     
     Args:
         workspace_id (str): Workspace ID being scanned
@@ -483,7 +484,7 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
         secrets_found = notebook_metadata.get("secrets_found", 0)
         
         if secrets_found > 0:
-            # Insert a record for each detected secret
+            # Only insert records when secrets are found
             secret_details = notebook_metadata.get("secret_details", [])
             
             for secret in secret_details:
@@ -505,17 +506,8 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
                 spark.sql(sql)
                 logger.info(f"Inserted secret scan result for notebook {notebook_id}, detector: {detector_name}")
         else:
-            # Insert a record indicating no secrets found (for completeness)
-            sql = f"""
-            INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results 
-            (workspaceid, notebook_id, notebook_path, notebook_name, detector_name, 
-             secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-            VALUES ('{workspace_id}', '{notebook_id}', '{notebook_path}', '{notebook_name}', 
-                    'NO_SECRETS_FOUND', '', '', false, 0, {run_id}, cast({scan_time} as timestamp))
-            """
-            
-            spark.sql(sql)
-            logger.info(f"Inserted clean scan result for notebook {notebook_id}")
+            # Don't insert anything for clean notebooks to avoid database bloat
+            logger.debug(f"No secrets found in notebook {notebook_id}, skipping database insert")
             
     except Exception as e:
         logger.error(f"Failed to insert secret scan results for notebook {notebook_id}: {str(e)}")
