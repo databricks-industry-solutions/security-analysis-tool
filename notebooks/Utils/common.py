@@ -488,7 +488,7 @@ def create_account_workspaces_table():
 def create_secret_scan_results_table():
     df = spark.sql(
         f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.secret_scan_results (
-        workspaceid STRING,
+        workspace_id STRING,
         notebook_id STRING,
         notebook_path STRING,
         notebook_name STRING,

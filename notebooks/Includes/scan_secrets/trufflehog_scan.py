@@ -456,7 +456,7 @@ print("✅ Utility functions defined successfully!")
 
 # MAGIC %md
 # MAGIC ## Step 3.5: Database Storage Functions
-# MAGIC 
+# MAGIC
 # MAGIC This cell contains functions for storing secret scan results in the SAT database.
 
 # COMMAND ----------
@@ -496,7 +496,7 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
                 # Insert individual secret record
                 sql = f"""
                 INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results 
-                (workspaceid, notebook_id, notebook_path, notebook_name, detector_name, 
+                (workspace_id, notebook_id, notebook_path, notebook_name, detector_name, 
                  secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
                 VALUES ('{workspace_id}', '{notebook_id}', '{notebook_path}', '{notebook_name}', 
                         '{detector_name}', '{secret_sha256}', '{source_file}', {verified}, 
