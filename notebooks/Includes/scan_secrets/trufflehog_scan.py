@@ -1,10 +1,10 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # TruffleHog Secret Scanner for Databricks Notebooks
-# MAGIC 
+# MAGIC
 # MAGIC ## Overview
 # MAGIC This notebook scans Databricks workspace notebooks for exposed secrets using TruffleHog. It integrates with the Security Analysis Tool (SAT) to provide comprehensive secret detection across your Databricks environment.
-# MAGIC 
+# MAGIC
 # MAGIC ## Features
 # MAGIC - Scans all notebooks modified within a specified timeframe
 # MAGIC - Uses custom detectors for Databricks-specific tokens
@@ -12,16 +12,89 @@
 # MAGIC - Provides detailed reporting with SHA-256 hashed secrets for security
 # MAGIC - Handles pagination for large workspaces
 # MAGIC - Includes proper error handling and rate limiting
-# MAGIC 
+# MAGIC
 # MAGIC ## Prerequisites
 # MAGIC - Databricks workspace with appropriate permissions
 # MAGIC - Access to install packages and run shell commands
 # MAGIC - Valid Databricks API token (automatically extracted from notebook context)
-# MAGIC 
+# MAGIC
 # MAGIC ---
-# MAGIC 
+
+# COMMAND ----------
+
+# MAGIC %run ../install_sat_sdk
+
+# COMMAND ----------
+
+import time
+start_time = time.time()
+
+# COMMAND ----------
+
+# MAGIC %run ../../Utils/common
+
+# COMMAND ----------
+
+test=False #local testing
+if test:
+    jsonstr = JSONLOCALTEST
+else:
+    jsonstr = dbutils.widgets.get('json_')
+
+# COMMAND ----------
+
+import json
+if not jsonstr:
+    print('cannot run notebook by itself')
+    dbutils.notebook.exit('cannot run notebook by itself')
+else:
+    json_ = json.loads(jsonstr)
+
+# COMMAND ----------
+
+
+from core.logging_utils import LoggingUtils
+
+LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
+loggr = LoggingUtils.get_logger()
+
+# COMMAND ----------
+
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+
+# COMMAND ----------
+
+import requests
+from core import  parser as pars
+from core.dbclient import SatDBClient
+
+if cloud_type =='azure': # use client secret
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
+elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
+  mastername =' ' # this will not be present when using SPs
+  masterpwd = ' '  # we still need to send empty user/pwd.
+  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+else: #lets populate master key for accounts api
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
+  mastername = ' '
+  masterpwd = ' '
+  #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+  #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+
+db_client = SatDBClient(json_)
+
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Step 1: Install Dependencies and Setup TruffleHog
-# MAGIC 
+# MAGIC
 # MAGIC This cell installs required Python packages and downloads TruffleHog binary.
 
 # COMMAND ----------
@@ -29,11 +102,11 @@
 # MAGIC %sh 
 # MAGIC # Install required Python packages
 # MAGIC pip install requests pyyaml
-# MAGIC 
+# MAGIC
 # MAGIC # Download and install TruffleHog binary to /tmp directory
 # MAGIC echo "Installing TruffleHog..."
 # MAGIC curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp
-# MAGIC 
+# MAGIC
 # MAGIC echo "Setup completed successfully!"
 # MAGIC echo "TruffleHog binary location: /tmp/trufflehog"
 # MAGIC echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
@@ -42,7 +115,7 @@
 
 # MAGIC %md
 # MAGIC ## Step 2: Configuration and Authentication
-# MAGIC 
+# MAGIC
 # MAGIC This cell sets up configuration constants and extracts Databricks authentication context.
 
 # COMMAND ----------
@@ -138,8 +211,8 @@ class Config:
 # Extract Databricks authentication context
 # These are automatically available in Databricks notebooks
 try:
-    token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().getOrElse(None)
-    base_url = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+    token = db_client.get_temporary_oauth_token() 
+    base_url = json_["url"] 
     
     if not token or not base_url:
         raise ValueError("Unable to extract Databricks authentication context")
@@ -163,7 +236,7 @@ print(f"⚙️  API sleep: {Config.API_SLEEP_SECONDS}s, Page size: {Config.PAGE_
 
 # MAGIC %md
 # MAGIC ## Step 3: Utility Functions
-# MAGIC 
+# MAGIC
 # MAGIC This cell defines all the utility functions for API interactions, file operations, and secret scanning.
 
 # COMMAND ----------
@@ -383,7 +456,7 @@ print("✅ Utility functions defined successfully!")
 
 # MAGIC %md
 # MAGIC ## Step 4: Main Scanning Functions
-# MAGIC 
+# MAGIC
 # MAGIC This cell contains the main functions for processing notebooks and orchestrating the secret scanning workflow.
 
 # COMMAND ----------
@@ -536,7 +609,7 @@ print("✅ Main scanning functions defined successfully!")
 
 # MAGIC %md
 # MAGIC ## Step 5: Execute Secret Scanning
-# MAGIC 
+# MAGIC
 # MAGIC This cell executes the main scanning workflow to search for notebooks and scan them for secrets.
 
 # COMMAND ----------
@@ -674,7 +747,7 @@ if __name__ == "__main__":
 
 # MAGIC %md
 # MAGIC ## Step 6: Results Analysis and Cleanup
-# MAGIC 
+# MAGIC
 # MAGIC This cell provides additional analysis of the results and cleanup operations.
 
 # COMMAND ----------
@@ -722,6 +795,9 @@ print("=" * 30)
 # List temporary files created
 print("📁 Temporary files in /tmp/notebooks:")
 
+display(notebooks_by_secrets)
+
+
 # COMMAND ----------
 
 # MAGIC %sh ls -la /tmp/notebooks/ 2>/dev/null || echo "Directory not found or empty"
@@ -761,3 +837,7 @@ if 'scan_results' in locals() and scan_results and scan_results.get("notebooks_w
     print("   Secrets were detected in your notebooks. Please address them promptly!")
 else:
     print("\n✅ No immediate action required - no secrets detected.")
+
+# COMMAND ----------
+
+print(f"TruffleHog Secret Scanner - {time.time() - start_time} seconds to run")

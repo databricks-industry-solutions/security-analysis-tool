@@ -213,15 +213,6 @@ display(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Drop the staging database after SAT run that holds temporary tables
-
-# COMMAND ----------
-
-spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
-
-# COMMAND ----------
-
-# MAGIC %md
 # MAGIC ### TruffleHog Secret Scanning
 # MAGIC ##### Run TruffleHog secret scanning on configured workspaces to detect exposed secrets in notebooks
 
@@ -300,5 +291,17 @@ def runTruffleHogScanForAllWorkspaces():
             print(f"❌ TruffleHog scan failed for workspace: {ws.workspace_id}")
             continue
 
-# Uncomment the line below to run TruffleHog scanning automatically after the main analysis
-# runTruffleHogScanForAllWorkspaces()
+
+
+# COMMAND ----------
+
+runTruffleHogScanForAllWorkspaces()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Drop the staging database after SAT run that holds temporary tables
+
+# COMMAND ----------
+
+spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
