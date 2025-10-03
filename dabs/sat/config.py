@@ -165,6 +165,11 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
         key="analysis_schema_name",
         string_value=f'`{answers["catalog"]}`.{answers["security_analysis_schema"]}',
     )
+    client.secrets.put_secret(
+        scope=scope_name,
+        key="scan_for_secrets",
+        string_value=answers["scan_for_secrets"],
+    )
 
     if answers["use_proxy"]:
         client.secrets.put_secret(
