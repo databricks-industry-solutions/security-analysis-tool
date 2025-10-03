@@ -21,3 +21,5 @@ proxies = {}
 
 #Flag to run SAT initializer/Driver on Serverless
 run_on_serverless = false # [Only monitor current workspace]
+#Flag to scan for hardcoded secrets in all the SAT configured woekspace notebooks
+scan_for_secrets = true # [Scan for hardcoded secrets]
