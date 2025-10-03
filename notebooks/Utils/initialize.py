@@ -50,6 +50,7 @@ json_ = {
     "verbosity": "info",
     "maxpages":10,
     "timebetweencalls":1,
+    "scan_for_secrets":dbutils.secrets.get(scope="sat_scope", key="scan_for_secrets"),
     "proxies": json.loads(dbutils.secrets.get(scope="sat_scope", key="proxies")),
 }
 
@@ -88,7 +89,7 @@ json_.update(
         "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
-        "sat_version": "0.4.0",
+        "sat_version": "0.5.0",
     }
 )
 

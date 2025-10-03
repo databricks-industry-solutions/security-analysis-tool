@@ -295,7 +295,8 @@ def runTruffleHogScanForAllWorkspaces():
 
 # COMMAND ----------
 
-runTruffleHogScanForAllWorkspaces()
+if json_.get("scan_for_secrets", False):
+    runTruffleHogScanForAllWorkspaces()
 
 # COMMAND ----------
 

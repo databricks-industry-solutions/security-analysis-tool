@@ -58,6 +58,11 @@ def form():
             message="Select warehouse",
             choices=loading(get_warehouses, client=client),
         ),
+        Confirm(
+            name="scan_for_secrets",
+            message="Scan for hardcoded secrets in notebooks?",
+            default=True,
+        ),
     ]
     proxies = [
         Confirm(
