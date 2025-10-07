@@ -23,23 +23,6 @@ detectors:
       - dose
     regex:
       id: (?i)\b(dose[a-h0-9]{32})
-  
-  - name: AWSAccessKey
-    description: "AWS Access Key ID detector"
-    keywords:
-      - aws
-      - akia
-      - asia
-    regex:
-      accessKey: (AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}
-  
-  - name: AWSSecretKey
-    description: "AWS Secret Access Key detector"
-    keywords:
-      - aws
-      - secret
-    regex:
-      secretKey: (?i)(?:aws_secret_access_key|aws_secret_key|secret_key|secretkey)[\s:=]+["\']?([A-Za-z0-9/+=]{40})["\']?
 
 # Configuration settings for TruffleHog scanning
 settings:
