@@ -23,9 +23,6 @@ detectors:
       - dose
     regex:
       id: (?i)\b(dose[a-h0-9]{32})
-      
-  - name: AWS
-    enabled: true
 
 # Configuration settings for TruffleHog scanning
 settings:
