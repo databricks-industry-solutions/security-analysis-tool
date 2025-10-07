@@ -388,11 +388,12 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
     all_results = []
     
     # Scan 1: Run with built-in detectors (excluding specified ones)
+    # Note: Removing JSON mode to get ALL findings including unverified
     excluded_detectors = ",".join(Config.EXCLUDED_DETECTORS)
     builtin_command = (
         f"{Config.TRUFFLEHOG_BINARY} filesystem {file_path} "
         f"--exclude-detectors={excluded_detectors} "
-        f"--results=verified,unknown "
+        f"--no-verification "
         f"--no-update -j"
     )
     
