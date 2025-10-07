@@ -143,8 +143,8 @@ def load_config_from_file():
     try:
         # Get the current notebook's directory and construct path to config file
         notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-        repo_root = "/".join(notebook_path.split("/")[:-3])  # Go up from notebooks/Includes/scan_secrets
-        config_path = f"{repo_root}/configs/trufflehog_detectors.yaml"
+        config_folder = getConfigPath()
+        config_path = f"{config_folder}/trufflehog_detectors.yaml"
         
         logger.info(f"Loading configuration from: {config_path}")
         
