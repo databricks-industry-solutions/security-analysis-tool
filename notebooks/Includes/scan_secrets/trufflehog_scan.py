@@ -391,12 +391,14 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
     excluded_detectors = ",".join(Config.EXCLUDED_DETECTORS)
     builtin_command = (
         f"{Config.TRUFFLEHOG_BINARY} filesystem {file_path} "
-        f"--exclude-detectors {excluded_detectors} "
+        f"--exclude-detectors={excluded_detectors} "
+        f"--only-verified=false "
         f"--no-update -j"
     )
     
     try:
         logger.info(f"Running built-in detectors scan on {file_path}")
+        logger.info(f"Built-in scan command: {builtin_command}")
         result = subprocess.run(
             builtin_command, 
             shell=True, 
@@ -405,16 +407,20 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
             text=True,
             timeout=300  # 5 minute timeout
         )
+        logger.info(f"Built-in scan exit code: {result.returncode}")
+        
         if result.stdout:
             all_results.append(result.stdout)
-            logger.info(f"Built-in detectors scan completed with output")
+            logger.info(f"Built-in detectors scan completed with {len(result.stdout.splitlines())} output lines")
+            # Print first 1000 chars of output for debugging
+            print(f"Built-in scan found secrets: {result.stdout[:1000]}")
         else:
             logger.info(f"Built-in detectors scan completed with no secrets found")
+            print(f"Built-in scan stdout was empty")
         
         if result.stderr:
-            logger.debug(f"Built-in scan stderr: {result.stderr}")
-        if result.returncode != 0:
-            logger.warning(f"Built-in scan returned non-zero exit code: {result.returncode}")
+            logger.info(f"Built-in scan stderr: {result.stderr}")
+            print(f"Built-in scan stderr: {result.stderr}")
     except subprocess.TimeoutExpired:
         logger.error(f"Built-in detectors scan timed out for file: {file_path}")
     
