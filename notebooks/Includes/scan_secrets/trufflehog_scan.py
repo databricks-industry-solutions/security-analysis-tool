@@ -401,7 +401,7 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         result = subprocess.run(
             builtin_command, 
             shell=True, 
-            check=False,  # Don't raise exception on non-zero exit code
+            check=True,  # Don't raise exception on non-zero exit code
             capture_output=True, 
             text=True,
             timeout=300  # 5 minute timeout
@@ -434,7 +434,7 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         result = subprocess.run(
             custom_command, 
             shell=True, 
-            check=False,  # Don't raise exception on non-zero exit code
+            check=True,  # Don't raise exception on non-zero exit code
             capture_output=True, 
             text=True,
             timeout=300  # 5 minute timeout
