@@ -400,21 +400,23 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         result = subprocess.run(
             builtin_command, 
             shell=True, 
-            check=True, 
+            check=False,  # Don't raise exception on non-zero exit code
             capture_output=True, 
             text=True,
             timeout=300  # 5 minute timeout
         )
         if result.stdout:
             all_results.append(result.stdout)
-            logger.info(f"Built-in detectors scan completed")
+            logger.info(f"Built-in detectors scan completed with output")
+        else:
+            logger.info(f"Built-in detectors scan completed with no secrets found")
+        
+        if result.stderr:
+            logger.debug(f"Built-in scan stderr: {result.stderr}")
+        if result.returncode != 0:
+            logger.warning(f"Built-in scan returned non-zero exit code: {result.returncode}")
     except subprocess.TimeoutExpired:
         logger.error(f"Built-in detectors scan timed out for file: {file_path}")
-    except subprocess.CalledProcessError as e:
-        # Don't fail the entire scan if built-in detectors fail
-        logger.warning(f"Built-in detectors scan had issues for file: {file_path}. Error: {e}")
-        if e.stderr:
-            logger.debug(f"TruffleHog stderr: {e.stderr}")
     
     # Scan 2: Run with custom detectors from config file
     custom_command = (
@@ -427,21 +429,23 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         result = subprocess.run(
             custom_command, 
             shell=True, 
-            check=True, 
+            check=False,  # Don't raise exception on non-zero exit code
             capture_output=True, 
             text=True,
             timeout=300  # 5 minute timeout
         )
         if result.stdout:
             all_results.append(result.stdout)
-            logger.info(f"Custom detectors scan completed")
+            logger.info(f"Custom detectors scan completed with output")
+        else:
+            logger.info(f"Custom detectors scan completed with no secrets found")
+        
+        if result.stderr:
+            logger.debug(f"Custom scan stderr: {result.stderr}")
+        if result.returncode != 0:
+            logger.warning(f"Custom scan returned non-zero exit code: {result.returncode}")
     except subprocess.TimeoutExpired:
         logger.error(f"Custom detectors scan timed out for file: {file_path}")
-    except subprocess.CalledProcessError as e:
-        # Don't fail the entire scan if custom detectors fail
-        logger.warning(f"Custom detectors scan had issues for file: {file_path}. Error: {e}")
-        if e.stderr:
-            logger.debug(f"TruffleHog stderr: {e.stderr}")
     
     # Combine results from both scans
     if all_results:
