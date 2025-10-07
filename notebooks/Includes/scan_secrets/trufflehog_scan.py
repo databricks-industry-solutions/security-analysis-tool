@@ -392,7 +392,6 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
     builtin_command = (
         f"{Config.TRUFFLEHOG_BINARY} filesystem {file_path} "
         f"--exclude-detectors={excluded_detectors} "
-        f"--only-verified=false "
         f"--no-update -j"
     )
     
