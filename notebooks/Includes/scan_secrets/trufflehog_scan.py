@@ -324,7 +324,7 @@ def check_notebook_status(notebook_path: str) -> int:
         int: HTTP status code (200=accessible, 403=no permission, 404=not found)
     """
     check_url = f"{base_url}/api/2.0/workspace/get-status?path={notebook_path}"
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
 
     try:
         response = requests.get(check_url, headers=headers, timeout=30)
@@ -344,7 +344,7 @@ def export_notebook_content(notebook_path: str) -> Optional[Dict[str, Any]]:
         Optional[Dict[str, Any]]: Notebook export response or None if error
     """
     try:
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}","User-Agent": "databricks-sat/0.1.0"}
         url = f"{base_url}/api/2.0/workspace/export?path={notebook_path}"
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
@@ -793,7 +793,7 @@ def main_scanning_workflow():
     
     # Setup API request parameters
     url = f"{base_url}/api/2.0/search-midtier/unified-search"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
     data = {
         "query": {"query": ""},
         "filters": {"result_types": ["NOTEBOOK"], "last_edited_after": last_edited_after},
