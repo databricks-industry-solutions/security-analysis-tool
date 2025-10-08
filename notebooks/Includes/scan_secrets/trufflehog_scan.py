@@ -772,18 +772,29 @@ def main_scanning_workflow():
     logger.info(f"TruffleHog scan starting for workspace: {workspace_id}, run_id: {current_run_id}")
     
     # Get time range for notebook search
-    # Use environment variable TIME if provided, otherwise use yesterday's midnight
+    # Use environment variable TIME if provided, otherwise use config setting
     env_time = os.environ.get("TIME")
     if env_time:
         try:
             last_edited_after = convert_time_to_databricks_format(int(env_time))
             logger.info(f"Using provided TIME environment variable: {env_time}")
+            time_filter_enabled = True
         except ValueError:
             logger.warning(f"Invalid TIME environment variable: {env_time}. Using default.")
-            last_edited_after = get_yesterday_utc_midnight()
+            if Config.DAYS_BACK == 0:
+                time_filter_enabled = False
+            else:
+                last_edited_after = get_yesterday_utc_midnight()
+                time_filter_enabled = True
     else:
-        last_edited_after = get_yesterday_utc_midnight()
-        logger.info(f"Using default time range: last {Config.DAYS_BACK} day(s)")
+        # Check if days_back is 0 (scan all notebooks)
+        if Config.DAYS_BACK == 0:
+            time_filter_enabled = False
+            logger.info(f"Scanning ALL notebooks (days_back = 0)")
+        else:
+            last_edited_after = get_yesterday_utc_midnight()
+            time_filter_enabled = True
+            logger.info(f"Using default time range: last {Config.DAYS_BACK} day(s)")
     
     # Initialize tracking variables
     results_list = []
@@ -794,13 +805,22 @@ def main_scanning_workflow():
     # Setup API request parameters
     url = f"{base_url}/api/2.0/search-midtier/unified-search"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
+    
+    # Build filters - only include time filter if enabled
+    filters = {"result_types": ["NOTEBOOK"]}
+    if time_filter_enabled:
+        filters["last_edited_after"] = last_edited_after
+    
     data = {
         "query": {"query": ""},
-        "filters": {"result_types": ["NOTEBOOK"], "last_edited_after": last_edited_after},
+        "filters": filters,
         "page_size": Config.PAGE_SIZE,
     }
     
-    print(f"📅 Searching for notebooks modified after: {datetime.fromtimestamp(last_edited_after/1000).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    if time_filter_enabled:
+        print(f"📅 Searching for notebooks modified after: {datetime.fromtimestamp(last_edited_after/1000).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    else:
+        print(f"📅 Searching for ALL notebooks (no time filter)")
     print(f"📄 Page size: {Config.PAGE_SIZE}")
     print()
     

@@ -44,3 +44,5 @@ settings:
   search_settings:
     page_size: 50
     days_back: 1  # Number of days back to search for modified notebooks
+                  # Set to 0 to scan ALL notebooks (no time filter)
+                  # Can be overridden by TIME environment variable (epoch milliseconds)
