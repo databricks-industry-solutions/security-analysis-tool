@@ -143,10 +143,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# DABs Generated Template
-# Ignore everything in dabs/dabs_template/template/tmp except *.tmpl files
-dabs/dabs_template/template/tmp/*
-!dabs/dabs_template/template/tmp/*.tmpl
 
 **/.terraform*
 **/terraform.tfvars
