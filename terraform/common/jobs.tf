@@ -84,3 +84,48 @@ resource "databricks_job" "driver" {
     timezone_id = "America/New_York"
   }
 }
+
+
+resource "databricks_job" "secrets_scanner" {
+  name = "SAT Secrets Scanner"
+  dynamic "job_cluster" {
+    for_each = var.run_on_serverless ? [] : [1]
+    content {
+      job_cluster_key = "job_cluster"
+      new_cluster {
+        data_security_mode = "SINGLE_USER"
+        num_workers        = 5
+        spark_version      = data.databricks_spark_version.latest_lts.id
+        node_type_id       = data.databricks_node_type.smallest.id
+        runtime_engine     = "PHOTON"
+        dynamic "gcp_attributes" {
+          for_each = var.gcp_impersonate_service_account == "" ? [] : [var.gcp_impersonate_service_account]
+          content {
+            google_service_account = var.gcp_impersonate_service_account
+          }
+        }
+      }
+    }
+  }
+
+  task {
+    task_key        = "secrets_scanner"
+    job_cluster_key = var.run_on_serverless ? null : "job_cluster"
+    dynamic "library" {
+      for_each = var.run_on_serverless ? [] : [1]
+      content {
+        pypi {
+          package = "dbl-sat-sdk"
+        }
+      }
+    }
+    notebook_task {
+      notebook_path = "${databricks_repo.security_analysis_tool.workspace_path}/notebooks/security_analysis_secrets_scanner"
+    }
+  }
+
+  schedule {
+    quartz_cron_expression = "40 0 8 * * ?"
+    timezone_id            = "America/New_York"
+  }
+}

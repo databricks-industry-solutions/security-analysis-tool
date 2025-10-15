@@ -144,7 +144,9 @@ dmypy.json
 .pyre/
 
 # DABs Generated Template
-dabs/dabs_template/template/tmp
+# Ignore everything in dabs/dabs_template/template/tmp except *.tmpl files
+dabs/dabs_template/template/tmp/*
+!dabs/dabs_template/template/tmp/*.tmpl
 
 **/.terraform*
 **/terraform.tfvars

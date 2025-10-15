@@ -58,11 +58,6 @@ def form():
             message="Select warehouse",
             choices=loading(get_warehouses, client=client),
         ),
-        Confirm(
-            name="scan_for_secrets",
-            message="Scan for hardcoded secrets in notebooks?",
-            default=True,
-        ),
     ]
     proxies = [
         Confirm(
@@ -164,11 +159,6 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
         scope=scope_name,
         key="analysis_schema_name",
         string_value=f'`{answers["catalog"]}`.{answers["security_analysis_schema"]}',
-    )
-    client.secrets.put_secret(
-        scope=scope_name,
-        key="scan_for_secrets",
-        string_value=answers["scan_for_secrets"],
     )
 
     if answers["use_proxy"]:
