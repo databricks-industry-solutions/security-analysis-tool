@@ -143,8 +143,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# DABs Generated Template
-dabs/dabs_template/template/tmp
 
 **/.terraform*
 **/terraform.tfvars
