@@ -74,7 +74,7 @@ display(workspacesdf)
 workspaces = workspacesdf.collect()
 if workspaces is None or len(workspaces) == 0:
     loggr.info(
-        "Workspaes are not configured for analyis, check the workspace_configs.csv and "
+        "Workspaces are not configured for analysis, check the workspace_configs.csv and "
         + json_["analysis_schema_name"]
         + ".account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. "
     )
@@ -162,8 +162,4 @@ def runTruffleHogScanForAllWorkspaces():
             continue
 
 
-
-# COMMAND ----------
-
-if json_.get("scan_for_secrets", False):
-    runTruffleHogScanForAllWorkspaces()
+runTruffleHogScanForAllWorkspaces()

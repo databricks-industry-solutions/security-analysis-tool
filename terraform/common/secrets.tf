@@ -31,10 +31,3 @@ resource "databricks_secret" "proxies" {
   string_value = jsonencode(var.proxies)
   scope        = databricks_secret_scope.sat.id
 }
-
-
-resource "databricks_secret" "scan_for_secrets" {
-  key          = "scan_for_secrets"
-  string_value = var.scan_for_secrets
-  scope        = databricks_secret_scope.sat.id
-}

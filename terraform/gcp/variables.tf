@@ -57,8 +57,3 @@ variable "run_on_serverless" {
   description = "Flag to run SAT initializer/Driver on Serverless"
   default     = false
 }
-
-variable "scan_for_secrets" {
-  type        = bool
-  description = "Flag to scan for hard coded secrets in notebooks"
-}

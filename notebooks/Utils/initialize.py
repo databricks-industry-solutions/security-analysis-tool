@@ -50,7 +50,6 @@ json_ = {
     "verbosity": "info",
     "maxpages":10,
     "timebetweencalls":1,
-    "scan_for_secrets":dbutils.secrets.get(scope="sat_scope", key="scan_for_secrets"),
     "proxies": json.loads(dbutils.secrets.get(scope="sat_scope", key="proxies")),
 }
 
