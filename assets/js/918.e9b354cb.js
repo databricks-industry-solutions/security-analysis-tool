@@ -1,1 +1,0 @@
-(self.webpackChunksat=self.webpackChunksat||[]).push([[918],{5741:()=>{},8974:(s,a,e)=>{"use strict";e.d(a,{A:()=>c});var t=e(8291);const c=t}}]);
