@@ -16,9 +16,10 @@ Navigate to **Workspace -> Applications -> SAT -> files ->** `self_assessment_ch
 
 > **Note:** These workflows can take up to 10 mins to run per workspace. 
 
-Within the `Workflows` pane, there should now be two jobs available: **SAT Initializer Notebook** and **SAT Driver Notebook**. 
+Within the `Workflows` pane, there should now be three jobs available: **SAT Initializer Notebook**, **SAT Driver Notebook**, and **SAT Secrets Scanner Notebook**. 
     * Run the **SAT Initalizer Notebook** first. It only needs to complete successfully once, though it can be re-run if needed.
     * Once the initializer completes, run the **SAT Driver Notebook**, which can be executed on a recurring basis. By default, it is scheduled to run every Monday, Wednesday, and Friday.
+    * Optionally, run the **SAT Secrets Scanner Notebook** to scan workspace notebooks for exposed secrets using TruffleHog. This can be run on-demand or scheduled separately based on your security requirements.
 
 Once the workflows have finished running, you should see the schema under the catalog that was set at the time of installation for **SAT** within the `Catalog` pane. 
 
@@ -103,4 +104,34 @@ Next, click on the "Destinations" tab. From here, you can search for a user (ema
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
  <img src={useBaseUrl('/img/update_workspace_configuration.png')} alt="update_workspace_configuration" />
 </div>
+
+## Configuring Secret Scanning (Optional)
+
+The **SAT Secrets Scanner** uses TruffleHog to detect exposed secrets in Databricks workspace notebooks. This includes detection of:
+* AWS, Azure, and GCP cloud credentials
+* API tokens and keys (GitHub, Slack, Stripe, etc.)
+* Databricks-specific tokens (DKEA, DAPI, DOSE)
+* Private keys and other sensitive credentials
+
+### Configuration
+
+Secret scanning behavior can be configured via the `trufflehog_detectors.yaml` file located in the `configs` folder:
+
+* **days_back**: Controls how far back to search for modified notebooks
+    * Set to `1` to scan notebooks modified in the last day (default)
+    * Set to `7` to scan notebooks modified in the last week
+    * Set to `0` to scan **ALL notebooks** in the workspace (no time filter)
+* **page_size**: Number of notebooks to process per API page (default: 50)
+* **custom detectors**: Add custom regex patterns to detect organization-specific secret formats
+
+### Viewing Secret Scan Results
+
+Secret scan results are stored in the `secret_scan_results` table within your SAT schema. Each finding includes:
+* Notebook path and ID
+* Detector name (type of secret detected)
+* SHA-256 hash of the detected secret (for security)
+* Verification status
+* Scan timestamp
+
+Results can be queried directly or integrated into your existing security monitoring dashboards.
 
