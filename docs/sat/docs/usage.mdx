@@ -108,9 +108,9 @@ Next, click on the "Destinations" tab. From here, you can search for a user (ema
 ## Configuring Secret Scanning (Optional)
 
 The **SAT Secrets Scanner** uses TruffleHog to detect exposed secrets in Databricks workspace notebooks. This includes detection of:
+* Databricks-specific tokens (DKEA, DAPI, DOSE)
 * AWS, Azure, and GCP cloud credentials
 * API tokens and keys (GitHub, Slack, Stripe, etc.)
-* Databricks-specific tokens (DKEA, DAPI, DOSE)
 * Private keys and other sensitive credentials
 
 ### Configuration
@@ -126,12 +126,4 @@ Secret scanning behavior can be configured via the `trufflehog_detectors.yaml` f
 
 ### Viewing Secret Scan Results
 
-Secret scan results are stored in the `secret_scan_results` table within your SAT schema. Each finding includes:
-* Notebook path and ID
-* Detector name (type of secret detected)
-* SHA-256 hash of the detected secret (for security)
-* Verification status
-* Scan timestamp
-
-Results can be queried directly or integrated into your existing security monitoring dashboards.
-
+Secret scan results are stored in the `secret_scan_results` table within your SAT schema and available to reviews via SAT Dashboard. 
