@@ -563,25 +563,77 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
         logger.error(f"Failed to insert secret scan results for notebook {notebook_id}: {str(e)}")
         # Don't raise exception to avoid stopping the scan process
 
-def get_current_run_id() -> int:
+def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     """
-    Get the current SAT run ID for tracking scan results.
-    
-    Returns:
-        int: Current run ID from SAT run tracking system
+    Insert a single tracking row for a scan run where no secrets were found.
+    Ensures only one row per run_id exists.
     """
     try:
-        result = spark.sql(f'SELECT max(runID) FROM {json_["analysis_schema_name"]}.run_number_table').collect()
-        if result and result[0][0] is not None:
-            return result[0][0]
-        else:
-            # If no run ID exists, create a new one
-            insertNewBatchRun()
-            result = spark.sql(f'SELECT max(runID) FROM {json_["analysis_schema_name"]}.run_number_table').collect()
-            return result[0][0] if result and result[0][0] is not None else 1
+        # Ensure table exists
+        create_secret_scan_results_table()
+        logger.info(f"Inserting no-secrets tracking row for workspace_id: {workspace_id}, run_id: {run_id}")
+
+        # Check if a row already exists for this run_id
+        existing = spark.sql(f"""
+            SELECT COUNT(*) as cnt
+            FROM {json_["analysis_schema_name"]}.secret_scan_results
+            WHERE run_id = {run_id}
+        """).collect()[0]["cnt"]
+
+        if existing > 0:
+            logger.info(f"No-secrets row already exists for run_id {run_id}, skipping insert")
+            return
+
+        # Insert placeholder row
+        spark.sql(f"""
+            INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results
+            (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
+             secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
+            VALUES ('{workspace_id}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
+        """)
+        logger.info(f"No-secrets tracking row inserted successfully for run_id: {run_id}")
+
     except Exception as e:
-        logger.error(f"Failed to get run ID: {str(e)}")
-        return 1  # Default run ID
+        logger.error(f"Failed to insert no-secrets tracking row: {str(e)}")
+        # Do not raise to avoid stopping workflow
+
+def get_current_run_id() -> int:
+    """
+    Get a new SAT run ID for tracking scan results.
+    Each call generates a new run_id by incrementing the last run_id
+    and inserts a new row into the run_number_table.
+    
+    Returns:
+        int: New run ID
+    """
+    try:
+        # Get current max runID
+        result = spark.sql(f'''
+            SELECT max(runID) as max_run_id 
+            FROM {json_["analysis_schema_name"]}.run_number_table
+        ''').collect()
+        
+        current_max = result[0]["max_run_id"] if result and result[0]["max_run_id"] is not None else 0
+        
+        # Increment to get new run_id
+        new_run_id = current_max + 1
+        
+        # Insert new run into run_number_table
+        spark.sql(f'''
+            INSERT INTO {json_["analysis_schema_name"]}.run_number_table (runID, run_time)
+            VALUES ({new_run_id}, current_timestamp())
+        ''')
+        
+        logger.info(f"Created new SAT run_id: {new_run_id}")
+        return new_run_id
+    
+    except Exception as e:
+        logger.error(f"Failed to get or create new run ID: {str(e)}")
+        # Fallback: use current timestamp as unique run ID
+        fallback_run_id = int(time.time())
+        logger.info(f"Using fallback run_id: {fallback_run_id}")
+        return fallback_run_id
+
 
 print("✅ Database storage functions defined successfully!")
 
@@ -649,10 +701,11 @@ def scan_notebook_for_secrets(notebook_path: str, object_id: str) -> Optional[Li
                 logger.info(f"No secrets found in notebook: {notebook_path}")
             
             # Clean up temporary file
-            try:
-                os.remove(output_file_path)
-            except OSError as e:
-                logger.warning(f"Failed to clean up temporary file {output_file_path}: {str(e)}")
+            # TEMPORARILY DISABLED FOR DEBUGGING
+            # try:
+            #     os.remove(output_file_path)
+            # except OSError as e:
+            #     logger.warning(f"Failed to clean up temporary file {output_file_path}: {str(e)}")
             
             return results
             
@@ -890,6 +943,12 @@ def main_scanning_workflow():
             print("✅ No secrets detected in any notebooks. Great job!")
         
         print(f"📝 Detailed results logged to: {Config.RESULTS_LOG_FILE}")
+
+        # --- Insert a row if no secrets were found in any notebooks
+        if total_secrets_found == 0:
+            print("✅ No secrets found in any notebooks. Inserting a single tracking row for this run.")
+            logger.info("No secrets found in any notebooks. Inserting a single row to track this run.")
+            insert_no_secrets_tracking_row(workspace_id, current_run_id)
         
         # Return summary statistics
         return {

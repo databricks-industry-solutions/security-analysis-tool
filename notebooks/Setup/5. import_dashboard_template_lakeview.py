@@ -111,7 +111,7 @@ if response.status_code == 200:
 file_path = f'{basePath()}/dashboards/SAT_Dashboard_definition.json'
 
 # String to search and replace
-old_string = 'hive_metastore.security_analysis'
+old_string = '`sat`.security_analysis'
 new_string = json_['analysis_schema_name']
 
 # Read the JSON file
@@ -131,7 +131,7 @@ def replace_string(obj, old_str, new_str):
         for item in obj:
             replace_string(item, old_str, new_str)
 
-if json_['analysis_schema_name'] != 'hive_metastore.security_analysis':
+if json_['analysis_schema_name'] != '`sat`.security_analysis':
     replace_string(data, old_string, new_string)
 
     # Write the updated JSON back to the file
@@ -156,9 +156,9 @@ response = requests.get(
 
 exists = True
 
-if '[SAT] Security Analysis Tool - Assessment Results' in response.text:
+if 'Security Analysis Tool [SAT]' in response.text:
     json_response = response.json()
-    filtered_dashboard = [d for d in json_response['dashboards'] if d['display_name'] == '[SAT] Security Analysis Tool - Assessment Results']
+    filtered_dashboard = [d for d in json_response['dashboards'] if d['display_name'] == 'Security Analysis Tool [SAT]']
 
     dashboard_id = filtered_dashboard[0]['dashboard_id']
     print("Dashboard already exists")
@@ -198,7 +198,7 @@ with open(json_file_path) as json_file:
 
 json_string = json_string = json.dumps(json_data)
 
-BODY = {'display_name': '[SAT] Security Analysis Tool - Assessment Results','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
+BODY = {'display_name': 'Security Analysis Tool [SAT]','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
 
 response = requests.post(
           'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),

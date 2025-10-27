@@ -1,5 +1,8 @@
 resource "databricks_job" "initializer" {
   name = "SAT Initializer Notebook (one-time)"
+  tags = {
+    Application = "SAT"
+  }
   dynamic "job_cluster" {
     for_each = var.run_on_serverless ? [] : [1]
     content {
@@ -40,6 +43,9 @@ resource "databricks_job" "initializer" {
 
 resource "databricks_job" "driver" {
   name = "SAT Driver Notebook"
+  tags = {
+    Application = "SAT"
+  }
   dynamic "job_cluster" {
     for_each = var.run_on_serverless ? [] : [1]
     content {
@@ -88,6 +94,9 @@ resource "databricks_job" "driver" {
 
 resource "databricks_job" "secrets_scanner" {
   name = "SAT Secrets Scanner"
+  tags = {
+    Application = "SAT"
+  }
   dynamic "job_cluster" {
     for_each = var.run_on_serverless ? [] : [1]
     content {
