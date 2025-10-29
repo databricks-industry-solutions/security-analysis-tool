@@ -412,14 +412,14 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
             all_results.append(result.stdout)
             logger.info(f"Built-in detectors scan completed with {len(result.stdout.splitlines())} output lines")
             # Print first 1000 chars of output for debugging
-            print(f"Built-in scan found secrets: {result.stdout[:1000]}")
+            logger.debug(f"Built-in scan found secrets: {result.stdout[:1000]}")
         else:
             logger.info(f"Built-in detectors scan completed with no secrets found")
             print(f"Built-in scan stdout was empty")
         
         if result.stderr:
             logger.info(f"Built-in scan stderr: {result.stderr}")
-            print(f"Built-in scan stderr: {result.stderr}")
+            logger.debug(f"Built-in scan stderr: {result.stderr}")
     except subprocess.TimeoutExpired:
         logger.error(f"Built-in detectors scan timed out for file: {file_path}")
     
@@ -525,8 +525,8 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
     try:
         # Create the table if it doesn't exist
         create_secret_scan_results_table()
-        logger.info(f"Inserting secret scan results for workspace_id: {workspace_id}")
-        logger.info(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
+        logger.debug(f"Inserting secret scan results for workspace_id: {workspace_id}")
+        logger.debug(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
         scan_time = time.time()
         notebook_id = notebook_metadata.get("object_id", "")
         notebook_path = notebook_metadata.get("path", "")
@@ -554,7 +554,7 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
                 """
                 
                 spark.sql(sql)
-                logger.info(f"Inserted secret scan result for notebook {notebook_id}, detector: {detector_name}")
+                logger.debug(f"Inserted secret scan result for notebook {notebook_id}, detector: {detector_name}")
         else:
             # Don't insert anything for clean notebooks to avoid database bloat
             logger.debug(f"No secrets found in notebook {notebook_id}, skipping database insert")

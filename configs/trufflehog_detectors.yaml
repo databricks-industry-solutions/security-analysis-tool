@@ -2,22 +2,28 @@
 # This file contains custom detector definitions for TruffleHog secret scanning
 # Used by the SAT (Security Analysis Tool) TruffleHog integration
 
-detectors:
-  - name: DkeaToken
-    description: "Databricks DKEA token detector"
-    keywords:
-      - dkea
-    regex:
-      id: (?i)\b(dkea[a-h0-9]{32})
-    
-  - name: DapiToken
+- name: DapiToken
     description: "Databricks DAPI token detector"
     keywords:
       - dapi
     regex:
       id: (?i)\b(dapi[a-h0-9]{32})
-    
-  - name: DoseToken
+  
+- name: DkeaToken
+    description: "Databricks DKEA token detector"
+    keywords:
+      - dkea
+    regex:
+      id: (?i)\b(dkea[a-h0-9]{32})
+
+- name: DsapiToken
+    description: "Databricks Databricks Scoped API Token detector"
+    keywords:
+      - dsapi
+    regex:
+      id: (?i)\b(dsapi[a-h0-9]{32})
+
+- name: DoseToken
     description: "Databricks DOSE token detector"
     keywords:
       - dose
