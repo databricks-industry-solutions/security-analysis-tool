@@ -1130,7 +1130,7 @@ if enabled:
 
 # COMMAND ----------
 
-check_id='54' #	GOV-17 Lifetime of metastore delta sharing recipient token set less than 90 days
+check_id='54' #	GOV-17 Lifetime of metastore delta sharing recipient token is suggested to be less than 90 days, so flag any such tokens with expiry more than 90 days
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_metasore_token(df):
@@ -1145,7 +1145,7 @@ if enabled:
     sql=f'''
         SELECT name, delta_sharing_recipient_token_lifetime_in_seconds
         FROM {tbl_name} 
-        WHERE delta_sharing_scope ="INTERNAL_AND_EXTERNAL" AND delta_sharing_recipient_token_lifetime_in_seconds < 7776000
+        WHERE delta_sharing_scope ="INTERNAL_AND_EXTERNAL" AND delta_sharing_recipient_token_lifetime_in_seconds > 7776000
     '''
     sqlctrl(workspace_id, sql, uc_metasore_token)
     
