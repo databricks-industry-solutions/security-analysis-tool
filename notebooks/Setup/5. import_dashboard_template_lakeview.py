@@ -107,36 +107,52 @@ if response.status_code == 200:
 # COMMAND ----------
 
 
+import json
+
 # Path to the JSON file
 file_path = f'{basePath()}/dashboards/SAT_Dashboard_definition.json'
 
-# String to search and replace
-old_string = '`sat`.security_analysis'
+# Strings to search for (covers both forms)
+patterns_to_replace = [
+    "`sat`.security_analysis",  
+    "`sat`.`security_analysis`",
+    "sat.security_analysis"    
+]
+
+# User-provided schema (from your config)
 new_string = json_['analysis_schema_name']
 
 # Read the JSON file
 with open(file_path, 'r') as file:
     data = json.load(file)
 
-# Modify the JSON by replacing the string
-# Traverse the JSON object and replace the string when found
+# Recursive replacement function
 def replace_string(obj, old_str, new_str):
     if isinstance(obj, dict):
-        for key in obj:
-            if isinstance(obj[key], dict) or isinstance(obj[key], list):
-                replace_string(obj[key], old_str, new_str)
-            elif isinstance(obj[key], str):
-                obj[key] = obj[key].replace(old_str, new_str)
+        for key, value in obj.items():
+            if isinstance(value, (dict, list)):
+                replace_string(value, old_str, new_str)
+            elif isinstance(value, str):
+                if old_str in value:
+                    obj[key] = value.replace(old_str, new_str)
     elif isinstance(obj, list):
-        for item in obj:
-            replace_string(item, old_str, new_str)
+        for idx, item in enumerate(obj):
+            if isinstance(item, (dict, list)):
+                replace_string(item, old_str, new_str)
+            elif isinstance(item, str):
+                if old_str in item:
+                    obj[idx] = item.replace(old_str, new_str)
 
-if json_['analysis_schema_name'] != '`sat`.security_analysis':
-    replace_string(data, old_string, new_string)
+# Perform replacements for all known pattern variants
+print("Replacing schema references in dashboard JSON...")
+for pattern in patterns_to_replace:
+    replace_string(data, pattern, new_string)
 
-    # Write the updated JSON back to the file
-    with open(file_path, 'w') as file:
-        json.dump(data, file, indent=4)
+# Write the updated JSON back to the file
+with open(file_path, 'w') as file:
+    json.dump(data, file, indent=4)
+
+print("✅ Dashboard JSON file updated successfully!")
 
 # COMMAND ----------
 

@@ -635,12 +635,7 @@
                     "dataType": "STRING",
                     "defaultSelection": {
                         "values": {
-                            "dataType": "STRING",
-                            "values": [
-                                {
-                                    "value": ""
-                                }
-                            ]
+                            "dataType": "STRING"
                         }
                     }
                 },
@@ -1102,12 +1097,7 @@
                     "dataType": "STRING",
                     "defaultSelection": {
                         "values": {
-                            "dataType": "STRING",
-                            "values": [
-                                {
-                                    "value": ""
-                                }
-                            ]
+                            "dataType": "STRING"
                         }
                     }
                 },
@@ -1660,9 +1650,9 @@
                 "    COUNT(CASE WHEN sc.score = 1 THEN 1 END) AS failed_checks,\n",
                 "    COUNT(*) AS total_checks\n",
                 "  FROM sat.security_analysis.security_checks sc\n",
-                "  INNER JOIN completed_runs cr ON sc.run_id = cr.run_id\n",
+                "  INNER JOIN completed_runs cr ON sc.run_id = cr.run_id AND sc.workspaceid = cr.workspace_id\n",
                 "  INNER JOIN sat.security_analysis.security_best_practices bp ON sc.id = bp.id\n",
-                "  GROUP BY sc.run_id, cr.chk_date, bp.severity\n",
+                "  GROUP BY sc.workspaceid, sc.run_id, cr.chk_date, bp.severity\n",
                 ")\n",
                 "SELECT\n",
                 "  chk_date AS scan_date,\n",
