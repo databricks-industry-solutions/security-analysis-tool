@@ -30,18 +30,10 @@ def form():
                 r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", x
             ),
         ),
-        Confirm(
-            name="enable_uc",
-            message="Use Unity Catalog?",
-            default=lambda x: uc_enabled(client),
-            ignore=lambda x: not uc_enabled(client),
-        ),
         List(
             name="catalog",
             message="Select catalog",
             choices=loading(get_catalogs, client=client),
-            ignore=lambda x: not x["enable_uc"],
-            default="hive_metastore",
         ),
         Text(
             name="security_analysis_schema",
