@@ -1023,7 +1023,11 @@ print("=" * 30)
 # List temporary files created
 print("📁 Temporary files in /tmp/notebooks:")
 
-display(notebooks_by_secrets)
+if notebooks_by_secrets:
+    display(notebooks_by_secrets)
+else:
+    print("No notebooks with secrets to display.")
+
 
 
 # COMMAND ----------
