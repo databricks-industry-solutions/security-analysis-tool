@@ -2,10 +2,10 @@ databricks_url       = ""
 workspace_id         = ""
 account_console_id   = ""
 
-# Should follow this format:
-# Unity Catalog: catalog.schema
-# Hive Metastore: hive_metastore.schema
-analysis_schema_name = ""
+# Analysis Schema Name Should follow this format: YourUnityCatalogName.SchemaName 
+# Catalog must exist, schema will be created by SAT
+# Hive Metastore is no longer supported
+analysis_schema_name = ""  #example: sat.security_analysis_tool 
 
 ### Databricks Service Principal
 client_id     = "" // Databricks Service Principal Application ID

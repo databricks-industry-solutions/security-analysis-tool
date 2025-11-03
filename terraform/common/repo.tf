@@ -3,5 +3,5 @@
 resource "databricks_repo" "security_analysis_tool" {
   url    = "https://github.com/databricks-industry-solutions/security-analysis-tool.git"
   branch = "main"
-  path   = "/Applications/SAT_TF"
+  path   = "/Repos/Applications/SAT_TF"
 }
