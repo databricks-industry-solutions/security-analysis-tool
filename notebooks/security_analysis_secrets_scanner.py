@@ -1,7 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC **Notebook name:** security_analysis_secrets_scanner.
-# MAGIC **Functionality:** Main notebook to analyze and generate hardcoded secret scan report for configured workspaces
+# MAGIC **Functionality:** Analyzes all configured workspaces and generates a report of hardcoded secrets.
 
 # COMMAND ----------
 
@@ -21,7 +20,6 @@
 
 # COMMAND ----------
 
-# replace values for accounts exec
 hostname = (
     dbutils.notebook.entry_point.getDbutils()
     .notebook()
@@ -31,7 +29,6 @@ hostname = (
 )
 cloud_type = getCloudType(hostname)
 clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
-# dont know workspace token yet.
 json_.update(
     {
         "url": hostname,
@@ -52,19 +49,17 @@ dfexist.filter(dfexist.analysis_enabled == True ).createOrReplaceTempView(
 
 import json
 from dbruntime.databricks_repl_context import get_context
-#Get current workspace id
 current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### These are the workspaces we will run the analysis on
-# MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace
-# MAGIC ##### If the analysis is serverless compute only run the analysis for the current workspace
+# MAGIC ##### The analysis executes across all Databricks workspaces configured for SAT. Eligible workspaces are determined based on entries in **`workspace_configs.csv`** and the **`security_analysis.account_workspaces`** table where the **`analysis_enabled`** flag is set to **`True`**.
+# MAGIC ##### If a workspace does not appear in the results, verify that it is correctly listed and that **`analysis_enabled = True`** in both configuration sources.
+# MAGIC ##### When running the job/notebook using **Serverless Compute**, the analysis is limited to the **current workspace**. To scan all eligible workspaces, use a Classic Compute cluster.
 
 # COMMAND ----------
 
-#if the analysis is happening on serverless compute let us skip all workspaces except the current workspace
 serverless_filter=""
 if is_serverless:
     serverless_filter = " where workspace_id = '" + current_workspace + "'"
@@ -84,14 +79,13 @@ if workspaces is None or len(workspaces) == 0:
 
 # MAGIC %md
 # MAGIC ### TruffleHog Secret Scanning
-# MAGIC ##### Run TruffleHog secret scanning on configured workspaces to detect exposed secrets in notebooks
-
+# MAGIC ##### Runs TruffleHog secret scanning across all configured workspaces to detect exposed credentials and secrets in notebooks.
 # COMMAND ----------
 
 def processTruffleHogScan(wsrow):
     """
     Process TruffleHog secret scanning for a single workspace.
-    Similar to processWorkspace but focused on secret detection.
+    Similar to processWorkspace but focused on secrets detection.
     """
     import json
 
@@ -127,7 +121,7 @@ def processTruffleHogScan(wsrow):
     loggr.info(f"Running TruffleHog secret scan for workspace: {workspace_id}")
     scan_result = dbutils.notebook.run(
         f"{basePath()}/notebooks/Includes/scan_secrets/trufflehog_scan",
-        3600,  # 1 hour timeout for secret scanning
+        3600,  # 1 hour timeout for secrets scanning
         {"json_": json.dumps(ws_json)},
     )
     loggr.info(f"TruffleHog scan completed for workspace: {workspace_id}")
@@ -140,7 +134,6 @@ def runTruffleHogScanForAllWorkspaces():
     """
     loggr.info("Starting TruffleHog secret scanning for all configured workspaces")
     
-    # Get the same workspaces that were configured for analysis
     scan_workspaces = workspaces
     
     if scan_workspaces is None or len(scan_workspaces) == 0:

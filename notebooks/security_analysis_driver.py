@@ -1,7 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC **Notebook name:** security_analysis_driver.
-# MAGIC **Functionality:** Main notebook to analyze and generate report of configured workspaces
+# MAGIC **Functionality:** Analyzes all configured workspaces and generates a report of key metrics and security findings.
 # MAGIC
 
 # COMMAND ----------
@@ -22,7 +21,6 @@
 
 # COMMAND ----------
 
-# replace values for accounts exec
 hostname = (
     dbutils.notebook.entry_point.getDbutils()
     .notebook()
@@ -32,7 +30,6 @@ hostname = (
 )
 cloud_type = getCloudType(hostname)
 clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
-# dont know workspace token yet.
 json_.update(
     {
         "url": hostname,
@@ -76,19 +73,17 @@ dfexist.filter(dfexist.analysis_enabled == True ).createOrReplaceTempView(
 
 import json
 from dbruntime.databricks_repl_context import get_context
-#Get current workspace id
 current_workspace = get_context().workspaceId
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### These are the workspaces we will run the analysis on
-# MAGIC ##### Check the workspace_configs.csv and security_analysis.account_workspaces if analysis_enabled and see if analysis_enabled flag is enabled to True if you don't see your workspace
-# MAGIC ##### If the analysis is serverless compute only run the analysis for the current workspace
+# MAGIC ##### The analysis executes across all Databricks workspaces configured for SAT. Eligible workspaces are determined based on entries in **`workspace_configs.csv`** and the **`security_analysis.account_workspaces`** table where the **`analysis_enabled`** flag is set to **`True`**.
+# MAGIC ##### If a workspace does not appear in the results, verify that it is correctly listed and that **`analysis_enabled = True`** in both configuration sources.
+# MAGIC ##### When running the job/notebook using **Serverless Compute**, the analysis is limited to the **current workspace**. To scan all eligible workspaces, use a Classic Compute cluster.
 
 # COMMAND ----------
 
-#if the analysis is happening on serverless compute let us ignore all workspaces except the current workspace
 serverless_filter=""
 if is_serverless:
     serverless_filter = " where workspace_id = '" + current_workspace + "'"
@@ -106,7 +101,7 @@ if workspaces is None or len(workspaces) == 0:
 
 # COMMAND ----------
 
-insertNewBatchRun()  # common batch number for each run
+insertNewBatchRun()
 
 
 def processWorkspace(wsrow):
@@ -213,7 +208,7 @@ display(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Drop the staging database after SAT run that holds temporary tables
+# MAGIC #### After the SAT run completes, drop the **staging database** used to store temporary tables. This ensures no residual data persists between runs and maintains a clean environment for subsequent analyses.
 
 # COMMAND ----------
 

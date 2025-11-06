@@ -8429,7 +8429,7 @@
                                 "title": "Security Check Explorer",
                                 "showTitle": true,
                                 "showDescription": true,
-                                "description": "Filter and view details for a specific Security Check using the search bar.",
+                                "description": "Filter and view details for a specific security check using the search bar.",
                                 "headerAlignment": "center"
                             }
                         }

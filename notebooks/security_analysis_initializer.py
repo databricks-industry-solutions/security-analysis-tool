@@ -1,7 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC **Notebook name:** security_analysis_initializer.
-# MAGIC **Functionality:** Main notebook to initialize setup of SAT
+# MAGIC **Functionality:** Initializes the setup and configuration of the **Security Analysis Tool (SAT)**.
 # MAGIC
 
 # COMMAND ----------
@@ -57,7 +56,4 @@ for notebook, timeout in notebooks:
 
 spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
 
-# COMMAND ----------
 
-# MAGIC %md
-# MAGIC Read manual self assesment file and load workspace configurations for analysis
