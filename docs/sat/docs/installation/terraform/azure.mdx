@@ -84,6 +84,8 @@ terraform apply
 * This must be run successfully once. While it can be run multiple times, a single successful run is sufficient.
 2. Run "SAT Driver Notebook":
 * This notebook can be scheduled to run periodically (e.g., every Monday, Wednesday, and Friday).
+3. Run "SAT Secrets Scanner Notebook" (Optional):
+* This notebook scans workspace notebooks for exposed secrets using TruffleHog. Can be run on-demand or scheduled based on security requirements.
 
 ### Step 8: Access the SAT Dashboard
 1. Navigate to the <b>SQL > Dashboard </b> in the left menu from the Databricks workspace.

@@ -1132,20 +1132,20 @@ if enabled:
 
 check_id='54' #	GOV-17 Lifetime of metastore delta sharing recipient token set less than 90 days
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
+life_in_days_evaluation_value = sbp_rec['evaluation_value']
 def uc_metasore_token(df):
     if df is not None and not isEmpty(df):
         uc_metasore = df.collect()
-        uc_metasore_dict = {num: [row.name,row.delta_sharing_recipient_token_lifetime_in_seconds] for num,row in enumerate(uc_metasore)}
+        uc_metasore_dict = {num: [row.name,row.owner,row.delta_sharing_recipient_token_lifetime_in_seconds] for num,row in enumerate(uc_metasore)}
         return (check_id, 1, uc_metasore_dict )
     else:
         return (check_id, 0, {})   
 if enabled:    
-    tbl_name = 'unitycatalogmsv1' + '_' + workspace_id
+    tbl_name = 'workspace_metastore_summary' + '_' + workspace_id
     sql=f'''
-        SELECT name, delta_sharing_recipient_token_lifetime_in_seconds
+        SELECT name, delta_sharing_recipient_token_lifetime_in_seconds, owner
         FROM {tbl_name} 
-        WHERE delta_sharing_scope ="INTERNAL_AND_EXTERNAL" AND delta_sharing_recipient_token_lifetime_in_seconds < 7776000
+        WHERE delta_sharing_scope ="INTERNAL_AND_EXTERNAL" AND delta_sharing_recipient_token_lifetime_in_seconds >{life_in_days_evaluation_value * 86400}
     '''
     sqlctrl(workspace_id, sql, uc_metasore_token)
     
