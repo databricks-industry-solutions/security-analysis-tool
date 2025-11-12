@@ -2,10 +2,17 @@
 sidebar_position: 1
 ---
 import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
 
 # AWS
 
 This guide will help you setup the **Security Analysis Tool (SAT)** on AWS Databricks.
+
+<Admonition type="note" title="Note">
+SAT is also compatible with **AWS GovCloud** for the Civilian Shard. To install and run SAT on **AWS GovCloud** please use classic compute resources.
+
+DoD Shard compatibility will be coming soon. 
+</Admonition>
 
 ## Prerequisites
 
@@ -14,6 +21,10 @@ There are some [prerequisites](../../installation/index.mdx#prerequisites) that 
 > SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers,  as most of the checks and recommendations involve security features that are only available in tiers above Standard.
 
 ### Service Principal
+
+<Admonition type="note" title="Note">
+Make sure that there is a metastore attached to the workspace where you are going to install SAT.
+</Admonition>
 
 The first step is to create a Service Principal in Databricks. This will allow SAT to authenticate with the other workspaces. Follow the steps:
 
@@ -28,13 +39,11 @@ The first step is to create a Service Principal in Databricks. This will allow S
 - Save the `Secret` and `Client ID`
 - To deploy SAT in a workspace, you must add the Service Principal to the workspace.
 
-
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
   <img src={useBaseUrl('/img/aws_ws.png')} alt="Account Console" />
 </div>
 
-
-> The Service Principal requires an [Accounts Admin role](https://docs.gcp.databricks.com/en/admin/users-groups/service-principals.html#assign-account-admin-roles-to-a-service-principal), [Admin role](https://docs.gcp.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** and needs to be a member of the [metastore admin group](https://docs.gcp.databricks.com/en/data-governance/unity-catalog/manage-privileges/admin-privileges.html#who-has-metastore-admin-privileges) is required to analyze many of the APIs. Please [add this Service Princple](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) to **each workspace** so that SAT can access the APIs for analysis.  
+> The Service Principal requires an [Accounts Admin role](https://docs.databricks.com/aws/en/admin/users-groups/service-principals), [Admin role](https://docs.databricks.com/aws/en/admin/users-groups/service-principals) for **each workspace** and needs to be a member of the [metastore admin group](https://docs.databricks.com/aws/en/data-governance/unity-catalog/manage-privileges/admin-privileges) is required to analyze many of the APIs. Please [add this Service Princple](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) to **each workspace** so that SAT can access the APIs for analysis.  
 
 ## Installation
 
@@ -53,7 +62,7 @@ To execute the SAT follow these steps on your workstation or a compatible VM tha
     git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
    ```
 
-> Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
+> Remember that the target workspace should have a [profile](https://docs.databricks.com/aws/en/dev-tools/cli/profiles) in [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial)
 
 - Run the `install.sh` script on your terminal.
 
