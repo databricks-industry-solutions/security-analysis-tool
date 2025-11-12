@@ -88,7 +88,7 @@ json_.update(
         "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
-        "sat_version": "0.4.0",
+        "sat_version": "0.5.0",
     }
 )
 
@@ -180,6 +180,7 @@ create_schema()
 create_security_checks_table()
 create_account_info_table()
 create_account_workspaces_table()
+create_secret_scan_results_table()
 create_workspace_run_complete_table()
 
 # COMMAND ----------

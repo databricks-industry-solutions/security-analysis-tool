@@ -107,36 +107,52 @@ if response.status_code == 200:
 # COMMAND ----------
 
 
+import json
+
 # Path to the JSON file
 file_path = f'{basePath()}/dashboards/SAT_Dashboard_definition.json'
 
-# String to search and replace
-old_string = 'hive_metastore.security_analysis'
+# Strings to search for (covers both forms)
+patterns_to_replace = [
+    "`sat`.security_analysis",  
+    "`sat`.`security_analysis`",
+    "sat.security_analysis"    
+]
+
+# User-provided schema (from your config)
 new_string = json_['analysis_schema_name']
 
 # Read the JSON file
 with open(file_path, 'r') as file:
     data = json.load(file)
 
-# Modify the JSON by replacing the string
-# Traverse the JSON object and replace the string when found
+# Recursive replacement function
 def replace_string(obj, old_str, new_str):
     if isinstance(obj, dict):
-        for key in obj:
-            if isinstance(obj[key], dict) or isinstance(obj[key], list):
-                replace_string(obj[key], old_str, new_str)
-            elif isinstance(obj[key], str):
-                obj[key] = obj[key].replace(old_str, new_str)
+        for key, value in obj.items():
+            if isinstance(value, (dict, list)):
+                replace_string(value, old_str, new_str)
+            elif isinstance(value, str):
+                if old_str in value:
+                    obj[key] = value.replace(old_str, new_str)
     elif isinstance(obj, list):
-        for item in obj:
-            replace_string(item, old_str, new_str)
+        for idx, item in enumerate(obj):
+            if isinstance(item, (dict, list)):
+                replace_string(item, old_str, new_str)
+            elif isinstance(item, str):
+                if old_str in item:
+                    obj[idx] = item.replace(old_str, new_str)
 
-if json_['analysis_schema_name'] != 'hive_metastore.security_analysis':
-    replace_string(data, old_string, new_string)
+# Perform replacements for all known pattern variants
+print("Replacing schema references in dashboard JSON...")
+for pattern in patterns_to_replace:
+    replace_string(data, pattern, new_string)
 
-    # Write the updated JSON back to the file
-    with open(file_path, 'w') as file:
-        json.dump(data, file, indent=4)
+# Write the updated JSON back to the file
+with open(file_path, 'w') as file:
+    json.dump(data, file, indent=4)
+
+print("✅ Dashboard JSON file updated successfully!")
 
 # COMMAND ----------
 
@@ -156,9 +172,9 @@ response = requests.get(
 
 exists = True
 
-if '[SAT] Security Analysis Tool - Assessment Results' in response.text:
+if 'Security Analysis Tool [SAT]' in response.text:
     json_response = response.json()
-    filtered_dashboard = [d for d in json_response['dashboards'] if d['display_name'] == '[SAT] Security Analysis Tool - Assessment Results']
+    filtered_dashboard = [d for d in json_response['dashboards'] if d['display_name'] == 'Security Analysis Tool [SAT]']
 
     dashboard_id = filtered_dashboard[0]['dashboard_id']
     print("Dashboard already exists")
@@ -198,7 +214,7 @@ with open(json_file_path) as json_file:
 
 json_string = json_string = json.dumps(json_data)
 
-BODY = {'display_name': '[SAT] Security Analysis Tool - Assessment Results','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
+BODY = {'display_name': 'Security Analysis Tool [SAT]','warehouse_id': json_['sql_warehouse_id'], 'serialized_dashboard': json_string, 'parent_path': f"{basePath()}/dashboards"}
 
 response = requests.post(
           'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
