@@ -2,38 +2,186 @@
 sidebar_position: 1
 ---
 import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
 
 # Overview
 
-**Security Analysis Tool (SAT)** analyzes customer's Databricks account and workspace security configurations and provides recommendations that help them follow Databrick's security best practices. 
+**Security Analysis Tool (SAT)** is a comprehensive security assessment solution that analyzes your Databricks account and workspace configurations, providing actionable recommendations to help you follow Databricks security best practices.
 
-When a customer runs SAT, it compares their workspace configurations against a set of security best practices and delivers a report for their Databricks workspaces on AWS, Azure, and GCP. 
-These checks identify opportunities and provide recommendations to harden Databricks configurations, services, and resources.
+<Admonition type="tip" title="What SAT Does">
+SAT compares your workspace configurations against a curated set of security best practices and delivers detailed reports for your Databricks workspaces on **AWS**, **Azure**, and **GCP**.
+</Admonition>
 
-Databricks has worked with thousands of customers to securely deploy its platform, leveraging security features that meet their architectural requirements. 
-While security implementations may vary across organizations, there are commonly used guidelines and features adopted by organizations with high security standards. 
+---
 
-SAT checks for typical security configurations deployed by most high-security organizations. It highlights the most significant risks, and those most frequently asked about by customers. 
-Each recommendation will include a security configuration reference link to the relevant Databricks documentation. 
+## Why Use SAT?
 
+Databricks has worked with thousands of customers to securely deploy its platform, leveraging security features that meet diverse architectural requirements. While security implementations vary across organizations, there are commonly adopted guidelines and features used by organizations with high security standards.
 
->**Note:** SAT is a productivity tool designed to help verify your security configurations against Databricks’ best practices. It is *not* intended to serve as a certification or formal attestation of your deployment's security posture.
+**SAT helps you:**
 
- 
-Please review the SAT report with your business stakeholders, administrators, security team and auditors. Assess your organizational security requirements carefully before making changes based on the report - not all deviations require mitigation.
-Some recommendations may have cost implications, and some of the security recommendations may have dependency limitations. Always thoroughly review the associated feature documentation before modifying your security configurations. 
+<div style={{display: 'grid', gap: '1rem', marginTop: '1rem', marginBottom: '1.5rem'}}>
 
-Refer to the Databricks [Security and Trust Center](https://www.databricks.com/trust) for additional resources and best practices. 
+<div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
 
-The SAT project is regularly updated to improve check accuracy, add new checks, and fix bugs. 
+**🔍 Identify Security Gaps**  
+Automatically scan your Databricks environment to find deviations from security best practices.
 
-For feedback and comments, contact us at sat@databricks.com or open a GitHub issue.
+</div>
 
-## Project Support 
-> The code in this project is provided **for exploration purposes only** and is **not formally supported** by Databricks under any Service Level Agreements (SLAs). It is provided **AS-IS**, without any warranties or guarantees.  
->
-> Please **do not submit support tickets** to Databricks for issues related to the use of this project.  
->
-> The source code provided is subject to the Databricks [LICENSE](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/LICENSE) . All third-party libraries included or referenced are subject to their respective licenses set forth in the project license.  
->
-> Any issues or bugs found should be submitted as **GitHub Issues** on the project repository. While these will be reviewed as time permits, there are **no formal SLAs** for support.
+<div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
+
+**📊 Prioritize Risks**  
+Get recommendations ranked by severity (High, Medium, Low) to focus on the most critical issues first.
+
+</div>
+
+<div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
+
+**📚 Access Documentation**  
+Each recommendation includes direct links to relevant Databricks documentation for easy implementation.
+
+</div>
+
+<div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
+
+**✅ Verify Compliance**  
+Ensure your configurations align with industry standards and organizational security policies.
+
+</div>
+
+</div>
+
+---
+
+## What SAT Analyzes
+
+SAT performs comprehensive security checks across multiple dimensions:
+
+- **🛡️ Network Security** - Firewall rules, IP access controls, VPC configurations
+- **👥 Identity & Access** - Authentication, authorization, user management
+- **🔐 Data Protection** - Encryption, data access controls, secrets management
+- **⚖️ Governance** - Audit logging, workspace settings, policies
+- **ℹ️ Informational** - Configuration insights and recommendations
+
+Each check identifies opportunities to harden your Databricks configurations, services, and resources, with clear explanations and remediation guidance.
+
+---
+
+## Important Considerations
+
+<Admonition type="warning" title="Assessment Tool - Not a Certification">
+SAT is a **productivity tool** designed to help verify your security configurations against Databricks best practices. It is *not* intended to serve as a certification or formal attestation of your deployment's security posture.
+</Admonition>
+
+### Before Making Changes
+
+Please review the SAT report with your:
+- ✓ Business stakeholders
+- ✓ System administrators  
+- ✓ Security team
+- ✓ Compliance auditors
+
+**Key points to consider:**
+- 📌 Not all deviations require immediate mitigation
+- 💰 Some recommendations may have cost implications
+- 🔗 Some security features may have dependency limitations
+- 📖 Always review the associated documentation before making changes
+
+<Admonition type="info" title="Additional Resources">
+For more security guidance, visit the Databricks [Security and Trust Center](https://www.databricks.com/trust) for comprehensive resources and best practices.
+</Admonition>
+
+---
+
+## Project Updates & Support
+
+### Continuous Improvement
+
+The SAT project is **regularly updated** to:
+- ✨ Improve check accuracy
+- 🆕 Add new security checks
+- 🐛 Fix bugs and issues
+- 📈 Enhance reporting features
+
+### Getting Help
+
+<div style={{marginTop: '1rem'}}>
+
+**📧 Feedback & Questions**  
+Contact us at sat@databricks.com or open a GitHub issue
+
+**🔄 Updates**  
+Watch the [GitHub repository](https://github.com/databricks-industry-solutions/security-analysis-tool) for the latest releases
+
+</div>
+
+---
+
+## Project Support
+
+<Admonition type="warning" title="Community-Supported Project">
+
+**Important Support Information:**
+
+- ⚠️ This code is provided **for exploration purposes only**
+- ⚠️ **Not formally supported** by Databricks under any Service Level Agreements (SLAs)
+- ⚠️ Provided **AS-IS**, without warranties or guarantees
+- ⚠️ **Do not submit support tickets** to Databricks for issues with this project
+
+**How to Get Help:**
+
+- 📝 Submit bugs or issues as [GitHub Issues](https://github.com/databricks-industry-solutions/security-analysis-tool/issues)
+- ⏰ Issues will be reviewed as time permits
+- 🤝 Community contributions are welcome
+
+**Licensing:**
+
+- 📄 Source code is subject to the Databricks [LICENSE](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/LICENSE)
+- 📚 Third-party libraries are subject to their respective licenses
+
+</Admonition>
+
+---
+
+## Ready to Get Started?
+
+<div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginTop: '1.5rem'}}>
+
+<div style={{padding: '1.5rem', border: '2px solid #e0e0e0', borderRadius: '8px', textAlign: 'center'}}>
+
+**📥 Installation**  
+Set up SAT in your environment
+
+[Get Started →](./installation/standard/index.mdx)
+
+</div>
+
+<div style={{padding: '1.5rem', border: '2px solid #e0e0e0', borderRadius: '8px', textAlign: 'center'}}>
+
+**🔍 Learn More**  
+Explore SAT capabilities
+
+[View Features →](./functionality.mdx)
+
+</div>
+
+<div style={{padding: '1.5rem', border: '2px solid #e0e0e0', borderRadius: '8px', textAlign: 'center'}}>
+
+**📖 Usage Guide**  
+Run your first security scan
+
+[Read Guide →](./usage.mdx)
+
+</div>
+
+<div style={{padding: '1.5rem', border: '2px solid #e0e0e0', borderRadius: '8px', textAlign: 'center'}}>
+
+**❓ Need Help?**  
+Find answers to common questions
+
+[View FAQ →](./faq.mdx)
+
+</div>
+
+</div>

@@ -159,27 +159,7 @@ If the finding is "Cluster policy not used", the dashboard will list the specifi
 
 </AccordionItem>
 
----
 
-## Executive Dashboard
-
-<Admonition type="success" title="Perfect for Leadership">
-A streamlined, high-level view specifically designed for stakeholders and executives who need quick insights without technical details.
-</Admonition>
-
-In addition to the comprehensive SAT dashboard, an **Executive Dashboard** is also provided. This view consolidates key findings from the complete dashboard and presents them in an easy-to-digest format.
-
-**What leadership can do:**
-- ✅ Quickly understand the overall security health of Databricks deployments
-- ✅ Identify critical security issues that require immediate attention
-- ✅ Track security improvements over time
-- ✅ Make informed decisions about security investments and priorities
-
-This executive-level view complements the detailed technical dashboard, ensuring that both technical teams and business stakeholders have access to the security insights they need.
-
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
- <img src={useBaseUrl('/img/executive_dashboard.png')} alt="Executive Dashboard" />
-</div>
 
 ---
 
@@ -266,6 +246,49 @@ SAT must be installed in at least one workspace per Databricks account on AWS or
 
 📖 **Usage Guide:**
 - [Usage Guide](./usage.mdx) - Instructions on running workflows, viewing dashboards, and customizing security checks
+
+---
+
+## Executive Dashboard
+
+In addition to the comprehensive SAT dashboard, an **Executive Dashboard** is also provided. This view consolidates key findings from the complete dashboard and presents them in an easy-to-digest format.
+
+**What leadership can do:**
+- ✅ Quickly understand the overall security health of Databricks deployments
+- ✅ Identify critical security issues that require immediate attention
+- ✅ Track security improvements over time
+- ✅ Make informed decisions about security investments and priorities
+
+This executive-level view complements the detailed technical dashboard, ensuring that both technical teams and business stakeholders have access to the security insights they need.
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/executive_dashboard.png')} alt="Executive Dashboard" />
+</div>
+
+---
+
+## Secret Scanner Dashboard
+
+
+SAT includes a **Secret Scanner Dashboard** that detects exposed credentials such as API keys, tokens, and passwords across your Databricks Notebooks. This powerful feature helps you quickly identify, prioritize, and remediate secret leaks to keep your Databricks workspaces secure.
+
+**Key Features:**
+
+**🔍 Comprehensive Detection**  
+- Scans all notebooks across monitored workspaces
+- Identifies various types of secrets (API keys, tokens, passwords, custom secrets)
+- Provides unique secret counts and total occurrences
+
+**⚡ Quick Remediation**  
+- Detailed breakdown of secrets by notebook
+- Direct notebook path references
+- Categorized by secret type for easy prioritization
+
+This dashboard enables security teams to maintain a proactive stance on credential management, ensuring that sensitive information is not inadvertently exposed in notebook code.
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/secret_scanner_dashboard.png')} alt="Secret Scanner Dashboard" />
+</div>
 
 ---
 
