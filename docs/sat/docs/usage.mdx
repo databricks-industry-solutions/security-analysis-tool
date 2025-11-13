@@ -19,6 +19,7 @@ Navigate to **Workspace -> Applications -> SAT -> files -> configs ->** `self_as
 Within the `Jobs and Pipelines` pane, there should now be two jobs available: **SAT Initializer Notebook** and **SAT Driver Notebook**. 
     * Run the **SAT Initalizer Notebook** first. It only needs to complete successfully once, though it can be re-run if needed.
     * Once the initializer completes, run the **SAT Driver Notebook**, which can be executed on a recurring basis. By default, it is scheduled to run every Monday, Wednesday, and Friday.
+    * Optionally, run the **SAT Secrets Scanner Notebook** to scan workspace notebooks for exposed secrets using TruffleHog. This can be run on-demand or scheduled separately based on your security requirements.
 
 
 Optionally, run the SAT Secrets Scanner Notebook to scan workspace notebooks for exposed secrets using TruffleHog. This can be run on-demand or scheduled separately based on your security requirements.

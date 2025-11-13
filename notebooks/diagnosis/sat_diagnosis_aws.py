@@ -1,22 +1,52 @@
 # Databricks notebook source
-# MAGIC %md
-# MAGIC **Notebook name:** sat_diagnosis_aws  
-# MAGIC **Functionality:** Diagnose account and workspace connections for aws workspaces
+# MAGIC %md 
+# MAGIC **Functionality:** Diagnoses account-level and workspace-level connections for Databricks workspaces on AWS to ensure proper configuration and connectivity.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Widget to provide specific workspace URL for connectivity tests
-# MAGIC If you need to test connectivity to specific workspaces, the following code would create a new widget to accept the workspace URL as a parameter. If this widget is left empty it connects to the current workspace (default). A sample workspace URL that can be provided through the widget (if needed) is given below.
+# MAGIC If you need to test connectivity to specific workspaces, the following code will create a new widget to accept the workspace URL as a parameter. If this widget is left empty it connects to the current workspace (default). A sample workspace URL format is provided below.
 # MAGIC
 # MAGIC * dbc-xxxxxxxx-xxxx.cloud.databricks.com
 
 # COMMAND ----------
 
-# Create the text input widget for workspace url, assign it to a variable and print it
 dbutils.widgets.text("workspaceUrl", "")
 userWorkspaceUrl = dbutils.widgets.get("workspaceUrl")
 print("User provided workspace URL ->", userWorkspaceUrl)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Proxy Configuration (Optional)
+# MAGIC If network is behind a proxy, provide the proxy URLs below. Leave blank if not using a proxy.
+# MAGIC
+# MAGIC **Example formats:**
+# MAGIC * `http://proxy.company.com:8080`
+
+# COMMAND ----------
+
+# Create proxy configuration widgets
+dbutils.widgets.text("http_proxy", "", "HTTP Proxy (Optional)")
+dbutils.widgets.text("https_proxy", "", "HTTPS Proxy (Optional)")
+
+http_proxy = dbutils.widgets.get("http_proxy").strip()
+https_proxy = dbutils.widgets.get("https_proxy").strip()
+
+# Build the proxies dictionary
+proxies = {}
+if http_proxy:
+    proxies['http'] = http_proxy
+    print(f"✓ HTTP Proxy configured: {http_proxy}")
+if https_proxy:
+    proxies['https'] = https_proxy
+    print(f"✓ HTTPS Proxy configured: {https_proxy}")
+
+if not proxies:
+    print("ℹ️  No proxy configured - using direct connection")
+    
+print(f"\nProxy configuration: {proxies if proxies else 'None'}")
 
 # COMMAND ----------
 
@@ -39,7 +69,7 @@ display(secret_scopes)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Let us check if there is an SAT scope configured
+# MAGIC ### Verify that the required SAT scope is configured
 
 # COMMAND ----------
 
@@ -53,15 +83,12 @@ for secret_scope in secret_scopes:
 if not found:
    dbutils.notebook.exit('Your SAT configuration is missing required scope, please review setup instructions"')
 
-      
-
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Let us check if there are required configs in the SAT scope
+# MAGIC ### Verify that the required secrets are configured in the SAT scope
 
 # COMMAND ----------
-
 
 try:
    dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
@@ -77,7 +104,7 @@ except Exception as e:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Validate the following values and make sure they are correct
+# MAGIC ### Verify that the required secrets have the correct values
 
 # COMMAND ----------
 
@@ -88,12 +115,9 @@ for key in dbutils.secrets.list(sat_scope):
     secretvalue = dbutils.secrets.get(scope=sat_scope, key=key.key)
     print(" ".join(secretvalue))
 
-
 # COMMAND ----------
 
-# Define the URL and headers
-#workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
-# Use the workspace variable provided or fallback to the default workspace url
+# Retrieve the workspace URL from the user-provided input or fallback to the default workspace URL
 workspaceUrl = userWorkspaceUrl or spark.conf.get("spark.databricks.workspaceUrl")
 
 import requests
@@ -112,12 +136,12 @@ def getAWSTokenwithOAuth(source, baccount, client_id, client_secret):
         }
               
         if baccount is True:
-            full_endpoint = f"https://accounts.cloud.databricks.com/oidc/accounts/{source}/v1/token" #url for accounts api  
-        else: #workspace
+            full_endpoint = f"https://accounts.cloud.databricks.com/oidc/accounts/{source}/v1/token"   
+        else: 
             full_endpoint = f'https://{source}/oidc/v1/token'
 
         response = requests.post(full_endpoint, headers=oidc_token,
-                                    auth=user_pass, data=json_params, timeout=60)  
+                                    auth=user_pass, data=json_params, timeout=60, proxies=proxies)  
 
         if response is not None and response.status_code == 200:
             return response.json()['access_token']
@@ -128,7 +152,7 @@ def getAWSTokenwithOAuth(source, baccount, client_id, client_secret):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Check to see if the SP client_id and cleint_secret are valid
+# MAGIC ### Verify that the Service Principal client_id and client_secret are valid
 
 # COMMAND ----------
 
@@ -140,48 +164,35 @@ print(token)
 
 import requests
 
-
-# Define the URL and headers
 workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
-
 
 url = f'https://{workspaceUrl}/api/2.0/clusters/spark-versions'
 headers = {
     'Authorization': f'Bearer {token}'
 }
 
-# Make the GET request
-response = requests.get(url, headers=headers)
-
-# Print the response
+response = requests.get(url, headers=headers, proxies=proxies)
 print(response.json())
-
 
 # COMMAND ----------
 
 import requests
 
-
-
-# Define the URL and headers
 workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
-
 
 url = f'https://{workspaceUrl}/api/2.1/unity-catalog/catalogs'
 headers = {
     'Authorization': f'Bearer {token}'
 }
 
-# Make the GET request
-response = requests.get(url, headers=headers)
+response = requests.get(url, headers=headers, proxies=proxies)
 
-# Print the response
 print(response.json())
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Additional validation   - Execute the curl command to check the token is able to access the workspace.
+# MAGIC ### Verify that the token can access the workspace
 
 # COMMAND ----------
 
@@ -201,67 +212,50 @@ print(access_token)
 
 import requests
 
-# Define the URL and headers
 DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=sat_scope, key="account-console-id")
 url = f'https://accounts.cloud.databricks.com/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
 
-## Note: The access token should be generated for a SP which is an account admin to run this command.  
+## Note: The access token must be generated for a Service Principal that has account admin privileges to run this command.  
 
 headers = {
      'Authorization': f'Bearer {access_token}' 
 }
 
 try:
-    # Make the GET request
-    response = requests.get(url, headers=headers)
-
-    # Check if the response was successful
+    response = requests.get(url, headers=headers, proxies=proxies)
     response.raise_for_status()
-
-    # Print the response
     print(response.json())
-    
 except requests.exceptions.RequestException as err:
     print(f"An error occurred: {err}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Test Connectivity to Workspace URL and Account Console 
+# MAGIC ### Verify connectivity to the workspace URL and account console
 
 # COMMAND ----------
 
 import subprocess
 
 def openssl_connect(host, port):
-    # Command to connect to a server using OpenSSL s_client
     openssl_command = [
         'openssl', 's_client', '-connect', f'{host}:{port}'
     ]
 
-    # Run the OpenSSL command
     process = subprocess.Popen(openssl_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    # Communicate with the subprocess
     output, error = process.communicate(input=b'GET / HTTP/1.0\r\n\r\n')
 
-    # Print the output
     print(output.decode())
 
-    # Check if there was any error
     if error:
         print("Error:", error.decode())
 
 
-
 # COMMAND ----------
 
-# Example usage: connect to a server running on localhost at port 443 (HTTPS)
 workspaceUrl = spark.conf.get('spark.databricks.workspaceUrl')
-
 openssl_connect(workspaceUrl, 443)
-
-
 
 # COMMAND ----------
 

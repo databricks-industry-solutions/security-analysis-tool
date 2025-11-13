@@ -1,4 +1,4 @@
-# SAT: Monitor the Security Health of your Workspaces
+# SAT: Monitor the Security Health of Databricks Workspaces
 
 The **Security Analysis Tool (SAT)** analyzes your Databricks account and workspace configurations, providing recommendations to help you follow Databricks' security best practices.
 

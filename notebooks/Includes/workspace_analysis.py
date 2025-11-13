@@ -196,8 +196,8 @@ if enabled:
 
 # COMMAND ----------
 
-# DBTITLE 1,IP Access List
-check_id='37' #IP Access List
+# DBTITLE 1,Workspace IP Access List
+check_id='37' #Workspace IP Access List
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 workspaceId = workspace_id
@@ -221,6 +221,29 @@ if enabled:
       WHERE enabled=true
     '''
     sqlctrl(workspace_id, sql, public_access_enabled)
+
+# COMMAND ----------
+
+check_id='110' #Accounts Console IP Access List
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def account_console_ip_access_list_configured(df):
+    df.collect()
+    if df is not None and not isEmpty(df):
+        access_list_configured_list = df.collect()
+        access_list_configured = {i.label: [i.list_type, i.address_count] for i in access_list_configured_list}
+      
+        return (check_id, 0, access_list_configured)
+    else:
+        return (check_id, 1, {'IP access lists for the account console not configured':True})   
+if enabled:    
+    tbl_name = 'account_ipaccess_list'
+    sql=f'''
+        SELECT label, list_type, address_count
+        FROM {tbl_name}  WHERE enabled = true
+        
+    '''
+    sqlctrl(workspace_id, sql, account_console_ip_access_list_configured)
 
 # COMMAND ----------
 
@@ -1109,20 +1132,20 @@ if enabled:
 
 check_id='54' #	GOV-17 Lifetime of metastore delta sharing recipient token set less than 90 days
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
+life_in_days_evaluation_value = sbp_rec['evaluation_value']
 def uc_metasore_token(df):
     if df is not None and not isEmpty(df):
         uc_metasore = df.collect()
-        uc_metasore_dict = {num: [row.name,row.delta_sharing_recipient_token_lifetime_in_seconds] for num,row in enumerate(uc_metasore)}
+        uc_metasore_dict = {num: [row.name,row.owner,row.delta_sharing_recipient_token_lifetime_in_seconds] for num,row in enumerate(uc_metasore)}
         return (check_id, 1, uc_metasore_dict )
     else:
         return (check_id, 0, {})   
 if enabled:    
-    tbl_name = 'unitycatalogmsv1' + '_' + workspace_id
+    tbl_name = 'workspace_metastore_summary' + '_' + workspace_id
     sql=f'''
-        SELECT name, delta_sharing_recipient_token_lifetime_in_seconds
+        SELECT name, delta_sharing_recipient_token_lifetime_in_seconds, owner
         FROM {tbl_name} 
-        WHERE delta_sharing_scope ="INTERNAL_AND_EXTERNAL" AND delta_sharing_recipient_token_lifetime_in_seconds < 7776000
+        WHERE delta_sharing_scope ="INTERNAL_AND_EXTERNAL" AND delta_sharing_recipient_token_lifetime_in_seconds >{life_in_days_evaluation_value * 86400}
     '''
     sqlctrl(workspace_id, sql, uc_metasore_token)
     
