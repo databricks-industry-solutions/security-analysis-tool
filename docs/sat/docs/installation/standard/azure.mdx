@@ -3,120 +3,195 @@ sidebar_position: 1
 ---
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import Admonition from '@theme/Admonition';
+import AccordionItem from '@site/src/components/AccordionItem';
 
-# Azure
+# Azure Installation
 
-This guide will help you setup the **Security Analysis Tool (SAT)** on Azure Databricks.
+This guide will walk you through setting up the **Security Analysis Tool (SAT)** on Azure Databricks.
 
-<Admonition type="note" title="Note">
-SAT requires at least one SAT set up in a workspace per Azure **subscription**. 
+<Admonition type="info" title="Azure Subscription">
+SAT requires at least one SAT setup in a workspace per Azure **subscription**. One deployment can monitor all workspaces within the same subscription.
+</Admonition>
+
+<Admonition type="tip" title="Best for Premium & Enterprise Tiers">
+SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers, as most checks and recommendations involve security features only available in these tiers.
 </Admonition>
 
 ## Prerequisites
 
-There are some [prerequisites](../../installation/index.mdx#prerequisites) that need to be met before you can setup SAT on Azure. Make sure you also have the appropriate permissions in your Azure cloud account to create the resources mentioned below.
+Before you begin, ensure you have:
 
-> SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers,  as most of the checks and recommendations involve security features that are only available in tiers above Standard.
+- ✅ Reviewed the [general prerequisites](../../installation/index.mdx#prerequisites)
+- ✅ Appropriate permissions in your Azure cloud account
+- ✅ A metastore attached to your installation workspace
+- ✅ Databricks CLI installed and configured
 
+---
 
-### App Registration
+## Step 1: Create Azure App Registration
 
-The first step is to create an App Registration in Azure. This will allow SAT to authenticate with Azure services. Follow the steps below to create an App Registration:
+The App Registration allows SAT to authenticate with Azure services and Databricks.
 
-- Open the Azure portal and navigate to Microsoft Entra ID.
-- Click on `App registrations` and then click on `New registration`.
-- Enter a name for the App Registration and select the appropriate permissions. The minimum requirement is to have access in a single tenant.
+<AccordionItem question="📋 How to create an App Registration">
+
+**Follow these steps in the Azure Portal:**
+
+1. Open the Azure portal and navigate to **Microsoft Entra ID**
+2. Click on `App registrations` → `New registration`
+3. Enter a name for the App Registration (e.g., "SAT-App")
+4. Select the appropriate permissions (minimum requirement: single tenant access)
+5. Click `Register`
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
-  <img src={useBaseUrl('/img/azure_app_reg.png')} alt="Account Console" />
+  <img src={useBaseUrl('/img/azure_app_reg.png')} alt="Azure App Registration" />
 </div>
 
+</AccordionItem>
 
+---
 
-### App Client Secrets
+## Step 2: Create Client Secret
 
-After creating the App Registration, you will need to create a client secret. This secret will be used to authenticate with Azure services. Follow the steps below to create a client secret:
+<AccordionItem question="🔐 How to create an App Client Secret">
 
-- Open the App Registration you created in the previous step.
-- Click on `Certificates & secrets` and then click on `New client secret`.
-- Enter a description for the client secret and select the expiry date. Click on `Add`.
-- Copy the value of the client secret and save it in a secure location.
-- Please add the created app with "Reader" role into the subscription level via Access control (IAM) using Role assignments under your [subscription, Access control (IAM) section](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal#step-2-open-the-add-role-assignment-page)
+**After creating the App Registration:**
 
+1. Open the App Registration you just created
+2. Click on `Certificates & secrets` → `New client secret`
+3. Enter a description for the client secret
+4. Select an expiry date
+5. Click `Add`
+6. **Copy and save the secret value immediately** (you won't be able to see it again!)
+7. Add the app with "Reader" role to your subscription:
+   - Navigate to your [subscription's Access control (IAM) section](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal#step-2-open-the-add-role-assignment-page)
+   - Click `Add role assignment`
+   - Select the "Reader" role
+   - Assign it to your App Registration
 
+</AccordionItem>
 
-### Add Service Principal to Databricks
+---
 
-<Admonition type="note" title="Note">
+## Step 3: Add Service Principal to Databricks
+
+<Admonition type="warning" title="Important">
 Make sure that there is a metastore attached to the workspace where you are going to install SAT.
 </Admonition>
 
-After creating the App Registration and client secret, you will need to add the App Registration as a service principal in Databricks. Follow the steps below to add the service principal:
+Now you'll connect your Azure App Registration to Databricks as a Service Principal.
 
-- Go to the [Account Console](https://accounts.azuredatabricks.net/)
-- On the left side bar menu, click on `User management`
-- Select `Service Principal` and then `Add service principal`
-- Paste the App Client ID and create a new name for the service principal.
-- Click Add.
-- The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
-- Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
-- Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions.
+<AccordionItem question="📋 How to add the Service Principal">
 
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
-  <img src={useBaseUrl('/img/azure_role_assignment.png')} alt="Account Console" />
-</div>
+**Follow these steps in Databricks Account Console:**
 
-
-See the [Databricks documentation](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals) for more information on adding service principals.
-
-> The Service Principal requires an [Accounts Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--assign-account-admin-roles-to-a-service-principal), [Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** and needs to be a member of the [metastore admin group](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges#who-has-metastore-admin-privileges) is required to analyze many of the APIs. Please [add this Service Princple](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals) to **each workspace** so that SAT can access the APIs for analysis. 
-
-## Installation
-
-### Credentials Needed
-
-To setup SAT on Azure, you will need the following credentials:
-
-- Databricks Account ID
-- Azure Tenant ID
-- Azure Subscription ID
-- Azure App Client ID (Obtained from App Registration)
-- Azure App Client Secret (Obtained from App Client Secrets)
-
-To execute the SAT follow these steps on your workstation or a compatible VM that has access to the internet and the Databricks workspace:
-
-- Clone the SAT repository locally 
-  
-  ```sh
-    git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
-   ```
-
-> Remember that the target workspace should have a [profile](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html)
-
-- Run the `install.sh` script on your terminal.
-
-> To ensure that the install.sh script is executable, you need to modify its permissions using the chmod command.
-    ```sh
-      chmod +x install.sh
-      ./install.sh
-    ```
+1. Navigate to the [Databricks Account Console](https://accounts.azuredatabricks.net/)
+2. Click on `User management` in the left sidebar
+3. Select `Service Principal` → `Add service principal`
+4. Paste the **App Client ID** (Application ID from Azure)
+5. Create a name for the service principal
+6. Click `Add`
+7. Grant the `Account Admin` role
+8. Assign the `Workspace Admin` role for each workspace to be monitored
+9. Add to the `Metastore Admin` group or role
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
-  <img src={useBaseUrl('/gif/terminal-azure.gif')} alt="Account Console" />
+  <img src={useBaseUrl('/img/azure_role_assignment.png')} alt="Role Assignment" />
 </div>
 
-Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../../functionality.mdx) for a detailed description on how to run and use it.
+**Required Permissions:**
+- [Account Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--assign-account-admin-roles-to-a-service-principal)
+- [Workspace Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace**
+- [Metastore admin group](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges#who-has-metastore-admin-privileges) membership
 
+📚 [Learn more about Service Principals](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals)
 
-## Troubleshooting
-Please review the FAQs and troubleshooting resources, including the diagnostic notebook provided to help verify your SAT setup.
+</AccordionItem>
 
-If you encounter issues during installation:
-  * Double-check your credentials.
-  * Ensure you have the correct configurations and permissions for your Databricks environment.
-  
-If problems persist, feel free to contact us with your feedback or questions at sat@databricks.com.
+---
+
+## Step 4: Run Installation
+
+<Admonition type="note" title="Credentials Required">
+Have these credentials ready before starting:
+
+- 🔑 **Databricks Account ID**
+- 🔑 **Azure Tenant ID**
+- 🔑 **Azure Subscription ID**
+- 🔑 **Azure App Client ID** (from Step 1)
+- 🔑 **Azure App Client Secret** (from Step 2)
+</Admonition>
+
+### Installation Steps
+
+Run these commands on your workstation or a VM with internet access and Databricks workspace connectivity:
+
+**1. Clone the SAT repository:**
+
+```sh
+git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+cd security-analysis-tool
+```
+
+<Admonition type="warning" title="Databricks CLI Required">
+Make sure the target workspace has a [profile configured](https://docs.gcp.databricks.com/en/dev-tools/cli/profiles.html) in the [Databricks CLI](https://docs.gcp.databricks.com/en/dev-tools/cli/tutorial.html).
+</Admonition>
+
+**2. Make the installation script executable and run it:**
+
+```sh
+chmod +x install.sh
+./install.sh
+```
+
+<Admonition type="tip" title="Proxy Support">
+**Proxies are supported!** You can add your HTTP and HTTPS proxy values during the install.sh script when prompted.
+</Admonition>
+
+**3. Follow the interactive prompts:**
+
+The installation script will guide you through the setup process. Here's what it looks like:
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+  <img src={useBaseUrl('/gif/terminal-azure.gif')} alt="Installation Process" />
+</div>
+
+---
+
+## 🎉 Next Steps
+
+Congratulations! You've successfully installed SAT on Azure Databricks.
+
+<Admonition type="success" title="Installation Complete">
+SAT is now ready to analyze your Databricks workspaces. Click [here](../../functionality.mdx) for a detailed guide on how to run and use it.
+</Admonition>
+
+---
+
+## Need Help?
+
+<AccordionItem question="🔧 Troubleshooting Installation Issues">
+
+If you encounter problems during installation:
+
+**Common Issues:**
+- ✓ Double-check your credentials are correct
+- ✓ Verify you have the required permissions in your Azure and Databricks environments
+- ✓ Ensure the Service Principal has been added to all workspaces
+- ✓ Confirm the metastore is attached to your workspace
+- ✓ Verify the App Registration has the "Reader" role on your subscription
+
+**Resources:**
+- Review our [FAQ page](../../faq.mdx) for common questions
+- Use the [diagnostic notebook](../../troubleshooting.mdx) to verify your setup
+- Check the [troubleshooting guide](../../troubleshooting.mdx) for specific errors
+
+**Still need help?** Contact us at sat@databricks.com
+
+</AccordionItem>
+
+---
+
 ## References
 
 - [Azure App Registration](https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)
-- [Databricks Service Principals](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals)
+- [Databricks Service Principals on Azure](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals)

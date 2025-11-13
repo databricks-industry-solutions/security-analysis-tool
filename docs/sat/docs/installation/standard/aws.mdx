@@ -3,90 +3,142 @@ sidebar_position: 1
 ---
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import Admonition from '@theme/Admonition';
+import AccordionItem from '@site/src/components/AccordionItem';
 
-# AWS
+# AWS Installation
 
-This guide will help you setup the **Security Analysis Tool (SAT)** on AWS Databricks.
+This guide will walk you through setting up the **Security Analysis Tool (SAT)** on AWS Databricks.
 
-<Admonition type="note" title="Note">
-SAT is also compatible with **AWS GovCloud** for the Civilian Shard. To install and run SAT on **AWS GovCloud** please use classic compute resources.
+<Admonition type="info" title="AWS GovCloud Support">
+SAT is compatible with **AWS GovCloud** for the Civilian Shard. To install and run SAT on AWS GovCloud, please use classic compute resources.
 
-DoD Shard compatibility will be coming soon. 
+**Note:** DoD Shard compatibility will be coming soon.
+</Admonition>
+
+<Admonition type="tip" title="Best for Premium & Enterprise Tiers">
+SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers, as most checks and recommendations involve security features only available in these tiers.
 </Admonition>
 
 ## Prerequisites
 
-There are some [prerequisites](../../installation/index.mdx#prerequisites) that need to be met before you can set up SAT on AWS. Make sure you also have the appropriate permissions in your Databricks Account Console to create the resources mentioned below.
+Before you begin, ensure you have:
 
-> SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers,  as most of the checks and recommendations involve security features that are only available in tiers above Standard.
+- ✅ Reviewed the [general prerequisites](../../installation/index.mdx#prerequisites)
+- ✅ Appropriate permissions in your Databricks Account Console
+- ✅ A metastore attached to your installation workspace
+- ✅ Databricks CLI installed and configured
 
-### Service Principal
+---
 
-<Admonition type="note" title="Note">
+## Step 1: Create Service Principal
+
+<Admonition type="warning" title="Important">
 Make sure that there is a metastore attached to the workspace where you are going to install SAT.
 </Admonition>
 
-The first step is to create a Service Principal in Databricks. This will allow SAT to authenticate with the other workspaces. Follow the steps:
+The Service Principal allows SAT to authenticate with your Databricks workspaces and collect security information.
 
-- Go to the [Account Console](https://accounts.cloud.databricks.com)
-- On the left side bar menu, click on `User management`
-- Select `Service Principal` and then `Add service principal`
-- Type a new name for the service principal.
-- The Service Principal must be granted the `Account Admin` role. This role provides the ability to manage account-level settings and permissions.
-- Assign the Workspace Admin Role: The Service Principal must be assigned the `Workspace Admin` role for each workspace it will manage. This role provides the ability to manage workspace-level settings and permissions.
-- Add to the Metastore Admin Group: The Service Principal must be added to the `Metastore Admin` group or role. This role provides the ability to manage metastore-level settings and permissions.
-- Create a new OAuth Secret.
-- Save the `Secret` and `Client ID`
-- To deploy SAT in a workspace, you must add the Service Principal to the workspace.
+<AccordionItem question="📋 How to create a Service Principal">
 
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
-  <img src={useBaseUrl('/img/aws_ws.png')} alt="Account Console" />
-</div>
+**Follow these steps in the Databricks Account Console:**
 
-> The Service Principal requires an [Accounts Admin role](https://docs.databricks.com/aws/en/admin/users-groups/service-principals), [Admin role](https://docs.databricks.com/aws/en/admin/users-groups/service-principals) for **each workspace** and needs to be a member of the [metastore admin group](https://docs.databricks.com/aws/en/data-governance/unity-catalog/manage-privileges/admin-privileges) is required to analyze many of the APIs. Please [add this Service Princple](https://docs.databricks.com/en/admin/users-groups/service-principals.html#assign-a-service-principal-to-a-workspace-using-the-account-console) to **each workspace** so that SAT can access the APIs for analysis.  
-
-## Installation
-
-### Credentials Needed
-
-To setup SAT on AWS, you will need the following credentials:
-- Databricks Account ID
-- Databricks Service Principal ID
-- Databricks Service Principal Secret
-
-To execute the SAT follow these steps on your workstation or a compatible VM that has access to the internet and the Databricks workspace:
-
-- Clone the SAT repository locally
-  
-  ```sh
-    git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
-   ```
-
-> Remember that the target workspace should have a [profile](https://docs.databricks.com/aws/en/dev-tools/cli/profiles) in [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial)
-
-- Run the `install.sh` script on your terminal.
-
-> To ensure that the install.sh script is executable, you need to modify its permissions using the chmod command.
-    ```sh
-      chmod +x install.sh
-      ./install.sh
-    ```
-
-> **Proxies are now supported as part of SAT. You can add your HTTP and HTTPS links to use your proxies.**
+1. Navigate to the [Account Console](https://accounts.cloud.databricks.com)
+2. Click on `User management` in the left sidebar
+3. Select `Service Principal` → `Add service principal`
+4. Enter a name for the service principal (e.g., "SAT-Service-Principal")
+5. Grant the `Account Admin` role
+6. Assign the `Workspace Admin` role for each workspace to be monitored
+7. Add to the `Metastore Admin` group or role
+8. Create a new OAuth Secret
+9. **Save the `Secret` and `Client ID`** (you'll need these later)
+10. Add the Service Principal to each workspace you want to analyze
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
-  <img src={useBaseUrl('/gif/terminal-aws.gif')} alt="Account Console" />
+  <img src={useBaseUrl('/img/aws_ws.png')} alt="Service Principal Setup" />
 </div>
 
+**Required Permissions:**
+- [Account Admin role](https://docs.databricks.com/aws/en/admin/users-groups/service-principals)
+- [Workspace Admin role](https://docs.databricks.com/aws/en/admin/users-groups/service-principals) for **each workspace**
+- [Metastore admin group](https://docs.databricks.com/aws/en/data-governance/unity-catalog/manage-privileges/admin-privileges) membership
 
-Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../../functionality.mdx) for a detailed description on how to run and use it.
+</AccordionItem>  
 
-## Troubleshooting
+---
 
-Please review the FAQs and troubleshooting resources, including the diagnostic notebook provided to help verify your SAT setup.
+## Step 2: Run Installation
 
-If you encounter issues during installation:
-  * Double-check your credentials.
-  * Ensure you have the correct configurations and permissions for your Databricks environment.
+<Admonition type="note" title="Credentials Required">
+Have these credentials ready before starting:
 
-If problems persist, feel free to contact us with your feedback or questions at sat@databricks.com.
+- 🔑 **Databricks Account ID**
+- 🔑 **Databricks Service Principal ID** (Client ID from Step 1)
+- 🔑 **Databricks Service Principal Secret** (from Step 1)
+</Admonition>
+
+### Installation Steps
+
+Run these commands on your workstation or a VM with internet access and Databricks workspace connectivity:
+
+**1. Clone the SAT repository:**
+
+```sh
+git clone https://github.com/databricks-industry-solutions/security-analysis-tool.git
+cd security-analysis-tool
+```
+
+<Admonition type="warning" title="Databricks CLI Required">
+Make sure the target workspace has a [profile configured](https://docs.databricks.com/aws/en/dev-tools/cli/profiles) in the [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/tutorial).
+</Admonition>
+
+**2. Make the installation script executable and run it:**
+
+```sh
+chmod +x install.sh
+./install.sh
+```
+
+<Admonition type="tip" title="Proxy Support">
+**Proxies are supported!** You can add your HTTP and HTTPS proxy values during the install.sh script when prompted.
+</Admonition>
+
+**3. Follow the interactive prompts:**
+
+The installation script will guide you through the setup process. Here's what it looks like:
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+  <img src={useBaseUrl('/gif/terminal-aws.gif')} alt="Installation Process" />
+</div>
+
+---
+
+## 🎉 Next Steps
+
+Congratulations! You've successfully installed SAT on AWS Databricks.
+
+<Admonition type="success" title="Installation Complete">
+SAT is now ready to analyze your Databricks workspaces. Click [here](../../functionality.mdx) for a detailed guide on how to run and use it.
+</Admonition>
+
+---
+
+## Need Help?
+
+<AccordionItem question="🔧 Troubleshooting Installation Issues">
+
+If you encounter problems during installation:
+
+**Common Issues:**
+- ✓ Double-check your credentials are correct
+- ✓ Verify you have the required permissions in your Databricks environment
+- ✓ Ensure the Service Principal has been added to all workspaces
+- ✓ Confirm the metastore is attached to your workspace
+
+**Resources:**
+- Review our [FAQ page](../../faq.mdx) for common questions
+- Use the [diagnostic notebook](../../troubleshooting.mdx) to verify your setup
+- Check the [troubleshooting guide](../../troubleshooting.mdx) for specific errors
+
+**Still need help?** Contact us at sat@databricks.com
+
+</AccordionItem>
