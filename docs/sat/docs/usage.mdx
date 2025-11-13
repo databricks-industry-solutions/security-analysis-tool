@@ -21,22 +21,40 @@ Within the `Jobs and Pipelines` pane, there should now be two jobs available: **
     * Once the initializer completes, run the **SAT Driver Notebook**, which can be executed on a recurring basis. By default, it is scheduled to run every Monday, Wednesday, and Friday.
     * Optionally, run the **SAT Secrets Scanner Notebook** to scan workspace notebooks for exposed secrets using TruffleHog. This can be run on-demand or scheduled separately based on your security requirements.
 
+
+Optionally, run the SAT Secrets Scanner Notebook to scan workspace notebooks for exposed secrets using TruffleHog. This can be run on-demand or scheduled separately based on your security requirements.
 Once the Jobs and Pipelines have finished running, you should see the schema under the catalog that was set at the time of installation for **SAT** within the `Catalog` pane. 
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
  <img src={useBaseUrl('/img/catalog_view.png')} alt="Catalog View" />
 </div>
 
-## Accessing and Viewing the SAT Analysis Dashboard
-Within the `Dashboards` pane, look for the  `[SAT] Security Analysis Tool - Assessment Results` dashboard. 
+## Accessing and Viewing the SAT Dashboards
 
-The dashboard is, by default, owned by the user profile or Service Principal used during SAT setup.
+SAT provides multiple dashboards to suit different audiences and use cases:
+
+1. **Main SAT Dashboard** - `[SAT] Security Analysis Tool - Assessment Results`  
+   A comprehensive dashboard with detailed security findings across all categories.
+
+2. **Executive Dashboard**  
+   A streamlined, high-level view designed for stakeholders and executives who need a quick overview of the security posture.
+
+3. **Secret Scanner Dashboard**  
+   A specialized dashboard that detects and reports exposed credentials (API keys, tokens, passwords) across your Databricks notebooks.
+
+<Admonition type="tip" title="Leverage Databricks One">
+You can use **Databricks One** to access and share the SAT dashboards across your organization, making it easier to distribute security insights to stakeholders.
+</Admonition>
+
+### Dashboard Configuration
+
+The dashboards are, by default, owned by the user profile or Service Principal used during SAT setup.
 If you encounter errors when running the dashboard, they are most likely due to permissions issues. To update this behavior:
     * Click on the dashboard and in the top right, click on the "Share" button. 
     * Click on the cogwheel icon and select "Assign new owner". Choose the new owner of the dashboard. Ownership can also be assigned to someone with access to the **SAT** catalog/schema and the underlying tables. 
     * Click on the "Published" icon next to the name of the dashboard towards the top of the page, and switch to the "Draft" version. Click on the "Publish" button that is next to the "Share" button. 
         * Choose from one of the two credential options:
-            * **Embed credentials (default):** All viewers run queries using the owner’s credentials and compute.
+            * **Embed credentials (default):** All viewers run queries using the owner's credentials and compute.
                 > This may expose data to users who wouldn't normally have access. 
             * **Don't embed credentials:** Each viewer must have access to the workspace and associated data to view the dashboard.
                 > We recommend using this option for more secure access control. 
