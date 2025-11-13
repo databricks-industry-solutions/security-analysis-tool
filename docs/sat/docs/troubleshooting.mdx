@@ -1,117 +1,133 @@
 ---
 sidebar_position: 7
 ---
-import useBaseUrl from '@docusaurus/useBaseUrl';
+import AccordionItem from '@site/src/components/AccordionItem';
 import Admonition from '@theme/Admonition';
 
 # Troubleshooting
 
-Diagnosis notebooks for each cloud platform are available to help troubleshoot your SAT setup. 
+Having issues with SAT? This guide will help you resolve common problems. Click on any issue below to see the solution.
 
-To run the appropriate diagnostic notebook:
-    1. Navigate to Workspace → Applications → SAT → files → notebooks → diagnosis folder
-    2. Open and run the notebook corresponding to your cloud provider. 
-    
-* [SAT AWS troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_aws.py)
-* [SAT Azure troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_azure.py)
-* [SAT GCP troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_gcp.py)
+## Diagnostic Notebooks
+
+<Admonition type="tip" title="Quick Diagnosis">
+Diagnosis notebooks for each cloud platform are available to help troubleshoot your SAT setup.
+
+**To run the appropriate diagnostic notebook:**
+1. Navigate to Workspace → Applications → SAT → files → notebooks → diagnosis folder
+2. Open and run the notebook corresponding to your cloud provider
+
+**Available diagnostic notebooks:**
+- [SAT AWS troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_aws.py)
+- [SAT Azure troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_azure.py)
+- [SAT GCP troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_gcp.py)
+</Admonition>
+
 ---
 
-## Misconfigured Secrets
+## Common Issues
 
-* **Error:**
+<AccordionItem question="Misconfigured Secrets - Secret does not exist with scope">
 
-    ```
-    Secret does not exist with scope: sat_scope and key: sat_tokens
-    ```
+**Error:**
 
-* **Resolution:**
+```
+Secret does not exist with scope: sat_scope and key: sat_tokens
+```
 
-    Check if the tokens are configured with the correct names by listing and comparing with the configuration.
-    ```
-    databricks --profile e2-sat secrets list-secrets sat_scope
-    ```
-##
+**Resolution:**
 
-## Firewall Blocking Databricks Accounts Console
+Check if the tokens are configured with the correct names by listing and comparing with the configuration.
 
-* **Error:**
+```bash
+databricks --profile e2-sat secrets list-secrets sat_scope
+```
 
-    ```
-    Traceback (most recent call last): 
-    File "/databricks/python/lib/python3.8/site-packages/urllib3/connectionpool.py", line 670, in urlopen  
-    httplib_response = self._make_request(  
-    File "/databricks/python/lib/python3.8/site-packages/urllib3/connectionpool.py", line 381, in _make_request  
-    self._validate_conn(conn)  
-    File "/databricks/python/lib/python3.8/site-packages/urllib3/connectionpool.py", line 978, in _validate_conn  
-    conn.connect()  
-    File "/databricks/python/lib/python3.8/site-packages/urllib3/connection.py", line 362, in connect  
-    self.sock = ssl_wrap_socket(  
-    File "/databricks/python/lib/python3.8/site-packages/urllib3/util/ssl_.py", line 386, in ssl_wrap_socket  
-    return context.wrap_socket(sock, server_hostname=server_hostname)  
-    File "/usr/lib/python3.8/ssl.py", line 500, in wrap_socket  
-    return self.sslsocket_class._create(  
-    File "/usr/lib/python3.8/ssl.py", line 1040, in _create  
-    self.do_handshake()  
-    File "/usr/lib/python3.8/ssl.py", line 1309, in do_handshake  
-    self._sslobj.do_handshake() 
-    ConnectionResetError: [Errno 104] Connection reset by peer 
-    During handling of the above exception, another exception occurred:
-    ```
+</AccordionItem>
 
-* **Resolution:**
+<AccordionItem question="Firewall Blocking Databricks Accounts Console - Connection Reset Error">
 
-    Run this following command in your notebook:
-    ```
-    %sh 
-    curl -X GET -H "Authorization: Basic /<base64 of userid:password/>" -H "Content-Type: application/json" https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces
-    ```
+**Error:**
 
-    or
+```
+Traceback (most recent call last): 
+File "/databricks/python/lib/python3.8/site-packages/urllib3/connectionpool.py", line 670, in urlopen  
+httplib_response = self._make_request(  
+File "/databricks/python/lib/python3.8/site-packages/urllib3/connectionpool.py", line 381, in _make_request  
+self._validate_conn(conn)  
+File "/databricks/python/lib/python3.8/site-packages/urllib3/connectionpool.py", line 978, in _validate_conn  
+conn.connect()  
+File "/databricks/python/lib/python3.8/site-packages/urllib3/connection.py", line 362, in connect  
+self.sock = ssl_wrap_socket(  
+File "/databricks/python/lib/python3.8/site-packages/urllib3/util/ssl_.py", line 386, in ssl_wrap_socket  
+return context.wrap_socket(sock, server_hostname=server_hostname)  
+File "/usr/lib/python3.8/ssl.py", line 500, in wrap_socket  
+return self.sslsocket_class._create(  
+File "/usr/lib/python3.8/ssl.py", line 1040, in _create  
+self.do_handshake()  
+File "/usr/lib/python3.8/ssl.py", line 1309, in do_handshake  
+self._sslobj.do_handshake() 
+ConnectionResetError: [Errno 104] Connection reset by peer 
+During handling of the above exception, another exception occurred:
+```
 
-    ```
-    %sh 
-    curl -u 'user:password' -X GET "Content-Type: application/json" https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces
-    ```
+**Resolution:**
 
-    If you don’t see a JSON with a clean listing of workspaces, you are likely having a firewall issue that is blocking calls to the accounts console. Please have your infrastructure team add `accounts.cloud.databricks.com` to the allow-list. Ensure that the private IPv4 address from the NAT gateway is added to the IP allow list.
+Run the following command in your notebook to test connectivity:
 
+```bash
+%sh 
+curl -X GET -H "Authorization: Basic /<base64 of userid:password/>" -H "Content-Type: application/json" https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces
+```
 
-## Offline Library Install (In case of No PyPI access)
+or
 
-* **Steps:**
+```bash
+%sh 
+curl -u 'user:password' -X GET "Content-Type: application/json" https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/workspaces
+```
 
-    1. Download the `dbl_sat_sdk` version specified in the notebook `notebooks/utils/initialize` from PyPi:
-        ```
-        https://pypi.org/project/dbl-sat-sdk/
-        ```
+If you don't see a JSON with a clean listing of workspaces, you are likely having a firewall issue that is blocking calls to the accounts console. Please have your infrastructure team add `accounts.cloud.databricks.com` to the allow-list. Ensure that the private IPv4 address from the NAT gateway is added to the IP allow list.
 
-    2. Upload the `dbl_sat_sdk-w.x.y-py3-none-any.whl` to a `dbfs` location. You can use the `databricks-cli` as one mechanism to upload. For example:
-        ```
-        databricks --profile e2-satfs cp /localdrive/whlfile/dbl_sat_sdk-w.x.y-py3-none-any.whl dbfs:/FileStore/wheels/
-        ```
+</AccordionItem>
 
-    3. Additionally, download the following wheel files and upload them to the `dbfs` location as above:
-        ```
-        https://github.com/databricks-industry-solutions/security-analysis-tool/tree/main/docs/wheels
-        ```
+<AccordionItem question="Offline Library Install - No PyPI Access">
 
-    4. Upload all wheel files to `/FileStore/wheels` in your workspace.
+If your workspace does not have access to PyPI, follow these steps to install the required libraries manually:
 
-    5. Verify all files are there by running:
+**Steps:**
 
-        ```
-        %fs ls /FileStore/wheels
-        ```
+1. Download the `dbl_sat_sdk` version specified in the notebook `notebooks/utils/initialize` from PyPi:
+   ```
+   https://pypi.org/project/dbl-sat-sdk/
+   ```
 
-    6. Then change the cell in your notebook `install_sat_sdk` to this:
+2. Upload the `dbl_sat_sdk-w.x.y-py3-none-any.whl` to a `dbfs` location. You can use the `databricks-cli` as one mechanism to upload. For example:
+   ```bash
+   databricks --profile e2-satfs cp /localdrive/whlfile/dbl_sat_sdk-w.x.y-py3-none-any.whl dbfs:/FileStore/wheels/
+   ```
 
-        ```python
-        
-        %pip install msal --find-links /Volumes/{catalog}/{schema}/{volume_name}/msal-1.22.0-py2.py3-none-any.whl
-        
-        %pip install dbl-sat-sdk==0.1.37 --find-links /Volumes/{catalog}/{schema}/{volume_name}/dbl_sat_sdk-0.1.37-py3-none-any.whl
-        ```
+3. Additionally, download the following wheel files and upload them to the `dbfs` location as above:
+   ```
+   https://github.com/databricks-industry-solutions/security-analysis-tool/tree/main/docs/wheels
+   ```
 
-    7. Make sure the versions for the above libraries match.
+4. Upload all wheel files to `/FileStore/wheels` in your workspace.
+
+5. Verify all files are there by running:
+   ```python
+   %fs ls /FileStore/wheels
+   ```
+
+6. Then change the cell in your notebook `install_sat_sdk` to this:
+   ```python
+   %pip install msal --find-links /Volumes/{catalog}/{schema}/{volume_name}/msal-1.22.0-py2.py3-none-any.whl
+   
+   %pip install dbl-sat-sdk==0.1.37 --find-links /Volumes/{catalog}/{schema}/{volume_name}/dbl_sat_sdk-0.1.37-py3-none-any.whl
+   ```
+
+7. Make sure the versions for the above libraries match.
+
+</AccordionItem>
+
 ---
