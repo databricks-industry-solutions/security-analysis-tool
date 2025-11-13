@@ -9,6 +9,10 @@ import AccordionItem from '@site/src/components/AccordionItem';
 
 This guide will walk you through setting up the **Security Analysis Tool (SAT)** on Azure Databricks.
 
+<Admonition type="warning" title="Unity Catalog Required">
+**SAT v0.5.0 and higher requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT.
+</Admonition>
+
 <Admonition type="info" title="Azure Subscription">
 SAT requires at least one SAT setup in a workspace per Azure **subscription**. One deployment can monitor all workspaces within the same subscription.
 </Admonition>
@@ -25,6 +29,7 @@ Before you begin, ensure you have:
 - ✅ Appropriate permissions in your Azure cloud account
 - ✅ A metastore attached to your installation workspace
 - ✅ Databricks CLI installed and configured
+- ✅ **Python version lower than 3.12** (for local installation using install.sh)
 
 ---
 
@@ -32,7 +37,7 @@ Before you begin, ensure you have:
 
 The App Registration allows SAT to authenticate with Azure services and Databricks.
 
-<AccordionItem question="📋 How to create an App Registration">
+<AccordionItem question="How to create an App Registration">
 
 **Follow these steps in the Azure Portal:**
 
@@ -52,7 +57,7 @@ The App Registration allows SAT to authenticate with Azure services and Databric
 
 ## Step 2: Create Client Secret
 
-<AccordionItem question="🔐 How to create an App Client Secret">
+<AccordionItem question="How to create an App Client Secret">
 
 **After creating the App Registration:**
 
@@ -74,13 +79,9 @@ The App Registration allows SAT to authenticate with Azure services and Databric
 
 ## Step 3: Add Service Principal to Databricks
 
-<Admonition type="warning" title="Important">
-Make sure that there is a metastore attached to the workspace where you are going to install SAT.
-</Admonition>
-
 Now you'll connect your Azure App Registration to Databricks as a Service Principal.
 
-<AccordionItem question="📋 How to add the Service Principal">
+<AccordionItem question="How to add the Service Principal">
 
 **Follow these steps in Databricks Account Console:**
 
@@ -157,7 +158,7 @@ The installation script will guide you through the setup process. Here's what it
 
 ---
 
-## 🎉 Next Steps
+## Next Steps
 
 Congratulations! You've successfully installed SAT on Azure Databricks.
 
@@ -169,7 +170,7 @@ SAT is now ready to analyze your Databricks workspaces. Click [here](../../funct
 
 ## Need Help?
 
-<AccordionItem question="🔧 Troubleshooting Installation Issues">
+<AccordionItem question="Troubleshooting Installation Issues">
 
 If you encounter problems during installation:
 

@@ -9,6 +9,10 @@ import AccordionItem from '@site/src/components/AccordionItem';
 
 This guide will walk you through setting up the **Security Analysis Tool (SAT)** on AWS Databricks.
 
+<Admonition type="warning" title="Unity Catalog Required">
+**SAT v0.5.0 and higher requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT.
+</Admonition>
+
 <Admonition type="info" title="AWS GovCloud Support">
 SAT is compatible with **AWS GovCloud** for the Civilian Shard. To install and run SAT on AWS GovCloud, please use classic compute resources.
 
@@ -27,18 +31,15 @@ Before you begin, ensure you have:
 - ✅ Appropriate permissions in your Databricks Account Console
 - ✅ A metastore attached to your installation workspace
 - ✅ Databricks CLI installed and configured
+- ✅ **Python version lower than 3.12** (for local installation using install.sh)
 
 ---
 
 ## Step 1: Create Service Principal
 
-<Admonition type="warning" title="Important">
-Make sure that there is a metastore attached to the workspace where you are going to install SAT.
-</Admonition>
-
 The Service Principal allows SAT to authenticate with your Databricks workspaces and collect security information.
 
-<AccordionItem question="📋 How to create a Service Principal">
+<AccordionItem question="How to create a Service Principal">
 
 **Follow these steps in the Databricks Account Console:**
 
@@ -112,7 +113,7 @@ The installation script will guide you through the setup process. Here's what it
 
 ---
 
-## 🎉 Next Steps
+## Next Steps
 
 Congratulations! You've successfully installed SAT on AWS Databricks.
 
@@ -124,7 +125,7 @@ SAT is now ready to analyze your Databricks workspaces. Click [here](../../funct
 
 ## Need Help?
 
-<AccordionItem question="🔧 Troubleshooting Installation Issues">
+<AccordionItem question="Troubleshooting Installation Issues">
 
 If you encounter problems during installation:
 

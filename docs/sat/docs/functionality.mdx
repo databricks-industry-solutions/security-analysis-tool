@@ -3,147 +3,302 @@ sidebar_position: 3
 ---
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import Admonition from '@theme/Admonition';
+import AccordionItem from '@site/src/components/AccordionItem';
 
 # Functionality
 
-The **Security Analysis Tool (SAT)** is an observability utility designed to improve the security posture of Databricks deployments. It helps customers identify deviations from established security best practices and monitor the security health of their Databricks workspaces. 
+The **Security Analysis Tool (SAT)** is an observability utility designed to improve the security posture of Databricks deployments. It helps you identify deviations from established security best practices and monitor the security health of your Databricks workspaces.
 
-To promote continuous adherence to best practices, SAT includes a master checklist that prioritizes checks by severity. Running SAT as a routine scan across all workspaces builds confidence — especially when onboarding sensitive datasets and workflows — by ensuring that critical security gaps are addressed proactively.
-
-
+<Admonition type="tip" title="Proactive Security Monitoring">
+Running SAT as a routine scan across all workspaces builds confidence — especially when onboarding sensitive datasets and workflows — by ensuring that critical security gaps are addressed proactively.
+</Admonition>
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
   <img src={useBaseUrl('/img/sat_functionality.png')} alt="Security Functionality" />
 </div>
-## How It Works
-SAT is typically run daily as an automated workflow within the customer’s environment. It performs the following actions:
 
-* Collects configuration details from Databricks accounts and workspaces via REST APIs.
+---
 
-* Persists results in Delta tables within the customer’s storage environment for historical tracking and trend analysis.
+## How SAT Works
 
-* Displays results in a centralized Databricks SQL dashboard, categorized into five distinct sections to help stakeholders review relevant workspace settings.
+SAT is typically run daily as an automated workflow within your environment. Here's what it does:
+
+<div style={{marginLeft: '1.5rem', marginTop: '1rem'}}>
+
+**📊 Data Collection**  
+Collects configuration details from Databricks accounts and workspaces via REST APIs.
+
+**💾 Historical Tracking**  
+Persists results in Delta tables within your storage environment for historical tracking and trend analysis.
+
+**📈 Centralized Reporting**  
+Displays results in a centralized Databricks SQL dashboard, categorized into five distinct sections to help stakeholders review relevant workspace settings.
+
+</div>
+
+---
 
 ## Key Features
-* **Prioritized checks** by severity, enabling focus on high-impact areas. 
 
-* **Documentation links** for each check, guiding users to the most up-to-date configuration best practices for each feature.
+<div style={{display: 'grid', gap: '1rem', marginTop: '1rem'}}>
 
-* **Alerting capabilities**, allowing notifications to be triggered on failed critical checks for immediate attention.
+<div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
 
-* **Detailed failure explanations**, enabling admins to pinpoint, isolate, and remediate issues quickly.
+**🎯 Prioritized Checks**  
+Checks are organized by severity, enabling focus on high-impact security areas.
 
-## SAT Insights
+</div>
 
-Data from all configured workspaces is consolidated and presented through a single-pane SQL Dashboard, which serves as the primary consumption layer for SAT insights. All findings are organized into the following well-defined categories:
-* Network Security
-* Identity & Access
-* Data Protection 
-* Governance  
-* Informational 
+<div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
 
-Each category further classifies the check results by **severity levels**: 
-* High
-* Medium 
-* Low
+**📚 Documentation Links**  
+Each check includes links guiding users to the most up-to-date configuration best practices.
+
+</div>
+
+<div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
+
+**🔔 Alerting Capabilities**  
+Notifications can be triggered on failed critical checks for immediate attention.
+
+</div>
+
+<div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
+
+**🔍 Detailed Explanations**  
+Comprehensive failure explanations enable admins to pinpoint, isolate, and remediate issues quickly.
+
+</div>
+
+</div>
+
+---
+
+## Security Categories & Severity Levels
+
+<Admonition type="info" title="Comprehensive Coverage">
+SAT evaluates over **60 security best practices** across five key categories, with more being added regularly.
+</Admonition>
+
+Data from all configured workspaces is consolidated and presented through a single-pane SQL Dashboard. All findings are organized into the following categories:
+
+**Security Pillars:**
+- 🛡️ **Network Security**
+- 👥 **Identity & Access**
+- 🔐 **Data Protection**
+- ⚖️ **Governance**
+- ℹ️ **Informational**
+
+**Severity Levels:**
+- 🔴 **High** - Critical issues requiring immediate attention
+- 🟡 **Medium** - Important issues to address soon
+- 🟢 **Low** - Minor issues for continuous improvement
 
 This structured view helps stakeholders quickly assess risk areas and prioritize remediation efforts across multiple workspaces.
+
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
  <img src={useBaseUrl('/img/sat_dashboard_partial.png')} alt="Security Dashboard" />
 </div>
 
+---
 
-The SAT dashboard is organized into five primary security categories (pillars), each presented in a consistent and intuitive format. The layout is designed to help users quickly assess their security posture across all workspaces.
+## Dashboard Components
 
-- **Workspace Security Summary**
-    * A high-level overview of security findings, broken down by category and categorized by **severity** (High, Medium, Low). Provides an at-a-glance view of the overall security health of each workspace.
+The SAT dashboard is organized into intuitive sections, each designed to help you quickly assess your security posture across all workspaces.
 
-- **Workspace Stats**
-    * Displays essential metadata about the analysis run, including:
-        * Timestamp of the Analysis
-        * Workspace Name
-        * Service/Pricing Tier
-        * Cloud Region
+<AccordionItem question="Workspace Security Summary">
 
-- **Individual Security Category Details**
-    * Each of the five security pillars (e.g., Network Security, Identity & Access) includes:
-      * Summary counts of deviations from security best practices.
-      * A detailed table of security findings, sorted by severity.
-        * Each finding includes a description of the issue and a link to relevant documentation to facilitate remediation.
+A high-level overview of security findings, broken down by category and categorized by **severity** (High, Medium, Low). This provides an at-a-glance view of the overall security health of each workspace.
 
-- **Informational Section**
-    * This section highlights observations that are less prescriptive but still valuable for in-depth security reviews. These findings can be reviewed by data and security teams to ensure thresholds and configurations align with organizational policies.
+**What you'll see:**
+- Summary counts per security category
+- Color-coded severity indicators
+- Quick comparison across workspaces
 
-- **Additional Finding Details**
-    * Provides deep-dive information to help pinpoint the root cause of specific findings, including the logic used to detect each issue.
-    * For example: 
-        >If the finding is "Cluster policy not used", the dashboard will list the specific cluster workloads where no policy was applied — eliminating the guesswork and enabling simplified remediation.
-    
+</AccordionItem>
+
+<AccordionItem question="Workspace Stats">
+
+Displays essential metadata about the analysis run, helping you understand the context of your security findings.
+
+**Information included:**
+- ⏰ Timestamp of the Analysis
+- 🏢 Workspace Name
+- 💼 Service/Pricing Tier
+- 🌍 Cloud Region
+
+</AccordionItem>
+
+<AccordionItem question="Individual Security Category Details">
+
+Each of the five security pillars includes comprehensive information to help you understand and address security issues.
+
+**What each section includes:**
+- Summary counts of deviations from security best practices
+- Detailed table of security findings, sorted by severity
+- Description of each issue
+- Links to relevant documentation for remediation guidance
+
+</AccordionItem>
+
+<AccordionItem question="Informational Section">
+
+This section highlights observations that are less prescriptive but still valuable for in-depth security reviews.
+
+**Purpose:**
+These findings can be reviewed by data and security teams to ensure thresholds and configurations align with organizational policies. Not all informational findings require action, but they provide valuable context for security decision-making.
+
+</AccordionItem>
+
+<AccordionItem question="Additional Finding Details">
+
+Provides deep-dive information to help pinpoint the root cause of specific findings, including the logic used to detect each issue.
+
+**Example:**  
+If the finding is "Cluster policy not used", the dashboard will list the specific cluster workloads where no policy was applied — eliminating the guesswork and enabling simplified remediation.
+
+</AccordionItem>
+
+---
+
+## Executive Dashboard
+
+<Admonition type="success" title="Perfect for Leadership">
+A streamlined, high-level view specifically designed for stakeholders and executives who need quick insights without technical details.
+</Admonition>
+
+In addition to the comprehensive SAT dashboard, an **Executive Dashboard** is also provided. This view consolidates key findings from the complete dashboard and presents them in an easy-to-digest format.
+
+**What leadership can do:**
+- ✅ Quickly understand the overall security health of Databricks deployments
+- ✅ Identify critical security issues that require immediate attention
+- ✅ Track security improvements over time
+- ✅ Make informed decisions about security investments and priorities
+
+This executive-level view complements the detailed technical dashboard, ensuring that both technical teams and business stakeholders have access to the security insights they need.
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/executive_dashboard.png')} alt="Executive Dashboard" />
+</div>
+
+---
+
 ## Detection Example
 
-The **Security Analysis Tool (SAT)** evaluates over **60 security best practices**, with more being added regularly. In the example below, the SAT scan highlights two findings:
+Let's look at how SAT identifies and presents security findings in practice.
 
-- **Deprecated Runtime Versions**  
-  This check is marked **red**, indicating that some workloads are using deprecated Databricks runtime versions. While such workloads may continue to run, they will no longer receive support or security patches from Databricks. The **Remediation** column explains the risk and provides a link to the official documentation listing currently supported runtime versions.
+<Admonition type="note" title="Real-World Example">
+The example below shows how SAT highlights security issues with clear visual indicators and actionable remediation guidance.
+</Admonition>
 
-- **Log Delivery**  
-  This check is marked **green**, confirming that the workspace configuration aligns with Databricks' security best practices for log delivery.
+**Two findings shown:**
 
-Regularly running SAT checks enables a comprehensive view of your Databricks account and workspace security posture. It also supports **continuous improvement** by helping you detect and resolve potential security risks early.
+**🔴 Deprecated Runtime Versions**  
+This check is marked **red**, indicating that some workloads are using deprecated Databricks runtime versions. While such workloads may continue to run, they will no longer receive support or security patches from Databricks. The **Remediation** column explains the risk and provides a link to the official documentation listing currently supported runtime versions.
 
+**✅ Log Delivery**  
+This check is marked **green**, confirming that the workspace configuration aligns with Databricks' security best practices for log delivery.
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
  <img src={useBaseUrl('/img/sat_detection_partial.png')} alt="Security Detection Dashboard" />
 </div>
 
+### Drilling Down into Details
+
 Customers can use the **Additional Details** section to view specific configuration settings or controls that caused a best practice check to fail.
 
-For example, the image below shows additional context for the **"Deprecated runtime versions"** check, allowing administrators to quickly identify and investigate the affected workloads.
-
-
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
- <img src={useBaseUrl('/img/additional_details_1.png')} alt="Security Detection Dashboard" />
-</div>
-
-In the example below, the customer can learn more about the **"Log Delivery"** check by referencing its identifier, **GOV-3**.
-
+**Example 1: Deprecated Runtime Versions**  
+The image below shows additional context for this check, allowing administrators to quickly identify and investigate the affected workloads.
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
- <img src={useBaseUrl('/img/additional_details_2.png')} alt="Security Detection Dashboard" />
+ <img src={useBaseUrl('/img/additional_details_1.png')} alt="Additional Details Example 1" />
 </div>
 
-
-
-
-## Security Configuration Comparison
-This section enables a side-by-side comparison of two SAT runs across all security dimensions. This drill-down view helps identify which best practice checks have **improved** or **regressed**, allowing security teams to take timely action.
-
-For example, the diagram below highlights changes in individual checks across categories. The red rectangle illustrates an **improvement** in the **"Enforce User Isolation"** check, while also showing a **regression** in the **"Admin Count"** best practice.
-
-Over time, the goal is for cross marks to turn into check marks, reflecting better alignment with best practices. If the opposite occurs, it signals a degradation and should be investigated immediately. Additionally, **alerts are triggered** for critical regressions, notifying relevant stakeholders via email.
-
+**Example 2: Log Delivery (GOV-3)**  
+Customers can learn more about the **"Log Delivery"** check by referencing its identifier, **GOV-3**.
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
- <img src={useBaseUrl('/img/security_config_comparison.png')} alt="Security Detection Dashboard" />
+ <img src={useBaseUrl('/img/additional_details_2.png')} alt="Additional Details Example 2" />
 </div>
 
-
-
-## Setup and Usage Instructions
-
-<Admonition type="note" title="Note">
-SAT (Security Analysis Tool) must be installed in at least one workspace per Databricks account on AWS or GCP, and in at least one workspace per Azure subscription.
+<Admonition type="tip" title="Continuous Improvement">
+Regularly running SAT checks enables a comprehensive view of your Databricks account and workspace security posture. It also supports **continuous improvement** by helping you detect and resolve potential security risks early.
 </Admonition>
 
-Refer to the [Standard Setup Guide](./installation/standard/index.mdx) or [Terraform Setup Guide](./installation/terraform/index.mdx) for installation instructions.
+---
 
-Refer to the [Usage Guide](./usage.mdx) for instructions on running the SAT workflows, viewing the dashboard, and customizing the security checks.
+## Security Configuration Comparison
 
+<Admonition type="info" title="Track Your Progress">
+This feature enables side-by-side comparison of two SAT runs across all security dimensions, helping you identify improvements and regressions over time.
+</Admonition>
 
+This drill-down view helps identify which best practice checks have **improved** or **regressed**, allowing security teams to take timely action.
 
+**What to look for:**
 
-<!--
-## Frequently Asked Questions
-Refer this document for [Frequently Asked Questions (FAQs) and Troubleshooting Guide](./docs/setup/faqs_and_troubleshooting.md)
--->
+**✅ Improvements**  
+Cross marks (❌) turning into check marks (✓) reflect better alignment with best practices.
 
+**⚠️ Regressions**  
+Check marks (✓) turning into cross marks (❌) signal degradation and should be investigated immediately. Alerts are automatically triggered for critical regressions, notifying relevant stakeholders via email.
+
+**Example:**  
+The diagram below highlights changes in individual checks across categories. The red rectangle illustrates an **improvement** in the **"Enforce User Isolation"** check, while also showing a **regression** in the **"Admin Count"** best practice.
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/security_config_comparison.png')} alt="Security Configuration Comparison" />
+</div>
+
+---
+
+## Getting Started
+
+<Admonition type="warning" title="Deployment Requirement">
+SAT must be installed in at least one workspace per Databricks account on AWS or GCP, and in at least one workspace per Azure subscription.
+</Admonition>
+
+**Ready to install SAT?**
+
+📖 **Installation Guides:**
+- [Standard Setup Guide](./installation/standard/index.mdx) - Manual installation
+- [Terraform Setup Guide](./installation/terraform/index.mdx) - Infrastructure as Code
+
+📖 **Usage Guide:**
+- [Usage Guide](./usage.mdx) - Instructions on running workflows, viewing dashboards, and customizing security checks
+
+---
+
+## Quick Links
+
+<div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginTop: '1rem'}}>
+
+<div style={{padding: '1.5rem', border: '2px solid #e0e0e0', borderRadius: '8px', textAlign: 'center'}}>
+
+**📥 Installation**  
+[Get Started](./installation/standard/index.mdx)
+
+</div>
+
+<div style={{padding: '1.5rem', border: '2px solid #e0e0e0', borderRadius: '8px', textAlign: 'center'}}>
+
+**📖 Usage Guide**  
+[Learn How](./usage.mdx)
+
+</div>
+
+<div style={{padding: '1.5rem', border: '2px solid #e0e0e0', borderRadius: '8px', textAlign: 'center'}}>
+
+**❓ FAQ**  
+[Get Answers](./faq.mdx)
+
+</div>
+
+<div style={{padding: '1.5rem', border: '2px solid #e0e0e0', borderRadius: '8px', textAlign: 'center'}}>
+
+**🔧 Troubleshooting**  
+[Find Solutions](./troubleshooting.mdx)
+
+</div>
+
+</div>

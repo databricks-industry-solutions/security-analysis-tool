@@ -9,6 +9,10 @@ import AccordionItem from '@site/src/components/AccordionItem';
 
 This guide will walk you through setting up the **Security Analysis Tool (SAT)** on GCP Databricks.
 
+<Admonition type="warning" title="Unity Catalog Required">
+**SAT v0.5.0 and higher requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT.
+</Admonition>
+
 <Admonition type="tip" title="Best for Premium & Enterprise Tiers">
 SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers, as most checks and recommendations involve security features only available in these tiers.
 </Admonition>
@@ -21,14 +25,11 @@ Before you begin, ensure you have:
 - ✅ Appropriate permissions in your GCP Cloud account
 - ✅ A metastore attached to your installation workspace
 - ✅ Databricks CLI installed and configured
+- ✅ **Python version lower than 3.12** (for local installation using install.sh)
 
 ---
 
 ## Step 1: Create Service Principal
-
-<Admonition type="warning" title="Important">
-Make sure that there is a metastore attached to the workspace where you are going to install SAT.
-</Admonition>
 
 The Service Principal allows SAT to authenticate with your Databricks workspaces and collect security information.
 
