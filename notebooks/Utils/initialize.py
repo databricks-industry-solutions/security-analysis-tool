@@ -164,7 +164,11 @@ if cloud_type == "aws":
 
 # COMMAND ----------
 
-
+import sys
+import os
+src_path = os.path.join(basePath(), "src", "securityanalysistoolproject")
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 from core.logging_utils import LoggingUtils
 
 LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
