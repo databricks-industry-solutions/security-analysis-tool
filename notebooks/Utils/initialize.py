@@ -163,6 +163,11 @@ if cloud_type == "aws":
 ###%pip install PyYAML dbl-sat-sdk=="0.0.109"
 
 # COMMAND ----------
+import sys
+import os
+src_path = os.path.join(basePath(), "src", "securityanalysistoolproject")
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 
 
 from core.logging_utils import LoggingUtils
