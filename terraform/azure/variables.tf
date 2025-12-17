@@ -44,6 +44,7 @@ variable "client_id" {
 variable "client_secret" {
   description = "SP Secret"
   type        = string
+  sensitive   = true
 }
 
 variable "tenant_id" {
