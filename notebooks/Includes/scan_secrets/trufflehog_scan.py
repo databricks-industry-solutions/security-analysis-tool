@@ -99,17 +99,45 @@ db_client = SatDBClient(json_)
 
 # COMMAND ----------
 
-# MAGIC %sh 
+# MAGIC %sh
 # MAGIC # Install required Python packages
 # MAGIC pip install requests pyyaml
 # MAGIC
 # MAGIC # Download and install TruffleHog binary to /tmp directory
 # MAGIC echo "Installing TruffleHog..."
-# MAGIC curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp
-# MAGIC
-# MAGIC echo "Setup completed successfully!"
-# MAGIC echo "TruffleHog binary location: /tmp/trufflehog"
-# MAGIC echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
+# MAGIC if curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp; then
+# MAGIC     if [ -f /tmp/trufflehog ]; then
+# MAGIC         echo "Setup completed successfully!"
+# MAGIC         echo "TruffleHog binary location: /tmp/trufflehog"
+# MAGIC         echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
+# MAGIC     else
+# MAGIC         echo "ERROR: TruffleHog binary not found after installation!"
+# MAGIC         echo "Please verify network access and try again."
+# MAGIC         exit 1
+# MAGIC     fi
+# MAGIC else
+# MAGIC     echo "=========================================="
+# MAGIC     echo "ERROR: Failed to download TruffleHog"
+# MAGIC     echo "=========================================="
+# MAGIC     echo ""
+# MAGIC     echo "The TruffleHog security scanner could not be downloaded from:"
+# MAGIC     echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
+# MAGIC     echo ""
+# MAGIC     echo "Possible causes:"
+# MAGIC     echo "  1. Network connectivity issues"
+# MAGIC     echo "  2. Firewall or proxy blocking external downloads"
+# MAGIC     echo "  3. GitHub.com access is restricted in your environment"
+# MAGIC     echo ""
+# MAGIC     echo "ACTION REQUIRED:"
+# MAGIC     echo "Please contact your IT/Security team to allowlist access to:"
+# MAGIC     echo "  - raw.githubusercontent.com"
+# MAGIC     echo "  - github.com/trufflesecurity"
+# MAGIC     echo ""
+# MAGIC     echo "Alternatively, you may need to configure a proxy or use an"
+# MAGIC     echo "internal mirror of the TruffleHog installation package."
+# MAGIC     echo "=========================================="
+# MAGIC     exit 1
+# MAGIC fi
 
 # COMMAND ----------
 
@@ -226,6 +254,31 @@ except Exception as e:
 # Create temporary directories if they don't exist
 os.makedirs(Config.TEMP_NOTEBOOKS_DIR, exist_ok=True)
 logger.info(f"Temporary directory created: {Config.TEMP_NOTEBOOKS_DIR}")
+
+# Verify TruffleHog binary exists
+if not os.path.exists(Config.TRUFFLEHOG_BINARY):
+    error_msg = f"""
+    ==========================================
+    ERROR: TruffleHog binary not found!
+    ==========================================
+
+    Expected location: {Config.TRUFFLEHOG_BINARY}
+
+    The TruffleHog security scanner was not successfully installed.
+    This could be due to network restrictions or firewall policies.
+
+    ACTION REQUIRED:
+    Please contact your IT/Security team to allowlist access to:
+      - raw.githubusercontent.com
+      - github.com/trufflesecurity
+
+    Or configure a proxy/mirror for downloading TruffleHog.
+    ==========================================
+    """
+    logger.error(error_msg)
+    raise FileNotFoundError(error_msg)
+
+logger.info(f"✓ TruffleHog binary verified at: {Config.TRUFFLEHOG_BINARY}")
 
 print("✅ Configuration loaded from external file and authentication setup completed successfully!")
 print(f"📁 Config file: {Config.TRUFFLEHOG_CONFIG}")
@@ -620,7 +673,7 @@ def get_current_run_id() -> int:
         
         # Insert new run into run_number_table
         spark.sql(f'''
-            INSERT INTO {json_["analysis_schema_name"]}.run_number_table (runID, run_time)
+            INSERT INTO {json_["analysis_schema_name"]}.run_number_table (runID, check_time)
             VALUES ({new_run_id}, current_timestamp())
         ''')
         
