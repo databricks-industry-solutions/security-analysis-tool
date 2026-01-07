@@ -565,19 +565,19 @@ print("✅ Utility functions defined successfully!")
 
 def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, Any], run_id: int) -> None:
     """
-    Insert secret scan results into the secret_scan_results table.
+    Insert secret scan results into the notebooks_secret_scan_results table.
     Only inserts records when secrets are actually found to avoid database bloat.
-    
+
     Args:
         workspace_id (str): Workspace ID being scanned
         notebook_metadata (Dict[str, Any]): Notebook metadata with secret details
         run_id (int): SAT run ID for tracking
     """
     import time
-    
+
     try:
         # Create the table if it doesn't exist
-        create_secret_scan_results_table()
+        create_notebooks_secret_scan_results_table()
         logger.debug(f"Inserting secret scan results for workspace_id: {workspace_id}")
         logger.debug(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
         scan_time = time.time()
@@ -585,27 +585,27 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
         notebook_path = notebook_metadata.get("path", "")
         notebook_name = notebook_metadata.get("name", "")
         secrets_found = notebook_metadata.get("secrets_found", 0)
-        
+
         if secrets_found > 0:
             # Only insert records when secrets are found
             secret_details = notebook_metadata.get("secret_details", [])
-            
+
             for secret in secret_details:
                 detector_name = secret.get("DetectorName", "Unknown")
                 secret_sha256 = secret.get("Raw_SHA", "")
                 source_file = secret.get("SourceFile", "")
                 verified = secret.get("Verified", False)
-                
+
                 # Insert individual secret record
                 sql = f"""
-                INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results 
-                (workspace_id, notebook_id, notebook_path, notebook_name, detector_name, 
+                INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
+                (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
                  secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-                VALUES ('{workspace_id}', '{notebook_id}', '{notebook_path}', '{notebook_name}', 
-                        '{detector_name}', '{secret_sha256}', '{source_file}', {verified}, 
+                VALUES ('{workspace_id}', '{notebook_id}', '{notebook_path}', '{notebook_name}',
+                        '{detector_name}', '{secret_sha256}', '{source_file}', {verified},
                         {secrets_found}, {run_id}, cast({scan_time} as timestamp))
                 """
-                
+
                 spark.sql(sql)
                 logger.debug(f"Inserted secret scan result for notebook {notebook_id}, detector: {detector_name}")
         else:
@@ -623,13 +623,13 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     """
     try:
         # Ensure table exists
-        create_secret_scan_results_table()
+        create_notebooks_secret_scan_results_table()
         logger.info(f"Inserting no-secrets tracking row for workspace_id: {workspace_id}, run_id: {run_id}")
 
         # Check if a row already exists for this run_id
         existing = spark.sql(f"""
             SELECT COUNT(*) as cnt
-            FROM {json_["analysis_schema_name"]}.secret_scan_results
+            FROM {json_["analysis_schema_name"]}.notebooks_secret_scan_results
             WHERE run_id = {run_id}
         """).collect()[0]["cnt"]
 
@@ -639,7 +639,7 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
 
         # Insert placeholder row
         spark.sql(f"""
-            INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results
+            INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
             (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
              secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
             VALUES ('{workspace_id}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
