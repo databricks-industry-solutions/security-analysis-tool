@@ -278,18 +278,28 @@ def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
         json_params = {'cluster_id': cluster_id}
         response = db_client.get('/clusters/get', json_params=json_params, version='2.1')
 
-        # The response has format: {'satelements': <cluster_config>, 'http_status_code': 200}
+        # The response has format: {'satelements': <data>, 'http_status_code': 200}
         # Extract the actual cluster config from 'satelements' key
-        # But if response doesn't have 'satelements', return the response as-is (fallback)
-        if isinstance(response, dict):
-            if 'satelements' in response:
-                # Response is wrapped - extract the cluster config
-                return response.get('satelements')
-            else:
-                # Response is already the cluster config
-                return response
+        if isinstance(response, dict) and 'satelements' in response:
+            satelements = response['satelements']
 
-        return response
+            # satelements can be either a list or dict depending on the endpoint
+            if isinstance(satelements, list):
+                # For single-item endpoints like /clusters/get, it's a list with one element
+                if len(satelements) > 0:
+                    return satelements[0]  # Return first (and only) item
+                else:
+                    logger.warning(f"Empty satelements list for cluster {cluster_id}")
+                    return None
+            elif isinstance(satelements, dict):
+                # Already a dict, return as-is
+                return satelements
+            else:
+                logger.warning(f"Unexpected satelements type: {type(satelements)}")
+                return None
+        else:
+            # Response doesn't have satelements wrapper, return as-is
+            return response
     except Exception as e:
         logger.error(f"Failed to get cluster config for {cluster_id}: {str(e)}")
         return None
