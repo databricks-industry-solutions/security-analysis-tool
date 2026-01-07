@@ -53,6 +53,7 @@ variable "client_secret" {
   description = "SP Secret"
   type        = string
   default     = "value"
+  sensitive   = true
 }
 
 variable "analysis_schema_name" {
