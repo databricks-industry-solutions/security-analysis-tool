@@ -89,74 +89,91 @@ db_client = SatDBClient(json_)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 1: Setup and Configuration
+# MAGIC ## Step 1: Install Dependencies and Setup TruffleHog
 # MAGIC
-# MAGIC Import required libraries and configure logging.
+# MAGIC This cell installs required Python packages and downloads TruffleHog binary.
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC # Install required Python packages
+# MAGIC pip install requests pyyaml
+# MAGIC
+# MAGIC # Download and install TruffleHog binary to /tmp directory
+# MAGIC echo "Installing TruffleHog..."
+# MAGIC if curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp; then
+# MAGIC     if [ -f /tmp/trufflehog ]; then
+# MAGIC         echo "Setup completed successfully!"
+# MAGIC         echo "TruffleHog binary location: /tmp/trufflehog"
+# MAGIC         echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
+# MAGIC     else
+# MAGIC         echo "ERROR: TruffleHog binary not found after installation!"
+# MAGIC         echo "Please verify network access and try again."
+# MAGIC         exit 1
+# MAGIC     fi
+# MAGIC else
+# MAGIC     echo "=========================================="
+# MAGIC     echo "ERROR: Failed to download TruffleHog"
+# MAGIC     echo "=========================================="
+# MAGIC     echo ""
+# MAGIC     echo "The TruffleHog security scanner could not be downloaded from:"
+# MAGIC     echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
+# MAGIC     echo ""
+# MAGIC     echo "Possible causes:"
+# MAGIC     echo "  1. Network connectivity issues"
+# MAGIC     echo "  2. Firewall or proxy blocking external downloads"
+# MAGIC     echo "  3. GitHub.com access is restricted in your environment"
+# MAGIC     echo ""
+# MAGIC     echo "ACTION REQUIRED:"
+# MAGIC     echo "Please contact your IT/Security team to allowlist access to:"
+# MAGIC     echo "  - raw.githubusercontent.com"
+# MAGIC     echo "  - github.com/trufflesecurity"
+# MAGIC     echo ""
+# MAGIC     echo "Alternatively, you may need to configure a proxy or use an"
+# MAGIC     echo "internal mirror of the TruffleHog installation package."
+# MAGIC     echo "=========================================="
+# MAGIC     exit 1
+# MAGIC fi
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Step 2: Configuration and Authentication
+# MAGIC
+# MAGIC This cell sets up configuration constants and extracts Databricks authentication context.
 
 # COMMAND ----------
 
 # Import required libraries
 import os
 import json
-import base64
 import subprocess
 import time
 import hashlib
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
-from urllib.parse import quote
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logger = loggr  # Use existing logger from common setup
 
-# Get configuration from parent notebook
-json_ = json.loads(dbutils.widgets.get("json_"))
-
-print("✅ Libraries imported and logging configured successfully!")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Step 2: Initialize Cluster Client and Authentication
-# MAGIC
-# MAGIC Set up authentication and initialize the ClustersClient.
-
-# COMMAND ----------
-
-from core.dbclient import SatDBClient
 from clientpkgs.clusters_client import ClustersClient
-
-# Initialize SAT DB Client
-db_client = SatDBClient(json_)
 
 # Initialize Clusters Client
 cluster_client = ClustersClient(json_)
 
-# Extract authentication context
-try:
-    token = db_client.get_temporary_oauth_token()
-    base_url = json_["url"]
-    workspace_id = json_["workspace_id"]
-
-    if not token or not base_url:
-        raise ValueError("Unable to extract Databricks authentication context")
-
-    logger.info(f"Successfully extracted Databricks context. Base URL: {base_url}")
-    logger.info(f"Workspace ID: {workspace_id}")
-
-except Exception as e:
-    logger.error(f"Failed to extract Databricks context: {str(e)}")
-    raise
+# Extract workspace context
+workspace_id = json_["workspace_id"]
+base_url = json_["url"]
 
 # Get run_id from parent orchestrator (shared with notebook scan)
 run_id = json_.get("run_id")
 if not run_id:
     logger.warning("No run_id provided by orchestrator, will generate fallback")
+
+logger.info(f"Successfully extracted Databricks context. Base URL: {base_url}")
+logger.info(f"Workspace ID: {workspace_id}")
+logger.info(f"Run ID: {run_id}")
 
 print(f"✅ Authentication setup completed!")
 print(f"📊 Workspace ID: {workspace_id}")
@@ -191,7 +208,7 @@ class Config:
 os.makedirs(Config.TEMP_CLUSTERS_DIR, exist_ok=True)
 logger.info(f"Temporary directory created: {Config.TEMP_CLUSTERS_DIR}")
 
-# Verify TruffleHog binary exists (should be installed by notebook scanner)
+# Verify TruffleHog binary exists (should be installed in Step 1)
 if not os.path.exists(Config.TRUFFLEHOG_BINARY):
     error_msg = f"""
     ==========================================
@@ -200,8 +217,8 @@ if not os.path.exists(Config.TRUFFLEHOG_BINARY):
 
     Expected location: {Config.TRUFFLEHOG_BINARY}
 
-    The TruffleHog binary should be installed by the notebook scanner.
-    Please ensure the notebook scanner has run first to install TruffleHog.
+    The TruffleHog binary should have been installed in Step 1.
+    Please ensure the installation step completed successfully.
     ==========================================
     """
     logger.error(error_msg)
