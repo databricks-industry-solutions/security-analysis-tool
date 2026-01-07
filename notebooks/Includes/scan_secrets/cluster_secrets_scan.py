@@ -99,41 +99,48 @@ db_client = SatDBClient(json_)
 # MAGIC # Install required Python packages
 # MAGIC pip install requests pyyaml
 # MAGIC
-# MAGIC # Download and install TruffleHog binary to /tmp directory
-# MAGIC echo "Installing TruffleHog..."
-# MAGIC if curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp; then
-# MAGIC     if [ -f /tmp/trufflehog ]; then
-# MAGIC         echo "Setup completed successfully!"
-# MAGIC         echo "TruffleHog binary location: /tmp/trufflehog"
-# MAGIC         echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
+# MAGIC # Check if TruffleHog is already installed (likely from notebook scanner)
+# MAGIC if [ -f /tmp/trufflehog ]; then
+# MAGIC     echo "TruffleHog already installed at /tmp/trufflehog"
+# MAGIC     echo "Skipping installation (reusing from notebook scanner)"
+# MAGIC else
+# MAGIC     # Download and install TruffleHog binary to /tmp directory
+# MAGIC     echo "Installing TruffleHog..."
+# MAGIC     if curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp; then
+# MAGIC         if [ -f /tmp/trufflehog ]; then
+# MAGIC             echo "Setup completed successfully!"
+# MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
+# MAGIC         else
+# MAGIC             echo "ERROR: TruffleHog binary not found after installation!"
+# MAGIC             echo "Please verify network access and try again."
+# MAGIC             exit 1
+# MAGIC         fi
 # MAGIC     else
-# MAGIC         echo "ERROR: TruffleHog binary not found after installation!"
-# MAGIC         echo "Please verify network access and try again."
+# MAGIC         echo "=========================================="
+# MAGIC         echo "ERROR: Failed to download TruffleHog"
+# MAGIC         echo "=========================================="
+# MAGIC         echo ""
+# MAGIC         echo "The TruffleHog security scanner could not be downloaded from:"
+# MAGIC         echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
+# MAGIC         echo ""
+# MAGIC         echo "Possible causes:"
+# MAGIC         echo "  1. Network connectivity issues"
+# MAGIC         echo "  2. Firewall or proxy blocking external downloads"
+# MAGIC         echo "  3. GitHub.com access is restricted in your environment"
+# MAGIC         echo ""
+# MAGIC         echo "ACTION REQUIRED:"
+# MAGIC         echo "Please contact your IT/Security team to allowlist access to:"
+# MAGIC         echo "  - raw.githubusercontent.com"
+# MAGIC         echo "  - github.com/trufflesecurity"
+# MAGIC         echo ""
+# MAGIC         echo "Alternatively, you may need to configure a proxy or use an"
+# MAGIC         echo "internal mirror of the TruffleHog installation package."
+# MAGIC         echo "=========================================="
 # MAGIC         exit 1
 # MAGIC     fi
-# MAGIC else
-# MAGIC     echo "=========================================="
-# MAGIC     echo "ERROR: Failed to download TruffleHog"
-# MAGIC     echo "=========================================="
-# MAGIC     echo ""
-# MAGIC     echo "The TruffleHog security scanner could not be downloaded from:"
-# MAGIC     echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
-# MAGIC     echo ""
-# MAGIC     echo "Possible causes:"
-# MAGIC     echo "  1. Network connectivity issues"
-# MAGIC     echo "  2. Firewall or proxy blocking external downloads"
-# MAGIC     echo "  3. GitHub.com access is restricted in your environment"
-# MAGIC     echo ""
-# MAGIC     echo "ACTION REQUIRED:"
-# MAGIC     echo "Please contact your IT/Security team to allowlist access to:"
-# MAGIC     echo "  - raw.githubusercontent.com"
-# MAGIC     echo "  - github.com/trufflesecurity"
-# MAGIC     echo ""
-# MAGIC     echo "Alternatively, you may need to configure a proxy or use an"
-# MAGIC     echo "internal mirror of the TruffleHog installation package."
-# MAGIC     echo "=========================================="
-# MAGIC     exit 1
 # MAGIC fi
+# MAGIC
+# MAGIC echo "✅ TruffleHog setup verified!"
 
 # COMMAND ----------
 
