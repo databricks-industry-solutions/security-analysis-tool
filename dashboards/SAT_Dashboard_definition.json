@@ -8948,24 +8948,36 @@
                                     "datasetName": "6dbb433f",
                                     "fields": [
                                         {
-                                            "name": "notebook_name",
-                                            "expression": "`notebook_name`"
+                                            "name": "source_type",
+                                            "expression": "`source_type`"
+                                        },
+                                        {
+                                            "name": "object_name",
+                                            "expression": "`object_name`"
+                                        },
+                                        {
+                                            "name": "object_path",
+                                            "expression": "`object_path`"
+                                        },
+                                        {
+                                            "name": "config_field",
+                                            "expression": "`config_field`"
+                                        },
+                                        {
+                                            "name": "config_key",
+                                            "expression": "`config_key`"
                                         },
                                         {
                                             "name": "detection_type",
                                             "expression": "`detection_type`"
                                         },
                                         {
-                                            "name": "notebook_path",
-                                            "expression": "`notebook_path`"
+                                            "name": "secret_hash",
+                                            "expression": "`secret_hash`"
                                         },
                                         {
                                             "name": "scan_time_est",
                                             "expression": "`scan_time_est`"
-                                        },
-                                        {
-                                            "name": "secret_hash",
-                                            "expression": "`secret_hash`"
                                         }
                                     ],
                                     "disaggregated": true
@@ -8978,7 +8990,7 @@
                             "encodings": {
                                 "columns": [
                                     {
-                                        "fieldName": "notebook_name",
+                                        "fieldName": "source_type",
                                         "booleanValues": [
                                             "false",
                                             "true"
@@ -8995,7 +9007,111 @@
                                         "displayAs": "string",
                                         "visible": true,
                                         "order": 0,
-                                        "title": "Notebook Name",
+                                        "title": "Source Type",
+                                        "allowSearch": true,
+                                        "alignContent": "left",
+                                        "allowHTML": false,
+                                        "highlightLinks": false,
+                                        "useMonospaceFont": false,
+                                        "preserveWhitespace": false
+                                    },
+                                    {
+                                        "fieldName": "object_name",
+                                        "booleanValues": [
+                                            "false",
+                                            "true"
+                                        ],
+                                        "imageUrlTemplate": "{{ @ }}",
+                                        "imageTitleTemplate": "{{ @ }}",
+                                        "imageWidth": "",
+                                        "imageHeight": "",
+                                        "linkUrlTemplate": "{{ @ }}",
+                                        "linkTextTemplate": "{{ @ }}",
+                                        "linkTitleTemplate": "{{ @ }}",
+                                        "linkOpenInNewTab": true,
+                                        "type": "string",
+                                        "displayAs": "string",
+                                        "visible": true,
+                                        "order": 1,
+                                        "title": "Object Name",
+                                        "allowSearch": true,
+                                        "alignContent": "left",
+                                        "allowHTML": false,
+                                        "highlightLinks": false,
+                                        "useMonospaceFont": false,
+                                        "preserveWhitespace": false
+                                    },
+                                    {
+                                        "fieldName": "object_path",
+                                        "booleanValues": [
+                                            "false",
+                                            "true"
+                                        ],
+                                        "imageUrlTemplate": "{{ @ }}",
+                                        "imageTitleTemplate": "{{ @ }}",
+                                        "imageWidth": "",
+                                        "imageHeight": "",
+                                        "linkUrlTemplate": "{{ @ }}",
+                                        "linkTextTemplate": "{{ @ }}",
+                                        "linkTitleTemplate": "{{ @ }}",
+                                        "linkOpenInNewTab": true,
+                                        "type": "string",
+                                        "displayAs": "string",
+                                        "visible": true,
+                                        "order": 2,
+                                        "title": "Object Path",
+                                        "allowSearch": false,
+                                        "alignContent": "left",
+                                        "allowHTML": false,
+                                        "highlightLinks": false,
+                                        "useMonospaceFont": false,
+                                        "preserveWhitespace": false
+                                    },
+                                    {
+                                        "fieldName": "config_field",
+                                        "booleanValues": [
+                                            "false",
+                                            "true"
+                                        ],
+                                        "imageUrlTemplate": "{{ @ }}",
+                                        "imageTitleTemplate": "{{ @ }}",
+                                        "imageWidth": "",
+                                        "imageHeight": "",
+                                        "linkUrlTemplate": "{{ @ }}",
+                                        "linkTextTemplate": "{{ @ }}",
+                                        "linkTitleTemplate": "{{ @ }}",
+                                        "linkOpenInNewTab": true,
+                                        "type": "string",
+                                        "displayAs": "string",
+                                        "visible": true,
+                                        "order": 3,
+                                        "title": "Config Field",
+                                        "allowSearch": false,
+                                        "alignContent": "left",
+                                        "allowHTML": false,
+                                        "highlightLinks": false,
+                                        "useMonospaceFont": false,
+                                        "preserveWhitespace": false
+                                    },
+                                    {
+                                        "fieldName": "config_key",
+                                        "booleanValues": [
+                                            "false",
+                                            "true"
+                                        ],
+                                        "imageUrlTemplate": "{{ @ }}",
+                                        "imageTitleTemplate": "{{ @ }}",
+                                        "imageWidth": "",
+                                        "imageHeight": "",
+                                        "linkUrlTemplate": "{{ @ }}",
+                                        "linkTextTemplate": "{{ @ }}",
+                                        "linkTitleTemplate": "{{ @ }}",
+                                        "linkOpenInNewTab": true,
+                                        "type": "string",
+                                        "displayAs": "string",
+                                        "visible": true,
+                                        "order": 4,
+                                        "title": "Config Key",
                                         "allowSearch": true,
                                         "alignContent": "left",
                                         "allowHTML": false,
@@ -9020,7 +9136,7 @@
                                         "type": "string",
                                         "displayAs": "string",
                                         "visible": true,
-                                        "order": 1,
+                                        "order": 5,
                                         "title": "Secret Type",
                                         "allowSearch": true,
                                         "alignContent": "left",
@@ -9031,7 +9147,7 @@
                                         "description": "Note: \"Custom Secrets\" are organization-defined detection patterns that primarily identify Databricks-specific tokens and credentials."
                                     },
                                     {
-                                        "fieldName": "notebook_path",
+                                        "fieldName": "secret_hash",
                                         "booleanValues": [
                                             "false",
                                             "true"
@@ -9047,8 +9163,8 @@
                                         "type": "string",
                                         "displayAs": "string",
                                         "visible": true,
-                                        "order": 2,
-                                        "title": "Notebook Path",
+                                        "order": 6,
+                                        "title": "Secret Hash",
                                         "allowSearch": false,
                                         "alignContent": "left",
                                         "allowHTML": false,
@@ -9073,34 +9189,8 @@
                                         "type": "string",
                                         "displayAs": "string",
                                         "visible": true,
-                                        "order": 3,
+                                        "order": 7,
                                         "title": "Scan Time",
-                                        "allowSearch": false,
-                                        "alignContent": "left",
-                                        "allowHTML": false,
-                                        "highlightLinks": false,
-                                        "useMonospaceFont": false,
-                                        "preserveWhitespace": false
-                                    },
-                                    {
-                                        "fieldName": "secret_hash",
-                                        "booleanValues": [
-                                            "false",
-                                            "true"
-                                        ],
-                                        "imageUrlTemplate": "{{ @ }}",
-                                        "imageTitleTemplate": "{{ @ }}",
-                                        "imageWidth": "",
-                                        "imageHeight": "",
-                                        "linkUrlTemplate": "{{ @ }}",
-                                        "linkTextTemplate": "{{ @ }}",
-                                        "linkTitleTemplate": "{{ @ }}",
-                                        "linkOpenInNewTab": true,
-                                        "type": "string",
-                                        "displayAs": "string",
-                                        "visible": true,
-                                        "order": 4,
-                                        "title": "Secret Hash",
                                         "allowSearch": false,
                                         "alignContent": "left",
                                         "allowHTML": false,
