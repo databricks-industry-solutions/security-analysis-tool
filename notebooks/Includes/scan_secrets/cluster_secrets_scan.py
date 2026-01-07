@@ -18,6 +18,76 @@
 
 # COMMAND ----------
 
+# MAGIC %run ../install_sat_sdk
+
+# COMMAND ----------
+
+import time
+start_time = time.time()
+
+# COMMAND ----------
+
+# MAGIC %run ../../Utils/common
+
+# COMMAND ----------
+
+test=False #local testing
+if test:
+    jsonstr = JSONLOCALTEST
+else:
+    jsonstr = dbutils.widgets.get('json_')
+
+# COMMAND ----------
+
+import json
+if not jsonstr:
+    print('cannot run notebook by itself')
+    dbutils.notebook.exit('cannot run notebook by itself')
+else:
+    json_ = json.loads(jsonstr)
+
+# COMMAND ----------
+
+
+from core.logging_utils import LoggingUtils
+
+LoggingUtils.set_logger_level(LoggingUtils.get_log_level(json_["verbosity"]))
+loggr = LoggingUtils.get_logger()
+
+# COMMAND ----------
+
+hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+cloud_type = getCloudType(hostname)
+
+# COMMAND ----------
+
+import requests
+from core import  parser as pars
+from core.dbclient import SatDBClient
+
+if cloud_type =='azure': # use client secret
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
+elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
+  mastername =' ' # this will not be present when using SPs
+  masterpwd = ' '  # we still need to send empty user/pwd.
+  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+else: #lets populate master key for accounts api
+  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+  json_.update({'token':'dapijedi', 'client_secret': client_secret})
+  mastername = ' '
+  masterpwd = ' '
+  #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
+  #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
+  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+
+db_client = SatDBClient(json_)
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Step 1: Setup and Configuration
 # MAGIC
