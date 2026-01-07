@@ -92,7 +92,6 @@ def generateWorkspaceConfigFile():
         accounts_console = json_.get("accounts_console", "").strip()
         if accounts_console:
             # Derive workspace URL suffix from accounts_console
-            # e.g., "https://accounts.staging.cloud.databricks.com" -> "staging.cloud.databricks.com"
             # e.g., "https://accounts-dod.cloud.databricks.mil" -> "cloud.databricks.mil"
             from urllib.parse import urlparse
             parsed = urlparse(accounts_console)
@@ -102,7 +101,6 @@ def generateWorkspaceConfigFile():
                 # Handle DoD style: accounts-dod.cloud.databricks.mil -> cloud.databricks.mil
                 workspace_suffix = netloc.split(".", 1)[1] if "." in netloc else netloc
             elif netloc.startswith("accounts."):
-                # Handle standard style: accounts.staging.cloud.databricks.com -> staging.cloud.databricks.com
                 workspace_suffix = netloc[len("accounts."):]
             else:
                 workspace_suffix = netloc
