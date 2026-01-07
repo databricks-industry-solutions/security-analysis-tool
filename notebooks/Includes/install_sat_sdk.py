@@ -29,7 +29,7 @@ if is_sat_compatible== False:
 
 # COMMAND ----------
 
-SDK_VERSION='0.0.125'
+SDK_VERSION='0.1.38'
 
 # COMMAND ----------
 
@@ -37,4 +37,4 @@ SDK_VERSION='0.0.125'
 
 # COMMAND ----------
 
-# MAGIC %pip install PyYAML dbl-sat-sdk==0.0.125 --find-links ./dbl_sat_sdk-0.0.125-py3-none-any.whl 
+# MAGIC %pip install PyYAML dbl-sat-sdk=={SDK_VERSION} 
