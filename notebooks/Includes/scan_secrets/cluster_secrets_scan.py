@@ -720,6 +720,12 @@ def main_cluster_scanning_workflow():
             cluster_id = cluster.get('cluster_id')
             cluster_name = cluster.get('cluster_name', 'Unknown')
 
+            # Special logging for test cluster
+            is_test_cluster = 'Arun' in cluster_name or 'Personal' in cluster_name
+            if is_test_cluster:
+                logger.info(f"🎯 FOUND TEST CLUSTER: {cluster_name} ({cluster_id})")
+                print(f"\n🎯 FOUND TEST CLUSTER: {cluster_name}")
+
             logger.info(f"🔍 [{idx}/{total_clusters}] Processing cluster: {cluster_name} ({cluster_id})")
 
             try:
@@ -731,17 +737,37 @@ def main_cluster_scanning_workflow():
                     print(f"  ⚠️  Failed to get config for {cluster_name}")
                     continue
 
-                # Debug: Log first cluster config structure for debugging
-                if idx == 1:
+                # Debug: Log cluster config structure for debugging
+                if idx <= 3:  # Show first 3 clusters for debugging
                     logger.info(f"Sample cluster config keys for debugging: {list(cluster_config.keys())}")
-                    print(f"  🔍 Debug: First cluster config has these keys: {list(cluster_config.keys())[:10]}...")
+                    print(f"  🔍 Debug: Cluster #{idx} config keys: {list(cluster_config.keys())}")
+
+                # Check if spark_env_vars field exists
+                has_spark_env_vars = 'spark_env_vars' in cluster_config
+                spark_env_vars_value = cluster_config.get('spark_env_vars', None)
+
+                # Special debugging for test cluster
+                if is_test_cluster:
+                    print(f"  🔍 TEST CLUSTER DEBUG:")
+                    print(f"     - Has spark_env_vars field: {has_spark_env_vars}")
+                    print(f"     - spark_env_vars value: {spark_env_vars_value}")
+                    print(f"     - spark_env_vars type: {type(spark_env_vars_value).__name__}")
+                    if spark_env_vars_value:
+                        print(f"     - spark_env_vars keys: {list(spark_env_vars_value.keys()) if isinstance(spark_env_vars_value, dict) else 'N/A'}")
+
+                if has_spark_env_vars:
+                    logger.info(f"Cluster {cluster_name} has spark_env_vars field: {spark_env_vars_value}")
+                    print(f"  ✅ {cluster_name}: Has spark_env_vars field (value type: {type(spark_env_vars_value).__name__})")
+                else:
+                    logger.info(f"Cluster {cluster_name} does NOT have spark_env_vars field")
+                    print(f"  ⏭️  {cluster_name}: No spark_env_vars field in config")
 
                 # Extract spark_env_vars
                 env_vars = extract_spark_env_vars(cluster_config)
 
                 if not env_vars:
-                    logger.debug(f"No environment variables found in cluster {cluster_name}")
-                    print(f"  ⏭️  {cluster_name}: No environment variables found, skipping")
+                    logger.info(f"No environment variables extracted from cluster {cluster_name}")
+                    print(f"  ⏭️  {cluster_name}: No environment variables extracted, skipping")
                     continue
 
                 print(f"  ✅ {cluster_name}: Found {len(env_vars)} environment variables to scan")
