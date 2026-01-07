@@ -708,6 +708,15 @@ def main_cluster_scanning_workflow():
     clusters_with_secrets = 0
     total_secrets_found = 0
 
+    # Debug info to survive notebook.exit()
+    debug_info = {
+        "sample_cluster_configs": [],
+        "test_cluster_found": False,
+        "test_cluster_name": None,
+        "test_cluster_has_spark_env_vars": None,
+        "clusters_with_spark_env_vars_field": 0
+    }
+
     try:
         # Get all clusters
         clusters = get_all_clusters()
@@ -739,15 +748,31 @@ def main_cluster_scanning_workflow():
 
                 # Debug: Log cluster config structure for debugging
                 if idx <= 3:  # Show first 3 clusters for debugging
-                    logger.info(f"Sample cluster config keys for debugging: {list(cluster_config.keys())}")
-                    print(f"  🔍 Debug: Cluster #{idx} config keys: {list(cluster_config.keys())}")
+                    config_keys = list(cluster_config.keys())
+                    logger.info(f"Sample cluster config keys for debugging: {config_keys}")
+                    print(f"  🔍 Debug: Cluster #{idx} config keys: {config_keys}")
+                    debug_info["sample_cluster_configs"].append({
+                        "cluster_name": cluster_name,
+                        "cluster_id": cluster_id,
+                        "config_keys": config_keys
+                    })
 
                 # Check if spark_env_vars field exists
                 has_spark_env_vars = 'spark_env_vars' in cluster_config
                 spark_env_vars_value = cluster_config.get('spark_env_vars', None)
 
+                # Track clusters with spark_env_vars field
+                if has_spark_env_vars:
+                    debug_info["clusters_with_spark_env_vars_field"] += 1
+
                 # Special debugging for test cluster
                 if is_test_cluster:
+                    debug_info["test_cluster_found"] = True
+                    debug_info["test_cluster_name"] = cluster_name
+                    debug_info["test_cluster_has_spark_env_vars"] = has_spark_env_vars
+                    debug_info["test_cluster_spark_env_vars_value"] = str(spark_env_vars_value)[:200]  # First 200 chars
+                    debug_info["test_cluster_config_keys"] = list(cluster_config.keys())
+
                     print(f"  🔍 TEST CLUSTER DEBUG:")
                     print(f"     - Has spark_env_vars field: {has_spark_env_vars}")
                     print(f"     - spark_env_vars value: {spark_env_vars_value}")
@@ -837,7 +862,8 @@ def main_cluster_scanning_workflow():
             "clusters_scanned": clusters_scanned,
             "clusters_with_secrets": clusters_with_secrets,
             "total_secrets_found": total_secrets_found,
-            "run_id": current_run_id
+            "run_id": current_run_id,
+            "debug_info": debug_info
         }
 
     except Exception as e:
