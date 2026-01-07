@@ -89,9 +89,8 @@ json_.update(
         "use_mastercreds": True,
         "use_parallel_runs": True,
         "sat_version": "0.5.0",
-        # accounts_console: URL for accounts console in special environments (staging, gov cloud, DoD)
+        # accounts_console: URL for accounts console in special environments (gov cloud, DoD)
         # Leave empty for standard environments. Examples:
-        #   - Staging: "https://accounts.staging.cloud.databricks.com"
         #   - GovCloud (FedRAMP): "https://accounts.cloud.databricks.us"
         #   - DoD (IL4/IL5): See https://docs.databricks.com/aws/en/security/privacy/gov-cloud
         "accounts_console": "",
