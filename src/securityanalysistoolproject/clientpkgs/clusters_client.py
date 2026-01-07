@@ -62,12 +62,13 @@ class ClustersClient(SatDBClient):
 
     def get_cluster_info(self, cluster_id):
         """
-        Export all cluster permissions for a specific cluster id
-        :return:
+        Get full cluster configuration including spark_env_vars, spark_conf, etc.
+        :param cluster_id: Cluster ID to retrieve
+        :return: Full cluster configuration dict
         """
         json_params = {'cluster_id': cluster_id}
-        current_policy = self.get(f'/clusters/get', json_params=json_params, version='2.1').get('satelements', [])
-        return current_policy        
+        cluster_info = self.get(f'/clusters/get', json_params=json_params, version='2.1')
+        return cluster_info        
 
 
     def get_cluster_list(self, alive=False):
