@@ -276,10 +276,20 @@ def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
     try:
         # Direct API call to clusters/get endpoint
         json_params = {'cluster_id': cluster_id}
-        cluster_info = db_client.get('/clusters/get', json_params=json_params, version='2.1')
+        response = db_client.get('/clusters/get', json_params=json_params, version='2.1')
 
-        # The API returns the full cluster config directly (not nested)
-        return cluster_info
+        # The response has format: {'satelements': <cluster_config>, 'http_status_code': 200}
+        # Extract the actual cluster config from 'satelements' key
+        # But if response doesn't have 'satelements', return the response as-is (fallback)
+        if isinstance(response, dict):
+            if 'satelements' in response:
+                # Response is wrapped - extract the cluster config
+                return response.get('satelements')
+            else:
+                # Response is already the cluster config
+                return response
+
+        return response
     except Exception as e:
         logger.error(f"Failed to get cluster config for {cluster_id}: {str(e)}")
         return None
