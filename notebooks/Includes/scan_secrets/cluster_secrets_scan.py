@@ -294,9 +294,25 @@ def extract_spark_env_vars(cluster_config: Dict[str, Any]) -> Optional[Dict[str,
     if not cluster_config:
         return None
 
+    # Debug: Log available keys in cluster config
+    available_keys = list(cluster_config.keys())
+    logger.debug(f"Cluster config keys available: {available_keys}")
+
     spark_env_vars = cluster_config.get('spark_env_vars', {})
 
     if not spark_env_vars or len(spark_env_vars) == 0:
+        logger.debug(f"No spark_env_vars found. Checking alternative field names...")
+
+        # Check alternative field names
+        alternatives = ['spark_env_variables', 'environment_variables', 'env_vars']
+        for alt_key in alternatives:
+            if alt_key in cluster_config:
+                spark_env_vars = cluster_config.get(alt_key, {})
+                if spark_env_vars:
+                    logger.info(f"Found environment variables under key: '{alt_key}'")
+                    return spark_env_vars
+
+        logger.debug(f"No environment variables found in any checked fields")
         return None
 
     return spark_env_vars
@@ -708,16 +724,23 @@ def main_cluster_scanning_workflow():
 
                 if not cluster_config:
                     logger.warning(f"Failed to get config for cluster {cluster_id}, skipping")
+                    print(f"  ⚠️  Failed to get config for {cluster_name}")
                     continue
+
+                # Debug: Log first cluster config structure for debugging
+                if idx == 1:
+                    logger.info(f"Sample cluster config keys for debugging: {list(cluster_config.keys())}")
+                    print(f"  🔍 Debug: First cluster config has these keys: {list(cluster_config.keys())[:10]}...")
 
                 # Extract spark_env_vars
                 env_vars = extract_spark_env_vars(cluster_config)
 
                 if not env_vars:
-                    logger.info(f"No spark_env_vars found in cluster {cluster_name}, skipping")
+                    logger.debug(f"No environment variables found in cluster {cluster_name}")
+                    print(f"  ⏭️  {cluster_name}: No environment variables found, skipping")
                     continue
 
-                logger.info(f"Found {len(env_vars)} environment variables to scan")
+                print(f"  ✅ {cluster_name}: Found {len(env_vars)} environment variables to scan")
 
                 # Serialize to temp file
                 file_path = serialize_env_vars_to_file(cluster_id, cluster_name, env_vars)
