@@ -164,11 +164,7 @@ from datetime import datetime, timezone
 # Configure logging
 logger = loggr  # Use existing logger from common setup
 
-from clientpkgs.clusters_client import ClustersClient
-
-# Initialize Clusters Client
-cluster_client = ClustersClient(json_)
-
+# Use db_client for direct API calls (already initialized in common setup)
 # Extract workspace context
 workspace_id = json_["workspace_id"]
 base_url = json_["url"]
@@ -249,13 +245,16 @@ print(f"🔧 Config field to scan: {Config.CONFIG_FIELD}")
 def get_all_clusters() -> List[Dict[str, Any]]:
     """
     Get list of all clusters in the workspace (including terminated).
+    Uses direct API call to /clusters/list endpoint.
 
     Returns:
         List[Dict]: List of cluster objects with cluster_id, cluster_name, state
     """
     try:
-        logger.info("Fetching list of all clusters...")
-        clusters = cluster_client.get_cluster_list(alive=False)
+        logger.info("Fetching list of all clusters via direct API call...")
+        # Direct API call to clusters/list endpoint
+        response = db_client.get('/clusters/list', json_params={}, version='2.1')
+        clusters = response.get('clusters', [])
         logger.info(f"Found {len(clusters)} clusters in workspace")
         return clusters
     except Exception as e:
@@ -266,15 +265,20 @@ def get_all_clusters() -> List[Dict[str, Any]]:
 def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
     """
     Get full cluster configuration including spark_env_vars.
+    Uses direct API call to /clusters/get endpoint.
 
     Args:
         cluster_id: Cluster ID
 
     Returns:
-        Dict: Cluster configuration or None if error
+        Dict: Full cluster configuration dict or None if error
     """
     try:
-        cluster_info = cluster_client.get_cluster_info(cluster_id)
+        # Direct API call to clusters/get endpoint
+        json_params = {'cluster_id': cluster_id}
+        cluster_info = db_client.get('/clusters/get', json_params=json_params, version='2.1')
+
+        # The API returns the full cluster config directly (not nested)
         return cluster_info
     except Exception as e:
         logger.error(f"Failed to get cluster config for {cluster_id}: {str(e)}")
