@@ -651,8 +651,7 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
     secrets_found = cluster_metadata.get("secrets_found", 0)
 
     try:
-        # Create the table if it doesn't exist
-        from common import create_clusters_secret_scan_results_table
+        # Create the table if it doesn't exist (function loaded via %run ../../Utils/common)
         create_clusters_secret_scan_results_table()
 
         scan_time = time.time()
@@ -694,8 +693,7 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     Ensures only one row per run_id exists.
     """
     try:
-        # Ensure table exists
-        from common import create_clusters_secret_scan_results_table
+        # Ensure table exists (function loaded via %run ../../Utils/common)
         create_clusters_secret_scan_results_table()
 
         logger.info(f"Inserting no-secrets tracking row for workspace_id: {workspace_id}, run_id: {run_id}")
