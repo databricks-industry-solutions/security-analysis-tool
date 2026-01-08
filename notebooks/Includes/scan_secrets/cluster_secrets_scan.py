@@ -946,5 +946,40 @@ else:
 
 print("\n✅ Cluster Secret Scanning Completed Successfully!")
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cleanup and File Inspection
+# MAGIC
+# MAGIC Show temporary files created during the scan.
+
+# COMMAND ----------
+
+print("🧹 Cleanup and File Operations")
+print("=" * 60)
+
+# COMMAND ----------
+
+print("📁 Temporary cluster config files:")
+
+# COMMAND ----------
+
+# MAGIC %sh ls -la /tmp/clusters/ 2>/dev/null || echo "Directory not found or empty"
+
+# COMMAND ----------
+
+print("📄 TruffleHog binary and config files:")
+
+# COMMAND ----------
+
+# MAGIC %sh ls -la /tmp/trufflehog* 2>/dev/null || echo "No TruffleHog files found"
+
+# COMMAND ----------
+
+print("✅ Cleanup information:")
+print("   - Temporary cluster config files are stored in /tmp/clusters/")
+print("   - These files will be automatically removed when the cluster terminates")
+print("   - TruffleHog binary is shared with notebook scanning (/tmp/trufflehog)")
+
 # Note: We don't use dbutils.notebook.exit() here to preserve the output above
 # The orchestrator doesn't need the return value - it just checks for completion
