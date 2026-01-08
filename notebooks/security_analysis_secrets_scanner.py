@@ -159,7 +159,7 @@ def processTruffleHogScan(wsrow, run_id):
     # Run TruffleHog secret scanning for notebooks
     loggr.info(f"Running TruffleHog notebook scan for workspace: {workspace_id}")
     scan_result = dbutils.notebook.run(
-        f"{basePath()}/notebooks/Includes/scan_secrets/trufflehog_scan",
+        f"{basePath()}/notebooks/Includes/scan_secrets/notebook_secret_scan",
         3600,  # 1 hour timeout for secrets scanning
         {"json_": json.dumps(ws_json)},
     )

@@ -12,7 +12,7 @@
 # MAGIC 5. Parse results and store in clusters_secret_scan_results table
 # MAGIC
 # MAGIC ## Based on:
-# MAGIC - trufflehog_scan.py pattern
+# MAGIC - notebook_secret_scan.py pattern
 # MAGIC - Uses same TruffleHog binary and config
 # MAGIC - Shares run_id with notebook scanning for correlation
 
@@ -208,8 +208,35 @@ class Config:
     CONFIG_FIELD = "spark_env_vars"  # Which cluster config field to scan
 
 # Create temporary directories if they don't exist
-os.makedirs(Config.TEMP_CLUSTERS_DIR, exist_ok=True)
-logger.info(f"Temporary directory created: {Config.TEMP_CLUSTERS_DIR}")
+try:
+    os.makedirs(Config.TEMP_CLUSTERS_DIR, exist_ok=True)
+    logger.info(f"Temporary directory created: {Config.TEMP_CLUSTERS_DIR}")
+
+    # Verify directory is writable
+    test_file = os.path.join(Config.TEMP_CLUSTERS_DIR, ".write_test")
+    with open(test_file, 'w') as f:
+        f.write("test")
+    os.remove(test_file)
+    logger.info(f"✓ Directory verified writable: {Config.TEMP_CLUSTERS_DIR}")
+
+except PermissionError as e:
+    error_msg = f"""
+    ==========================================
+    ERROR: Cannot create/write to temporary directory!
+    ==========================================
+
+    Directory: {Config.TEMP_CLUSTERS_DIR}
+    Error: {str(e)}
+
+    The cluster scanner needs write access to /tmp for storing
+    temporary cluster configuration files.
+    ==========================================
+    """
+    logger.error(error_msg)
+    raise
+except Exception as e:
+    logger.error(f"Failed to setup temporary directory: {str(e)}")
+    raise
 
 # Verify TruffleHog binary exists (should be installed in Step 1)
 if not os.path.exists(Config.TRUFFLEHOG_BINARY):
@@ -354,6 +381,9 @@ def serialize_env_vars_to_file(cluster_id: str, cluster_name: str, env_vars: Dic
     Returns:
         str: Path to the created temp file
     """
+    # Ensure directory exists (defensive programming)
+    os.makedirs(Config.TEMP_CLUSTERS_DIR, exist_ok=True)
+
     file_path = os.path.join(Config.TEMP_CLUSTERS_DIR, f"cluster_config_{cluster_id}.txt")
 
     try:
