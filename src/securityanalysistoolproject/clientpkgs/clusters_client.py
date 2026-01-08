@@ -194,3 +194,4 @@ class ClustersClient(SatDBClient):
             return True
         else:
             return False
+        
