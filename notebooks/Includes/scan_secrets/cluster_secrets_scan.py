@@ -652,18 +652,12 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
 
     try:
         # Create the table if it doesn't exist
-        logger.info(f"Creating clusters_secret_scan_results table if it doesn't exist...")
         from common import create_clusters_secret_scan_results_table
         create_clusters_secret_scan_results_table()
-        logger.info(f"Table creation completed")
-
-        logger.info(f"Inserting cluster secret scan results for workspace_id: {workspace_id}, cluster_id: {cluster_id}")
-        logger.info(f"Cluster metadata: {json.dumps(cluster_metadata, indent=2)}")
 
         scan_time = time.time()
 
         if secrets_found > 0:
-            logger.info(f"Processing {secrets_found} secrets for cluster {cluster_id}")
             # Only insert records when secrets are found
             secret_details = cluster_metadata.get("secret_details", [])
 
@@ -673,8 +667,6 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
                 source_file = secret.get("SourceFile", "")
                 verified = secret.get("Verified", False)
                 config_key = secret.get("ConfigKey", "Unknown")
-
-                logger.info(f"Inserting secret {idx}/{len(secret_details)}: detector={detector_name}, key={config_key}, verified={verified}")
 
                 # Insert individual secret record
                 sql = f"""
@@ -686,9 +678,7 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
                         {verified}, {secrets_found}, {run_id}, cast({scan_time} as timestamp))
                 """
 
-                logger.info(f"Executing SQL: {sql[:200]}...")  # Log first 200 chars
                 spark.sql(sql)
-                logger.info(f"Successfully inserted secret {idx}/{len(secret_details)} for cluster {cluster_id}, detector: {detector_name}")
         else:
             # Don't insert anything for clean clusters to avoid database bloat
             logger.debug(f"No secrets found in cluster {cluster_id}, skipping database insert")
@@ -766,15 +756,6 @@ def main_cluster_scanning_workflow():
     clusters_with_secrets = 0
     total_secrets_found = 0
 
-    # Debug info to survive notebook.exit()
-    debug_info = {
-        "sample_cluster_configs": [],
-        "test_cluster_found": False,
-        "test_cluster_name": None,
-        "test_cluster_has_spark_env_vars": None,
-        "clusters_with_spark_env_vars_field": 0
-    }
-
     try:
         # Get all clusters
         clusters = get_all_clusters()
@@ -787,13 +768,7 @@ def main_cluster_scanning_workflow():
             cluster_id = cluster.get('cluster_id')
             cluster_name = cluster.get('cluster_name', 'Unknown')
 
-            # Special logging for test cluster
-            is_test_cluster = 'Arun' in cluster_name or 'Personal' in cluster_name
-            if is_test_cluster:
-                logger.info(f"🎯 FOUND TEST CLUSTER: {cluster_name} ({cluster_id})")
-                print(f"\n🎯 FOUND TEST CLUSTER: {cluster_name}")
-
-            logger.info(f"🔍 [{idx}/{total_clusters}] Processing cluster: {cluster_name} ({cluster_id})")
+            logger.info(f"[{idx}/{total_clusters}] Processing cluster: {cluster_name} ({cluster_id})")
 
             try:
                 # Get full cluster configuration
@@ -801,59 +776,16 @@ def main_cluster_scanning_workflow():
 
                 if not cluster_config:
                     logger.warning(f"Failed to get config for cluster {cluster_id}, skipping")
-                    print(f"  ⚠️  Failed to get config for {cluster_name}")
                     continue
-
-                # Debug: Log cluster config structure for debugging
-                if idx <= 3:  # Show first 3 clusters for debugging
-                    config_keys = list(cluster_config.keys())
-                    logger.info(f"Sample cluster config keys for debugging: {config_keys}")
-                    print(f"  🔍 Debug: Cluster #{idx} config keys: {config_keys}")
-                    debug_info["sample_cluster_configs"].append({
-                        "cluster_name": cluster_name,
-                        "cluster_id": cluster_id,
-                        "config_keys": config_keys
-                    })
-
-                # Check if spark_env_vars field exists
-                has_spark_env_vars = 'spark_env_vars' in cluster_config
-                spark_env_vars_value = cluster_config.get('spark_env_vars', None)
-
-                # Track clusters with spark_env_vars field
-                if has_spark_env_vars:
-                    debug_info["clusters_with_spark_env_vars_field"] += 1
-
-                # Special debugging for test cluster
-                if is_test_cluster:
-                    debug_info["test_cluster_found"] = True
-                    debug_info["test_cluster_name"] = cluster_name
-                    debug_info["test_cluster_has_spark_env_vars"] = has_spark_env_vars
-                    debug_info["test_cluster_spark_env_vars_value"] = str(spark_env_vars_value)[:200]  # First 200 chars
-                    debug_info["test_cluster_config_keys"] = list(cluster_config.keys())
-
-                    print(f"  🔍 TEST CLUSTER DEBUG:")
-                    print(f"     - Has spark_env_vars field: {has_spark_env_vars}")
-                    print(f"     - spark_env_vars value: {spark_env_vars_value}")
-                    print(f"     - spark_env_vars type: {type(spark_env_vars_value).__name__}")
-                    if spark_env_vars_value:
-                        print(f"     - spark_env_vars keys: {list(spark_env_vars_value.keys()) if isinstance(spark_env_vars_value, dict) else 'N/A'}")
-
-                if has_spark_env_vars:
-                    logger.info(f"Cluster {cluster_name} has spark_env_vars field: {spark_env_vars_value}")
-                    print(f"  ✅ {cluster_name}: Has spark_env_vars field (value type: {type(spark_env_vars_value).__name__})")
-                else:
-                    logger.info(f"Cluster {cluster_name} does NOT have spark_env_vars field")
-                    print(f"  ⏭️  {cluster_name}: No spark_env_vars field in config")
 
                 # Extract spark_env_vars
                 env_vars = extract_spark_env_vars(cluster_config)
 
                 if not env_vars:
-                    logger.info(f"No environment variables extracted from cluster {cluster_name}")
-                    print(f"  ⏭️  {cluster_name}: No environment variables extracted, skipping")
+                    logger.debug(f"No environment variables in cluster {cluster_name}, skipping")
                     continue
 
-                print(f"  ✅ {cluster_name}: Found {len(env_vars)} environment variables to scan")
+                logger.info(f"Scanning {len(env_vars)} environment variables in cluster {cluster_name}")
 
                 # Serialize to temp file
                 file_path = serialize_env_vars_to_file(cluster_id, cluster_name, env_vars)
@@ -872,6 +804,8 @@ def main_cluster_scanning_workflow():
                     clusters_with_secrets += 1
                     total_secrets_found += len(secrets_found)
 
+                    print(f"  🚨 SECRETS DETECTED in {cluster_name}: {len(secrets_found)} secrets found")
+
                     # Store in database
                     cluster_metadata = {
                         "cluster_id": cluster_id,
@@ -881,20 +815,12 @@ def main_cluster_scanning_workflow():
                         "secret_details": secrets_found
                     }
 
-                    logger.info(f"Attempting to insert {len(secrets_found)} secrets into database for cluster {cluster_id}")
-                    print(f"  💾 Inserting {len(secrets_found)} secrets into database...")
-
                     try:
                         insert_cluster_secret_scan_results(workspace_id, cluster_metadata, current_run_id)
-                        logger.info(f"Successfully inserted secrets into database for cluster {cluster_id}")
-                        print(f"  ✅ Database insert successful")
+                        logger.info(f"Stored {len(secrets_found)} secrets for cluster {cluster_id}")
                     except Exception as insert_error:
                         logger.error(f"Database insertion failed for cluster {cluster_id}: {str(insert_error)}")
                         print(f"  ❌ Database insertion failed: {str(insert_error)}")
-                        import traceback
-                        logger.error(f"Traceback: {traceback.format_exc()}")
-
-                    print(f"🚨 SECRETS DETECTED in {cluster_name}: {len(secrets_found)} secrets found")
 
                 # Clean up temp file
                 try:
@@ -931,8 +857,7 @@ def main_cluster_scanning_workflow():
             "clusters_scanned": clusters_scanned,
             "clusters_with_secrets": clusters_with_secrets,
             "total_secrets_found": total_secrets_found,
-            "run_id": current_run_id,
-            "debug_info": debug_info
+            "run_id": current_run_id
         }
 
     except Exception as e:
@@ -962,14 +887,6 @@ print(f"🔍 Clusters scanned: {results['clusters_scanned']}")
 print(f"🚨 Clusters with secrets: {results['clusters_with_secrets']}")
 print(f"🔑 Total secrets detected: {results['total_secrets_found']}")
 print(f"🆔 Run ID: {results['run_id']}")
-
-if results.get('debug_info'):
-    debug_info = results['debug_info']
-    print(f"\n🔧 Debug Information:")
-    print(f"   - Clusters with spark_env_vars field: {debug_info.get('clusters_with_spark_env_vars_field', 0)}")
-    if debug_info.get('test_cluster_found'):
-        print(f"   - Test cluster found: {debug_info.get('test_cluster_name')}")
-        print(f"   - Test cluster has spark_env_vars: {debug_info.get('test_cluster_has_spark_env_vars')}")
 
 print("\n🎯 Next Steps and Recommendations")
 print("=" * 60)
