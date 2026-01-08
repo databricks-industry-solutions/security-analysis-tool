@@ -460,10 +460,9 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         logger.info(f"Running built-in detectors scan on {file_path}")
         logger.info(f"Built-in scan command: {builtin_command}")
         result = subprocess.run(
-            builtin_command, 
-            shell=True, 
-            check=True,  # Don't raise exception on non-zero exit code
-            capture_output=True, 
+            builtin_command,
+            shell=True,
+            capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
         )
@@ -493,10 +492,9 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
     try:
         logger.info(f"Running custom detectors scan on {file_path}")
         result = subprocess.run(
-            custom_command, 
-            shell=True, 
-            check=True,  # Don't raise exception on non-zero exit code
-            capture_output=True, 
+            custom_command,
+            shell=True,
+            capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
         )
@@ -875,11 +873,20 @@ def main_scanning_workflow():
     """
     print("🔍 Starting TruffleHog Secret Scanning Workflow")
     print("=" * 60)
-    
+
     # Get current workspace ID and run ID for database storage
     workspace_id = json_.get("workspace_id", "unknown")
-    current_run_id = get_current_run_id()
-    
+
+    # Check if run_id was passed from orchestrator (for shared correlation with cluster scan)
+    # If not, generate a new one for standalone execution
+    passed_run_id = json_.get("run_id")
+    if passed_run_id:
+        current_run_id = passed_run_id
+        logger.info(f"Using run_id from orchestrator: {current_run_id}")
+    else:
+        current_run_id = get_current_run_id()
+        logger.info(f"Generated new run_id for standalone execution: {current_run_id}")
+
     logger.info(f"TruffleHog scan starting for workspace: {workspace_id}, run_id: {current_run_id}")
     
     # Get time range for notebook search
