@@ -614,6 +614,12 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
     """
     import time
 
+    # Extract metadata FIRST so variables are always defined (even if exception occurs)
+    cluster_id = cluster_metadata.get("cluster_id", "Unknown")
+    cluster_name = cluster_metadata.get("cluster_name", "Unknown")
+    config_field = cluster_metadata.get("config_field", Config.CONFIG_FIELD)
+    secrets_found = cluster_metadata.get("secrets_found", 0)
+
     try:
         # Create the table if it doesn't exist
         from common import create_clusters_secret_scan_results_table
@@ -623,10 +629,6 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
         logger.debug(f"Cluster metadata: {json.dumps(cluster_metadata, indent=2)}")
 
         scan_time = time.time()
-        cluster_id = cluster_metadata.get("cluster_id", "")
-        cluster_name = cluster_metadata.get("cluster_name", "")
-        config_field = cluster_metadata.get("config_field", Config.CONFIG_FIELD)
-        secrets_found = cluster_metadata.get("secrets_found", 0)
 
         if secrets_found > 0:
             # Only insert records when secrets are found
