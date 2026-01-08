@@ -667,13 +667,23 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
                 verified = secret.get("Verified", False)
                 config_key = secret.get("ConfigKey", "Unknown")
 
+                # Escape single quotes in string values for SQL (replace ' with '')
+                workspace_id_escaped = workspace_id.replace("'", "''")
+                cluster_id_escaped = cluster_id.replace("'", "''")
+                cluster_name_escaped = cluster_name.replace("'", "''")
+                config_field_escaped = config_field.replace("'", "''")
+                config_key_escaped = config_key.replace("'", "''")
+                detector_name_escaped = detector_name.replace("'", "''")
+                secret_sha256_escaped = secret_sha256.replace("'", "''")
+                source_file_escaped = source_file.replace("'", "''")
+
                 # Insert individual secret record
                 sql = f"""
                 INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
                 (workspace_id, cluster_id, cluster_name, config_field, config_key, detector_name,
                  secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-                VALUES ('{workspace_id}', '{cluster_id}', '{cluster_name}', '{config_field}',
-                        '{config_key}', '{detector_name}', '{secret_sha256}', '{source_file}',
+                VALUES ('{workspace_id_escaped}', '{cluster_id_escaped}', '{cluster_name_escaped}', '{config_field_escaped}',
+                        '{config_key_escaped}', '{detector_name_escaped}', '{secret_sha256_escaped}', '{source_file_escaped}',
                         {verified}, {secrets_found}, {run_id}, cast({scan_time} as timestamp))
                 """
 
@@ -709,12 +719,15 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
             logger.info(f"No-secrets row already exists for run_id {run_id}, skipping insert")
             return
 
+        # Escape single quotes in workspace_id for SQL
+        workspace_id_escaped = workspace_id.replace("'", "''")
+
         # Insert placeholder row
         spark.sql(f"""
             INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
             (workspace_id, cluster_id, cluster_name, config_field, config_key, detector_name,
              secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-            VALUES ('{workspace_id}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
+            VALUES ('{workspace_id_escaped}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
         """)
         logger.info(f"No-secrets tracking row inserted successfully for run_id: {run_id}")
 

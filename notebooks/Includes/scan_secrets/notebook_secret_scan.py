@@ -602,13 +602,22 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
                 source_file = secret.get("SourceFile", "")
                 verified = secret.get("Verified", False)
 
+                # Escape single quotes in string values for SQL (replace ' with '')
+                workspace_id_escaped = workspace_id.replace("'", "''")
+                notebook_id_escaped = notebook_id.replace("'", "''")
+                notebook_path_escaped = notebook_path.replace("'", "''")
+                notebook_name_escaped = notebook_name.replace("'", "''")
+                detector_name_escaped = detector_name.replace("'", "''")
+                secret_sha256_escaped = secret_sha256.replace("'", "''")
+                source_file_escaped = source_file.replace("'", "''")
+
                 # Insert individual secret record
                 sql = f"""
                 INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
                 (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
                  secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-                VALUES ('{workspace_id}', '{notebook_id}', '{notebook_path}', '{notebook_name}',
-                        '{detector_name}', '{secret_sha256}', '{source_file}', {verified},
+                VALUES ('{workspace_id_escaped}', '{notebook_id_escaped}', '{notebook_path_escaped}', '{notebook_name_escaped}',
+                        '{detector_name_escaped}', '{secret_sha256_escaped}', '{source_file_escaped}', {verified},
                         {secrets_found}, {run_id}, cast({scan_time} as timestamp))
                 """
 
@@ -643,12 +652,15 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
             logger.info(f"No-secrets row already exists for run_id {run_id}, skipping insert")
             return
 
+        # Escape single quotes in workspace_id for SQL
+        workspace_id_escaped = workspace_id.replace("'", "''")
+
         # Insert placeholder row
         spark.sql(f"""
             INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
             (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
              secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-            VALUES ('{workspace_id}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
+            VALUES ('{workspace_id_escaped}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
         """)
         logger.info(f"No-secrets tracking row inserted successfully for run_id: {run_id}")
 
