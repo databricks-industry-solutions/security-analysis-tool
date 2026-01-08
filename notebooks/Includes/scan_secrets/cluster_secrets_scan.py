@@ -622,24 +622,29 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
 
     try:
         # Create the table if it doesn't exist
+        logger.info(f"Creating clusters_secret_scan_results table if it doesn't exist...")
         from common import create_clusters_secret_scan_results_table
         create_clusters_secret_scan_results_table()
+        logger.info(f"Table creation completed")
 
-        logger.debug(f"Inserting cluster secret scan results for workspace_id: {workspace_id}")
-        logger.debug(f"Cluster metadata: {json.dumps(cluster_metadata, indent=2)}")
+        logger.info(f"Inserting cluster secret scan results for workspace_id: {workspace_id}, cluster_id: {cluster_id}")
+        logger.info(f"Cluster metadata: {json.dumps(cluster_metadata, indent=2)}")
 
         scan_time = time.time()
 
         if secrets_found > 0:
+            logger.info(f"Processing {secrets_found} secrets for cluster {cluster_id}")
             # Only insert records when secrets are found
             secret_details = cluster_metadata.get("secret_details", [])
 
-            for secret in secret_details:
+            for idx, secret in enumerate(secret_details, 1):
                 detector_name = secret.get("DetectorName", "Unknown")
                 secret_sha256 = secret.get("Raw_SHA", "")
                 source_file = secret.get("SourceFile", "")
                 verified = secret.get("Verified", False)
                 config_key = secret.get("ConfigKey", "Unknown")
+
+                logger.info(f"Inserting secret {idx}/{len(secret_details)}: detector={detector_name}, key={config_key}, verified={verified}")
 
                 # Insert individual secret record
                 sql = f"""
@@ -651,8 +656,9 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
                         {verified}, {secrets_found}, {run_id}, cast({scan_time} as timestamp))
                 """
 
+                logger.info(f"Executing SQL: {sql[:200]}...")  # Log first 200 chars
                 spark.sql(sql)
-                logger.debug(f"Inserted secret scan result for cluster {cluster_id}, detector: {detector_name}")
+                logger.info(f"Successfully inserted secret {idx}/{len(secret_details)} for cluster {cluster_id}, detector: {detector_name}")
         else:
             # Don't insert anything for clean clusters to avoid database bloat
             logger.debug(f"No secrets found in cluster {cluster_id}, skipping database insert")
@@ -845,7 +851,18 @@ def main_cluster_scanning_workflow():
                         "secret_details": secrets_found
                     }
 
-                    insert_cluster_secret_scan_results(workspace_id, cluster_metadata, current_run_id)
+                    logger.info(f"Attempting to insert {len(secrets_found)} secrets into database for cluster {cluster_id}")
+                    print(f"  💾 Inserting {len(secrets_found)} secrets into database...")
+
+                    try:
+                        insert_cluster_secret_scan_results(workspace_id, cluster_metadata, current_run_id)
+                        logger.info(f"Successfully inserted secrets into database for cluster {cluster_id}")
+                        print(f"  ✅ Database insert successful")
+                    except Exception as insert_error:
+                        logger.error(f"Database insertion failed for cluster {cluster_id}: {str(insert_error)}")
+                        print(f"  ❌ Database insertion failed: {str(insert_error)}")
+                        import traceback
+                        logger.error(f"Traceback: {traceback.format_exc()}")
 
                     print(f"🚨 SECRETS DETECTED in {cluster_name}: {len(secrets_found)} secrets found")
 
