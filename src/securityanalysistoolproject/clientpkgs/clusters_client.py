@@ -47,7 +47,7 @@ class ClustersClient(SatDBClient):
 
     def get_cluster_events(self, cluster_id, start_time=None, end_time=None):
         """
-        Returns an array of json objects for the  cluster events. 
+        Returns an array of json objects for the  cluster events.
         Grab the cluster_name or cluster_id
         """
         LOGGR = LoggingUtils.get_logger()
@@ -62,9 +62,8 @@ class ClustersClient(SatDBClient):
 
     def get_cluster_info(self, cluster_id):
         """
-        Get full cluster configuration including spark_env_vars, spark_conf, etc.
-        :param cluster_id: Cluster ID to retrieve
-        :return: Full cluster configuration dict
+        Export all cluster permissions for a specific cluster id
+        :return:
         """
         json_params = {'cluster_id': cluster_id}
         current_policy = self.get(f'/clusters/get', json_params=json_params, version='2.1').get('satelements', [])
