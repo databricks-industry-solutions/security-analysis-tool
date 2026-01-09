@@ -76,11 +76,13 @@ class AccountsSettings(SatDBClient):
             workspace_id: The ID of the workspace
 
         Returns:
-            dict: Network configuration including network_policy_id if assigned
-                  Response format: {"network_policy_id": "...", "workspace_id": ...}
+            list: List containing a single network configuration dict
+                  Format: [{"network_policy_id": "...", "workspace_id": ...}]
+                  Returns list for compatibility with bootstrap() function
         """
         account_id = self._account_id
         config = self.get(f"/accounts/{account_id}/workspaces/{workspace_id}/network", master_acct=True)
-        return config
+        # Wrap single config object in a list for bootstrap compatibility
+        return [config] if config else []
 
 
