@@ -1589,12 +1589,12 @@ def comprehensive_network_policy_check(workspace_id, workspace_name):
         return (check_id, 1, violation)
 
     # Step 2: Check the policy's restriction_mode and enforcement_mode
+    # Note: Don't fetch dry_run_mode_product_filter yet as it might not exist in ENFORCED policies
     sql_get_policy_details = f"""
         SELECT
             network_policy_id,
             egress.network_access.restriction_mode as restriction_mode,
-            egress.network_access.policy_enforcement.enforcement_mode as enforcement_mode,
-            egress.network_access.dry_run_mode_product_filter as dry_run_filter
+            egress.network_access.policy_enforcement.enforcement_mode as enforcement_mode
         FROM {tbl_network_policies}
         WHERE network_policy_id = '{assigned_policy_id}'
     """
@@ -1616,7 +1616,6 @@ def comprehensive_network_policy_check(workspace_id, workspace_name):
         policy_row = policy_details_df.first()
         restriction_mode = policy_row.restriction_mode
         enforcement_mode = policy_row.enforcement_mode
-        dry_run_filter = policy_row.dry_run_filter
 
     except Exception as e:
         loggr.error(f"Error retrieving policy details for {assigned_policy_id}: {e}")
@@ -1647,6 +1646,25 @@ def comprehensive_network_policy_check(workspace_id, workspace_name):
 
     # Step 4: If DRY_RUN, check dry_run_mode_product_filter
     if enforcement_mode and enforcement_mode.upper() in ['DRY_RUN', 'DRYRUN']:
+        # Now fetch dry_run_mode_product_filter (only exists for DRY_RUN policies)
+        sql_get_dry_run_filter = f"""
+            SELECT
+                egress.network_access.dry_run_mode_product_filter as dry_run_filter
+            FROM {tbl_network_policies}
+            WHERE network_policy_id = '{assigned_policy_id}'
+        """
+
+        try:
+            dry_run_df = spark.sql(sql_get_dry_run_filter)
+            if dry_run_df.count() > 0:
+                dry_run_filter = dry_run_df.first().dry_run_filter
+            else:
+                dry_run_filter = None
+        except Exception as e:
+            # If field doesn't exist or error accessing it, assume empty filter
+            loggr.warning(f"Could not retrieve dry_run_mode_product_filter for policy {assigned_policy_id}: {e}")
+            dry_run_filter = None
+
         # Check if dry_run_filter is empty or None
         if dry_run_filter is None or len(dry_run_filter) == 0:
             # Empty filter = all products in dry-run = VIOLATION
@@ -1688,8 +1706,8 @@ if enabled:
             result = comprehensive_network_policy_check(ws_id, ws_name)
 
             # Write result to security_checks table
-            chkDetails = [result]
-            wrapperUpdates(workspace_id, chkDetails)
+            check_id_result, score, additional_details = result
+            insertIntoControlTable(workspace_id, check_id_result, score, additional_details)
         else:
             loggr.warning(f"Workspace {workspace_id} not found in acctworkspaces table")
 
