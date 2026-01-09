@@ -1646,15 +1646,38 @@ if enabled:
     tbl_name_ws = 'acctworkspaces'
     tbl_name_wnc = f'workspace_network_config_{workspace_id}'
 
-    sql = f'''
-        SELECT DISTINCT w.workspace_id, w.workspace_name
-        FROM {tbl_name_ws} w
-        LEFT JOIN {tbl_name_sql} s ON 1=1
-        LEFT JOIN {tbl_name_wnc} wnc ON 1=1
-        WHERE s.enable_serverless_compute = true
-          AND w.workspace_id = '{workspace_id}'
-          AND wnc.network_policy_id IS NULL
-    '''
+    # Check if workspace_network_config table exists
+    try:
+        spark.table(tbl_name_wnc)
+        table_exists = True
+    except:
+        table_exists = False
+
+    if table_exists:
+        # Use workspace network config if available
+        sql = f'''
+            SELECT DISTINCT w.workspace_id, w.workspace_name
+            FROM {tbl_name_ws} w
+            LEFT JOIN {tbl_name_sql} s ON 1=1
+            LEFT JOIN {tbl_name_wnc} wnc ON 1=1
+            WHERE s.enable_serverless_compute = true
+              AND w.workspace_id = '{workspace_id}'
+              AND wnc.network_policy_id IS NULL
+        '''
+    else:
+        # Fallback: Check if account has ANY network policies configured
+        loggr.warning(f"Table {tbl_name_wnc} not found. Using fallback check for NS-9.")
+        tbl_name_np = 'account_networkpolicies'
+        sql = f'''
+            SELECT DISTINCT w.workspace_id, w.workspace_name
+            FROM {tbl_name_ws} w
+            LEFT JOIN {tbl_name_sql} s ON 1=1
+            WHERE s.enable_serverless_compute = true
+              AND w.workspace_id = '{workspace_id}'
+              AND NOT EXISTS (
+                  SELECT 1 FROM {tbl_name_np} np WHERE np.network_policy_id IS NOT NULL
+              )
+        '''
     sqlctrl(workspace_id, sql, serverless_workspace_network_policy_check)
 
 # COMMAND ----------
@@ -1684,14 +1707,36 @@ if enabled:
     tbl_name_ws = 'acctworkspaces'
     tbl_name_wnc = f'workspace_network_config_{workspace_id}'
 
-    sql = f'''
-        SELECT wh.id as warehouse_id, wh.name as warehouse_name, '{workspace_id}' as workspace_id
-        FROM {tbl_name_warehouses} wh
-        LEFT JOIN {tbl_name_ws} w ON w.workspace_id = '{workspace_id}'
-        LEFT JOIN {tbl_name_wnc} wnc ON 1=1
-        WHERE wh.enable_serverless_compute = true
-          AND wnc.network_policy_id IS NULL
-    '''
+    # Check if workspace_network_config table exists
+    try:
+        spark.table(tbl_name_wnc)
+        table_exists = True
+    except:
+        table_exists = False
+
+    if table_exists:
+        # Use workspace network config if available
+        sql = f'''
+            SELECT wh.id as warehouse_id, wh.name as warehouse_name, '{workspace_id}' as workspace_id
+            FROM {tbl_name_warehouses} wh
+            LEFT JOIN {tbl_name_ws} w ON w.workspace_id = '{workspace_id}'
+            LEFT JOIN {tbl_name_wnc} wnc ON 1=1
+            WHERE wh.enable_serverless_compute = true
+              AND wnc.network_policy_id IS NULL
+        '''
+    else:
+        # Fallback: Check if account has ANY network policies configured
+        loggr.warning(f"Table {tbl_name_wnc} not found. Using fallback check for NS-13.")
+        tbl_name_np = 'account_networkpolicies'
+        sql = f'''
+            SELECT wh.id as warehouse_id, wh.name as warehouse_name, '{workspace_id}' as workspace_id
+            FROM {tbl_name_warehouses} wh
+            LEFT JOIN {tbl_name_ws} w ON w.workspace_id = '{workspace_id}'
+            WHERE wh.enable_serverless_compute = true
+              AND NOT EXISTS (
+                  SELECT 1 FROM {tbl_name_np} np WHERE np.network_policy_id IS NOT NULL
+              )
+        '''
     sqlctrl(workspace_id, sql, serverless_sql_warehouse_policy_check)
 
 # COMMAND ----------
