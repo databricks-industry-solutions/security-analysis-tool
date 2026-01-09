@@ -1662,7 +1662,7 @@ if enabled:
             LEFT JOIN {tbl_name_wnc} wnc ON 1=1
             WHERE s.enable_serverless_compute = true
               AND w.workspace_id = '{workspace_id}'
-              AND wnc.network_policy_id IS NULL
+              AND wnc.satelements[0].network_policy_id IS NULL
         '''
     else:
         # Fallback: Check if account has ANY network policies configured
@@ -1722,7 +1722,7 @@ if enabled:
             LEFT JOIN {tbl_name_ws} w ON w.workspace_id = '{workspace_id}'
             LEFT JOIN {tbl_name_wnc} wnc ON 1=1
             WHERE wh.enable_serverless_compute = true
-              AND wnc.network_policy_id IS NULL
+              AND wnc.satelements[0].network_policy_id IS NULL
         '''
     else:
         # Fallback: Check if account has ANY network policies configured
