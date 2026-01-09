@@ -66,7 +66,20 @@ class AccountsSettings(SatDBClient):
     
     def get_networkpolicies(self):
         account_id=self._account_id
-        ncpoliciesjsonlist = self.get(f"/accounts/{account_id}/network-policies", master_acct=True).get('items',[])      
-        return ncpoliciesjsonlist      
-    
-    
+        ncpoliciesjsonlist = self.get(f"/accounts/{account_id}/network-policies", master_acct=True).get('items',[])
+        return ncpoliciesjsonlist
+
+    def get_workspace_network_configuration(self, workspace_id):
+        """Get network configuration for a specific workspace.
+
+        Args:
+            workspace_id: The ID of the workspace
+
+        Returns:
+            dict: Network configuration including network_policy_id if assigned
+        """
+        account_id = self._account_id
+        config = self.get(f"/accounts/{account_id}/workspace-network-configuration/{workspace_id}", master_acct=True)
+        return config
+
+

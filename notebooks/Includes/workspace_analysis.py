@@ -1536,9 +1536,13 @@ def network_policy_restricted_mode_check(df):
 if enabled:
     tbl_name = 'account_networkpolicies'
     sql = f'''
-        SELECT network_policy_id, name, access_mode
+        SELECT
+            network_policy_id,
+            network_policy_id as name,
+            egress.network_access.restriction_mode as access_mode
         FROM {tbl_name}
-        WHERE UPPER(access_mode) = 'FULL_ACCESS' OR UPPER(access_mode) = 'FULLACCESSMODE'
+        WHERE UPPER(egress.network_access.restriction_mode) = 'FULL_ACCESS'
+           OR UPPER(egress.network_access.restriction_mode) = 'FULLACCESSMODE'
     '''
     sqlctrl(workspace_id, sql, network_policy_restricted_mode_check)
 
@@ -1563,9 +1567,13 @@ def network_policy_enforcement_check(df):
 if enabled:
     tbl_name = 'account_networkpolicies'
     sql = f'''
-        SELECT network_policy_id, name, enforcement_mode
+        SELECT
+            network_policy_id,
+            network_policy_id as name,
+            egress.network_access.policy_enforcement.enforcement_mode as enforcement_mode
         FROM {tbl_name}
-        WHERE UPPER(enforcement_mode) = 'DRY_RUN' OR UPPER(enforcement_mode) = 'DRYRUN'
+        WHERE UPPER(egress.network_access.policy_enforcement.enforcement_mode) = 'DRY_RUN'
+           OR UPPER(egress.network_access.policy_enforcement.enforcement_mode) = 'DRYRUN'
     '''
     sqlctrl(workspace_id, sql, network_policy_enforcement_check)
 
@@ -1602,9 +1610,14 @@ def network_policy_allowlist_check(df):
 if enabled:
     tbl_name = 'account_networkpolicies'
     sql = f'''
-        SELECT network_policy_id, name, access_mode, allowed_destinations, allowed_fqdns
+        SELECT
+            network_policy_id,
+            network_policy_id as name,
+            egress.network_access.restriction_mode as access_mode,
+            egress.network_access.allowed_storage_destinations as allowed_destinations,
+            CAST(NULL AS ARRAY<STRING>) as allowed_fqdns
         FROM {tbl_name}
-        WHERE UPPER(access_mode) LIKE '%RESTRICTED%'
+        WHERE UPPER(egress.network_access.restriction_mode) LIKE '%RESTRICTED%'
     '''
     sqlctrl(workspace_id, sql, network_policy_allowlist_check)
 
@@ -1629,18 +1642,18 @@ def serverless_workspace_network_policy_check(df):
 if enabled:
     # This check requires understanding which workspaces have serverless enabled
     # We'll check if SQL warehouse serverless is enabled as a proxy
-    tbl_name_sql = f'dbsqlsettings_{workspace_id}'
+    tbl_name_sql = f'dbsql_workspaceconfig_{workspace_id}'
     tbl_name_ws = 'acctworkspaces'
-    tbl_name_np = 'account_networkpolicies'
+    tbl_name_wnc = f'workspace_network_config_{workspace_id}'
 
     sql = f'''
         SELECT DISTINCT w.workspace_id, w.workspace_name
         FROM {tbl_name_ws} w
         LEFT JOIN {tbl_name_sql} s ON 1=1
-        LEFT JOIN {tbl_name_np} np ON ARRAY_CONTAINS(np.workspace_ids, CAST(w.workspace_id AS STRING))
+        LEFT JOIN {tbl_name_wnc} wnc ON 1=1
         WHERE s.enable_serverless_compute = true
-          AND np.network_policy_id IS NULL
           AND w.workspace_id = '{workspace_id}'
+          AND wnc.network_policy_id IS NULL
     '''
     sqlctrl(workspace_id, sql, serverless_workspace_network_policy_check)
 
@@ -1667,17 +1680,17 @@ def serverless_sql_warehouse_policy_check(df):
         return (check_id, 0, {})  # PASS - all serverless warehouses covered
 
 if enabled:
-    tbl_name_warehouses = f'dbsqlwarehouses_{workspace_id}'
+    tbl_name_warehouses = f'dbsql_warehouselistv2_{workspace_id}'
     tbl_name_ws = 'acctworkspaces'
-    tbl_name_np = 'account_networkpolicies'
+    tbl_name_wnc = f'workspace_network_config_{workspace_id}'
 
     sql = f'''
         SELECT wh.id as warehouse_id, wh.name as warehouse_name, '{workspace_id}' as workspace_id
         FROM {tbl_name_warehouses} wh
         LEFT JOIN {tbl_name_ws} w ON w.workspace_id = '{workspace_id}'
-        LEFT JOIN {tbl_name_np} np ON ARRAY_CONTAINS(np.workspace_ids, CAST(w.workspace_id AS STRING))
+        LEFT JOIN {tbl_name_wnc} wnc ON 1=1
         WHERE wh.enable_serverless_compute = true
-          AND np.network_policy_id IS NULL
+          AND wnc.network_policy_id IS NULL
     '''
     sqlctrl(workspace_id, sql, serverless_sql_warehouse_policy_check)
 
@@ -1705,7 +1718,13 @@ def network_policy_default_check(df):
 if enabled:
     tbl_name = 'account_networkpolicies'
     sql = f'''
-        SELECT network_policy_id, name, is_default
+        SELECT
+            network_policy_id,
+            network_policy_id as name,
+            CASE
+                WHEN network_policy_id = 'default-policy' THEN true
+                ELSE false
+            END as is_default
         FROM {tbl_name}
     '''
     sqlctrl(workspace_id, sql, network_policy_default_check)

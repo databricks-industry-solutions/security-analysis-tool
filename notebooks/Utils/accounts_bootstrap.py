@@ -224,4 +224,21 @@ bootstrap('account_networkpolicies', acct_settings.get_networkpolicies)
 
 # COMMAND ----------
 
+# Collect workspace network configurations
+# This links workspaces to their assigned network policies
+try:
+    workspaces = spark.table('acctworkspaces').collect()
+    loggr.info(f"Collecting network configurations for {len(workspaces)} workspaces")
+    for ws in workspaces:
+        workspace_id = str(ws.workspace_id)
+        try:
+            bootstrap(f'workspace_network_config_{workspace_id}',
+                      lambda wid=workspace_id: acct_settings.get_workspace_network_configuration(wid))
+        except Exception as e:
+            loggr.warning(f"Could not collect network config for workspace {workspace_id}: {e}")
+except Exception as e:
+    loggr.warning(f"Could not collect workspace network configurations: {e}")
+
+# COMMAND ----------
+
 print(f"Account Bootstrap - {time.time() - start_time} seconds to run")
