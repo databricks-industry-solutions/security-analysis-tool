@@ -77,9 +77,10 @@ class AccountsSettings(SatDBClient):
 
         Returns:
             dict: Network configuration including network_policy_id if assigned
+                  Response format: {"network_policy_id": "...", "workspace_id": ...}
         """
         account_id = self._account_id
-        config = self.get(f"/accounts/{account_id}/workspace-network-configuration/{workspace_id}", master_acct=True)
+        config = self.get(f"/accounts/{account_id}/workspaces/{workspace_id}/network", master_acct=True)
         return config
 
 
