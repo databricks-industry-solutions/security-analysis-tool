@@ -1517,262 +1517,184 @@ if enabled:
 
 # COMMAND ----------
 
-# NS-10: Network policies use restricted access mode
-check_id='112' #NS-10,Network Security,Network policies use restricted access mode
+# NS-9: Serverless workspaces have proper network policy configuration
+check_id='111' #NS-9,Network Security,Serverless workspaces have proper network policy configuration
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-def network_policy_restricted_mode_check(df):
-    """Check if network policies use restricted access mode (not FULL_ACCESS)"""
-    if df is not None and not isEmpty(df):
-        violations = df.collect()
-        violations_dict = {
-            row.network_policy_id: [row.name, row.access_mode]
-            for row in violations
-        }
-        return (check_id, 1, violations_dict)  # FAIL - found policies with FULL_ACCESS
-    else:
-        return (check_id, 0, {})  # PASS - no policies with FULL_ACCESS
+def comprehensive_network_policy_check(workspace_id, workspace_name):
+    """
+    Comprehensive check following decision tree:
+    1. Check if workspace has network policy assigned
+    2. If yes, check if policy uses RESTRICTED_ACCESS mode
+    3. If restricted, check if policy is ENFORCED
+    4. If DRY_RUN, check if dry_run_mode_product_filter is non-empty
 
-if enabled:
-    tbl_name = 'account_networkpolicies'
-    sql = f'''
-        SELECT
-            network_policy_id,
-            network_policy_id as name,
-            egress.network_access.restriction_mode as access_mode
-        FROM {tbl_name}
-        WHERE UPPER(egress.network_access.restriction_mode) = 'FULL_ACCESS'
-           OR UPPER(egress.network_access.restriction_mode) = 'FULLACCESSMODE'
-    '''
-    sqlctrl(workspace_id, sql, network_policy_restricted_mode_check)
+    Returns: (check_id, pass_fail, violations_dict)
+    """
 
-# COMMAND ----------
+    # Table names
+    tbl_workspace_config = f'workspace_network_config_{workspace_id}'
+    tbl_network_policies = 'account_networkpolicies'
 
-# NS-11: Network policies are enforced (not dry-run)
-check_id='113' #NS-11,Network Security,Network policies are enforced (not dry-run)
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def network_policy_enforcement_check(df):
-    """Check if network policies are in enforced mode (not DRY_RUN)"""
-    if df is not None and not isEmpty(df):
-        violations = df.collect()
-        violations_dict = {
-            row.network_policy_id: [row.name, row.enforcement_mode]
-            for row in violations
-        }
-        return (check_id, 1, violations_dict)  # FAIL - found policies in DRY_RUN mode
-    else:
-        return (check_id, 0, {})  # PASS - all policies enforced
-
-if enabled:
-    tbl_name = 'account_networkpolicies'
-    sql = f'''
-        SELECT
-            network_policy_id,
-            network_policy_id as name,
-            egress.network_access.policy_enforcement.enforcement_mode as enforcement_mode
-        FROM {tbl_name}
-        WHERE UPPER(egress.network_access.policy_enforcement.enforcement_mode) = 'DRY_RUN'
-           OR UPPER(egress.network_access.policy_enforcement.enforcement_mode) = 'DRYRUN'
-    '''
-    sqlctrl(workspace_id, sql, network_policy_enforcement_check)
-
-# COMMAND ----------
-
-# NS-12: Network policies have destination allow-lists
-check_id='114' #NS-12,Network Security,Network policies have destination allow-lists
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-evaluation_value = int(sbp_rec['evaluation_value']) if sbp_rec and 'evaluation_value' in sbp_rec else 1
-
-def network_policy_allowlist_check(df):
-    """Check if restricted mode policies have explicit destination allow-lists configured"""
-    if df is not None and not isEmpty(df):
-        violations = df.collect()
-        violations_dict = {}
-        for row in violations:
-            policy_id = row.network_policy_id
-            policy_name = row.name if hasattr(row, 'name') else 'Unknown'
-            access_mode = row.access_mode if hasattr(row, 'access_mode') else 'Unknown'
-            # Count allowed destinations - handling various possible field names/structures
-            dest_count = 0
-            if hasattr(row, 'allowed_destinations') and row.allowed_destinations:
-                if isinstance(row.allowed_destinations, list):
-                    dest_count = len(row.allowed_destinations)
-            if hasattr(row, 'allowed_fqdns') and row.allowed_fqdns:
-                if isinstance(row.allowed_fqdns, list):
-                    dest_count += len(row.allowed_fqdns)
-            violations_dict[policy_id] = [policy_name, access_mode, dest_count]
-
-        return (check_id, 1, violations_dict)  # FAIL - restricted policies with insufficient destinations
-    else:
-        return (check_id, 0, {})  # PASS - all restricted policies have allow-lists
-
-if enabled:
-    tbl_name = 'account_networkpolicies'
-    sql = f'''
-        SELECT
-            network_policy_id,
-            network_policy_id as name,
-            egress.network_access.restriction_mode as access_mode,
-            egress.network_access.allowed_storage_destinations as allowed_destinations,
-            CAST(NULL AS ARRAY<STRING>) as allowed_fqdns
-        FROM {tbl_name}
-        WHERE UPPER(egress.network_access.restriction_mode) LIKE '%RESTRICTED%'
-    '''
-    sqlctrl(workspace_id, sql, network_policy_allowlist_check)
-
-# COMMAND ----------
-
-# NS-9: Serverless workspaces have network policies configured
-check_id='111' #NS-9,Network Security,Serverless workspaces have network policies configured
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def serverless_workspace_network_policy_check(df):
-    """Check if serverless-enabled workspaces have network policies configured"""
-    if df is not None and not isEmpty(df):
-        violations = df.collect()
-        violations_dict = {
-            row.workspace_id: [row.workspace_name if hasattr(row, 'workspace_name') else 'Unknown', 'serverless enabled', 'no network policy']
-            for row in violations
-        }
-        return (check_id, 1, violations_dict)  # FAIL - serverless workspaces without policies
-    else:
-        return (check_id, 0, {})  # PASS - all serverless workspaces have policies
-
-if enabled:
-    # This check requires understanding which workspaces have serverless enabled
-    # We'll check if SQL warehouse serverless is enabled as a proxy
-    tbl_name_sql = f'dbsql_workspaceconfig_{workspace_id}'
-    tbl_name_ws = 'acctworkspaces'
-    tbl_name_wnc = f'workspace_network_config_{workspace_id}'
-
-    # Check if workspace_network_config table exists
+    # Step 1: Check if workspace has a network policy assigned
     try:
-        spark.table(tbl_name_wnc)
-        table_exists = True
+        spark.table(tbl_workspace_config)
+        config_exists = True
     except:
-        table_exists = False
+        config_exists = False
+        loggr.warning(f"Workspace network config table {tbl_workspace_config} not found")
 
-    if table_exists:
-        # Use workspace network config if available
-        sql = f'''
-            SELECT DISTINCT w.workspace_id, w.workspace_name
-            FROM {tbl_name_ws} w
-            LEFT JOIN {tbl_name_sql} s ON 1=1
-            LEFT JOIN {tbl_name_wnc} wnc ON 1=1
-            WHERE s.enable_serverless_compute = true
-              AND w.workspace_id = '{workspace_id}'
-              AND wnc.satelements[0].network_policy_id IS NULL
-        '''
-    else:
-        # Fallback: Check if account has ANY network policies configured
-        loggr.warning(f"Table {tbl_name_wnc} not found. Using fallback check for NS-9.")
-        tbl_name_np = 'account_networkpolicies'
-        sql = f'''
-            SELECT DISTINCT w.workspace_id, w.workspace_name
-            FROM {tbl_name_ws} w
-            LEFT JOIN {tbl_name_sql} s ON 1=1
-            WHERE s.enable_serverless_compute = true
-              AND w.workspace_id = '{workspace_id}'
-              AND NOT EXISTS (
-                  SELECT 1 FROM {tbl_name_np} np WHERE np.network_policy_id IS NOT NULL
-              )
-        '''
-    sqlctrl(workspace_id, sql, serverless_workspace_network_policy_check)
-
-# COMMAND ----------
-
-# NS-13: Serverless SQL warehouses have network policy coverage
-check_id='115' #NS-13,Network Security,Serverless SQL warehouses have network policy coverage
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def serverless_sql_warehouse_policy_check(df):
-    """Check if serverless SQL warehouses are in workspaces with network policies"""
-    if df is not None and not isEmpty(df):
-        violations = df.collect()
-        violations_dict = {
-            row.warehouse_id if hasattr(row, 'warehouse_id') else idx: [
-                row.warehouse_name if hasattr(row, 'warehouse_name') else 'Unknown',
-                row.workspace_id if hasattr(row, 'workspace_id') else workspace_id,
-                'no network policy'
+    if not config_exists:
+        # Fallback: assume no policy assigned
+        violation = {
+            workspace_id: [
+                workspace_name,
+                "NO_POLICY_ASSIGNED",
+                "Workspace does not have a network policy assigned"
             ]
-            for idx, row in enumerate(violations)
         }
-        return (check_id, 1, violations_dict)  # FAIL - serverless warehouses without policy coverage
-    else:
-        return (check_id, 0, {})  # PASS - all serverless warehouses covered
+        return (check_id, 1, violation)
 
-if enabled:
-    tbl_name_warehouses = f'dbsql_warehouselistv2_{workspace_id}'
-    tbl_name_ws = 'acctworkspaces'
-    tbl_name_wnc = f'workspace_network_config_{workspace_id}'
+    # Get workspace's assigned policy ID
+    sql_get_policy = f"""
+        SELECT satelements[0].network_policy_id as policy_id
+        FROM {tbl_workspace_config}
+        LIMIT 1
+    """
 
-    # Check if workspace_network_config table exists
     try:
-        spark.table(tbl_name_wnc)
-        table_exists = True
-    except:
-        table_exists = False
+        policy_df = spark.sql(sql_get_policy)
+        if policy_df.count() == 0 or policy_df.first().policy_id is None:
+            # No policy assigned
+            violation = {
+                workspace_id: [
+                    workspace_name,
+                    "NO_POLICY_ASSIGNED",
+                    "Workspace does not have a network policy assigned"
+                ]
+            }
+            return (check_id, 1, violation)
 
-    if table_exists:
-        # Use workspace network config if available
-        sql = f'''
-            SELECT wh.id as warehouse_id, wh.name as warehouse_name, '{workspace_id}' as workspace_id
-            FROM {tbl_name_warehouses} wh
-            LEFT JOIN {tbl_name_ws} w ON w.workspace_id = '{workspace_id}'
-            LEFT JOIN {tbl_name_wnc} wnc ON 1=1
-            WHERE wh.enable_serverless_compute = true
-              AND wnc.satelements[0].network_policy_id IS NULL
-        '''
-    else:
-        # Fallback: Check if account has ANY network policies configured
-        loggr.warning(f"Table {tbl_name_wnc} not found. Using fallback check for NS-13.")
-        tbl_name_np = 'account_networkpolicies'
-        sql = f'''
-            SELECT wh.id as warehouse_id, wh.name as warehouse_name, '{workspace_id}' as workspace_id
-            FROM {tbl_name_warehouses} wh
-            LEFT JOIN {tbl_name_ws} w ON w.workspace_id = '{workspace_id}'
-            WHERE wh.enable_serverless_compute = true
-              AND NOT EXISTS (
-                  SELECT 1 FROM {tbl_name_np} np WHERE np.network_policy_id IS NOT NULL
-              )
-        '''
-    sqlctrl(workspace_id, sql, serverless_sql_warehouse_policy_check)
+        assigned_policy_id = policy_df.first().policy_id
 
-# COMMAND ----------
+    except Exception as e:
+        loggr.error(f"Error retrieving policy ID for workspace {workspace_id}: {e}")
+        violation = {
+            workspace_id: [
+                workspace_name,
+                "ERROR_RETRIEVING_POLICY",
+                f"Error checking policy assignment: {str(e)}"
+            ]
+        }
+        return (check_id, 1, violation)
 
-# INFO-19: Network policy default vs custom assignment
-check_id='116' #INFO-19,Informational,Network policy default vs custom assignment
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def network_policy_default_check(df):
-    """Identify workspaces using default network policy vs custom policies"""
-    if df is not None and not isEmpty(df):
-        policies = df.collect()
-        policy_info = {}
-        for row in policies:
-            policy_id = row.network_policy_id
-            policy_name = row.name if hasattr(row, 'name') else 'Unknown'
-            is_default = row.is_default if hasattr(row, 'is_default') else False
-            policy_type = 'Default' if is_default else 'Custom'
-            policy_info[policy_id] = [policy_name, policy_type]
-        return (check_id, 0, policy_info)  # INFO - always report
-    else:
-        return (check_id, 0, {'No network policies configured': True})
-
-if enabled:
-    tbl_name = 'account_networkpolicies'
-    sql = f'''
+    # Step 2: Check the policy's restriction_mode and enforcement_mode
+    sql_get_policy_details = f"""
         SELECT
             network_policy_id,
-            network_policy_id as name,
-            CASE
-                WHEN network_policy_id = 'default-policy' THEN true
-                ELSE false
-            END as is_default
-        FROM {tbl_name}
-    '''
-    sqlctrl(workspace_id, sql, network_policy_default_check)
+            egress.network_access.restriction_mode as restriction_mode,
+            egress.network_access.policy_enforcement.enforcement_mode as enforcement_mode,
+            egress.network_access.dry_run_mode_product_filter as dry_run_filter
+        FROM {tbl_network_policies}
+        WHERE network_policy_id = '{assigned_policy_id}'
+    """
+
+    try:
+        policy_details_df = spark.sql(sql_get_policy_details)
+
+        if policy_details_df.count() == 0:
+            # Policy ID not found in account_networkpolicies
+            violation = {
+                workspace_id: [
+                    workspace_name,
+                    "POLICY_NOT_FOUND",
+                    f"Assigned policy '{assigned_policy_id}' not found in account policies"
+                ]
+            }
+            return (check_id, 1, violation)
+
+        policy_row = policy_details_df.first()
+        restriction_mode = policy_row.restriction_mode
+        enforcement_mode = policy_row.enforcement_mode
+        dry_run_filter = policy_row.dry_run_filter
+
+    except Exception as e:
+        loggr.error(f"Error retrieving policy details for {assigned_policy_id}: {e}")
+        violation = {
+            workspace_id: [
+                workspace_name,
+                "ERROR_RETRIEVING_POLICY_DETAILS",
+                f"Error checking policy details: {str(e)}"
+            ]
+        }
+        return (check_id, 1, violation)
+
+    # Step 2: Check restriction_mode
+    if restriction_mode and restriction_mode.upper() in ['FULL_ACCESS', 'FULLACCESSMODE']:
+        violation = {
+            workspace_id: [
+                workspace_name,
+                "FULL_ACCESS_MODE",
+                f"Policy '{assigned_policy_id}' uses FULL_ACCESS mode (unrestricted internet access)"
+            ]
+        }
+        return (check_id, 1, violation)
+
+    # Step 3: Check enforcement_mode
+    if enforcement_mode and enforcement_mode.upper() in ['ENFORCED']:
+        # Policy is enforced - PASS
+        return (check_id, 0, {})
+
+    # Step 4: If DRY_RUN, check dry_run_mode_product_filter
+    if enforcement_mode and enforcement_mode.upper() in ['DRY_RUN', 'DRYRUN']:
+        # Check if dry_run_filter is empty or None
+        if dry_run_filter is None or len(dry_run_filter) == 0:
+            # Empty filter = all products in dry-run = VIOLATION
+            violation = {
+                workspace_id: [
+                    workspace_name,
+                    "DRY_RUN_ALL_PRODUCTS",
+                    f"Policy '{assigned_policy_id}' is in DRY_RUN mode for all products (not enforced)"
+                ]
+            }
+            return (check_id, 1, violation)
+        else:
+            # Non-empty filter = selective dry-run = PASS
+            # Some products are enforced, others in dry-run for testing
+            return (check_id, 0, {})
+
+    # If we reach here, policy exists but mode is unclear - log and pass
+    loggr.warning(f"Workspace {workspace_id}: Unable to determine enforcement status for policy {assigned_policy_id}")
+    return (check_id, 0, {})
+
+
+if enabled:
+    # Get current workspace info
+    tbl_workspaces = 'acctworkspaces'
+    sql_workspace_info = f"""
+        SELECT workspace_id, workspace_name
+        FROM {tbl_workspaces}
+        WHERE workspace_id = '{workspace_id}'
+    """
+
+    try:
+        ws_df = spark.sql(sql_workspace_info)
+        if ws_df.count() > 0:
+            ws_row = ws_df.first()
+            ws_id = str(ws_row.workspace_id)
+            ws_name = ws_row.workspace_name if hasattr(ws_row, 'workspace_name') else 'Unknown'
+
+            # Run comprehensive check
+            result = comprehensive_network_policy_check(ws_id, ws_name)
+
+            # Write result to security_checks table
+            chkDetails = [result]
+            wrapperUpdates(workspace_id, chkDetails)
+        else:
+            loggr.warning(f"Workspace {workspace_id} not found in acctworkspaces table")
+
+    except Exception as e:
+        loggr.error(f"Error running comprehensive network policy check for workspace {workspace_id}: {e}")
 
 # COMMAND ----------
 
