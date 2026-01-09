@@ -1741,8 +1741,8 @@ if enabled:
 
 # COMMAND ----------
 
-# INFO-18: Network policy default vs custom assignment
-check_id='116' #INFO-18,Informational,Network policy default vs custom assignment
+# INFO-19: Network policy default vs custom assignment
+check_id='116' #INFO-19,Informational,Network policy default vs custom assignment
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def network_policy_default_check(df):
