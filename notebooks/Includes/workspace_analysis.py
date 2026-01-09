@@ -1526,7 +1526,8 @@ def comprehensive_network_policy_check(df):
     Comprehensive check following decision tree:
     1. Check if workspace has network policy assigned
     2. If yes, check if policy uses RESTRICTED_ACCESS mode
-    3. If restricted, check if policy is ENFORCED (not DRY_RUN)
+    3. If restricted, check if policy is ENFORCED
+    4. If DRY_RUN, check if dry_run_mode_product_filter is non-empty
 
     Returns: (check_id, pass_fail, violations_dict)
     """
@@ -1575,15 +1576,25 @@ def comprehensive_network_policy_check(df):
             # Policy is enforced - PASS
             return (check_id, 0, {})
 
-        # Step 3: If DRY_RUN, it's a violation (policy not enforced)
+        # Step 3: If DRY_RUN, check dry_run_mode_product_filter
         if enforcement_mode and enforcement_mode.upper() in ['DRY_RUN', 'DRYRUN']:
-            violation = {
-                workspace_id: [
-                    "DRY_RUN_MODE",
-                    f"Policy '{policy_id}' is in DRY_RUN mode (not enforced)"
-                ]
-            }
-            return (check_id, 1, violation)
+            # Try to get dry_run_filter from row (may not exist for all policies)
+            dry_run_filter = row.dry_run_filter if hasattr(row, 'dry_run_filter') else None
+
+            # Check if dry_run_filter is empty or None
+            if dry_run_filter is None or len(dry_run_filter) == 0:
+                # Empty filter = all products in dry-run = VIOLATION
+                violation = {
+                    workspace_id: [
+                        "DRY_RUN_ALL_PRODUCTS",
+                        f"Policy '{policy_id}' is in DRY_RUN mode for all products (not enforced)"
+                    ]
+                }
+                return (check_id, 1, violation)
+            else:
+                # Non-empty filter = selective dry-run = PASS
+                # Some products are enforced, others in dry-run for testing
+                return (check_id, 0, {})
 
         # If we reach here, policy exists but mode is unclear - log and pass
         loggr.warning(f"Workspace {workspace_id}: Unable to determine enforcement status for policy {policy_id}")
@@ -1605,14 +1616,15 @@ if enabled:
     tbl_workspaces = 'acctworkspaces'
 
     # SQL query that joins workspace config with policy details
-    # Schema: egress.network_access has restriction_mode, policy_enforcement.enforcement_mode, allowed_storage_destinations
+    # Schema: egress.network_access has restriction_mode, policy_enforcement.enforcement_mode, policy_enforcement.dry_run_mode_product_filter
     sql = f"""
         SELECT
             w.workspace_id,
             w.workspace_name,
             wnc.satelements[0].network_policy_id as network_policy_id,
             np.egress.network_access.restriction_mode as restriction_mode,
-            np.egress.network_access.policy_enforcement.enforcement_mode as enforcement_mode
+            np.egress.network_access.policy_enforcement.enforcement_mode as enforcement_mode,
+            np.egress.network_access.policy_enforcement.dry_run_mode_product_filter as dry_run_filter
         FROM {tbl_workspaces} w
         LEFT JOIN {tbl_workspace_config} wnc ON 1=1
         LEFT JOIN {tbl_network_policies} np
