@@ -147,3 +147,7 @@ dmypy.json
 **/.terraform*
 **/terraform.tfvars
 **/terraform.tfstate*
+
+# Project documentation and planning files
+CLAUDE.md
+docs/*Implementation_Plan.html
