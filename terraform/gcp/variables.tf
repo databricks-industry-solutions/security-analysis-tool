@@ -50,7 +50,6 @@ variable "client_id" {
 variable "client_secret" {
   description = "SP Secret"
   type        = string
-  sensitive   = true
 }
 
 variable "run_on_serverless" {
