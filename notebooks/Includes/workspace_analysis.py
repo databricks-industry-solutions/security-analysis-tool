@@ -1562,7 +1562,7 @@ def comprehensive_network_policy_check(df):
             return (check_id, 1, violation)
 
         # Step 1: Check restriction_mode
-        if restriction_mode and restriction_mode.upper() in ['FULL_ACCESS', 'FULLACCESSMODE']:
+        if restriction_mode and restriction_mode.upper() in ['FULL_ACCESS']:
             violation = {
                 workspace_id: [
                     "FULL_ACCESS_MODE",
@@ -1577,7 +1577,7 @@ def comprehensive_network_policy_check(df):
             return (check_id, 0, {})
 
         # Step 3: If DRY_RUN, check dry_run_mode_product_filter
-        if enforcement_mode and enforcement_mode.upper() in ['DRY_RUN', 'DRYRUN']:
+        if enforcement_mode and enforcement_mode.upper() in ['DRY_RUN']:
             # Try to get dry_run_filter from row (may not exist for all policies)
             dry_run_filter = row.dry_run_filter if hasattr(row, 'dry_run_filter') else None
 
