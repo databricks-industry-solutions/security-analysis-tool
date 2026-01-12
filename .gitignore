@@ -9,6 +9,7 @@
 /configs/setupsecrets.sh
 /configs/workspace_configs.csv
 /configs/security_best_practices_user.csv
+/docs/databricks_mcp_tools.md
 .databricks/
 .vscode/settings.json
 
