@@ -18,8 +18,8 @@ app.secret_key = 'brickhound_secret_key_change_in_production'
 # Load configuration
 CATALOG = os.getenv("BRICKHOUND_CATALOG", "arunuc")
 SCHEMA = os.getenv("BRICKHOUND_SCHEMA", "brickhound")
-VERTICES_TABLE = f"{CATALOG}.{SCHEMA}.vertices"
-EDGES_TABLE = f"{CATALOG}.{SCHEMA}.edges"
+VERTICES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_vertices"
+EDGES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_edges"
 
 
 # Initialize Databricks connection

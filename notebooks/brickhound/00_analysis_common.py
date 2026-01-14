@@ -74,7 +74,7 @@ def format_principal_name(display_name, email, name, principal_id=None):
 # Get available collection runs
 available_runs_df = spark.sql(f"""
     SELECT run_id, collection_timestamp, vertices_count, edges_count, collected_by
-    FROM {CATALOG}.{SCHEMA}.collection_metadata
+    FROM {COLLECTION_METADATA_TABLE}
     ORDER BY collection_timestamp DESC
     LIMIT 20
 """)
@@ -138,7 +138,7 @@ import json
 # Get collection metadata for selected run
 metadata_row = spark.sql(f"""
     SELECT workspaces_collected, workspaces_failed, collection_mode, collection_timestamp
-    FROM {CATALOG}.{SCHEMA}.collection_metadata
+    FROM {COLLECTION_METADATA_TABLE}
     WHERE run_id = '{SELECTED_RUN_ID}'
     ORDER BY collection_timestamp DESC
     LIMIT 1
