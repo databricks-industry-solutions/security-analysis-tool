@@ -5,9 +5,10 @@ Permissions Analysis Tool setup configuration
 from setuptools import setup, find_packages
 from pathlib import Path
 
-# Read README
+# Read README if it exists
 this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text()
+readme_file = this_directory / "README.md"
+long_description = readme_file.read_text() if readme_file.exists() else "BrickHound - Security analysis tool for Databricks environments"
 
 setup(
     name="brickhound",
