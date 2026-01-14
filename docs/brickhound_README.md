@@ -132,7 +132,7 @@ Create or use any cluster with:
 
 #### Step 3: Run Collection Notebook
 
-1. Open `notebooks/01_data_collection.py`
+1. Open `notebooks/permission_analysis_data_collection.py`
 2. Attach to your cluster
 3. Run all cells - libraries install automatically!
 4. The notebook uses your workspace context (no tokens needed!)
@@ -143,10 +143,10 @@ Create or use any cluster with:
 #### Step 4: Analyze and Visualize
 
 Run the analysis notebooks:
-- `02_principal_resource_analysis.py` - Principal and resource permission queries
-- `03_escalation_paths.py` - Privilege escalation analysis
-- `04_impersonation_analysis.py` - Impersonation path finding
-- `05_advanced_reports.py` - Comprehensive security reports
+- `01_principal_resource_analysis.py` - Principal and resource permission queries
+- `02_escalation_paths.py` - Privilege escalation analysis
+- `03_impersonation_analysis.py` - Impersonation path finding
+- `04_advanced_reports.py` - Comprehensive security reports
 
 ## Project Structure
 
@@ -161,11 +161,11 @@ Permissions Analysis Tool/
 ├── notebooks/                      # 👈 START HERE - Databricks Notebooks
 │   ├── 00_config.py               # ⚙️  Configuration (catalog/schema settings)
 │   ├── 00_analysis_common.py      # 📋 Shared analysis setup and utilities
-│   ├── 01_data_collection.py      # 📊 Data collection via Databricks SDK
-│   ├── 02_principal_resource_analysis.py  # 🔍 Principal and resource queries
-│   ├── 03_escalation_paths.py     # ⚡ Privilege escalation path analysis
-│   ├── 04_impersonation_analysis.py      # 🎭 Impersonation path finding
-│   └── 05_advanced_reports.py     # 📈 Security reports (High Privilege, Isolated, Orphaned, etc.)
+│   ├── permission_analysis_data_collection.py      # 📊 Data collection via Databricks SDK
+│   ├── 01_principal_resource_analysis.py  # 🔍 Principal and resource queries
+│   ├── 02_escalation_paths.py     # ⚡ Privilege escalation path analysis
+│   ├── 03_impersonation_analysis.py      # 🎭 Impersonation path finding
+│   └── 04_advanced_reports.py     # 📈 Security reports (High Privilege, Isolated, Orphaned, etc.)
 │
 ├── brickhound/                    # Python library (auto-imported in notebooks)
 │   ├── collector/
@@ -188,7 +188,7 @@ Permissions Analysis Tool/
 **Quick Start**:
 1. Add repo to Databricks
 2. Update `CATALOG` in `notebooks/00_config.py` (default: "main")
-3. Run `notebooks/01_data_collection.py` to collect data
+3. Run `notebooks/permission_analysis_data_collection.py` to collect data
 4. **Option A:** Deploy `app/` as Databricks App (user-friendly web UI) - update `app.yaml` first
 5. **Option B:** Run analysis notebooks directly (for deep dives)
 

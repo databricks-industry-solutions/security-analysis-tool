@@ -130,7 +130,7 @@ try:
     print(f"\nGraph data is ready for analysis.")
 except Exception as e:
     print(f"✗ Graph tables not found: {e}")
-    print(f"\nRun '01_data_collection.py' to create the graph data.")
+    print(f"\nRun '/notebooks/permission_analysis_data_collection.py' to create the graph data.")
 
 # COMMAND ----------
 

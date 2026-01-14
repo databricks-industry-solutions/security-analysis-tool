@@ -12,8 +12,8 @@ SAT (Security Analysis Tool)
 ├── security_analysis_secrets_scanner (secrets scanning)
 └── sat_scope credentials
     └── BrickHound (Permissions Analysis)
-        ├── 01_data_collection.py (Weekly - permissions graph)
-        ├── 02-05_*.py (Interactive analysis)
+        ├── permission_analysis_data_collection.py (Weekly - permissions graph)
+        ├── 01-04_*.py (Interactive analysis)
         ├── Web App (Gradio UI)
         └── Tables: brickhound_vertices, brickhound_edges, brickhound_collection_metadata
 ```
@@ -125,7 +125,7 @@ Access at: `https://<workspace-url>/apps/brickhound-sat`
 - **Fix**: Run `%run ./install_brickhound_sdk` first
 
 **Error**: "Table not found"
-- **Fix**: Run data collection job first (`01_data_collection.py`)
+- **Fix**: Run data collection job first (`permission_analysis_data_collection.py`)
 
 ### Web App Won't Load
 

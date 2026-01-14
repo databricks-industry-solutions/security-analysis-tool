@@ -12,7 +12,7 @@
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
-# MAGIC Run `01_data_collection.py` first to populate the graph data.
+# MAGIC Run `/notebooks/permission_analysis_data_collection.py` first to populate the graph data.
 # MAGIC
 # MAGIC ## Usage
 # MAGIC
@@ -81,7 +81,7 @@ available_runs_df = spark.sql(f"""
 available_runs = available_runs_df.collect()
 
 if not available_runs:
-    raise Exception("No collection runs found. Run 01_data_collection.py first to collect data.")
+    raise Exception("No collection runs found. Run /notebooks/permission_analysis_data_collection.py first to collect data.")
 
 # Build dropdown options
 run_options = []

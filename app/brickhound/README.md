@@ -27,7 +27,7 @@ Unity Catalog Tables
 ```
 
 **Data Flow:**
-1. Customer runs `01_data_collection.py` notebook (populates vertices/edges)
+1. Customer runs `permission_analysis_data_collection.py` notebook (populates vertices/edges)
 2. Customer deploys Permissions Analysis Tool App
 3. App queries pre-collected graph data via SQL Warehouse
 4. Interactive analysis via web UI
@@ -36,7 +36,7 @@ Unity Catalog Tables
 
 ### 1. Data Collection (Required)
 
-Run `notebooks/01_data_collection.py` first to populate the graph data:
+Run `notebooks/permission_analysis_data_collection.py` first to populate the graph data:
 ```
 {CATALOG}.{SCHEMA}.vertices  # All Databricks objects & principals
 {CATALOG}.{SCHEMA}.edges     # All relationships & permissions
@@ -254,7 +254,7 @@ resources:
 
 ### "Error loading graph data"
 **Cause:** Data tables don't exist or are empty  
-**Fix:** Run `notebooks/01_data_collection.py` first
+**Fix:** Run `notebooks/permission_analysis_data_collection.py` first
 
 ### "Principal/Resource not found"
 **Cause:** Name doesn't exactly match what's in vertices table  
@@ -262,7 +262,7 @@ resources:
 
 ### "No permission grants found"
 **Cause:** Permission collection wasn't run or failed  
-**Fix:** Re-run `01_data_collection.py` with `collect_permissions = True`
+**Fix:** Re-run `permission_analysis_data_collection.py` with `collect_permissions = True`
 
 ### "Connection refused" or "Warehouse not available"
 **Cause:** SQL Warehouse is stopped
@@ -335,7 +335,7 @@ After deploying the app:
 
 1. **Bookmark the app URL** for easy access
 2. **Share with security team** (restrict access appropriately)
-3. **Schedule data collection** - Run `01_data_collection.py` weekly via Databricks Jobs
+3. **Schedule data collection** - Run `permission_analysis_data_collection.py` weekly via Databricks Jobs
 4. **Monitor trends** - Track permission changes over time
 5. **Integrate with SIEM** - Export findings to security dashboard
 

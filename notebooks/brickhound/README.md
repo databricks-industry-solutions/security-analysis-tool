@@ -15,7 +15,7 @@ Execute the data collection job to build the permissions graph:
 - Wait: ~10-30 minutes (depends on account size)
 
 **Option B: Run Notebook Directly**
-- Open: `01_data_collection.py`
+- Open: `/notebooks/permission_analysis_data_collection.py`
 - Click: "Run All"
 
 ### 2. Analyze Permissions
@@ -24,10 +24,10 @@ Use the interactive analysis notebooks:
 
 | Notebook | Purpose |
 |----------|---------|
-| `02_principal_resource_analysis.py` | Query permissions: "Who can access what?" |
-| `03_escalation_paths.py` | Find privilege escalation paths |
-| `04_impersonation_analysis.py` | Analyze impersonation risks |
-| `05_advanced_reports.py` | Generate compliance reports |
+| `01_principal_resource_analysis.py` | Query permissions: "Who can access what?" |
+| `02_escalation_paths.py` | Find privilege escalation paths |
+| `03_impersonation_analysis.py` | Analyze impersonation risks |
+| `04_advanced_reports.py` | Generate compliance reports |
 
 ### 3. Web UI (Optional)
 
@@ -61,7 +61,7 @@ Both write to the same Unity Catalog schema for unified security analysis.
 ## Troubleshooting
 
 **No data found?**
-- Run `01_data_collection.py` first
+- Run `/notebooks/permission_analysis_data_collection.py` first
 - Check job logs for errors
 
 **Authentication failed?**

@@ -97,5 +97,5 @@ except ImportError as e:
 # MAGIC ## Next Steps
 # MAGIC
 # MAGIC 1. **Configure**: Run `00_config.py` to set up catalog/schema
-# MAGIC 2. **Collect Data**: Run `01_data_collection.py` to build the permissions graph
-# MAGIC 3. **Analyze**: Use analysis notebooks (02-05) to explore permissions
+# MAGIC 2. **Collect Data**: Run `/notebooks/permission_analysis_data_collection.py` to build the permissions graph
+# MAGIC 3. **Analyze**: Use analysis notebooks (01-04) to explore permissions
