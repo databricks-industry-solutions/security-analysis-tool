@@ -25,7 +25,11 @@
 
 # DBTITLE 1,Install Dependencies
 # MAGIC %pip install networkx --quiet
-# MAGIC %pip install -e /Workspace/Applications/BrickHound --quiet
+# MAGIC
+# MAGIC # Install BrickHound SDK from SAT repository
+# MAGIC # The SDK is located at: <repo_root>/src/brickhound
+# MAGIC # Navigate from notebooks/brickhound/ -> ../../src/brickhound
+# MAGIC %pip install -e ../../src/brickhound --quiet
 
 # COMMAND ----------
 
