@@ -93,7 +93,7 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
-# MAGIC %run ./00_config
+# MAGIC %run ./brickhound/00_config
 
 # COMMAND ----------
 
