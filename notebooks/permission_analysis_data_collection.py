@@ -119,18 +119,22 @@ try:
     existing_catalogs = spark.sql("SHOW CATALOGS").collect()
     catalog_names = [row.catalog for row in existing_catalogs]
 
-    if CATALOG in catalog_names:
-        print(f"\n Catalog '{CATALOG}' exists")
+    # Strip backticks for comparison (SAT uses backticks to handle special chars)
+    catalog_name_clean = CATALOG.strip('`').strip()
+    schema_name_clean = SCHEMA.strip('`').strip()
+
+    if catalog_name_clean in catalog_names:
+        print(f"\n Catalog '{catalog_name_clean}' exists")
     else:
-        print(f"\n Catalog '{CATALOG}' does not exist")
+        print(f"\n Catalog '{catalog_name_clean}' does not exist")
         print(f"\nAvailable catalogs: {', '.join(catalog_names)}")
         print(f"\n Update CATALOG in 00_config.py or create the catalog")
-        raise Exception(f"Catalog {CATALOG} not found")
+        raise Exception(f"Catalog {catalog_name_clean} not found")
 
-    # Create schema if needed
+    # Create schema if needed (use original CATALOG/SCHEMA with backticks for SQL)
     spark.sql(f"USE CATALOG {CATALOG}")
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
-    print(f" Schema '{SCHEMA}' ready")
+    print(f" Schema '{schema_name_clean}' ready")
 
     # Check existing tables
     tables = spark.sql(f"SHOW TABLES IN {CATALOG}.{SCHEMA}").collect()

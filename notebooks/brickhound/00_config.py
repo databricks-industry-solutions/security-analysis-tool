@@ -104,11 +104,14 @@ print("=" * 60)
 try:
     existing_catalogs = spark.sql("SHOW CATALOGS").collect()
     catalog_names = [row.catalog for row in existing_catalogs]
-    
-    if CATALOG in catalog_names:
-        print(f"✓ Catalog '{CATALOG}' exists")
+
+    # Strip backticks for comparison (SAT uses backticks to handle special chars)
+    catalog_name_clean = CATALOG.strip('`').strip()
+
+    if catalog_name_clean in catalog_names:
+        print(f"✓ Catalog '{catalog_name_clean}' exists")
     else:
-        print(f"✗ Catalog '{CATALOG}' does not exist")
+        print(f"✗ Catalog '{catalog_name_clean}' does not exist")
         print(f"\nAvailable catalogs:")
         for cat in catalog_names:
             print(f"  - {cat}")
