@@ -44,12 +44,14 @@ class AccountsSettings(SatDBClient):
 
     def get_disablelegacyfeatures(self):
         """
-        Returns json object for disable legacy features account setting
+        Returns json object for disable legacy features account setting.
+        Extracts satelements array to match CSP/ESM pattern.
         """
         account_id = self._account_id
-        dlf_json = self.get(f"/accounts/{account_id}/settings/types/disable_legacy_features/names/default", master_acct=True)
-        # Return as list for consistency with bootstrap pattern
-        return [dlf_json] if dlf_json else []
+        dlf_response = self.get(f"/accounts/{account_id}/settings/types/disable_legacy_features/names/default", master_acct=True)
+        # Extract satelements array like CSP/ESM methods do
+        dlf_json_list = dlf_response.get("satelements", []) if dlf_response else []
+        return dlf_json_list
 
     def get_networkconnectivityconfigurations(self, pageToken=None):
         """

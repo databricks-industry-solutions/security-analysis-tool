@@ -253,12 +253,19 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def disable_legacy_features_account(df):
     if df is not None and not isEmpty(df):
         result_row = df.first()
+
         if result_row and hasattr(result_row, 'disable_legacy_features'):
             dlf_value = result_row.disable_legacy_features
+
             if dlf_value and hasattr(dlf_value, 'value') and dlf_value.value == True:
+                # Setting is enabled - PASS (legacy features are disabled)
                 return (check_id, 0, {'disable_legacy_features_enabled': True})
             else:
-                return (check_id, 1, {'disable_legacy_features_enabled': False, 'value': dlf_value.value if dlf_value else None})
+                # Setting is disabled - FAIL (legacy features are NOT disabled)
+                return (check_id, 1, {
+                    'disable_legacy_features_enabled': False,
+                    'value': dlf_value.value if dlf_value and hasattr(dlf_value, 'value') else None
+                })
         else:
             return (check_id, 1, {'disable_legacy_features_enabled': False, 'error': 'Setting not found in response'})
     else:
