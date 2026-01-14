@@ -60,7 +60,8 @@ try:
 except ImportError as e:
     print("⚠ Warning: brickhound package not installed. Using notebook-local functions.")
     print(f"  Error: {e}")
-    print("  To install: Upload brickhound package to /Workspace/Applications or adjust pip install path above")
+    print("  To install: Ensure the pip install command above completed successfully")
+    print("  Expected path: <repo_root>/src/brickhound")
     SecurityAnalyzer = None
     USE_ANALYZER = False
 

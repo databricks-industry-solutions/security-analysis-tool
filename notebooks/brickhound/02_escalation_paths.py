@@ -36,7 +36,7 @@
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
-# MAGIC Run `01_data_collection.py` first to populate the graph data.
+# MAGIC Run `/notebooks/permission_analysis_data_collection.py` first to populate the graph data.
 
 # COMMAND ----------
 
