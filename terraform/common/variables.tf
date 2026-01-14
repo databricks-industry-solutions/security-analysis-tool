@@ -55,3 +55,13 @@ variable "job_compute_num_workers" {
   description = "Number of worker nodes that this cluster should have."
   default     = 5
 }
+
+variable "job_schedule_timezone_id" {
+  type        = string
+  description = "Time zone ID for job schedules. The system default is UTC; For more details: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+  default     = "UTC"
+  validation {
+    condition     = can(regex("^([A-Za-z]+(/[A-Za-z0-9_+\\-]+)+|UTC)$", var.job_schedule_timezone_id))
+    error_message = "Must be a valid IANA time zone ID (e.g. America/New_York, Etc/UTC) or UTC."
+  }
+}
