@@ -85,7 +85,7 @@ resource "databricks_job" "driver" {
 
   schedule {
     #E.G. At 08:00:00am, on every Monday, Wednesday and Friday, every month; For more: http://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/crontrigger.html
-    quartz_cron_expression = "0 0 7 ? * Mon,Wed,Fri"
+    quartz_cron_expression = var.driver_cron_expression
     # The system default is UTC; For more: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
     timezone_id = var.job_schedule_timezone_id
   }
@@ -134,7 +134,7 @@ resource "databricks_job" "secrets_scanner" {
   }
 
   schedule {
-    quartz_cron_expression = "0 0 8 * * ?"
+    quartz_cron_expression = var.secrets_scanner_cron_expression
     timezone_id            = var.job_schedule_timezone_id
   }
 }
