@@ -93,3 +93,15 @@ variable "secrets_scanner_cron_expression" {
     error_message = "Must be a Quartz-style cron with 6 or 7 fields and only contain typical Quartz cron characters. For more details: http://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/crontrigger.html."
   }
 }
+
+variable "sql_warehouse_enable_serverless" {
+  type        = bool
+  description = "Flag to run SQL Warehouse on Serverless Compute"
+  default     = false
+}
+
+variable "sql_warehouse_auto_stop_mins" {
+  type        = number
+  description = "Time in minutes until an idle SQL warehouse terminates all clusters and stops. This field is optional. The default is 120, set to 0 to disable the auto stop."
+  default     = 120
+}
