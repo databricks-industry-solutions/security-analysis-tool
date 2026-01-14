@@ -9,7 +9,7 @@ resource "databricks_job" "initializer" {
       job_cluster_key = "job_cluster"
       new_cluster {
         data_security_mode = "SINGLE_USER"
-        num_workers        = 5
+        num_workers        = var.job_compute_num_workers
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
@@ -52,7 +52,7 @@ resource "databricks_job" "driver" {
       job_cluster_key = "job_cluster"
       new_cluster {
         data_security_mode = "SINGLE_USER"
-        num_workers        = 5
+        num_workers        = var.job_compute_num_workers
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
@@ -103,7 +103,7 @@ resource "databricks_job" "secrets_scanner" {
       job_cluster_key = "job_cluster"
       new_cluster {
         data_security_mode = "SINGLE_USER"
-        num_workers        = 5
+        num_workers        = var.job_compute_num_workers
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"

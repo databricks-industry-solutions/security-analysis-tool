@@ -49,3 +49,9 @@ variable "run_on_serverless" {
   type        = bool
   description = "Flag to run SAT initializer/Driver on Serverless"
 }
+
+variable "job_compute_num_workers" {
+  type        = number
+  description = "Number of worker nodes that this cluster should have."
+  default     = 5
+}
