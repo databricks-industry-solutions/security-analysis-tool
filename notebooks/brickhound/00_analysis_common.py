@@ -63,8 +63,13 @@ from pyspark.sql.window import Window
 import sys
 import os
 
-# Add brickhound to path for local development (fallback if pip install didn't work)
-sys.path.insert(0, os.path.dirname(os.getcwd()))
+# Add src directory to path (fallback if editable install didn't work in Databricks)
+# From: /Workspace/Repos/.../notebooks/brickhound
+# To:   /Workspace/Repos/.../src
+repo_root = os.path.dirname(os.path.dirname(os.getcwd()))
+src_path = os.path.join(repo_root, "src")
+sys.path.insert(0, src_path)
+print(f"Added to sys.path: {src_path}")
 
 # Import the SecurityAnalyzer class
 print("\n" + "="*60)
