@@ -51,6 +51,15 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,SDK Status Check
+if not analyzer:
+    print("⚠️  WARNING: Running in FALLBACK mode (simplified analysis)")
+    print("   For full-featured analysis, ensure SDK is loaded in 00_analysis_common")
+    print("   Results will be incomplete (no group expansion, no parent inheritance)")
+    print()
+
+# COMMAND ----------
+
 # DBTITLE 1,Define Helper Constants
 # These constants are used by the report queries
 USER_SP_TYPES = ["User", "ServicePrincipal", "AccountUser", "AccountServicePrincipal"]

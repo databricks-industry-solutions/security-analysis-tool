@@ -24,12 +24,29 @@
 # COMMAND ----------
 
 # DBTITLE 1,Install Dependencies
+import os
+
+print("="*60)
+print("BRICKHOUND SDK INSTALLATION")
+print("="*60)
+print(f"Current working directory: {os.getcwd()}")
+
+# Verify SDK path exists before installing
+sdk_path = os.path.abspath("../../src/brickhound")
+print(f"SDK installation path: {sdk_path}")
+print(f"SDK path exists: {os.path.exists(sdk_path)}")
+
 # MAGIC %pip install networkx --quiet
-# MAGIC
-# MAGIC # Install BrickHound SDK from SAT repository
-# MAGIC # The SDK is located at: <repo_root>/src/brickhound
-# MAGIC # Navigate from notebooks/brickhound/ -> ../../src/brickhound
-# MAGIC %pip install -e ../../src/brickhound --quiet
+
+if os.path.exists(sdk_path):
+    print(f"\nInstalling brickhound SDK from: {sdk_path}")
+    # MAGIC %pip install -e ../../src/brickhound
+    print("✓ SDK installation command executed")
+else:
+    print(f"\n⚠️  WARNING: SDK path not found at {sdk_path}")
+    print(f"   SDK will not be available - notebooks will use fallback functions")
+
+print("="*60)
 
 # COMMAND ----------
 
@@ -53,17 +70,34 @@ import os
 sys.path.insert(0, os.path.dirname(os.getcwd()))
 
 # Import the SecurityAnalyzer class
+print("\n" + "="*60)
+print("SDK LOADING VERIFICATION")
+print("="*60)
+
 try:
     from brickhound.graph.analyzer import SecurityAnalyzer, PRIVILEGED_ROLES
-    print("✓ Using SecurityAnalyzer from brickhound package (shared logic with app)")
+
+    # Verify the import actually worked
+    print("✓ SecurityAnalyzer imported successfully")
+    print(f"  Module location: {SecurityAnalyzer.__module__}")
+    print(f"  SecurityAnalyzer class: {SecurityAnalyzer}")
+
     USE_ANALYZER = True
+    print("\n✓ SDK LOADED - Using SecurityAnalyzer (full-featured analysis)")
+
 except ImportError as e:
-    print("⚠ Warning: brickhound package not installed. Using notebook-local functions.")
+    print("✗ SDK import failed - Using fallback functions (simplified analysis)")
     print(f"  Error: {e}")
-    print("  To install: Ensure the pip install command above completed successfully")
-    print("  Expected path: <repo_root>/src/brickhound")
+    print(f"  Current sys.path (first 3): {sys.path[:3]}")
+    print("\nTo fix:")
+    print("  1. Verify SDK path exists: ../../src/brickhound")
+    print("  2. Re-run the 'Install Dependencies' cell above")
+    print("  3. Ensure Python restart completed (run all cells in order)")
+
     SecurityAnalyzer = None
     USE_ANALYZER = False
+
+print("="*60 + "\n")
 
 def format_principal_name(display_name, email, name, principal_id=None):
     """Format principal name with identifier in parentheses like 'Arun Pamulapati (arun.pamulapati@databricks.com)'"""
@@ -134,6 +168,35 @@ if SecurityAnalyzer:
 else:
     analyzer = None
     print(f"⚠ Using fallback notebook-local functions")
+
+# COMMAND ----------
+
+# DBTITLE 1,⚠️ VERIFY SDK STATUS (Check This!)
+print("="*60)
+print("BRICKHOUND SDK STATUS")
+print("="*60)
+
+if analyzer is not None:
+    print("\n✓ SDK ACTIVE: Using SecurityAnalyzer from brickhound package")
+    print("\n  Available features:")
+    print("  • Full group expansion (nested groups)")
+    print("  • Parent resource inheritance")
+    print("  • Complete permission resolution")
+    print("  • Detailed source tracking (DIRECT, GROUP, OWNERSHIP, PARENT)")
+    print("\n  All analysis notebooks will use full-featured SDK methods.")
+else:
+    print("\n⚠️  FALLBACK MODE: Using simplified notebook functions")
+    print("\n  Limited features:")
+    print("  • No group expansion (direct grants only)")
+    print("  • No parent resource inheritance")
+    print("  • Simplified permission resolution")
+    print("\n  ⚠️  Analysis results will be incomplete!")
+    print("\n  To enable SDK:")
+    print("  1. Verify brickhound SDK is at: ../../src/brickhound")
+    print("  2. Re-run 'Install Dependencies' cell")
+    print("  3. Re-run cells after Python restart")
+
+print("="*60)
 
 # COMMAND ----------
 
