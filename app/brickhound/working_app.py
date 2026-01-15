@@ -103,12 +103,24 @@ def get_connection():
         # If not in environment, try to read from SAT's sat_scope using correct SDK API
         if not warehouse_id:
             try:
+                import base64
+
                 secret_response = workspace_client.secrets.get_secret(
                     scope="sat_scope",
                     key="sql-warehouse-id"
                 )
-                warehouse_id = secret_response.value
-                print(f"[AUTH] Using SQL Warehouse from sat_scope: {warehouse_id}")
+
+                # Databricks SDK returns base64-encoded values - decode it
+                # SAT stores warehouse ID as plain text, but SDK returns it encoded
+                try:
+                    warehouse_id = base64.b64decode(secret_response.value).decode('utf-8')
+                    print(f"[AUTH] Using SQL Warehouse from sat_scope: {warehouse_id}")
+                except Exception as decode_error:
+                    # If base64 decode fails, try using the value as-is
+                    # (in case Databricks SDK behavior changes in the future)
+                    print(f"[AUTH] Base64 decode failed, using value as-is: {decode_error}")
+                    warehouse_id = secret_response.value
+
             except Exception as e:
                 print(f"[AUTH] Failed to read sql-warehouse-id from sat_scope: {e}")
                 print(f"[AUTH] Using default warehouse ID")
