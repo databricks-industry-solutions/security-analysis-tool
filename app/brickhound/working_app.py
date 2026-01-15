@@ -8,44 +8,78 @@ Inspired by BloodHound for Active Directory analysis.
 
 from flask import Flask, request, jsonify
 import os
+import logging
+from databricks.sdk import WorkspaceClient
 
 app = Flask(__name__)
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Configuration - SAT Integration
 # Read catalog/schema from SAT's sat_scope secrets
-try:
-    from databricks.sdk import WorkspaceClient
-    _temp_client = WorkspaceClient()
+CATALOG = None
+SCHEMA = None
 
-    # Try to read from environment variables first (for local testing)
+try:
+    # Step 1: Try environment variables first (for local testing)
     CATALOG = os.getenv("BRICKHOUND_CATALOG")
     SCHEMA = os.getenv("BRICKHOUND_SCHEMA")
 
-    # If not set in env, read from SAT's sat_scope
+    if CATALOG and SCHEMA:
+        logger.info(f"[CONFIG] Using environment variables: CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+
+    # Step 2: If not set in env, read from SAT's sat_scope using correct SDK API
     if not CATALOG or not SCHEMA:
         try:
-            analysis_schema = _temp_client.dbutils.secrets.get(scope="sat_scope", key="analysis_schema_name")
-            CATALOG = analysis_schema.split('.')[0]
-            SCHEMA = analysis_schema.split('.')[1]
-        except:
-            # Fallback to defaults if secrets not available
-            CATALOG = CATALOG or "main"
-            SCHEMA = SCHEMA or "security_analysis"
+            client = WorkspaceClient()
 
-    # Table names (namespaced with brickhound_ prefix for SAT integration)
-    VERTICES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_vertices"
-    EDGES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_edges"
-    METADATA_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_collection_metadata"
+            # Use correct Databricks SDK Secrets API (not dbutils)
+            secret_response = client.secrets.get_secret(
+                scope="sat_scope",
+                key="analysis_schema_name"
+            )
+            analysis_schema = secret_response.value
 
-    print(f"[CONFIG] Using catalog: {CATALOG}, schema: {SCHEMA}")
+            # Parse the value (format: `catalog`.schema or catalog.schema)
+            # Strip backticks if present (SAT uses backticks for special chars)
+            analysis_schema_clean = analysis_schema.strip('`')
+            parts = analysis_schema_clean.split('.')
+
+            if len(parts) >= 2:
+                CATALOG = parts[0].strip('`').strip()
+                SCHEMA = parts[1].strip('`').strip()
+                logger.info(f"[CONFIG] Read from sat_scope: CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+            else:
+                raise ValueError(f"Invalid analysis_schema_name format: {analysis_schema}")
+
+        except Exception as e:
+            logger.warning(f"[CONFIG] Failed to read from sat_scope: {e}")
+            logger.warning(f"[CONFIG] Falling back to defaults: main.security_analysis")
+            CATALOG = "main"
+            SCHEMA = "security_analysis"
+
+    # Step 3: Final fallback if still not set
+    if not CATALOG or not SCHEMA:
+        logger.warning("[CONFIG] No configuration found, using defaults")
+        CATALOG = "main"
+        SCHEMA = "security_analysis"
+
 except Exception as e:
-    print(f"[CONFIG WARNING] Could not read from sat_scope: {e}")
-    # Fallback to defaults
+    logger.error(f"[CONFIG ERROR] Unexpected error during configuration: {e}", exc_info=True)
     CATALOG = "main"
     SCHEMA = "security_analysis"
-    VERTICES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_vertices"
-    EDGES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_edges"
-    METADATA_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_collection_metadata"
+
+# Define table names
+VERTICES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_vertices"
+EDGES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_edges"
+METADATA_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_collection_metadata"
+
+logger.info(f"[CONFIG FINAL] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")
+logger.info(f"[CONFIG FINAL] EDGES_TABLE={EDGES_TABLE}")
+logger.info(f"[CONFIG FINAL] METADATA_TABLE={METADATA_TABLE}")
 
 # Global variable to cache the current run_id for this session
 _cached_run_id = None
@@ -66,11 +100,18 @@ def get_connection():
         # Check multiple sources for warehouse ID (SAT integration)
         warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
 
-        # If not in environment, try to read from SAT's sat_scope
+        # If not in environment, try to read from SAT's sat_scope using correct SDK API
         if not warehouse_id:
             try:
-                warehouse_id = workspace_client.dbutils.secrets.get(scope="sat_scope", key="sql-warehouse-id")
-            except:
+                secret_response = workspace_client.secrets.get_secret(
+                    scope="sat_scope",
+                    key="sql-warehouse-id"
+                )
+                warehouse_id = secret_response.value
+                print(f"[AUTH] Using SQL Warehouse from sat_scope: {warehouse_id}")
+            except Exception as e:
+                print(f"[AUTH] Failed to read sql-warehouse-id from sat_scope: {e}")
+                print(f"[AUTH] Using default warehouse ID")
                 warehouse_id = "82fc4fdc7d3edb9f"  # Fallback default
         return workspace_client, warehouse_id
     except Exception as e:
@@ -4576,6 +4617,19 @@ def api_debug():
         debug_info['edges_query'] = f'FAILED: {str(e)}'
 
     return jsonify(debug_info)
+
+
+@app.route('/api/config')
+def api_config():
+    """Get current configuration (catalog, schema, tables)"""
+    return jsonify({
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+        "vertices_table": VERTICES_TABLE,
+        "edges_table": EDGES_TABLE,
+        "metadata_table": METADATA_TABLE,
+        "config_source": "Determined at app startup - check logs for details"
+    })
 
 
 @app.route('/api/runs')
