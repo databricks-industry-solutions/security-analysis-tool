@@ -13,7 +13,7 @@ config:
 # Values from SAT configuration (arunuc.security_analysis)
 env:
   - name: "PORT"
-    value: "8501"
+    value: "8000"
   - name: "BRICKHOUND_CATALOG"
     value: "arunuc"
   - name: "BRICKHOUND_SCHEMA"
@@ -30,7 +30,7 @@ resources:
 # Health check configuration
 health_check:
   path: "/health"
-  port: 8501
+  port: 8000
   timeout: 30
 
 # Dependencies
