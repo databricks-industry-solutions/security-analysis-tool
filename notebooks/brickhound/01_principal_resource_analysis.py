@@ -314,8 +314,6 @@ def get_resource_access(resource_identifier):
           AND v.run_id = '{SELECTED_RUN_ID}'
     )
     SELECT DISTINCT principal_id,
-           principal_name,
-           principal_email,
            CASE
                WHEN principal_email IS NOT NULL AND principal_email != '' AND LOWER(principal_name) != LOWER(principal_email)
                THEN CONCAT(principal_name, ' (', principal_email, ')')
