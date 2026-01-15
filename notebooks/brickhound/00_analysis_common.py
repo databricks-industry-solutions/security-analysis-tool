@@ -36,17 +36,14 @@ sdk_path = os.path.abspath("../../src/brickhound")
 print(f"SDK installation path: {sdk_path}")
 print(f"SDK path exists: {os.path.exists(sdk_path)}")
 
-# MAGIC %pip install networkx --quiet
-
-if os.path.exists(sdk_path):
-    print(f"\nInstalling brickhound SDK from: {sdk_path}")
-    # MAGIC %pip install -e ../../src/brickhound
-    print("✓ SDK installation command executed")
-else:
+if not os.path.exists(sdk_path):
     print(f"\n⚠️  WARNING: SDK path not found at {sdk_path}")
     print(f"   SDK will not be available - notebooks will use fallback functions")
 
 print("="*60)
+
+# MAGIC %pip install networkx --quiet
+# MAGIC %pip install -e ../../src/brickhound
 
 # COMMAND ----------
 
