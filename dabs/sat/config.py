@@ -70,7 +70,35 @@ def form():
             default="",
         ),
     ]
-    questions = questions + cloud_specific_questions(client) + proxies
+
+    # BrickHound Permissions Analysis Configuration
+    brickhound = [
+        Confirm(
+            name="enable_brickhound",
+            message="Deploy BrickHound Permissions Analysis?",
+            default=True,
+        ),
+        Confirm(
+            name="deploy_brickhound_app",
+            message="Deploy BrickHound Web App?",
+            ignore=lambda x: not x["enable_brickhound"],
+            default=True,
+        ),
+        Confirm(
+            name="use_default_brickhound_schedule",
+            message="Use default collection schedule (Daily at 2 AM ET)?",
+            ignore=lambda x: not x["enable_brickhound"],
+            default=True,
+        ),
+        Text(
+            name="brickhound_schedule",
+            message="Enter custom cron schedule",
+            ignore=lambda x: not x["enable_brickhound"] or x["use_default_brickhound_schedule"],
+            default="0 0 2 * * ?",
+        ),
+    ]
+
+    questions = questions + cloud_specific_questions(client) + proxies + brickhound
     return client, prompt(questions), profile
 
 
