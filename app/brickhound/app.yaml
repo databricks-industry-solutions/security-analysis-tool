@@ -10,17 +10,16 @@ config:
     - "working_app.py"
 
   # Environment variables
-  # NOTE: App automatically reads from SAT's sat_scope secrets
-  # Only set these if you need to override defaults
+  # Values from SAT configuration (arunuc.security_analysis)
   env:
     - name: "PORT"
       value: "8501"
-    # - name: "BRICKHOUND_CATALOG"
-    #   value: ""  # Optional: Leave empty to use SAT's catalog
-    # - name: "BRICKHOUND_SCHEMA"
-    #   value: ""  # Optional: Leave empty to use SAT's schema
-    # - name: "WAREHOUSE_ID"
-    #   value: ""  # Optional: Leave empty to use SAT's SQL warehouse
+    - name: "BRICKHOUND_CATALOG"
+      value: "arunuc"
+    - name: "BRICKHOUND_SCHEMA"
+      value: "security_analysis"
+    - name: "WAREHOUSE_ID"
+      value: "782228d75bf63e5c"
 
 # Resource requirements
 resources:

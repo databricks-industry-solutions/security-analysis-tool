@@ -17,59 +17,11 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration - SAT Integration
-# Read catalog/schema from SAT's sat_scope secrets
-CATALOG = None
-SCHEMA = None
+# Configuration - Read from environment variables (set in app.yaml)
+CATALOG = os.getenv("BRICKHOUND_CATALOG", "main")
+SCHEMA = os.getenv("BRICKHOUND_SCHEMA", "security_analysis")
 
-try:
-    # Step 1: Try environment variables first (for local testing)
-    CATALOG = os.getenv("BRICKHOUND_CATALOG")
-    SCHEMA = os.getenv("BRICKHOUND_SCHEMA")
-
-    if CATALOG and SCHEMA:
-        logger.info(f"[CONFIG] Using environment variables: CATALOG={CATALOG}, SCHEMA={SCHEMA}")
-
-    # Step 2: If not set in env, read from SAT's sat_scope using correct SDK API
-    if not CATALOG or not SCHEMA:
-        try:
-            client = WorkspaceClient()
-
-            # Use correct Databricks SDK Secrets API (not dbutils)
-            secret_response = client.secrets.get_secret(
-                scope="sat_scope",
-                key="analysis_schema_name"
-            )
-            analysis_schema = secret_response.value
-
-            # Parse the value (format: `catalog`.schema or catalog.schema)
-            # Strip backticks if present (SAT uses backticks for special chars)
-            analysis_schema_clean = analysis_schema.strip('`')
-            parts = analysis_schema_clean.split('.')
-
-            if len(parts) >= 2:
-                CATALOG = parts[0].strip('`').strip()
-                SCHEMA = parts[1].strip('`').strip()
-                logger.info(f"[CONFIG] Read from sat_scope: CATALOG={CATALOG}, SCHEMA={SCHEMA}")
-            else:
-                raise ValueError(f"Invalid analysis_schema_name format: {analysis_schema}")
-
-        except Exception as e:
-            logger.warning(f"[CONFIG] Failed to read from sat_scope: {e}")
-            logger.warning(f"[CONFIG] Falling back to defaults: main.security_analysis")
-            CATALOG = "main"
-            SCHEMA = "security_analysis"
-
-    # Step 3: Final fallback if still not set
-    if not CATALOG or not SCHEMA:
-        logger.warning("[CONFIG] No configuration found, using defaults")
-        CATALOG = "main"
-        SCHEMA = "security_analysis"
-
-except Exception as e:
-    logger.error(f"[CONFIG ERROR] Unexpected error during configuration: {e}", exc_info=True)
-    CATALOG = "main"
-    SCHEMA = "security_analysis"
+logger.info(f"[CONFIG] Using CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 
 # Define table names
 VERTICES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_vertices"
@@ -97,34 +49,17 @@ def get_connection():
             print(f"[AUTH] Auth type: {workspace_client.config.auth_type}")
             get_connection._logged = True
         
-        # Check multiple sources for warehouse ID (SAT integration)
+        # Get warehouse ID from environment variable (set in app.yaml)
         warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
 
-        # If not in environment, try to read from SAT's sat_scope using correct SDK API
         if not warehouse_id:
-            try:
-                import base64
-
-                secret_response = workspace_client.secrets.get_secret(
-                    scope="sat_scope",
-                    key="sql-warehouse-id"
-                )
-
-                # Databricks SDK returns base64-encoded values - decode it
-                # SAT stores warehouse ID as plain text, but SDK returns it encoded
-                try:
-                    warehouse_id = base64.b64decode(secret_response.value).decode('utf-8')
-                    print(f"[AUTH] Using SQL Warehouse from sat_scope: {warehouse_id}")
-                except Exception as decode_error:
-                    # If base64 decode fails, try using the value as-is
-                    # (in case Databricks SDK behavior changes in the future)
-                    print(f"[AUTH] Base64 decode failed, using value as-is: {decode_error}")
-                    warehouse_id = secret_response.value
-
-            except Exception as e:
-                print(f"[AUTH] Failed to read sql-warehouse-id from sat_scope: {e}")
-                print(f"[AUTH] Using default warehouse ID")
-                warehouse_id = "82fc4fdc7d3edb9f"  # Fallback default
+            print(f"[AUTH] WARNING: No warehouse ID found in environment")
+            print(f"[AUTH] Set WAREHOUSE_ID in app.yaml or use default")
+            warehouse_id = "82fc4fdc7d3edb9f"  # Fallback default
+        else:
+            if not hasattr(get_connection, '_warehouse_logged'):
+                print(f"[AUTH] Using SQL Warehouse: {warehouse_id}")
+                get_connection._warehouse_logged = True
         return workspace_client, warehouse_id
     except Exception as e:
         print(f"ERROR in get_connection(): {e}")
