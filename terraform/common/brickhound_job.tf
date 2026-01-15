@@ -44,10 +44,10 @@ resource "databricks_job" "brickhound_data_collection" {
     timeout_seconds = 14400  # 4 hours max (permissions collection can take time for large accounts)
   }
 
-  # Schedule: Run weekly (Sunday 2 AM ET)
-  # Less frequent than SAT (Mon/Wed/Fri) since permissions change less frequently
+  # Schedule: Run daily (2 AM ET)
+  # Daily collection ensures fresh permissions data for analysis
   schedule {
-    quartz_cron_expression = "0 0 2 ? * Sun"
+    quartz_cron_expression = "0 0 2 * * ?"
     timezone_id            = "America/New_York"
     pause_status           = "UNPAUSED"
   }
