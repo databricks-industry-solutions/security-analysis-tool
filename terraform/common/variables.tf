@@ -49,3 +49,9 @@ variable "run_on_serverless" {
   type        = bool
   description = "Flag to run SAT initializer/Driver on Serverless"
 }
+
+variable "deploy_brickhound_app" {
+  type        = bool
+  description = "Deploy BrickHound web application for interactive permissions analysis"
+  default     = true
+}
