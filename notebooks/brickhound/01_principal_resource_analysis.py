@@ -389,7 +389,8 @@ if identifier:
             display(result)
 
     elif analysis_type == "Resource Access":
-        # Use SecurityAnalyzer if available, otherwise fallback to standalone function
+        # Use SecurityAnalyzer if available (provides full grouping and deduplication),
+        # otherwise fallback to standalone function (simplified results without grouping)
         if analyzer:
             resource = analyzer.find_resource(identifier)
             if resource:
@@ -463,40 +464,12 @@ if identifier:
                 print(f"Resource '{identifier}' not found")
                 result = None
         else:
+            # Fallback: use standalone function (simplified - no grouping)
             result = get_resource_access(identifier)
-
-            # Group standalone function results too
             if result:
-                result.createOrReplaceTempView("resource_access_raw")
-
-                grouped = spark.sql("""
-                    SELECT
-                        CASE
-                            WHEN principal_id LIKE '%:%' THEN SPLIT(principal_id, ':')[1]
-                            ELSE principal_id
-                        END as canonical_id,
-                        FIRST(principal_id) as principal_id,
-                        FIRST(principal_name) as principal_name,
-                        FIRST(principal_email) as principal_email,
-                        FIRST(
-                            CASE
-                                WHEN principal_type = 'AccountUser' THEN 'User'
-                                WHEN principal_type = 'AccountGroup' THEN 'Group'
-                                WHEN principal_type LIKE '%ServicePrincipal%' THEN 'Service Principal'
-                                ELSE principal_type
-                            END
-                        ) as principal_type,
-                        COLLECT_SET(permission_level) as permissions,
-                        COLLECT_SET(source) as sources,
-                        COLLECT_LIST(inheritance_path) as inheritance_paths
-                    FROM resource_access_raw
-                    GROUP BY canonical_id, COALESCE(principal_email, principal_name)
-                    ORDER BY principal_type, principal_name
-                """)
-
-                total_unique = grouped.count()
-                print(f"\nFound {total_unique:,} unique principal(s) with access")
-                result = grouped
+                # Standalone function provides simple results without grouping
+                total = result.count()
+                print(f"\nFound {total:,} principal(s) with access (simplified view)")
 
         if result:
             display(result)
