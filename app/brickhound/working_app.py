@@ -18,6 +18,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration - Read from environment variables (set in app.yaml)
+# Debug: Print all environment variables to troubleshoot
+logger.info("[CONFIG] Environment variables check:")
+logger.info(f"  BRICKHOUND_CATALOG = {os.getenv('BRICKHOUND_CATALOG')}")
+logger.info(f"  BRICKHOUND_SCHEMA = {os.getenv('BRICKHOUND_SCHEMA')}")
+logger.info(f"  WAREHOUSE_ID = {os.getenv('WAREHOUSE_ID')}")
+
 CATALOG = os.getenv("BRICKHOUND_CATALOG", "main")
 SCHEMA = os.getenv("BRICKHOUND_SCHEMA", "security_analysis")
 
