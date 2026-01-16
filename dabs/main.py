@@ -11,11 +11,6 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
     cloud = cloud_type(client)
     generate_secrets(client, answers, cloud)
 
-    # Handle BrickHound schedule - set default if using default schedule
-    brickhound_schedule = "0 0 2 * * ?"  # Default: daily at 2 AM ET
-    if answers.get("enable_brickhound", False) and not answers.get("use_default_brickhound_schedule", True):
-        brickhound_schedule = answers.get("brickhound_schedule", "0 0 2 * * ?")
-
     config = {
         "catalog": answers.get("catalog", None),
         "cloud": cloud,
@@ -33,7 +28,7 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
         "serverless": answers.get("enable_serverless", False),
         "enable_brickhound": answers.get("enable_brickhound", False),
         "deploy_brickhound_app": answers.get("deploy_brickhound_app", False),
-        "brickhound_schedule": brickhound_schedule,
+        "brickhound_schedule": "0 0 2 * * ?",  # Daily at 2 AM ET
     }
 
     config_file = "tmp_config.json"

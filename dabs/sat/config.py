@@ -71,30 +71,18 @@ def form():
         ),
     ]
 
-    # BrickHound Permissions Analysis Configuration
+    # Permissions Analysis Configuration
     brickhound = [
         Confirm(
             name="enable_brickhound",
-            message="Deploy BrickHound Permissions Analysis?",
+            message="Deploy Permissions Analysis?",
             default=True,
         ),
         Confirm(
             name="deploy_brickhound_app",
-            message="Deploy BrickHound Web App?",
+            message="Deploy Permissions Analysis Web App?",
             ignore=lambda x: not x["enable_brickhound"],
             default=True,
-        ),
-        Confirm(
-            name="use_default_brickhound_schedule",
-            message="Use default collection schedule (Daily at 2 AM ET)?",
-            ignore=lambda x: not x["enable_brickhound"],
-            default=True,
-        ),
-        Text(
-            name="brickhound_schedule",
-            message="Enter custom cron schedule",
-            ignore=lambda x: not x["enable_brickhound"] or x["use_default_brickhound_schedule"],
-            default="0 0 2 * * ?",
         ),
     ]
 
