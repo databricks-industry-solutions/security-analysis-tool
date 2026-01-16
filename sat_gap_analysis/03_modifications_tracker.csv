@@ -1,0 +1,13 @@
+Modification ID,Check ID,Check Code,Category,Check Name,Current Logic,Enhanced Logic,Impact,Effort (days),Sprint,Status,Assigned To,Completion %,Notes
+Modify-1,53,GOV-16,Governance,UC Metastore Assignment,Binary check (assigned or not),Add region validation (metastore region must match workspace region),High,2,Sprint 4,Not Started,,0%,Data residency compliance
+Modify-2,17,GOV-12,Governance,UC Enabled Clusters,Only USER_ISOLATION and SINGLE_USER,Accept SHARED mode as valid UC configuration,High,1,Sprint 1,Not Started,,0%,Reduce false positives
+Modify-3,42,IA-7,Identity & Access,Service Principals,Binary check (exists or not),Validate production jobs run as SPs not users,High,3,Sprint 4,Not Started,,0%,Operational security
+Modify-4,103 & 109,INFO-37 & INFO-40,Informational,CSP/ESM,Binary enabled/disabled check,Validate specific compliance standards (HIPAA PCI-DSS FIPS),High,3,Sprint 5,Not Started,,0%,Compliance framework alignment
+Modify-5,61,INFO-17,Informational,Serverless Compute,Informational observation,Change to positive recommendation (serverless preferred),Medium,1,Sprint 4,Not Started,,0%,Strategic alignment
+Modify-6,89,NS-7,Network Security,Model Serving Endpoint Security,Only checks IP ACLs/Private Link,Add AI Gateway guardrails validation,Medium,2,Sprint 5,Not Started,,0%,Comprehensive AI security
+Modify-7,104,INFO-38,Informational,Third-Party Library Control,Binary check (allowlist configured),Validate specific artifacts allowed/blocked per policy,Medium,2,Sprint 5,Not Started,,0%,Operational visibility
+Modify-8,8,GOV-3,Governance,Log Delivery Configurations,Only checks audit log delivery,Add system tables (Check 105) as alternative,Medium,2,Sprint 5,Not Started,,0%,Modern audit logging
+Modify-9,28,INFO-7,Informational,Network Peering Detection,Manual check,Automated detection via private_access_settings API,Low,1,Sprint 5,Not Started,,0%,Automation improvement
+Modify-10,110,NS-8,Network Security,Account Console IP Access Lists,Binary check (configured or not),Validate lists not overly permissive (0.0.0.0/0),Low,2,Sprint 5,Not Started,,0%,Prevent misconfigurations
+Modify-11,7,GOV-2,Governance,PAT Token Expiration,Alerts on 7 days,Add severity levels (30d=warning 7d=high),Low,1,Sprint 1,Not Started,,0%,Early warning system
+Modify-12,63,GOV-24,Governance,Legacy Global Init Scripts,Only checks if legacy scripts disabled,Also check for scripts in /databricks/init (Check 64),Low,1,Sprint 4,Not Started,,0%,Comprehensive detection

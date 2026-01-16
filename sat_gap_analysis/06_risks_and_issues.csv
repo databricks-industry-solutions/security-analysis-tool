@@ -1,0 +1,15 @@
+Risk ID,Risk Category,Risk Description,Impact,Probability,Risk Level,Affected Checks,Mitigation Strategy,Owner,Status,Date Identified,Date Resolved
+RISK-001,API Availability,Network policies API not available in MCP tools,High,Medium,HIGH,"126, 127, 128, 129",Research API in Sprint 1 week 1; defer to later sprint if preview; mark as preview feature,,Open,2026-01-16,
+RISK-002,API Availability,ABAC API not GA or available,Medium,Medium,MEDIUM,113,Research API in Sprint 1 week 1; implement as preview feature or defer; use tags API as alternative,,Open,2026-01-16,
+RISK-003,Performance,Performance degradation from new queries,High,Low,MEDIUM,All new checks,Implement pagination for large datasets; add caching for metadata; optimize SQL queries; parallelize checks,,Open,2026-01-16,
+RISK-004,Cloud Compatibility,Cloud-specific API differences (AWS/Azure/GCP),Medium,Medium,MEDIUM,"All checks, especially 115, 126-129",Test on all 3 clouds early in Sprint 1; create cloud-specific validation logic; document differences,,Open,2026-01-16,
+RISK-005,Implementation Complexity,IAM policy parsing complexity for storage credentials,Medium,Low,LOW,115,Use existing JSON parsing libraries; limit scope to common patterns; extensive testing on all clouds,,Open,2026-01-16,
+RISK-006,Timeline,Sprint timeline slippage due to unforeseen issues,Medium,Low,MEDIUM,All,Build 20% buffer into estimates; prioritize high-impact checks; defer low-priority if needed,,Open,2026-01-16,
+RISK-007,Testing,Insufficient test coverage for new checks,High,Low,MEDIUM,All new checks,Create dedicated test workspaces on all clouds; populate with diverse configs; automate test data setup,,Open,2026-01-16,
+RISK-008,User Adoption,Customer confusion about deprecated checks,Medium,Medium,MEDIUM,"20, 63-65, 46-48",Clear communication plan; gradual deprecation; comprehensive documentation; migration guides,,Open,2026-01-16,
+RISK-009,API Consistency,Apps API inconsistent or missing fields,Medium,Medium,MEDIUM,"133, 134, 135, 136",Flexible validation logic; handle missing fields gracefully; fallback to generic permissions API,,Open,2026-01-16,
+RISK-010,Performance,Secret scanning in init scripts performance impact,Medium,Low,LOW,139,Limit scope to global init scripts only; optimize regex patterns; consider async processing,,Open,2026-01-16,
+RISK-011,Dependencies,AI Gateway configuration varies by model type,Medium,Medium,MEDIUM,"119, 120, 121, 122",Comprehensive testing across model types; flexible validation; clear documentation of supported configs,,Open,2026-01-16,
+RISK-012,Backward Compatibility,Modifications break existing SAT deployments,High,Low,MEDIUM,All modifications,Maintain backward compatibility; add new logic without removing old; extensive regression testing,,Open,2026-01-16,
+
+Issue ID,Issue Category,Issue Description,Severity,Affected Checks,Impact,Resolution,Owner,Status,Date Opened,Date Resolved,Notes

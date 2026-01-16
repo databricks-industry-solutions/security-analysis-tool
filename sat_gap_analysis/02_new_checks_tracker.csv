@@ -1,0 +1,36 @@
+Check ID,Check Code,Category,Check Name,Description,Severity,Priority,AWS,Azure,GCP,Complexity,Effort (days),Sprint,Status,Assigned To,Notes,Completion %
+111,DP-10,Data Protection,Row-Level Security Filters Applied,Validates sensitive tables have RLS filters configured,High,HIGH,Yes,Yes,Yes,Medium,3,Sprint 1,Not Started,,"UC fine-grained security",0%
+112,DP-11,Data Protection,Column Masking Policies Configured,Validates PII columns have masking functions,High,HIGH,Yes,Yes,Yes,Medium,3,Sprint 1,Not Started,,"UC fine-grained security",0%
+113,GOV-37,Governance,ABAC Policies Deployed,Validates tag-based access policies configured,Medium,HIGH,Yes,Yes,Yes,High,5,Sprint 1,Not Started,,"API needs verification",0%
+114,DP-12,Data Protection,External Location Security,Validates external locations use storage credentials,High,HIGH,Yes,Yes,Yes,Low,2,Sprint 1,Not Started,,"UC security",0%
+115,DP-13,Data Protection,Storage Credential Scope,Validates credentials scoped to specific paths,Medium,HIGH,Yes,Yes,Yes,Medium,4,Sprint 1,Not Started,,"IAM policy parsing required",0%
+116,GOV-38,Governance,Catalog/Schema Ownership Delegation,Validates ownership assigned to groups not users,Low,LOW,Yes,Yes,Yes,Low,2,Sprint 2,Not Started,,"UC governance",0%
+117,GOV-39,Governance,Table/View Lineage Tracking,Validates production tables have lineage data,Informational,LOW,Yes,Yes,Yes,Low,2,Sprint 2,Not Started,,"UC governance",0%
+118,DP-15,Data Protection,Volume Security Configuration,Validates volumes not world-readable,Medium,HIGH,Yes,Yes,Yes,Medium,3,Sprint 2,Not Started,,"UC security",0%
+119,DP-16,Data Protection,Model Serving Guardrails Configured,Validates AI Gateway guardrails enabled,High,HIGH,Yes,Yes,No,Medium,4,Sprint 2,Not Started,,"AI Gateway features",0%
+120,IA-8,Identity & Access,Model Serving Authentication,Validates endpoints require authentication,High,HIGH,Yes,Yes,Yes,Low,2,Sprint 2,Not Started,,"AI security",0%
+121,GOV-40,Governance,Inference Table Logging Enabled,Validates request/response logging configured,Medium,HIGH,Yes,Yes,Yes,Low,2,Sprint 2,Not Started,,"AI governance",0%
+122,GOV-41,Governance,Foundation Model API Rate Limits,Validates rate limits prevent abuse,Medium,HIGH,Yes,Yes,No,Low,2,Sprint 2,Not Started,,"AI governance",0%
+123,NS-9,Network Security,Vector Search Endpoint Security,Validates endpoints secured with IP ACLs or Private Link,High,HIGH,Yes,Yes,Yes,Low,2,Sprint 2,Not Started,,"AI network security",0%
+124,GOV-42,Governance,Model Registry UC Migration,Validates models in UC not workspace registry,Medium,MEDIUM,Yes,Yes,Yes,Low,2,Sprint 3,Not Started,,"AI governance",0%
+125,IA-9,Identity & Access,MLflow Experiment Permissions,Validates experiments have proper ACLs,Low,MEDIUM,Yes,Yes,Yes,Low,2,Sprint 3,Not Started,,"AI access control",0%
+126,NS-10,Network Security,Serverless Network Policies Configured,Validates custom network policies exist,High,HIGH,Yes,Yes,No,High,5,Sprint 3,Not Started,,"API needs verification",0%
+127,NS-11,Network Security,Workspace Network Policy Assignment,Validates production workspaces have custom policies,High,HIGH,Yes,Yes,No,Medium,3,Sprint 3,Not Started,,"Serverless security",0%
+128,NS-12,Network Security,Serverless Egress Restrictions,Validates policies restrict outbound connections,Medium,HIGH,Yes,Yes,No,Medium,2,Sprint 3,Not Started,,"Serverless security",0%
+129,NS-13,Network Security,Serverless SQL Warehouse Security,Validates serverless warehouses respect network policies,Medium,MEDIUM,Yes,Yes,No,Low,1,Sprint 3,Not Started,,"Serverless security",0%
+130,DP-17,Data Protection,Git URL Allowlist Enforcement,Validates allowlist configured and enforced,Medium,MEDIUM,Yes,Yes,Yes,Low,2,Sprint 3,Not Started,,"Git security",0%
+131,DP-18,Data Protection,Git Restriction Mode,Validates clone/commit/push restrictions configured,Low,MEDIUM,Yes,Yes,Yes,Low,1,Sprint 3,Not Started,,"Git security",0%
+132,IA-10,Identity & Access,Bitbucket Authentication Migration,Validates repos not using deprecated app passwords,Medium,MEDIUM,Yes,Yes,Yes,Low,2,Sprint 3,Not Started,,"Becomes HIGH after June 2026",0%
+133,IA-11,Identity & Access,Apps Use Service Principal Identity,Validates apps have dedicated service principals,High,MEDIUM,Yes,Yes,Yes,Medium,3,Sprint 4,Not Started,,"Apps security",0%
+134,IA-12,Identity & Access,Apps Enforce SSO Authentication,Validates apps require SSO not OTP,Medium,MEDIUM,Yes,Yes,Yes,Low,2,Sprint 4,Not Started,,"Apps security",0%
+135,NS-14,Network Security,Apps Not Publicly Accessible,Validates apps require authentication,High,MEDIUM,Yes,Yes,Yes,Low,2,Sprint 4,Not Started,,"Apps security",0%
+136,IA-13,Identity & Access,App Permission Boundaries,Validates apps have properly scoped permissions,Medium,MEDIUM,Yes,Yes,Yes,Low,2,Sprint 4,Not Started,,"Apps security",0%
+137,DP-19,Data Protection,External Secret Stores Configured,Validates production scopes use external stores,Medium,MEDIUM,Yes,Yes,Yes,Low,2,Sprint 4,Not Started,,"Secrets management",0%
+138,DP-20,Data Protection,Secrets Not in Notebooks,Validates notebooks reference secrets not hardcode,High,MEDIUM,Yes,Yes,Yes,Low,0,Sprint 4,Not Started,,"REDUNDANT - covered by TruffleHog",0%
+139,DP-21,Data Protection,Secrets Not in Init Scripts,Validates init scripts use dbutils.secrets.get(),High,MEDIUM,Yes,Yes,Yes,Medium,3,Sprint 4,Not Started,,"Secrets management",0%
+140,GOV-43,Governance,Automated Security Monitoring Configured,Validates SQL queries scheduled for security events,Low,LOW,Yes,Yes,Yes,Low,2,Sprint 5,Not Started,,"System tables monitoring",0%
+141,GOV-44,Governance,Audit Log Retention Policies,Validates system tables have retention configured,Medium,MEDIUM,Yes,Yes,Yes,Medium,3,Sprint 5,Not Started,,"System tables monitoring",0%
+142,GOV-45,Governance,Alert Destinations Configured,Validates notification destinations for security alerts,Low,LOW,Yes,Yes,Yes,Low,2,Sprint 5,Not Started,,"System tables monitoring",0%
+143,DP-22,Data Protection,Workspace Encryption Status,Validates workspace encryption enabled with CMK,Medium,LOW,Yes,Yes,Yes,Low,2,Sprint 6,Not Started,,"Workspace security",0%
+144,GOV-46,Governance,Cluster Policy Inheritance,Validates all clusters inherit from policies,Medium,LOW,Yes,Yes,Yes,Low,2,Sprint 6,Not Started,,"Governance",0%
+145,IA-14,Identity & Access,Job Owner is Service Principal,Validates production jobs owned by SPs not users,Medium,LOW,Yes,Yes,Yes,Low,2,Sprint 6,Not Started,,"Identity best practices",0%

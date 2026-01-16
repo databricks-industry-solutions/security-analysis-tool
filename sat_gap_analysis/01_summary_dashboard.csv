@@ -1,0 +1,41 @@
+Metric,Current,Proposed,Delta,Notes
+Total Active Checks,77,112,+35 (+45%),"35 new checks, 12 modifications, 3 deprecations"
+New Security Areas,5,8,+3,"Added: AI/ML, Serverless, Enhanced UC"
+Cloud Coverage (AWS),%92,%98,+6%,110 of 112 checks
+Cloud Coverage (Azure),%92,%97,+5%,109 of 112 checks
+Cloud Coverage (GCP),%91,%94,+3%,105 of 112 checks
+High Severity Checks,28,42,+14,Critical security validations
+Medium Severity Checks,31,45,+14,Important security validations
+Low Severity Checks,10,15,+5,Nice-to-have validations
+Informational Checks,8,10,+2,Awareness and monitoring
+NIST CSF Alignment,%78,%96,+18%,Improved framework compliance
+CIS Benchmark Alignment,%78,%96,+18%,87 of 112 to 108 of 112 controls
+DASF Alignment,%75,%95,+20%,Databricks security framework
+
+Category,Current Checks,Proposed Checks,New,Modified,Deprecated
+Governance (GOV),28,37,+9,5,-2 (consolidated)
+Data Protection (DP),9,22,+13,1,0
+Identity & Access (IA),7,14,+7,1,-1 (UC only)
+Network Security (NS),8,15,+7,2,0
+Informational (INFO),17,17,0,3,-3 (downgraded)
+AI/ML Security (AI),0,7,+7,0,0
+Total,77,112,+35,12,-3
+
+Priority,New Checks,Effort (days),Sprint
+HIGH - Must Address,19,54,Sprint 1-2
+MEDIUM - Should Address,13,30,Sprint 3-4
+LOW - Nice to Have,3,6,Sprint 5-6
+Total,35,90,6 sprints (12 weeks)
+
+Sprint,Focus,New Checks,Modifications,Effort (days)
+Sprint 1-2,UC & AI Security,15,2,35
+Sprint 3-4,Serverless & Apps,11,5,30
+Sprint 5,System Tables & Cleanup,6,5,15
+Sprint 6,Enhancements & Polish,3,0,14
+Total,All Categories,35,12,94
+
+Resource Plan,Option 1 (2 engineers),Option 2 (3 engineers)
+Duration,12 weeks,8 weeks
+Engineer-days,94,94
+Daily capacity,2 engineers × 8 days/sprint,3 engineers × 8 days/sprint
+Buffer,20%,15%

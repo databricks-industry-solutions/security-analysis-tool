@@ -1,0 +1,40 @@
+Test ID,Test Type,Check IDs,Test Description,Test Environment,AWS,Azure,GCP,Priority,Status,Assigned To,Pass/Fail,Completion %,Notes
+TEST-001,Unit Test,111,UC row-level security filter detection,Dev,Yes,Yes,Yes,High,Not Started,,,0%,Test tables with and without filters
+TEST-002,Unit Test,112,UC column masking detection,Dev,Yes,Yes,Yes,High,Not Started,,,0%,Test PII columns with and without masks
+TEST-003,Unit Test,113,ABAC policy detection,Dev,Yes,Yes,Yes,Medium,Not Started,,,0%,Depends on API availability
+TEST-004,Unit Test,114,External location security validation,Dev,Yes,Yes,Yes,High,Not Started,,,0%,Test with and without storage credentials
+TEST-005,Unit Test,115,Storage credential scope validation,Dev,Yes,Yes,Yes,High,Not Started,,,0%,Test IAM/RBAC/GCP policy parsing
+TEST-006,Unit Test,119,AI Gateway guardrails detection,Dev,Yes,Yes,No,High,Not Started,,,0%,Test PII and safety filters
+TEST-007,Unit Test,120,Model serving authentication,Dev,Yes,Yes,Yes,High,Not Started,,,0%,Test public vs authenticated endpoints
+TEST-008,Unit Test,126-129,Serverless network policy validation,Dev,Yes,Yes,No,High,Not Started,,,0%,Depends on API availability
+TEST-009,Unit Test,133-136,Apps security validation,Dev,Yes,Yes,Yes,High,Not Started,,,0%,Test SP assignment and permissions
+TEST-010,Unit Test,137-139,Secrets management validation,Dev,Yes,Yes,Yes,High,Not Started,,,0%,Test external stores and hardcoded secrets
+TEST-011,Integration Test,All new checks,Full workspace analysis with new checks,Test Workspace,Yes,Yes,Yes,High,Not Started,,,0%,Validate all 112 checks execute
+TEST-012,Integration Test,All new checks,Cross-cloud compatibility testing,Test Workspaces,Yes,Yes,Yes,High,Not Started,,,0%,Ensure cloud-specific logic works
+TEST-013,Regression Test,1-77,Existing checks still pass,Test Workspace,Yes,Yes,Yes,High,Not Started,,,0%,No breaking changes to old checks
+TEST-014,Performance Test,All checks,Execution time within 10% of baseline,Test Workspace,Yes,Yes,Yes,High,Not Started,,,0%,Large workspace (1000+ clusters)
+TEST-015,Performance Test,All checks,Query optimization for large datasets,Test Workspace,Yes,Yes,Yes,Medium,Not Started,,,0%,10000+ tables test
+TEST-016,Security Test,139,Secret scanning doesn't leak secrets,Test Workspace,Yes,Yes,Yes,High,Not Started,,,0%,Validate no secrets in logs
+TEST-017,Validation Test,All modifications,Modified checks enhance without breaking,Test Workspace,Yes,Yes,Yes,High,Not Started,,,0%,Compare before/after results
+TEST-018,Validation Test,"20, 63-65, 46-48",Deprecated checks handled correctly,Test Workspace,Yes,Yes,Yes,Medium,Not Started,,,0%,Conditional logic and warnings
+TEST-019,User Acceptance Test,All,End-to-end SAT execution by user,Staging,Yes,Yes,Yes,High,Not Started,,,0%,User feedback and validation
+TEST-020,Compliance Test,All,Framework alignment validation (NIST/CIS/DASF),Test Workspace,Yes,Yes,Yes,Medium,Not Started,,,0%,Validate coverage metrics
+
+Test Environment,Type,Cloud,Workspace ID,Configuration,Setup Status,Owner,Notes
+Dev Environment 1,Development,AWS,TBD,"Small workspace, diverse configs",Not Started,,For unit testing
+Dev Environment 2,Development,Azure,TBD,"Small workspace, diverse configs",Not Started,,For unit testing
+Dev Environment 3,Development,GCP,TBD,"Small workspace, diverse configs",Not Started,,For unit testing
+Test Workspace 1,Integration,AWS,TBD,"Large workspace (1000+ clusters, 10000+ tables)",Not Started,,Performance testing
+Test Workspace 2,Integration,Azure,TBD,"Large workspace (1000+ clusters, 10000+ tables)",Not Started,,Performance testing
+Test Workspace 3,Integration,GCP,TBD,"Medium workspace (100+ clusters, 1000+ tables)",Not Started,,Integration testing
+Staging Environment,UAT,Multi-cloud,TBD,Production-like configuration,Not Started,,User acceptance testing
+
+Test Data Requirements,Description,Status,Owner,Notes
+Unity Catalog Tables,Tables with and without row filters and column masks,Not Started,,10+ tables per environment
+AI/ML Resources,Model serving endpoints with various guardrail configs,Not Started,,5+ endpoints per environment
+Serverless Resources,Serverless SQL warehouses and network policies,Not Started,,Requires preview access
+Apps Resources,Databricks Apps with various security configs,Not Started,,3+ apps per environment
+Git Repos,Repos with various authentication methods (including Bitbucket),Not Started,,5+ repos per environment
+Secret Scopes,Mix of external and Databricks-backed secret scopes,Not Started,,3+ scopes per environment
+Jobs,Mix of user-owned and SP-owned jobs,Not Started,,10+ jobs per environment
+Clusters,Mix of UC-enabled and legacy clusters,Not Started,,10+ clusters per environment
