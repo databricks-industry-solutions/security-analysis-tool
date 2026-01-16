@@ -25,19 +25,36 @@ BrickHound is a graph-based permissions analysis tool integrated into SAT. It an
   - `brickhound_collection_metadata`: Collection run metadata
 
 ### Analysis Tools
-1. **Web App:** Interactive queries via Flask UI
+1. **Web App:** Interactive queries via Gradio UI (manual deployment required)
 2. **Notebooks:** 4 specialized analysis notebooks
 3. **SQL Queries:** Direct table access for custom analysis
 
 ## Using the Web App
 
-### Access
-Navigate to: `https://<workspace>/apps/brickhound-sat`
+**⚠️ Note:** The web app must be deployed manually (see Deployment section below).
 
-Or find the URL in Terraform outputs:
+### Access
+After deployment, navigate to: **Workspace → Apps → brickhound-sat**
+
+Or use the direct URL: `https://<workspace>/apps/brickhound-sat`
+
+### Deployment
+The web app is **NOT** automatically deployed by DABS or Terraform. To deploy:
+
 ```bash
-terraform output brickhound_app_url
+cd app/brickhound
+
+# 1. Update app.yaml with your warehouse ID and catalog/schema
+# 2. Deploy the app:
+databricks apps create brickhound-sat \
+  --source-code-path . \
+  --description "Permissions Analysis Tool"
+
+# 3. Grant permissions to the app's service principal:
+# Find service principal in: Workspace → Apps → brickhound-sat → Settings
 ```
+
+**See:** `/app/brickhound/README.md` for complete deployment instructions.
 
 ### Features
 - **Dashboard:** View collection runs and statistics

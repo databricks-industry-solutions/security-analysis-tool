@@ -94,15 +94,43 @@ cd terraform
 terraform apply  # Includes brickhound_job.tf
 ```
 
-## Web App Deployment
+## Web App Deployment (Manual)
 
-Deploy the interactive UI:
+**⚠️ Important:** The Permissions Analysis web app is **NOT** automatically deployed by DABS or Terraform.
+
+The web app must be deployed manually after SAT installation:
+
+### Prerequisites
+1. SAT must be installed first (provides credentials and data collection job)
+2. Data collection job must run at least once (populates tables)
+3. SQL warehouse must be running
+
+### Deploy the App
 ```bash
 cd app/brickhound
-databricks apps deploy
+
+# Update app.yaml with your warehouse ID and catalog/schema
+# Then deploy:
+databricks apps create brickhound-sat \
+  --source-code-path . \
+  --description "Permissions Analysis Tool"
 ```
 
-Access at: `https://<workspace-url>/apps/brickhound-sat`
+### Grant Permissions
+After deployment, grant the app's service principal access to tables:
+```sql
+-- Find app service principal in: Workspace → Apps → brickhound-sat → Settings
+GRANT USAGE ON CATALOG {catalog} TO `{app_service_principal}`;
+GRANT USAGE ON SCHEMA {catalog}.{schema} TO `{app_service_principal}`;
+GRANT SELECT ON SCHEMA {catalog}.{schema} TO `{app_service_principal}`;
+```
+
+### Access the App
+Navigate to: **Workspace → Apps → brickhound-sat**
+
+Or use the direct URL: `https://<workspace-url>/apps/brickhound-sat`
+
+**See:** `/app/brickhound/README.md` for complete deployment instructions.
 
 ## Troubleshooting
 
