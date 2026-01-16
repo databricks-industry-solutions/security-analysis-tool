@@ -49,17 +49,6 @@ resource "databricks_job" "brickhound_data_collection" {
   schedule {
     quartz_cron_expression = "0 0 2 * * ?"
     timezone_id            = "America/New_York"
-    pause_status           = "UNPAUSED"
-  }
-
-  email_notifications {
-    on_failure                = var.notification_email != "" ? [var.notification_email] : []
-    no_alert_for_skipped_runs = true
-  }
-
-  notification_settings {
-    no_alert_for_skipped_runs = true
-    no_alert_for_canceled_runs = true
   }
 }
 
