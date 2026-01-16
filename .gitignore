@@ -183,3 +183,6 @@ notebooks/.ipynb_checkpoints/
 *.key
 credentials.json
 secrets.yaml
+
+# Project-specific documentation
+CLAUDE.md
