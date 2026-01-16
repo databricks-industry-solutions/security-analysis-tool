@@ -78,12 +78,6 @@ def form():
             message="Deploy Permissions Analysis?",
             default=True,
         ),
-        Confirm(
-            name="deploy_brickhound_app",
-            message="Deploy Permissions Analysis Web App?",
-            ignore=lambda x: not x["enable_brickhound"],
-            default=True,
-        ),
     ]
 
     questions = questions + cloud_specific_questions(client) + proxies + brickhound

@@ -26,11 +26,6 @@
             "description": "Enable Permissions Analysis",
             "default": false
         },
-        "deploy_brickhound_app": {
-            "type": "boolean",
-            "description": "Deploy Permissions Analysis Web App",
-            "default": false
-        },
         "brickhound_schedule": {
             "type": "string",
             "description": "Permissions Analysis collection schedule (cron expression)",

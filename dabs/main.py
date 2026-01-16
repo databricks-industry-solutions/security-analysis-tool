@@ -27,7 +27,6 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
         ),
         "serverless": answers.get("enable_serverless", False),
         "enable_brickhound": answers.get("enable_brickhound", False),
-        "deploy_brickhound_app": answers.get("deploy_brickhound_app", False),
         "brickhound_schedule": "0 0 2 * * ?",  # Daily at 2 AM ET
     }
 
