@@ -20,6 +20,21 @@
         "serverless": {
             "type": "boolean",
             "description": "Serverless"
+        },
+        "enable_brickhound": {
+            "type": "boolean",
+            "description": "Enable BrickHound Permissions Analysis",
+            "default": false
+        },
+        "deploy_brickhound_app": {
+            "type": "boolean",
+            "description": "Deploy BrickHound Web App",
+            "default": false
+        },
+        "brickhound_schedule": {
+            "type": "string",
+            "description": "BrickHound collection schedule (cron expression)",
+            "default": "0 0 2 * * ?"
         }
     },
     "success_message": ""
