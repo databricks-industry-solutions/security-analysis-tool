@@ -240,12 +240,77 @@ print("\n" + "="*80 + "\n")
 # DBTITLE 1,Initialize Permissions Analysis Tool Collector and Load Credentials
 import sys
 import os
-from databricks.sdk import WorkspaceClient, AccountClient
+from databricks.sdk import WorkspaceClient, AccountClient, useragent
+
+# Configure User-Agent for all API calls (aligns with dbclient.py)
+useragent.with_product("databricks-sat", "0.1.0")
 
 # Add the brickhound package to path (if running from notebooks folder)
 repo_root = os.path.dirname(os.path.dirname(os.getcwd()))
 if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
+
+# =============================================================================
+# Helper Functions for Cloud Detection and Domain Extraction
+# =============================================================================
+# Note: These functions align with the reference implementation in dbclient.py
+# and support government clouds (e.g., .com.br for Brazil, .mil for US military)
+
+import re
+
+def get_domain_from_url(url):
+    """
+    Extract domain suffix from Databricks URL to support government clouds.
+
+    This function aligns with the reference implementation in dbclient.py and
+    supports various domain suffixes including government clouds.
+
+    Examples:
+        https://adb-123.cloud.databricks.com → com
+        https://adb-456.cloud.databricks.com.br → com.br
+        https://workspace.azuredatabricks.net → net
+        https://workspace.gcp.databricks.com → com
+
+    Args:
+        url (str): Databricks workspace URL
+
+    Returns:
+        str: Domain suffix (e.g., 'com', 'com.br', 'net')
+    """
+    regex = r"https://.*databricks\.(.*?)/?$"
+    match = re.match(regex, url)
+    if match:
+        return match.group(1)
+
+    # Fallback to '.com' or '.net' if extraction fails
+    if 'azure' in url.lower():
+        return 'net'
+    return 'com'
+
+
+def parse_cloud_type(workspace_url):
+    """
+    Determine cloud provider from workspace URL using explicit pattern matching.
+
+    This function aligns with the reference implementation in dbclient.py for
+    consistent cloud detection across the codebase.
+
+    Args:
+        workspace_url (str): Databricks workspace URL
+
+    Returns:
+        str: Cloud provider ('azure', 'aws', or 'gcp')
+    """
+    if 'azuredatabricks.net' in workspace_url:
+        return 'azure'
+    if 'gcp.databricks' in workspace_url:
+        return 'gcp'
+    if 'cloud.databricks' in workspace_url:
+        return 'aws'
+
+    # Fallback to AWS as default
+    return 'aws'
+
 
 print("="*80)
 print("Initializing Permissions Analysis Tool Collector")
@@ -266,13 +331,21 @@ SP_CREDENTIALS = {
 MULTI_WORKSPACE_MODE = False
 
 # Determine account host based on current workspace URL
+# Note: Domain extraction supports government clouds (e.g., .com.br for Brazil)
+# This aligns with the reference implementation in dbclient.py
 workspace_url = spark.conf.get("spark.databricks.workspaceUrl", "")
-if "azure" in workspace_url.lower():
-    SP_CREDENTIALS['account_host'] = "https://accounts.azuredatabricks.net"
-elif "gcp" in workspace_url.lower():
-    SP_CREDENTIALS['account_host'] = "https://accounts.gcp.databricks.com"
-else:
-    SP_CREDENTIALS['account_host'] = "https://accounts.cloud.databricks.com"
+domain = get_domain_from_url(workspace_url)
+cloud_type = parse_cloud_type(workspace_url)
+
+if cloud_type == 'azure':
+    SP_CREDENTIALS['account_host'] = f"https://accounts.azuredatabricks.{domain}"
+elif cloud_type == 'gcp':
+    SP_CREDENTIALS['account_host'] = f"https://accounts.gcp.databricks.{domain}"
+else:  # aws
+    SP_CREDENTIALS['account_host'] = f"https://accounts.cloud.databricks.{domain}"
+
+# Store cloud type for later use
+SP_CREDENTIALS['cloud_type'] = cloud_type
 
 print(f"\n1. Loading Service Principal Credentials...")
 
@@ -472,7 +545,7 @@ if MULTI_WORKSPACE_MODE and workspaces_to_collect:
 
         # Build workspace URL
         if ws.azure_workspace_info:
-            ws_host = f"https://adb-{ws.workspace_id}.azuredatabricks.net"
+            ws_host = f"https://{ws.deployment_name}.azuredatabricks.net"
         elif hasattr(ws, 'gcp_managed_network_config') and ws.gcp_managed_network_config:
             ws_host = f"https://{ws.workspace_id}.gcp.databricks.com"
         else:
@@ -614,7 +687,7 @@ def get_workspace_client(workspace):
 
     # For Azure workspaces
     if workspace.azure_workspace_info:
-        ws_host = f"https://adb-{workspace.workspace_id}.azuredatabricks.net"
+        ws_host = f"https://{workspace.deployment_name}.azuredatabricks.net"
     # For GCP workspaces
     elif hasattr(workspace, 'gcp_managed_network_config'):
         ws_host = f"https://{workspace.workspace_id}.gcp.databricks.com"
@@ -1884,14 +1957,22 @@ if COLLECTION_CONFIG.get('collect_account_level', False):
 
     if ACCOUNT_ID and SP_CLIENT_ID and SP_CLIENT_SECRET:
         try:
-            # Determine account host based on workspace URL
-            workspace_url = spark.conf.get("spark.databricks.workspaceUrl", "")
-            if "azure" in workspace_url.lower():
-                account_host = "https://accounts.azuredatabricks.net"
-            elif "gcp" in workspace_url.lower():
-                account_host = "https://accounts.gcp.databricks.com"
+            # Reuse account host determined during initialization (Step 4)
+            # If not available (credentials loaded directly here), compute it using helper functions
+            if SP_CREDENTIALS.get('account_host'):
+                account_host = SP_CREDENTIALS['account_host']
             else:
-                account_host = "https://accounts.cloud.databricks.com"
+                # Fallback: compute account host using domain-aware logic
+                workspace_url = spark.conf.get("spark.databricks.workspaceUrl", "")
+                domain = get_domain_from_url(workspace_url)
+                cloud_type = parse_cloud_type(workspace_url)
+
+                if cloud_type == 'azure':
+                    account_host = f"https://accounts.azuredatabricks.{domain}"
+                elif cloud_type == 'gcp':
+                    account_host = f"https://accounts.gcp.databricks.{domain}"
+                else:  # aws
+                    account_host = f"https://accounts.cloud.databricks.{domain}"
 
             print(f"\n📡 Connecting to {account_host}")
             print(f"   Account ID: {ACCOUNT_ID}")
@@ -2251,7 +2332,7 @@ if COLLECTION_CONFIG.get('collect_account_level', False):
 
                 # Build workspace URL
                 if ws.azure_workspace_info:
-                    ws_host = f"https://adb-{ws.workspace_id}.azuredatabricks.net"
+                    ws_host = f"https://{ws.deployment_name}.azuredatabricks.net"
                 elif hasattr(ws, 'gcp_managed_network_config') and ws.gcp_managed_network_config:
                     ws_host = f"https://{ws.workspace_id}.gcp.databricks.com"
                 else:
