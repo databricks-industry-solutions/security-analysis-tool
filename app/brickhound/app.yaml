@@ -9,8 +9,11 @@ config:
     - "python"
     - "app.py"
 
-# Environment variables 
-# Values from SAT configuration (arunuc.security_analysis)
+# Environment variables
+# REQUIRED: Replace placeholders with actual values from your SAT configuration
+# Example: If your SAT schema is "main.security_analysis", use:
+#   BRICKHOUND_CATALOG: "main"
+#   BRICKHOUND_SCHEMA: "security_analysis"
 env:
   - name: "PORT"
     value: "8000"
@@ -19,7 +22,7 @@ env:
   - name: "BRICKHOUND_SCHEMA"
     value: "<schema_name_of_sat>"
   - name: "WAREHOUSE_ID"
-    value: "<warehouse_id_of_sat"
+    value: "<warehouse_id_of_sat>"
 
 # Resource requirements
 resources:

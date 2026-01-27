@@ -18,14 +18,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration - Read from environment variables (set in app.yaml)
-# Debug: Print all environment variables to troubleshoot
+# These MUST be configured in app.yaml - no hardcoded defaults
 logger.info("[CONFIG] Environment variables check:")
 logger.info(f"  BRICKHOUND_CATALOG = {os.getenv('BRICKHOUND_CATALOG')}")
 logger.info(f"  BRICKHOUND_SCHEMA = {os.getenv('BRICKHOUND_SCHEMA')}")
 logger.info(f"  WAREHOUSE_ID = {os.getenv('WAREHOUSE_ID')}")
 
-CATALOG = os.getenv("BRICKHOUND_CATALOG", "main")
-SCHEMA = os.getenv("BRICKHOUND_SCHEMA", "security_analysis")
+# Validate required environment variables
+CATALOG = os.getenv("BRICKHOUND_CATALOG")
+SCHEMA = os.getenv("BRICKHOUND_SCHEMA")
+
+if not CATALOG or not SCHEMA:
+    error_msg = "FATAL: Missing required environment variables in app.yaml:\n"
+    if not CATALOG:
+        error_msg += "  - BRICKHOUND_CATALOG is not set\n"
+    if not SCHEMA:
+        error_msg += "  - BRICKHOUND_SCHEMA is not set\n"
+    error_msg += "\nPlease configure these values in app.yaml before deploying."
+    logger.error(error_msg)
+    raise ValueError(error_msg)
 
 logger.info(f"[CONFIG] Using CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 
@@ -59,13 +70,17 @@ def get_connection():
         warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
 
         if not warehouse_id:
-            print(f"[AUTH] WARNING: No warehouse ID found in environment")
-            print(f"[AUTH] Set WAREHOUSE_ID in app.yaml or use default")
-            warehouse_id = "82fc4fdc7d3edb9f"  # Fallback default
-        else:
-            if not hasattr(get_connection, '_warehouse_logged'):
-                print(f"[AUTH] Using SQL Warehouse: {warehouse_id}")
-                get_connection._warehouse_logged = True
+            error_msg = (
+                "FATAL: WAREHOUSE_ID environment variable is not set in app.yaml.\n"
+                "Please configure WAREHOUSE_ID with a valid SQL warehouse ID before deploying."
+            )
+            print(f"[AUTH] ERROR: {error_msg}")
+            raise ValueError(error_msg)
+
+        if not hasattr(get_connection, '_warehouse_logged'):
+            print(f"[AUTH] Using SQL Warehouse: {warehouse_id}")
+            get_connection._warehouse_logged = True
+
         return workspace_client, warehouse_id
     except Exception as e:
         print(f"ERROR in get_connection(): {e}")
