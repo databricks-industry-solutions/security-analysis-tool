@@ -485,13 +485,37 @@ def create_account_workspaces_table():
 # COMMAND ----------
 
 
-def create_secret_scan_results_table():
+def create_notebooks_secret_scan_results_table():
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.secret_scan_results (
+        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.notebooks_secret_scan_results (
         workspace_id STRING,
         notebook_id STRING,
         notebook_path STRING,
         notebook_name STRING,
+        detector_name STRING,
+        secret_sha256 STRING,
+        source_file STRING,
+        verified BOOLEAN,
+        secrets_found INTEGER,
+        run_id BIGINT,
+        scan_time TIMESTAMP,
+        scan_date DATE GENERATED ALWAYS AS (CAST(scan_time AS DATE)),
+        scan_hhmm INTEGER GENERATED ALWAYS AS (CAST(CAST(hour(scan_time) as STRING) || CAST(minute(scan_time) as STRING) as INTEGER))
+    )
+    USING DELTA
+    PARTITIONED BY (scan_date)
+    """
+    )
+
+
+def create_clusters_secret_scan_results_table():
+    df = spark.sql(
+        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.clusters_secret_scan_results (
+        workspace_id STRING,
+        cluster_id STRING,
+        cluster_name STRING,
+        config_field STRING,
+        config_key STRING,
         detector_name STRING,
         secret_sha256 STRING,
         source_file STRING,
