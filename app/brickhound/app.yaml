@@ -9,17 +9,17 @@ config:
     - "python"
     - "working_app.py"
 
-# Environment variables (top-level, not under config)
+# Environment variables 
 # Values from SAT configuration (arunuc.security_analysis)
 env:
   - name: "PORT"
     value: "8000"
   - name: "BRICKHOUND_CATALOG"
-    value: "arunuc"
+    value: "<catalog_name_of_sat>"
   - name: "BRICKHOUND_SCHEMA"
-    value: "security_analysis"
+    value: "<schema_name_of_sat>"
   - name: "WAREHOUSE_ID"
-    value: "782228d75bf63e5c"
+    value: "<warehouse_id_of_sat"
 
 # Resource requirements
 resources:
