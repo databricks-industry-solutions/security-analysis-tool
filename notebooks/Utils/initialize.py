@@ -88,7 +88,7 @@ json_.update(
         "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
-        "sat_version": "0.5.0",
+        "sat_version": "0.6.0",
     }
 )
 

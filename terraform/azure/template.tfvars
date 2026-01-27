@@ -23,3 +23,15 @@ proxies = {}
 
 #Flag to run SAT initializer/Driver on Serverless
 run_on_serverless = false # [Only monitor current workspace]
+
+# SQL Warehouse ID (Optional)
+# Default: "new" - Will create a new SQL warehouse
+# To use an existing warehouse, provide its 16-character ID
+# Example: "782228d75bf63e5c"
+# sqlw_id = "new"
+
+# Secret Scope Name (Optional)
+# Default: "sat_scope"
+# Customize to use a different scope name (useful for multiple SAT instances or naming conventions)
+# Example: "sat_scope_prod" or "sat_scope_scan1"
+# secret_scope_name = "sat_scope"
