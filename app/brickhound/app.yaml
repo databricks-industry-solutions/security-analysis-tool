@@ -7,7 +7,7 @@ config:
   # Entry point for the application
   command:
     - "python"
-    - "working_app.py"
+    - "app.py"
 
 # Environment variables 
 # Values from SAT configuration (arunuc.security_analysis)

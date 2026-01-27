@@ -7486,4 +7486,7 @@ def report_secret_scopes_filters():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    # Debug mode should be explicitly enabled via environment variable
+    # Never enable debug=True in production - it exposes sensitive information
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(host='0.0.0.0', port=8000, debug=debug_mode)
