@@ -247,6 +247,40 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='111'# GOV-37,Governance,Disable legacy features for new workspaces
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def disable_legacy_features_account(df):
+    if df is not None and not isEmpty(df):
+        result_row = df.first()
+
+        if result_row and hasattr(result_row, 'disable_legacy_features'):
+            dlf_value = result_row.disable_legacy_features
+
+            if dlf_value and hasattr(dlf_value, 'value') and dlf_value.value == True:
+                # Setting is enabled - PASS (legacy features are disabled)
+                return (check_id, 0, {'disable_legacy_features_enabled': True})
+            else:
+                # Setting is disabled - FAIL (legacy features are NOT disabled)
+                return (check_id, 1, {
+                    'disable_legacy_features_enabled': False,
+                    'value': dlf_value.value if dlf_value and hasattr(dlf_value, 'value') else None
+                })
+        else:
+            return (check_id, 1, {'disable_legacy_features_enabled': False, 'error': 'Setting not found in response'})
+    else:
+        return (check_id, 1, {'disable_legacy_features_enabled': False, 'error': 'No data returned from API'})
+
+if enabled:
+    tbl_name = 'account_disable_legacy_features'
+    sql=f'''
+        SELECT disable_legacy_features, etag, setting_name
+        FROM {tbl_name}
+    '''
+    sqlctrl(workspace_id, sql, disable_legacy_features_account)
+
+# COMMAND ----------
+
 check_id='39' #Secure cluster connectivity - azure
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 

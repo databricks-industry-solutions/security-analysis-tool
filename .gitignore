@@ -1,3 +1,18 @@
+/src/securityanalysistoolproject/file.log
+/src/securityanalysistoolproject/**/logs/
+/src/securityanalysistoolproject/test.py
+/src/securityanalysistoolproject/**/dist/
+/src/securityanalysistoolproject/**/build/
+/src/securityanalysistoolproject/dbr_profiler_tool.egg-info/
+/src/securityanalysistoolproject/.DS_Store
+/configs/gensecrets.sh
+/configs/setupsecrets.sh
+/configs/workspace_configs.csv
+/configs/security_best_practices_user.csv
+.databricks/
+.vscode/settings.json
+CLAUDE.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
