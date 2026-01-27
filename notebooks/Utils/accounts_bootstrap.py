@@ -224,4 +224,8 @@ bootstrap('account_networkpolicies', acct_settings.get_networkpolicies)
 
 # COMMAND ----------
 
+bootstrap('account_disable_legacy_features', acct_settings.get_disablelegacyfeatures)
+
+# COMMAND ----------
+
 print(f"Account Bootstrap - {time.time() - start_time} seconds to run")
