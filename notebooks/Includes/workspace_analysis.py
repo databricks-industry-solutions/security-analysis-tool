@@ -1518,7 +1518,7 @@ if enabled:
 # COMMAND ----------
 
 # NS-9: Serverless workspaces have proper network policy configuration
-check_id='111' #NS-9,Network Security,Serverless workspaces have proper network policy configuration
+check_id='111' #NS-9,Network Security, Workspaces have proper network policy configuration
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def comprehensive_network_policy_check(df):
