@@ -39,9 +39,19 @@ class AccountsSettings(SatDBClient):
         #if self._cloud_type=='azure':
         #    pass
         account_id=self._account_id
-        esmjsonlist = self.get(f"/accounts/{account_id}/settings/types/shield_esm_enablement_ac/names/default", master_acct=True).get("satelements", [])   
-        return esmjsonlist    
+        esmjsonlist = self.get(f"/accounts/{account_id}/settings/types/shield_esm_enablement_ac/names/default", master_acct=True).get("satelements", [])
+        return esmjsonlist
 
+    def get_disablelegacyfeatures(self):
+        """
+        Returns json object for disable legacy features account setting.
+        Extracts satelements array to match CSP/ESM pattern.
+        """
+        account_id = self._account_id
+        dlf_response = self.get(f"/accounts/{account_id}/settings/types/disable_legacy_features/names/default", master_acct=True)
+        # Extract satelements array like CSP/ESM methods do
+        dlf_json_list = dlf_response.get("satelements", []) if dlf_response else []
+        return dlf_json_list
 
     def get_networkconnectivityconfigurations(self, pageToken=None):
         """
@@ -66,7 +76,23 @@ class AccountsSettings(SatDBClient):
     
     def get_networkpolicies(self):
         account_id=self._account_id
-        ncpoliciesjsonlist = self.get(f"/accounts/{account_id}/network-policies", master_acct=True).get('items',[])      
-        return ncpoliciesjsonlist      
-    
-    
+        ncpoliciesjsonlist = self.get(f"/accounts/{account_id}/network-policies", master_acct=True).get('items',[])
+        return ncpoliciesjsonlist
+
+    def get_workspace_network_configuration(self, workspace_id):
+        """Get network configuration for a specific workspace.
+
+        Args:
+            workspace_id: The ID of the workspace
+
+        Returns:
+            list: List containing a single network configuration dict
+                  Format: [{"network_policy_id": "...", "workspace_id": ...}]
+                  Returns list for compatibility with bootstrap() function
+        """
+        account_id = self._account_id
+        config = self.get(f"/accounts/{account_id}/workspaces/{workspace_id}/network", master_acct=True)
+        # Wrap single config object in a list for bootstrap compatibility
+        return [config] if config else []
+
+

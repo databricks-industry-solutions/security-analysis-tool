@@ -1,0 +1,36 @@
+{{- if .enable_brickhound }}
+resources:
+  jobs:
+    brickhound_data_collection:
+      name: "SAT Permissions Analysis - Data Collection"
+      tags:
+        Application: SAT-PermissionsAnalysis
+        Component: Permissions
+        Purpose: Security Analysis
+      schedule:
+        quartz_cron_expression: "{{.brickhound_schedule}}"
+        timezone_id: "America/New_York"
+      max_concurrent_runs: 1
+      timeout_seconds: 14400
+      tasks:
+        - task_key: "collect_permissions_data"
+          {{- if eq .serverless false }}
+          job_cluster_key: brickhound_cluster
+          libraries:
+            - pypi:
+                package: networkx
+          {{- end }}
+          notebook_task:
+            notebook_path: "/Workspace/Applications/SAT/files/notebooks/permission_analysis_data_collection"
+
+      {{- if eq .serverless false }}
+      job_clusters:
+        - job_cluster_key: brickhound_cluster
+          new_cluster:
+            data_security_mode: SINGLE_USER
+            num_workers: 3
+            spark_version: {{.latest_lts}}
+            runtime_engine: "PHOTON"
+            node_type_id: {{.node_type}}
+      {{- end }}
+{{- end }}

@@ -4,6 +4,15 @@ bundle:
 include:
   - resources/*.yml
 
+sync:
+  include:
+    - notebooks/**/*.py
+    - notebooks/**/*.sql
+    - notebooks/**/
+    - configs/**/*
+    - dashboards/**/*
+    - app/**/*
+
 targets:
   sat:
     default: true

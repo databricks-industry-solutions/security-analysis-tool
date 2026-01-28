@@ -23,13 +23,19 @@ variable "sqlw_id" {
   }
 }
 
+variable "secret_scope_name" {
+  description = "Name of secret scope for SAT secrets"
+  type        = string
+  default     = "sat_scope"
+}
+
 variable "analysis_schema_name" {
   type        = string
   description = "Name of the schema to be used for analysis"
 }
 
 variable "proxies" {
-  type        = map
+  type        = map(any)
   description = "Proxies to be used for Databricks API calls"
 }
 
@@ -50,6 +56,7 @@ variable "client_id" {
 variable "client_secret" {
   description = "SP Secret"
   type        = string
+  sensitive   = true
 }
 
 variable "run_on_serverless" {
