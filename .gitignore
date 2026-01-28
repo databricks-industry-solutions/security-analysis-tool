@@ -189,21 +189,10 @@ notebooks/.ipynb_checkpoints/
 # Logs
 *.log
 
-# Database
-*.db
-*.sqlite
+**/.terraform*
+**/terraform.tfvars
+**/terraform.tfstate*
 
-# Secrets
-*.pem
-*.key
-credentials.json
-secrets.yaml
-
-# Project-specific documentation
+# Project documentation and planning files
 CLAUDE.md
-PROJECT_STRUCTURE_IMPROVEMENTS.md
-docs/BRICKHOUND_INTEGRATION.md
-docs/brickhound_PERMISSIONS.md
-docs/brickhound_README.md
-docs/brickhound_user_guide.md
-docs/databricks_mcp_tools.md
+docs/*Implementation_Plan.html

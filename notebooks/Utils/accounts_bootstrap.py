@@ -220,7 +220,76 @@ bootstrap('account_ncc', acct_settings.get_networkconnectivityconfigurations)
 
 # COMMAND ----------
 
-bootstrap('account_networkpolicies', acct_settings.get_networkpolicies)
+# Custom bootstrap for network policies with explicit schema to ensure dry_run_mode_product_filter is captured
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType
+from pyspark.sql.functions import col, from_json
+import json
+
+# Define explicit schema matching API documentation
+network_policy_schema = StructType([
+    StructField("account_id", StringType(), True),
+    StructField("network_policy_id", StringType(), True),
+    StructField("egress", StructType([
+        StructField("network_access", StructType([
+            StructField("restriction_mode", StringType(), True),
+            StructField("policy_enforcement", StructType([
+                StructField("enforcement_mode", StringType(), True),
+                StructField("dry_run_mode_product_filter", ArrayType(StringType()), True)  # EXPLICIT!
+            ]), True),
+            StructField("allowed_storage_destinations", ArrayType(StructType([
+                StructField("bucket_name", StringType(), True),
+                StructField("region", StringType(), True),
+                StructField("storage_destination_type", StringType(), True)
+            ])), True),
+            StructField("allowed_internet_destinations", ArrayType(StructType([
+                StructField("destination", StringType(), True),
+                StructField("internet_destination_type", StringType(), True)
+            ])), True)
+        ]), True)
+    ]), True),
+    StructField("ingress", StructType([
+        StructField("create_time", StringType(), True),
+        StructField("restriction_mode", StringType(), True),
+        StructField("update_time", StringType(), True)
+    ]), True)
+])
+
+try:
+    # Get policies from API
+    policies_list = acct_settings.get_networkpolicies()
+    if policies_list:
+        # Convert to JSON strings
+        json_strings = [json.dumps(p) for p in policies_list]
+        # Create DataFrame with explicit schema
+        policies_df = spark.createDataFrame([(x,) for x in json_strings], ["json_string"])
+        policies_df = policies_df.select(from_json(col("json_string"), network_policy_schema).alias("data")).select("data.*")
+        # Save as table
+        policies_df.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('account_networkpolicies')
+        loggr.info(f"Table created: `account_networkpolicies` with explicit schema including dry_run_mode_product_filter")
+    else:
+        from pyspark.sql.types import StructType as EmptyStructType
+        apiDF = spark.createDataFrame([], EmptyStructType([]))
+        apiDF.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('account_networkpolicies')
+        loggr.info("No network policies found")
+except Exception:
+    loggr.exception("Exception encountered while bootstrapping network policies")
+
+# COMMAND ----------
+
+# Collect workspace network configurations
+# This links workspaces to their assigned network policies
+try:
+    workspaces = spark.table('acctworkspaces').collect()
+    loggr.info(f"Collecting network configurations for {len(workspaces)} workspaces")
+    for ws in workspaces:
+        workspace_id = str(ws.workspace_id)
+        try:
+            bootstrap(f'workspace_network_config_{workspace_id}',
+                      lambda wid=workspace_id: acct_settings.get_workspace_network_configuration(wid))
+        except Exception as e:
+            loggr.warning(f"Could not collect network config for workspace {workspace_id}: {e}")
+except Exception as e:
+    loggr.warning(f"Could not collect workspace network configurations: {e}")
 
 # COMMAND ----------
 

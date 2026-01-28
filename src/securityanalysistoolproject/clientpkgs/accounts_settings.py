@@ -76,7 +76,23 @@ class AccountsSettings(SatDBClient):
     
     def get_networkpolicies(self):
         account_id=self._account_id
-        ncpoliciesjsonlist = self.get(f"/accounts/{account_id}/network-policies", master_acct=True).get('items',[])      
-        return ncpoliciesjsonlist      
-    
-    
+        ncpoliciesjsonlist = self.get(f"/accounts/{account_id}/network-policies", master_acct=True).get('items',[])
+        return ncpoliciesjsonlist
+
+    def get_workspace_network_configuration(self, workspace_id):
+        """Get network configuration for a specific workspace.
+
+        Args:
+            workspace_id: The ID of the workspace
+
+        Returns:
+            list: List containing a single network configuration dict
+                  Format: [{"network_policy_id": "...", "workspace_id": ...}]
+                  Returns list for compatibility with bootstrap() function
+        """
+        account_id = self._account_id
+        config = self.get(f"/accounts/{account_id}/workspaces/{workspace_id}/network", master_acct=True)
+        # Wrap single config object in a list for bootstrap compatibility
+        return [config] if config else []
+
+
