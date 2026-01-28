@@ -53,19 +53,30 @@ class SatDBClient:
         #AWS and GCP pass in secret generated in accounts console
         #Azure pass in secret generated in azure portal
         self._client_id = configs['client_id'].strip()
-        self._client_secret = configs['client_secret'].strip() 
-        #take care of gov cloud domains
-        domain= pars.get_domain(self._raw_url)       
-        if 'aws' in self._cloud_type:
-            self._ACCTURL=f"https://accounts.cloud.databricks.{domain}"
-        if "gcp" in self._cloud_type:
-            self._ACCTURL=f"https://accounts.gcp.databricks.{domain}"
-        #Azure msmgmt urls need these
+        self._client_secret = configs['client_secret'].strip()
+
+        # Check if accounts_console URL is explicitly provided
+        # (required for staging, DoD, and other non-standard environments)
+        accounts_console = configs.get('accounts_console', '').strip()
+        if accounts_console:
+            self._ACCTURL = accounts_console.rstrip('/')
+            LOGGR.info(f"Using provided accounts_console URL: {self._ACCTURL}")
+        else:
+            # Construct account URL from workspace URL domain
+            # Works for standard (.com) and GovCloud (.us) environments
+            domain = pars.get_domain(self._raw_url)
+            if 'aws' in self._cloud_type:
+                self._ACCTURL = f"https://accounts.cloud.databricks.{domain}"
+            elif "gcp" in self._cloud_type:
+                self._ACCTURL = f"https://accounts.gcp.databricks.{domain}"
+            elif 'azure' in self._cloud_type:
+                self._ACCTURL = f"https://accounts.azuredatabricks.{domain}"
+
+        # Azure management URLs
         if 'azure' in self._cloud_type:
-            self._ACCTURL=f"https://accounts.azuredatabricks.{domain}"
-            self._MGMTURL= "https://management.azure.com"
+            self._MGMTURL = "https://management.azure.com"
             self._subscription_id = configs['subscription_id'].strip()
-            self._tenant_id = configs['tenant_id'].strip().strip()   
+            self._tenant_id = configs['tenant_id'].strip()   
 
 
     def _update_token_master(self,endpoint=None):

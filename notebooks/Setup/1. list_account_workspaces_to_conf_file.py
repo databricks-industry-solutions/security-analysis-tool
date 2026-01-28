@@ -88,7 +88,28 @@ def generateWorkspaceConfigFile():
     df = spark.sql(spsql)
     #display(df)
     if len(df.take(1)) > 0:
-        if cloud_type == "azure":
+        # Check if accounts_console is provided for special environments
+        accounts_console = json_.get("accounts_console", "").strip()
+        if accounts_console:
+            # Derive workspace URL suffix from accounts_console
+            # e.g., "https://accounts-dod.cloud.databricks.mil" -> "cloud.databricks.mil"
+            from urllib.parse import urlparse
+            parsed = urlparse(accounts_console)
+            netloc = parsed.netloc
+            # Remove "accounts." or "accounts-dod." prefix
+            if netloc.startswith("accounts-"):
+                # Handle DoD style: accounts-dod.cloud.databricks.mil -> cloud.databricks.mil
+                workspace_suffix = netloc.split(".", 1)[1] if "." in netloc else netloc
+            elif netloc.startswith("accounts."):
+                workspace_suffix = netloc[len("accounts."):]
+            else:
+                workspace_suffix = netloc
+            df = df.withColumn(
+                "deployment_url",
+                concat(col("deployment_url"), lit("."), lit(workspace_suffix)),
+            )
+            loggr.info(f"Using accounts_console derived workspace suffix: .{workspace_suffix}")
+        elif cloud_type == "azure":
             df = df.withColumn(
                 "deployment_url",
                 concat(col("deployment_url"), lit(".azuredatabricks."), lit(domain)),
