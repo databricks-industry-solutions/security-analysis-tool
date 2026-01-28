@@ -11,17 +11,17 @@
 /configs/security_best_practices_user.csv
 .databricks/
 .vscode/settings.json
+CLAUDE.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
-.DS_Store
-.pytest_cache/
+*.py[cod]
+*$py.class
 
 # C extensions
 *.so
 
 # Distribution / packaging
-.idea
 .Python
 build/
 develop-eggs/
@@ -35,7 +35,6 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -43,8 +42,6 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
@@ -65,6 +62,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+cover/
 
 # Translations
 *.mo
@@ -87,6 +85,7 @@ instance/
 docs/_build/
 
 # PyBuilder
+.pybuilder/
 target/
 
 # Jupyter Notebook
@@ -100,13 +99,15 @@ ipython_config.py
 .python-version
 
 # pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+Pipfile.lock
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
 __pypackages__/
 
 # Celery stuff
@@ -134,6 +135,7 @@ venv.bak/
 
 # mkdocs documentation
 /site
+docs/sat/site/
 
 # mypy
 .mypy_cache/
@@ -143,6 +145,49 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform/aws/models
+
+# Project-specific
+claude_js/
+notebooks/.ipynb_checkpoints/
+
+# Build artifacts
+*.whl
+*.tar.gz
+
+# Logs
+*.log
 
 **/.terraform*
 **/terraform.tfvars

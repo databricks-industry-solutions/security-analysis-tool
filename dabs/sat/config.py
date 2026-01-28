@@ -70,7 +70,17 @@ def form():
             default="",
         ),
     ]
-    questions = questions + cloud_specific_questions(client) + proxies
+
+    # Permissions Analysis Configuration
+    brickhound = [
+        Confirm(
+            name="enable_brickhound",
+            message="Deploy Permissions Analysis?",
+            default=True,
+        ),
+    ]
+
+    questions = questions + cloud_specific_questions(client) + proxies + brickhound
     return client, prompt(questions), profile
 
 

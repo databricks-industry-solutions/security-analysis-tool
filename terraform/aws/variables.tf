@@ -23,6 +23,12 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "secret_scope_name" {
+  description = "Name of secret scope for SAT secrets"
+  type        = string
+  default     = "sat_scope"
+}
+
 ### AWS Specific Variables
 
 variable "account_user" {
@@ -62,7 +68,7 @@ variable "analysis_schema_name" {
 }
 
 variable "proxies" {
-  type        = map
+  type        = map(any)
   description = "Proxies to be used for Databricks API calls"
 }
 

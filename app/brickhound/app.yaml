@@ -1,0 +1,42 @@
+name: brickhound-sat
+display_name: "BrickHound - Databricks Permissions Analysis (SAT)"
+description: "Interactive permissions analysis for Databricks (part of SAT)"
+
+# App configuration
+config:
+  # Entry point for the application
+  command:
+    - "python"
+    - "app.py"
+
+# Environment variables
+# REQUIRED: Replace placeholders with actual values from your SAT configuration
+# Example: If your SAT schema is "main.security_analysis", use:
+#   BRICKHOUND_CATALOG: "main"
+#   BRICKHOUND_SCHEMA: "security_analysis"
+env:
+  - name: "PORT"
+    value: "8000"
+  - name: "BRICKHOUND_CATALOG"
+    value: "<catalog_name_of_sat>"
+  - name: "BRICKHOUND_SCHEMA"
+    value: "<schema_name_of_sat>"
+  - name: "WAREHOUSE_ID"
+    value: "<warehouse_id_of_sat>"
+
+# Resource requirements
+resources:
+  # Compute resources
+  compute:
+    size: "small"
+
+# Health check configuration
+health_check:
+  path: "/health"
+  port: 8000
+  timeout: 30
+
+# Dependencies
+dependencies:
+  # Python packages from requirements.txt will be automatically installed
+

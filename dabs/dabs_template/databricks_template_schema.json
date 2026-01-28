@@ -20,6 +20,16 @@
         "serverless": {
             "type": "boolean",
             "description": "Serverless"
+        },
+        "enable_brickhound": {
+            "type": "boolean",
+            "description": "Enable Permissions Analysis",
+            "default": false
+        },
+        "brickhound_schedule": {
+            "type": "string",
+            "description": "Permissions Analysis collection schedule (cron expression)",
+            "default": "0 0 2 * * ?"
         }
     },
     "success_message": ""

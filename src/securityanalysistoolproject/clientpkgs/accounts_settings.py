@@ -39,9 +39,19 @@ class AccountsSettings(SatDBClient):
         #if self._cloud_type=='azure':
         #    pass
         account_id=self._account_id
-        esmjsonlist = self.get(f"/accounts/{account_id}/settings/types/shield_esm_enablement_ac/names/default", master_acct=True).get("satelements", [])   
-        return esmjsonlist    
+        esmjsonlist = self.get(f"/accounts/{account_id}/settings/types/shield_esm_enablement_ac/names/default", master_acct=True).get("satelements", [])
+        return esmjsonlist
 
+    def get_disablelegacyfeatures(self):
+        """
+        Returns json object for disable legacy features account setting.
+        Extracts satelements array to match CSP/ESM pattern.
+        """
+        account_id = self._account_id
+        dlf_response = self.get(f"/accounts/{account_id}/settings/types/disable_legacy_features/names/default", master_acct=True)
+        # Extract satelements array like CSP/ESM methods do
+        dlf_json_list = dlf_response.get("satelements", []) if dlf_response else []
+        return dlf_json_list
 
     def get_networkconnectivityconfigurations(self, pageToken=None):
         """
