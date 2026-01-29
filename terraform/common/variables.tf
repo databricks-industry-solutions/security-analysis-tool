@@ -29,6 +29,12 @@ variable "notification_email" {
   default     = ""
 }
 
+variable "provisioner_name" {
+  type        = string
+  description = "Optional owner tag value for SQL warehouse compute resources; defaults to the current user."
+  default     = ""
+}
+
 variable "gcp_impersonate_service_account" {
   type        = string
   description = "GCP Service Account to impersonate (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"

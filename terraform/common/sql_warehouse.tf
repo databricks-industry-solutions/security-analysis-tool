@@ -1,3 +1,7 @@
+locals {
+    provisioner_name = var.provisioner_name != "" ? var.provisioner_name: data.databricks_current_user.me.alphanumeric
+}
+
 resource "databricks_sql_endpoint" "new" {
   count            = var.sqlw_id == "new" ? 1 : 0
   name             = "SAT Warehouse"
@@ -9,7 +13,7 @@ resource "databricks_sql_endpoint" "new" {
   tags {
     custom_tags {
       key   = "owner"
-      value = data.databricks_current_user.me.alphanumeric
+      value = local.provisioner_name
     }
   }
 }
