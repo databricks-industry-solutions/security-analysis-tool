@@ -9,7 +9,7 @@ resource "databricks_job" "initializer" {
       job_cluster_key = "job_cluster"
       new_cluster {
         data_security_mode = "SINGLE_USER"
-        num_workers        = 5
+        num_workers        = var.job_compute_num_workers
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
@@ -52,7 +52,7 @@ resource "databricks_job" "driver" {
       job_cluster_key = "job_cluster"
       new_cluster {
         data_security_mode = "SINGLE_USER"
-        num_workers        = 5
+        num_workers        = var.job_compute_num_workers
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
@@ -85,9 +85,9 @@ resource "databricks_job" "driver" {
 
   schedule {
     #E.G. At 08:00:00am, on every Monday, Wednesday and Friday, every month; For more: http://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/crontrigger.html
-    quartz_cron_expression = "0 0 7 ? * Mon,Wed,Fri"
+    quartz_cron_expression = var.driver_cron_expression
     # The system default is UTC; For more: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
-    timezone_id = "America/New_York"
+    timezone_id = var.job_schedule_timezone_id
   }
 }
 
@@ -103,7 +103,7 @@ resource "databricks_job" "secrets_scanner" {
       job_cluster_key = "job_cluster"
       new_cluster {
         data_security_mode = "SINGLE_USER"
-        num_workers        = 5
+        num_workers        = var.job_compute_num_workers
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
@@ -134,7 +134,7 @@ resource "databricks_job" "secrets_scanner" {
   }
 
   schedule {
-    quartz_cron_expression = "0 0 8 * * ?"
-    timezone_id            = "America/New_York"
+    quartz_cron_expression = var.secrets_scanner_cron_expression
+    timezone_id            = var.job_schedule_timezone_id
   }
 }
