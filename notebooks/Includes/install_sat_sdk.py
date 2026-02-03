@@ -29,12 +29,24 @@ if is_sat_compatible== False:
 
 # COMMAND ----------
 
-SDK_VERSION='0.1.38'
+SDK_VERSION='0.1.40'
 
 # COMMAND ----------
 
-#%pip install dbl-sat-sdk=={SDK_VERSION} --find-links /dbfs/FileStore/tables/dbl_sat_sdk-0.1.37-py3-none-any.whl
+# Construct workspace path to wheel file dynamically
+NOTEBOOK_PATH = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+# Extract repo root by finding 'security-analysis-tool' in the path
+path_parts = NOTEBOOK_PATH.split('/')
+try:
+    sat_index = path_parts.index('security-analysis-tool')
+    REPO_ROOT = '/'.join(path_parts[:sat_index+1])
+except ValueError:
+    # Fallback if repo name not found in path
+    REPO_ROOT = '/Workspace/Repos/production/security-analysis-tool'
+
+WHEEL_PATH = f'{REPO_ROOT}/lib/dbl_sat_sdk-{SDK_VERSION}-py3-none-any.whl'
+print(f"Installing SAT SDK from: {WHEEL_PATH}")
 
 # COMMAND ----------
 
-# MAGIC %pip install PyYAML dbl-sat-sdk=={SDK_VERSION} 
+# MAGIC %pip install PyYAML {WHEEL_PATH} 
