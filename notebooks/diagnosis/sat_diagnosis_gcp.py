@@ -89,63 +89,6 @@ for key in dbutils.secrets.list(sat_scope):
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## TruffleHog Secret Scanner Validation
-
-# COMMAND ----------
-
-import os
-import subprocess
-import requests
-
-print("\n" + "="*80)
-print("TRUFFLEHOG VALIDATION")
-print("="*80)
-
-# 1. Binary check
-trufflehog_path = "/tmp/trufflehog"
-trufflehog_installed = os.path.exists(trufflehog_path)
-
-if trufflehog_installed:
-    print(f"✅ TruffleHog installed at {trufflehog_path}")
-
-    # Get version
-    try:
-        result = subprocess.run([trufflehog_path, "--version"],
-                               capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            print(f"   Version: {result.stdout.strip()}")
-    except:
-        pass
-else:
-    print(f"⚠️  TruffleHog not installed (will be installed when secret scanner runs)")
-
-# 2. Config file check
-try:
-    notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-    path_parts = notebook_path.split('/')
-    sat_index = path_parts.index('security-analysis-tool')
-    repo_root = '/'.join(path_parts[:sat_index+1])
-    config_path = f"{repo_root}/configs/trufflehog_detectors.yaml"
-
-    # Note: Can't easily check Workspace file from notebook, so just log the path
-    print(f"   Config path: {config_path}")
-    print(f"   (Config will be validated when secret scanner runs)")
-except:
-    print(f"⚠️  Could not determine config path")
-
-# 3. Network access check for GitHub
-try:
-    response = requests.head("https://raw.githubusercontent.com", timeout=5)
-    print(f"✅ Network access to GitHub: OK")
-except:
-    print(f"❌ Network access to GitHub: FAILED")
-    print(f"   ACTION: Allowlist raw.githubusercontent.com in firewall")
-
-print()
-
-# COMMAND ----------
-
 # Retrieve the workspace URL from the user-provided input or fallback to the default workspace URL
 workspaceUrl = userWorkspaceUrl or spark.conf.get("spark.databricks.workspaceUrl")
 
