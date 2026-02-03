@@ -33,18 +33,21 @@ SDK_VERSION='0.1.40'
 
 # COMMAND ----------
 
-# Construct workspace path to wheel file dynamically
-NOTEBOOK_PATH = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-# Extract repo root by finding 'security-analysis-tool' in the path
-path_parts = NOTEBOOK_PATH.split('/')
-try:
-    sat_index = path_parts.index('security-analysis-tool')
-    REPO_ROOT = '/'.join(path_parts[:sat_index+1])
-except ValueError:
-    # Fallback if repo name not found in path
-    REPO_ROOT = '/Workspace/Repos/production/security-analysis-tool'
+def getLibPath():
+    path = (
+        dbutils.notebook.entry_point.getDbutils()
+        .notebook()
+        .getContext()
+        .notebookPath()
+        .get()
+    )
+    path = path[: path.find("/notebooks")]
+    return f"/Workspace{path}/lib"
 
-WHEEL_PATH = f'{REPO_ROOT}/lib/dbl_sat_sdk-{SDK_VERSION}-py3-none-any.whl'
+# COMMAND ----------
+
+# Construct workspace path to wheel file dynamically
+WHEEL_PATH = f'{getLibPath()}/dbl_sat_sdk-{SDK_VERSION}-py3-none-any.whl'
 print(f"Installing SAT SDK from: {WHEEL_PATH}")
 
 # COMMAND ----------
