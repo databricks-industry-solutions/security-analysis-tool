@@ -9,7 +9,7 @@ resources:
         Purpose: Security Analysis
       schedule:
         quartz_cron_expression: "{{.brickhound_schedule}}"
-        timezone_id: "America/New_York"
+        timezone_id: {{.job_timezone}}
       max_concurrent_runs: 1
       timeout_seconds: 14400
       tasks:

@@ -72,32 +72,16 @@ variable "job_schedule_timezone_id" {
   }
 }
 
-variable "driver_cron_expression" {
-  type        = string
-  description = "Quartz cron expression for the driver job schedule"
-  default     = "0 0 7 ? * Mon,Wed,Fri"
-  validation {
-    condition = (
-      can(regex("^\\S+[ ]+\\S+[ ]+\\S+[ ]+\\S+[ ]+\\S+[ ]+\\S+([ ]+\\S+)?$", trimspace(var.driver_cron_expression)))
-      &&
-      can(regex("^[0-9A-Za-z,*/?LW#\\-\\s]+$", trimspace(var.driver_cron_expression)))
-    )
-    error_message = "Must be a Quartz-style cron with 6 or 7 fields and only contain typical Quartz cron characters. For more details: http://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/crontrigger.html."
-  }
-}
-
 variable "secrets_scanner_cron_expression" {
   type        = string
   description = "Quartz cron expression for the secrets scanner job schedule"
-  default     = "0 0 8 * * ?"
-  validation {
-  condition = (
-      can(regex("^\\S+[ ]+\\S+[ ]+\\S+[ ]+\\S+[ ]+\\S+[ ]+\\S+([ ]+\\S+)?$", trimspace(var.secrets_scanner_cron_expression)))
-      &&
-      can(regex("^[0-9A-Za-z,*/?LW#\\-\\s]+$", trimspace(var.secrets_scanner_cron_expression)))
-    )
-    error_message = "Must be a Quartz-style cron with 6 or 7 fields and only contain typical Quartz cron characters. For more details: http://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/crontrigger.html."
-  }
+  default     = "0 0 8 ? * *"
+}
+
+variable "driver_cron_expression" {
+  type        = string
+  description = "Quartz cron expression for the driver job schedule"
+  default     = "0 0 8 ? * Mon,Wed,Fri"
 }
 
 variable "sql_warehouse_enable_serverless" {

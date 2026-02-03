@@ -21,6 +21,21 @@
             "type": "boolean",
             "description": "Serverless"
         },
+        "driver_schedule": {
+            "type": "string",
+            "description": "Driver job schedule (Quartz cron expression)",
+            "default": "0 0 8 ? * Mon,Wed,Fri"
+        },
+        "secrets_scanner_schedule": {
+            "type": "string", 
+            "description": "Secrets scanner job schedule (Quartz cron expression)",
+            "default": "0 0 8 ? * *"
+        },
+        "job_timezone": {
+            "type": "string",
+            "description": "Job schedule timezone (IANA timezone ID)",
+            "default": "UTC"
+        },
         "enable_brickhound": {
             "type": "boolean",
             "description": "Enable Permissions Analysis",
@@ -28,8 +43,8 @@
         },
         "brickhound_schedule": {
             "type": "string",
-            "description": "Permissions Analysis collection schedule (cron expression)",
-            "default": "0 0 2 * * ?"
+            "description": "Permissions Analysis collection schedule (Quartz cron expression)",
+            "default": "0 0 2 ? * *"
         }
     },
     "success_message": ""
