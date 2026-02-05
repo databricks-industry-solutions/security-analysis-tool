@@ -1,4 +1,4 @@
 resource "databricks_app" "brickhound" {
-  name        = "sat-permission-app-experimental"
+  name        = "sat-permissions-exp"
   description = "SAT Permissions Analysis App"
 }

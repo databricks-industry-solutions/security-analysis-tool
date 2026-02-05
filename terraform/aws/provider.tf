@@ -30,5 +30,5 @@ module "common" {
 }
 
 output "deploy_app" {
-  value = "Now please run `databricks apps deploy sat-permission-app-experimental --source-code-path /Workspace/Repos/Applications/SAT_TF/app/brickhound`"
+  value = "Now please run `databricks apps deploy sat-permissions-exp --source-code-path /Workspace/Repos/Applications/SAT_TF/app/brickhound`"
 }
