@@ -26,8 +26,11 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
             photon_worker_capable=True,
         ),
         "serverless": answers.get("enable_serverless", False),
+        "driver_schedule": answers.get("driver_schedule", "0 0 8 * * ?"),
+        "secrets_scanner_schedule": answers.get("secrets_scanner_schedule", "0 0 8 * * ?"),
+        "job_timezone": answers.get("job_timezone", "UTC"),
         "enable_brickhound": answers.get("enable_brickhound", False),
-        "brickhound_schedule": "0 0 2 * * ?",  # Daily at 2 AM ET
+        "brickhound_schedule": answers.get("brickhound_schedule", "0 0 2 * * ?"),
     }
 
     config_file = "tmp_config.json"

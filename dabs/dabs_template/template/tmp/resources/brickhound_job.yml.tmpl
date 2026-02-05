@@ -1,5 +1,10 @@
 {{- if .enable_brickhound }}
 resources:
+  apps:
+    sat_permissions_analysis:
+      name: "sat-permission-app"
+      description: "SAT Permissions Analysis App"
+      source_code_path: "../app/brickhound"
   jobs:
     brickhound_data_collection:
       name: "SAT Permissions Analysis - Data Collection"
@@ -9,7 +14,7 @@ resources:
         Purpose: Security Analysis
       schedule:
         quartz_cron_expression: "{{.brickhound_schedule}}"
-        timezone_id: "America/New_York"
+        timezone_id: {{.job_timezone}}
       max_concurrent_runs: 1
       timeout_seconds: 14400
       tasks:

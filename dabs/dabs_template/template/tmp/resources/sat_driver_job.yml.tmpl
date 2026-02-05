@@ -5,8 +5,8 @@ resources:
       tags:
         Application: SAT
       schedule:
-        quartz_cron_expression: "0 0 7 ? * Mon,Wed,Fri"
-        timezone_id: "America/New_York"
+        quartz_cron_expression: {{.driver_schedule}}
+        timezone_id: {{.job_timezone}}
       tasks:
         - task_key: "sat_initializer"
           {{- if eq .serverless false }}
