@@ -1290,8 +1290,8 @@ def get_main_html():
                 <div class="logo" style="cursor: pointer;" data-page="home">
                     <div class="logo-icon">🛡️</div>
                     <span class="logo-text">Principal and Resource Permissions Analysis Tool (Experimental)</span>
-                    <div style="font-size: 0.7em; color: #d32f2f; margin-top: 4px; line-height: 1.3;">
-                        This tool may have incomplete data. Outputs are visibility and audit aids, not authoritative compliance determinations.
+                    <div style="font-size: 0.65em; color: #d32f2f; margin-top: 6px; line-height: 1.2; max-width: 100%;">
+                        <strong>⚠️ Note:</strong> May have incomplete data. Outputs are visibility/audit aids, not authoritative compliance determinations.
                     </div>
                 </div>
             </div>
