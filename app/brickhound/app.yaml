@@ -1,5 +1,5 @@
 name: brickhound-sat
-display_name: "BrickHound - Databricks Permissions Analysis (SAT)"
+display_name: "BrickHound - Databricks Permissions Analysis (SAT) - Experimental"
 description: "Interactive permissions analysis for Databricks (part of SAT)"
 
 # App configuration
