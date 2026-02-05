@@ -1289,9 +1289,11 @@ def get_main_html():
             <div class="sidebar-header">
                 <div class="logo" style="cursor: pointer;" data-page="home">
                     <div class="logo-icon">🛡️</div>
-                    <span class="logo-text">Principal and Resource Permissions Analysis Tool (Experimental)</span>
-                    <div style="font-size: 0.65em; color: #d32f2f; margin-top: 6px; line-height: 1.2; max-width: 100%;">
-                        <strong>⚠️ Note:</strong> May have incomplete data. Outputs are visibility/audit aids, not authoritative compliance determinations.
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span class="logo-text">Principal and Resource Permissions Analysis Tool (Experimental)</span>
+                        <div style="font-size: 0.65em; color: #d32f2f; line-height: 1.2;">
+                            <strong>⚠️ Note:</strong> May have incomplete data. Outputs are visibility/audit aids, not authoritative compliance determinations.
+                        </div>
                     </div>
                 </div>
             </div>
