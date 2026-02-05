@@ -247,7 +247,7 @@ if enabled:
 
 # COMMAND ----------
 
-check_id='111'# GOV-37,Governance,Disable legacy features for new workspaces
+check_id='112'# GOV-37,Governance,Disable legacy features for new workspaces
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def disable_legacy_features_account(df):

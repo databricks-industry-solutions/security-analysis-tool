@@ -80,6 +80,7 @@ if workspaces is None or len(workspaces) == 0:
 # MAGIC %md
 # MAGIC ### TruffleHog Secret Scanning
 # MAGIC ##### Runs TruffleHog secret scanning across all configured workspaces to detect exposed credentials and secrets in notebooks.
+
 # COMMAND ----------
 
 def generate_shared_run_id():
@@ -202,7 +203,7 @@ def processClusterScan(wsrow, run_id):
     loggr.info(f"Running cluster config scan for workspace: {workspace_id}")
     scan_result = dbutils.notebook.run(
         f"{basePath()}/notebooks/Includes/scan_secrets/cluster_secrets_scan",
-        1800,  # 30 minute timeout for cluster scanning
+        3600,  # 1 hour timeout for cluster scanning
         {"json_": json.dumps(ws_json)},
     )
     loggr.info(f"Cluster scan completed for workspace: {workspace_id}")
