@@ -14,4 +14,4 @@ databricks bundle deploy -p $profile --force-lock
 cd ../
 rm -rf $project
 rm -rf ./dabs_template/template/tmp/configs ./dabs_template/template/tmp/dashboards ./dabs_template/template/tmp/notebooks ./dabs_template/template/tmp/app
-echo "Run 'databricks apps deploy sat-permission-app --source-code-path /Workspace/Applications/SAT/files/app/brickhound' to deploy the Permission app to your Databricks workspace."
+echo "Run 'databricks apps deploy sat-permission-app-experimental --source-code-path /Workspace/Applications/SAT/files/app/brickhound' to deploy the Permission app to your Databricks workspace."

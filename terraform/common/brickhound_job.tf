@@ -2,7 +2,7 @@
 # This job collects permissions data and builds the permissions graph for security analysis
 
 resource "databricks_job" "brickhound_data_collection" {
-  name = "BrickHound Permissions Analysis - Data Collection"
+  name = "BrickHound Permissions Analysis - Data Collection (Experimental)"
 
   tags = {
     Application = "SAT-BrickHound"
