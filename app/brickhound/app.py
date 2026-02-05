@@ -1289,7 +1289,10 @@ def get_main_html():
             <div class="sidebar-header">
                 <div class="logo" style="cursor: pointer;" data-page="home">
                     <div class="logo-icon">🛡️</div>
-                    <span class="logo-text">Principal and Resource Permissions Analysis Tool</span>
+                    <span class="logo-text">Principal and Resource Permissions Analysis Tool (Experimental)</span>
+                    <div style="font-size: 0.7em; color: #d32f2f; margin-top: 4px; line-height: 1.3;">
+                        This tool may have incomplete data. Outputs are visibility and audit aids, not authoritative compliance determinations.
+                    </div>
                 </div>
             </div>
 
