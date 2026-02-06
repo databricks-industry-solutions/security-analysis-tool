@@ -31,6 +31,7 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
         "job_timezone": answers.get("job_timezone", "UTC"),
         "enable_brickhound": answers.get("enable_brickhound", False),
         "brickhound_schedule": answers.get("brickhound_schedule", "0 0 2 * * ?"),
+        "warehouse_id": answers.get("warehouse", []).get("id", None),
     }
 
     config_file = "tmp_config.json"

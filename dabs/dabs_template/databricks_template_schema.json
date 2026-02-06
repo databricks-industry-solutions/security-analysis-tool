@@ -45,6 +45,10 @@
             "type": "string",
             "description": "Permissions Analysis collection schedule (Quartz cron expression)",
             "default": "0 0 2 ? * *"
+        },
+        "warehouse_id": {
+            "type": "string",
+            "description": "The ID of the SQL warehouse to use for SAT Permissions Analysis"
         }
     },
     "success_message": ""

@@ -5,6 +5,21 @@ resources:
       name: "sat-permission-app"
       description: "SAT Permissions Analysis App"
       source_code_path: "../app/brickhound"
+      resources: 
+        - name: "warehouse"
+          sql_warehouse:
+            permission: "CAN_USE"
+            id: {{.warehouse_id}}
+        - name: "analysis_schema_name"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: analysis_schema_name
+        - name: "sql-warehouse-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: sql-warehouse-id
   jobs:
     brickhound_data_collection:
       name: "SAT Permissions Analysis - Data Collection"
