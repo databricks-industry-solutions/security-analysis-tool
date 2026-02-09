@@ -1,6 +1,6 @@
 # Contributing to Security Analysis Tool (SAT)
 
-Thank you for your interest in contributing to the Databricks Security Analysis Tool! We welcome contributions from the community.
+Thank you for your interest in contributing to the Databricks Security Analysis Tool! We welcome contributions from the community, and we accept PRs pursuant to a CLA.
 
 ## Getting Started
 
