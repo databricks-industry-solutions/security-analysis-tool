@@ -433,7 +433,6 @@ class SatDBClient:
         Raises:
             Exception: On HTTP 401/403 or an API-level error response.
         """
-        NUM_PAGES = 10  # throttle as needed
         resultsArray = []
         elementName = ""
         for i in range(self._maxpages):
