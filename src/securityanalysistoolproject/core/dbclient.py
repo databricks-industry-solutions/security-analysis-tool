@@ -1,4 +1,10 @@
-'''dbclient'''
+"""REST API client for Databricks APIs supporting AWS, Azure, and GCP cloud providers.
+
+This module provides the ``SatDBClient`` class, which wraps Databricks REST API
+calls with automatic OAuth token management, pagination handling, and response
+normalization across all three supported cloud platforms.
+"""
+
 import json
 import time
 import urllib3
@@ -17,6 +23,12 @@ if LOGGR is None:
     LOGGR = LoggingUtils.get_logger()
 
 class PatternType(Enum):
+    """Classification of Databricks API response structures.
+
+    Used by :meth:`SatDBClient.getNumLists` to determine how to
+    normalize a given JSON response into a consistent internal format.
+    """
+
     PATTERN_1 = 1  # dict with 1 list of dicts
     PATTERN_2 = 2  # Dict with multiple lists of dicts
     PATTERN_3 = 3  # dict with 1 or more dicts
@@ -24,9 +36,18 @@ class PatternType(Enum):
 
 
 class SatDBClient:
+    """REST API wrapper for Databricks workspace and account-level APIs.
+
+    Handles OAuth-based authentication for AWS, Azure, and GCP cloud providers,
+    automatic pagination, response normalization, and remote command execution
+    via the Databricks execution-context API.
+
+    Args:
+        inp_configs: Raw configuration dictionary (or JSON string) containing
+            connection parameters such as ``url``, ``account_id``,
+            ``client_id``, ``client_secret``, and cloud-specific fields.
     """
-    Rest API Wrapper for Databricks APIs
-    """
+
     # set of http error codes to throw an exception if hit. Handles client and auth errors
     http_error_codes = [401, 403]
 
@@ -131,6 +152,11 @@ class SatDBClient:
 
 
     def get_temporary_oauth_token(self):
+        """Return a short-lived OAuth access token string for external use.
+
+        Returns:
+            The bearer token string, or ``None`` if token acquisition failed.
+        """
         self._update_token()
         if self._token is None:
             return None
@@ -142,17 +168,35 @@ class SatDBClient:
 
     
     def test_connection(self, master_acct=False):
-        '''test connection to workspace and master account'''
-        if master_acct: #master acct may use a different credential
-            
-            if (self._cloud_type == 'azure'):
-                self._update_token_master(endpoint='workspaces?api-version=2018-04-01')
-                results = requests.get(f'{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
-                            headers=self._token, timeout=60, proxies=self._proxies)
-            else:   
-                self._update_token_master() 
-                results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
-                            headers=self._token, timeout=60, proxies=self._proxies)
+        """Verify connectivity by making a lightweight API call.
+
+        Args:
+            master_acct: If ``True``, test the account-level API connection;
+                otherwise test the workspace-level connection.
+
+        Returns:
+            ``True`` if the connection succeeds.
+
+        Raises:
+            Exception: If the HTTP response status is not 200.
+        """
+        if master_acct:  # master acct may use a different credential
+            if self._cloud_type == "azure":
+                self._update_token_master(endpoint="workspaces?api-version=2018-04-01")
+                results = requests.get(
+                    f"{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01",
+                    headers=self._token,
+                    timeout=60,
+                    proxies=self._proxies,
+                )
+            else:
+                self._update_token_master()
+                results = requests.get(
+                    f"{self._url}/api/2.0/accounts/{self._account_id}/workspaces",
+                    headers=self._token,
+                    timeout=60,
+                    proxies=self._proxies,
+                )
         else:
             self._update_token()
             results = requests.get(f'{self._url}/api/2.0/clusters/spark-versions',
@@ -167,39 +211,36 @@ class SatDBClient:
             raise Exception(f'Test connection failed {results.reason}')
         return True
 
+    @staticmethod
+    def debugminijson(jsonelem, title=""):
+        """Log the first 1250 characters of a JSON element at DEBUG level.
+
+        Args:
+            jsonelem: JSON-serializable object to log.
+            title: Optional label prepended to the log message.
+        """
+        debugs = json.dumps(jsonelem, indent=1, sort_keys=True)
+        LOGGR.debug(f"{title}-=-=-{debugs[:1250]}-=-=-{type(jsonelem)}")
 
     @staticmethod
-    def debugminijson(jsonelem, title=''):
-        '''debugging function to print limited json'''
-        debugs=json.dumps(jsonelem, indent=1, sort_keys=True)
-        LOGGR.debug(f"{title}-=-=-{debugs[:1250]}-=-=-{type(jsonelem)}") 
+    def getNumLists(resp) -> PatternType:
+        """Classify the structure of a Databricks API JSON response.
 
-    @staticmethod
-    def getNumLists(resp)->PatternType:
-        '''
-        Used to check if the response is a satelements type of output.
-        We expect one list in the response. 
-        {'key':['key1':'value1']}
-        If not, return the whole response as a satelements
+        Inspects the top-level keys of ``resp`` to determine which
+        :class:`PatternType` it matches so that downstream code can
+        extract the payload consistently.
 
-        '''
-        numlists=0
-        numdicts=0
+        Args:
+            resp: Parsed JSON response (``dict`` or ``list``).
 
-        # #moved to get_paginated REMOVE COMMENT AFTER DEC 2025
-        # if 'error_code' in resp and 'message' in resp:
-        #     LOGGR.debug(f"\t\t\t$error_code={resp['error_code']} {resp['message']}")
-        #     return numlists, innerisdict        
-        
-        # some of the ones which cannot be auto-inferred we put in an exception list.
-        # exceptionlist=['/budget-policies/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-']
-        # for srch in exceptionlist:
-        #     if re.search(srch, endpoint) is not None:
-        #         LOGGR.debug(f"explicit match found... returning 0, False")
-        #         return numlists, innerisdict
+        Returns:
+            The matching :class:`PatternType`.
+        """
+        numlists = 0
+        numdicts = 0
 
-        if isinstance(resp, list): # some like in accounts return a list as outer
-            LOGGR.debug(f"\t\t\tPattern4")
+        if isinstance(resp, list):  # some like in accounts return a list as outer
+            LOGGR.debug("\t\t\tPattern4")
             return PatternType.PATTERN_4
 
         bfoundschemas=False
@@ -212,7 +253,7 @@ class SatDBClient:
             if isinstance(resp[ielem], dict):
                 numdicts+=1
 
-        #somethings like uc.get_systemschemas return only schemas this is valid dont touch these.        
+        # somethings like uc.get_systemschemas return only schemas this is valid dont touch these.
         if bfoundschemas and numlists > 1:
             numlists -= 1
             resp.pop('schemas') #remove schemas from solution to make it a PATTERN_1
@@ -231,13 +272,19 @@ class SatDBClient:
  
     @staticmethod
     def getRespArray(resp):
-        '''
-        if the response contains one list we are in the majority situation. 
-        return a elementname, list
-        '''
+        """Extract the element name and data list from a classified response.
 
-        arrdict=[]
-        #dont think this should ever happen. As it is handled in get_paginated
+        Args:
+            resp: Parsed JSON response (``dict`` or ``list``).
+
+        Returns:
+            A ``(element_name, data_list)`` tuple.  ``element_name`` is the
+            original dict key holding the list, or ``"satelements"`` when the
+            response does not follow the standard pattern.
+        """
+
+        arrdict = []
+        # dont think this should ever happen. As it is handled in get_paginated
         if not resp:
             emptydict={}
             arrdict.append(emptydict)
@@ -345,19 +392,19 @@ class SatDBClient:
                 LOGGR.debug(f"\t\tEmpty result with prev_page_token. Breaking out of loop.")
                 break
 
-            #do not keep this on. only for debug testing
-            #LOGGR.debug('pag - start -------------')
-            #LOGGR.debug(json.dumps(results, indent=4, sort_keys=True)) #for debug
-            #SatDBClient.debugminijson(results, "get_paginated1") #for debug
-            #LOGGR.debug('pag - end -------------')
+            # do not keep this on. only for debug testing
+            # LOGGR.debug('pag - start -------------')
+            # LOGGR.debug(json.dumps(results, indent=4, sort_keys=True)) #for debug
+            # SatDBClient.debugminijson(results, "get_paginated1") #for debug
+            # LOGGR.debug('pag - end -------------')
 
             elementName, resultsArray=SatDBClient.getRespArray(results)
             retdict={elementName:resultsArray}
             yield (retdict, http_status_code)
-            
-            #for debug.
-            #LOGGR.debug(f'\t\tyielding-{retdict}')
-            
+
+            # for debug.
+            # LOGGR.debug(f'\t\tyielding-{retdict}')
+
             if http_status_code < 200 or http_status_code > 299:
                 break
             
@@ -377,6 +424,14 @@ class SatDBClient:
 
     @staticmethod
     def ispaginatedCall(endpoint):
+        """Check whether an endpoint uses token-based pagination.
+
+        Args:
+            endpoint: The fully-qualified API URL.
+
+        Returns:
+            ``True`` if the endpoint matches a known paginated API pattern.
+        """
         paginatedurls = [
             '/api/2.0/accounts/.+/federationPolicies',
             '/api/2.0/accounts/.+/network-connectivity-configs',
@@ -453,11 +508,11 @@ class SatDBClient:
                 return True
         return False
 
-    '''
+    """
     http_req => get_paginated and flatten
     get_paginated => getRespArray
     getRespArray => getNumLists
-    '''
+    """
 
     def http_req(self, http_type, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
         '''helpers for http post put patch'''
@@ -500,26 +555,35 @@ class SatDBClient:
         results = {reselement:resflattenpages, 'http_status_code': http_status_code}
         return results
 
-    def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
-        '''get'''
-        return self.http_req('get', endpoint, json_params, version, None, master_acct) 
-   
+    def get(self, endpoint, json_params=None, version="2.0", master_acct=False):
+        """Send a GET request to the Databricks API."""
+        return self.http_req("get", endpoint, json_params, version, None, master_acct)
 
-    def post(self, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
-        '''post'''
-        return self.http_req('post', endpoint, json_params, version, files_json, master_acct)
+    def post(
+        self, endpoint, json_params, version="2.0", files_json=None, master_acct=False
+    ):
+        """Send a POST request to the Databricks API."""
+        return self.http_req(
+            "post", endpoint, json_params, version, files_json, master_acct
+        )
 
-    def put(self, endpoint, json_params, version='2.0', master_acct=False):
-        '''put'''
-        return self.http_req('put', endpoint, json_params, version, None, master_acct)
+    def put(self, endpoint, json_params, version="2.0", master_acct=False):
+        """Send a PUT request to the Databricks API."""
+        return self.http_req("put", endpoint, json_params, version, None, master_acct)
 
-    def patch(self, endpoint, json_params, version='2.0', master_acct=False):
-        '''patch'''
-        return self.http_req('patch', endpoint, json_params, version, None, master_acct)
-
+    def patch(self, endpoint, json_params, version="2.0", master_acct=False):
+        """Send a PATCH request to the Databricks API."""
+        return self.http_req("patch", endpoint, json_params, version, None, master_acct)
 
     def get_execution_context(self):
-        '''execute with context'''
+        """Create a remote Python execution context on the configured cluster.
+
+        Returns:
+            The execution context ID string.
+
+        Raises:
+            Exception: If the cluster is not running or context creation fails.
+        """
         self._update_token()
         LOGGR.debug("Creating remote Spark Session")
 
@@ -536,9 +600,19 @@ class SatDBClient:
             raise Exception("Remote session error. Cluster may not be started.")
         return ec_id
 
-
     def submit_command(self, ec_id, cmd):
-        '''submit a command '''
+        """Submit a Python command to a remote execution context and wait for results.
+
+        Args:
+            ec_id: Execution context ID returned by :meth:`get_execution_context`.
+            cmd: Python source code string to execute.
+
+        Returns:
+            The ``results`` dict from the command status response.
+
+        Raises:
+            Exception: If the command finishes with an error result.
+        """
         self._update_token()
         cid=self._cluster_id
         # This launches spark commands and print the results. We can pull out the text results from the API
@@ -572,10 +646,20 @@ class SatDBClient:
             raise Exception("Error in Submit Command")
         return end_results
 
-
     @staticmethod
     def get_key(http_resp, key_name):
-        '''get key from json of response'''
+        """Retrieve a required key from an HTTP JSON response.
+
+        Args:
+            http_resp: Parsed JSON response dict.
+            key_name: Key to look up.
+
+        Returns:
+            The value associated with ``key_name``.
+
+        Raises:
+            ValueError: If the key is not present in ``http_resp``.
+        """
         value = http_resp.get(key_name, None)
         if value is None:
             raise ValueError('Unable to find key ' + key_name)
@@ -589,9 +673,8 @@ class SatDBClient:
         user_name = self.get('/preview/scim/v2/Me').get('userName')
         return user_name
 
-
     def get_url(self):
-        '''getter - url'''
+        """Return the current base URL (may be workspace or account URL)."""
         return self._url
 
     def get_latest_spark_version(self):
@@ -603,9 +686,8 @@ class SatDBClient:
             if img_type == 'scala':
                 return vsparkver
 
-
     def get_cloud_type(self):
-        '''return cloud type'''
+        """Return the detected cloud provider (``"aws"``, ``"azure"``, or ``"gcp"``)."""
         return self._cloud_type
 
     def parse_cloud_type(self):
@@ -620,6 +702,20 @@ class SatDBClient:
         return cloudtype
 
     def getAzureToken(self, baccount, endpoint, client_id, client_secret):
+        """Route to the correct MSAL token scope for Azure.
+
+        Determines whether the request targets Azure Management APIs or
+        Databricks APIs and delegates to :meth:`getAzureTokenWithMSAL`.
+
+        Args:
+            baccount: ``True`` for account-level calls.
+            endpoint: API endpoint path (used to detect ``?api-version=``).
+            client_id: Azure AD application (client) ID.
+            client_secret: Azure AD client secret.
+
+        Returns:
+            An OAuth access token string, or ``None`` on failure.
+        """
         LOGGR.debug(f"getAzureToken {endpoint} {baccount}")
         databrickstype=True
         #microsft apis have the api-version string
@@ -644,12 +740,20 @@ class SatDBClient:
             return None, None #account dbtype              
 
     def getAzureTokenWithMSAL(self, scopeType):
-        """
-        validate client id and secret from microsoft and google
-        for scopes https://learn.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/app-aad-token#get-azure-ad-tokens-by-using-a-web-browser-and-curl
-        microsoft scope for management api 'https://management.azure.com/.default'
-        databricks scope for rest api '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'
-        some of these will change for govcloud or DoD
+        """Acquire an Azure AD token using the MSAL confidential client flow.
+
+        Tries the MSAL token cache first; falls back to a fresh
+        client-credentials grant when no cached token is available.
+
+        Args:
+            scopeType: ``"msmgmt"`` for Azure Management scope or
+                ``"dbmgmt"`` for the Databricks REST API scope.
+
+        Returns:
+            An OAuth access token string.
+
+        Raises:
+            Exception: If token acquisition fails.
         """
         try:
             if self._cloud_type != 'azure':
@@ -673,7 +777,7 @@ class SatDBClient:
 
             if not token:
                 token = app.acquire_token_for_client(scopes=scopes)
-            
+
             if token.get("access_token") is None:
                 LOGGR.debug('no token')
                 raise Exception('No token')
@@ -686,10 +790,18 @@ class SatDBClient:
             print(f"Exception {error}")
             print(str(error))
 
-
     def getAWSTokenwithOAuth(self, baccount, client_id, client_secret):
-        '''generates OAuth token for Service Principal authentication flow'''
-        '''baccount if generating for account. False for workspace'''
+        """Acquire an OAuth token for AWS Databricks via the OIDC endpoint.
+
+        Args:
+            baccount: ``True`` to authenticate against the accounts API;
+                ``False`` for the workspace API.
+            client_id: Service principal client ID.
+            client_secret: Service principal client secret.
+
+        Returns:
+            An OAuth access token string, or ``None`` on failure.
+        """
         response = None
         user_pass = (client_id, client_secret)
         oidc_token = {
@@ -714,8 +826,17 @@ class SatDBClient:
         return None
 
     def getGCPTokenwithOAuth(self, baccount, client_id, client_secret):
-        '''generates OAuth token for Service Principal authentication flow'''
-        '''baccount if generating for account. False for workspace'''
+        """Acquire an OAuth token for GCP Databricks via the OIDC endpoint.
+
+        Args:
+            baccount: ``True`` to authenticate against the accounts API;
+                ``False`` for the workspace API.
+            client_id: Service principal client ID.
+            client_secret: Service principal client secret.
+
+        Returns:
+            An OAuth access token string, or ``None`` on failure.
+        """
         response = None
         user_pass = (client_id, client_secret)
         oidc_token = {
@@ -741,9 +862,9 @@ class SatDBClient:
         return None
 
 
-#----------------------------------------------------
+# ----------------------------------------------------
 # notes
-#----------------------------------------------------
+# ----------------------------------------------------
 # pattern 1 - Dict with 1 list of dicts.
 # {
 #   "apps": [
@@ -754,7 +875,7 @@ class SatDBClient:
 #   "next_page_token": "string"
 # }
 
-#pattern 2 Dict with multiple lists of dicts
+# pattern 2 Dict with multiple lists of dicts
 # {
 #   "active": true,
 #   "applicationId": "97ab27fa-30e2-43e3-92a3-160e80f4c0d5",
@@ -849,180 +970,176 @@ class SatDBClient:
 # ]
 
 
+# ----------------------------------------------------
+# old code discard after Dec 2025
+# ----------------------------------------------------
+# @staticmethod
+# def listdir(f_path):
+#     ls = os.listdir(f_path)
+#     for x in ls:
+#         # remove hidden directories / files from function
+#         if x.startswith('.'):
+#             continue
+#         yield x
+
+# @staticmethod
+# def walk(f_path):
+#     for my_root, my_subdir, my_files in os.walk(f_path):
+#         # filter out files starting with a '.'
+#         filtered_files = list(filter(lambda x: not x.startswith('.'), my_files))
+#         yield my_root, my_subdir, filtered_files
+# @staticmethod
+# def delete_dir_if_empty(local_dir):
+#     if len(os.listdir(local_dir)) == 0:
+#         os.rmdir(local_dir)
 
 
+# @staticmethod
+# def my_map(F, items):
+#     ''''''
+#     to_return = []
+#     for elem in items:
+#         to_return.append(F(elem))
+#     return to_return
+
+# def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
+#     '''http get helper'''
+#     if master_acct:
+#         self._update_token_master()
+#     else:
+#         self._update_token()
 
 
-#----------------------------------------------------
-#old code discard after Dec 2025
-#----------------------------------------------------
-    # @staticmethod
-    # def listdir(f_path):
-    #     ls = os.listdir(f_path)
-    #     for x in ls:
-    #         # remove hidden directories / files from function
-    #         if x.startswith('.'):
-    #             continue
-    #         yield x
+#     while True:
+#         if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different
+#             full_endpoint = f"{self._url}/{endpoint}"
+#         else:
+#             full_endpoint = f"{self._url}/api/{version}{endpoint}"
 
-    # @staticmethod
-    # def walk(f_path):
-    #     for my_root, my_subdir, my_files in os.walk(f_path):
-    #         # filter out files starting with a '.'
-    #         filtered_files = list(filter(lambda x: not x.startswith('.'), my_files))
-    #         yield my_root, my_subdir, filtered_files
-    # @staticmethod
-    # def delete_dir_if_empty(local_dir):
-    #     if len(os.listdir(local_dir)) == 0:
-    #         os.rmdir(local_dir)
+#         LOGGR.debug(f"Get: {full_endpoint}")
 
+#         if SatDBClient.ispaginatedCall(full_endpoint):
+#             respageslst = list(self.get_paginated(full_endpoint, json_params))
+#             LOGGR.debug(f"get1-{len(respageslst)}-type-{type(respageslst)}-type-{type(respageslst[0])}") #get1-10-type-<class 'list'>-type-<class 'tuple'>
+#             for i in respageslst:
+#                 LOGGR.debug(f"get2-{len(i)}-type-{type(i)}-{len(i[0])}-{type(i[0])}") #get2-2-type-<class 'tuple'>
+#             reselement, resflattenpages = SatDBClient.flatten(respageslst)
+#             LOGGR.debug(f"get3-{len(resflattenpages)}") #get3-200
+#             #SatDBClient.debugminijson(resflattenpages, "l1resflattenpages")
+#             #print(f"l2-{len(resflattenpages[0])}-type-{type(resflattenpages[0])}")
+#             #SatDBClient.debugminijson(resflattenpages[0], "l2resflattenpages")
+#             results = {reselement:resflattenpages}
 
-    # @staticmethod
-    # def my_map(F, items):
-    #     ''''''
-    #     to_return = []
-    #     for elem in items:
-    #         to_return.append(F(elem))
-    #     return to_return
+#         else:
+#             if json_params:
+#                 raw_results = requests.get(full_endpoint, headers=self._token, params=json_params, timeout=60, proxies=self._proxies)
+#             else:
+#                 raw_results = requests.get(full_endpoint, headers=self._token, timeout=60, proxies=self._proxies)
 
-    # def get(self, endpoint, json_params=None, version='2.0', master_acct=False):
-    #     '''http get helper'''
-    #     if master_acct:
-    #         self._update_token_master()
-    #     else:
-    #         self._update_token()
+#             http_status_code = raw_results.status_code
+#             if http_status_code in SatDBClient.http_error_codes:
+#                 raise Exception(f"Error: GET request failed with code {http_status_code}\n{raw_results.text}")
+#             results = raw_results.json()
+#             LOGGR.debug(json.dumps(results, indent=4, sort_keys=True))
+#             if isinstance(results, list):
+#                 results = {'elements': results}
+#             results['http_status_code'] = http_status_code
+#         return results
 
+#    def _update_token_master_old(self):
+#     '''update token master in http header'''
+#     LOGGR.info("in _update_token_master")
+#     if(self._cloud_type == 'gcp'):
+#         self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
+#         self._token = {
+#             "Authorization": f"Bearer {self._master_name}",
+#             "X-Databricks-GCP-SA-Access-Token": f"{self._master_password}",
+#             "User-Agent": "databricks-sat/0.1.0"
+#         }
+#         LOGGR.info(f'GCP self._token {self._token}')
+#     elif(self._cloud_type == 'azure'):
+#         #azure is only oauth to accounts/msmgmt
+#         self._url, self._master_password = self.getAzureToken('msmgmt')
+#         self._token = {
+#             "Authorization": f"Bearer {self._master_password}",
+#             "User-Agent": "databricks-sat/0.1.0"
+#         }
+#     else:     #AWS
+#         self._url = "https://accounts.cloud.databricks.com" #url for accounts api
+#         if (self._use_sp_auth): # Service Principal authentication flow
+#             oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
+#             self._token = {
+#                 "Authorization": f"Bearer {oauth}",
+#                 "User-Agent": "databricks-sat/0.1.0"
+#             }
+#         else:
+#             LOGGR.info('OAuth flow for master')
+#             user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+#             self._token = {
+#                 "Authorization" : f"Basic {user_pass}",
+#                 "User-Agent": "databricks-sat/0.1.0"
+#             }
 
-    #     while True:
-    #         if self._cloud_type == 'azure' and master_acct: #Azure accounts API format is different
-    #             full_endpoint = f"{self._url}/{endpoint}"
-    #         else:
-    #             full_endpoint = f"{self._url}/api/{version}{endpoint}"
-            
-    #         LOGGR.debug(f"Get: {full_endpoint}")
+# def _update_token_old(self):
+#     '''update token in http header'''
+#     self._url=self._raw_url #accounts api uses a different url
 
-    #         if SatDBClient.ispaginatedCall(full_endpoint):
-    #             respageslst = list(self.get_paginated(full_endpoint, json_params))
-    #             LOGGR.debug(f"get1-{len(respageslst)}-type-{type(respageslst)}-type-{type(respageslst[0])}") #get1-10-type-<class 'list'>-type-<class 'tuple'>
-    #             for i in respageslst:
-    #                 LOGGR.debug(f"get2-{len(i)}-type-{type(i)}-{len(i[0])}-{type(i[0])}") #get2-2-type-<class 'tuple'>
-    #             reselement, resflattenpages = SatDBClient.flatten(respageslst)
-    #             LOGGR.debug(f"get3-{len(resflattenpages)}") #get3-200
-    #             #SatDBClient.debugminijson(resflattenpages, "l1resflattenpages")
-    #             #print(f"l2-{len(resflattenpages[0])}-type-{type(resflattenpages[0])}")
-    #             #SatDBClient.debugminijson(resflattenpages[0], "l2resflattenpages")
-    #             results = {reselement:resflattenpages}
+#     if self._cloud_type == 'aws' and self._use_sp_auth is True:# AWS Service Principal authentication flow
+#         LOGGR.info("OAuth flow for workspace")
+#         oauth = self.getAWSTokenwithOAuth(False, self._client_id, self._client_secret)
+#         self._token = {
+#             "Authorization": f"Bearer {oauth}",
+#             "User-Agent": "databricks-sat/0.1.0"
+#         }
+#     elif self._use_mastercreds is False:
+#         self._token = {
+#             "Authorization": f"Bearer {self._raw_token}",
+#             "User-Agent": "databricks-sat/0.1.0"
+#         }
+#     else: # use master creds for workspaces also
+#         if(self._cloud_type == 'gcp'):
+#             self._token = {
+#             "Authorization": f"Bearer {self._raw_token}",
+#             "User-Agent": "databricks-sat/0.1.0"
+#             }
+#             LOGGR.info(f'In GCP  self._url {self._url}')
+#         elif (self._cloud_type == 'azure'):
+#             self._raw_token = self.getAzureTokenWithMSAL('dbmgmt')
 
-    #         else:    
-    #             if json_params:
-    #                 raw_results = requests.get(full_endpoint, headers=self._token, params=json_params, timeout=60, proxies=self._proxies)
-    #             else:
-    #                 raw_results = requests.get(full_endpoint, headers=self._token, timeout=60, proxies=self._proxies)
+#             self._token = {
+#             "Authorization": f"Bearer {self._raw_token}",
+#             "User-Agent": "databricks-sat/0.1.0"
+#             }
+#         else:
+#             user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
+#             self._token = {
+#                 "Authorization" : f"Basic {user_pass}",
+#                 "User-Agent": "databricks-sat/0.1.0"
+#             }
+#     return None
 
-    #             http_status_code = raw_results.status_code
-    #             if http_status_code in SatDBClient.http_error_codes:
-    #                 raise Exception(f"Error: GET request failed with code {http_status_code}\n{raw_results.text}")
-    #             results = raw_results.json()
-    #             LOGGR.debug(json.dumps(results, indent=4, sort_keys=True))
-    #             if isinstance(results, list):
-    #                 results = {'elements': results}
-    #             results['http_status_code'] = http_status_code
-    #         return results
+# def getAzureTokenwithOAuth(self, baccount):
+#     '''generates OAuth token for Service Principal authentication flow'''
+#     '''baccount if generating for account. False for workspace'''
+#     response = None
+#     print(f'{self._client_id}========{self._client_secret}')
+#     user_pass = (self._client_id,self._client_secret)
+#     oidc_token = {
+#         "User-Agent": "databricks-sat/0.1.0"
+#     }
+#     json_params = {
+#         "grant_type": "client_credentials",
+#         "scope": "all-apis"
+#     }
+#     if baccount in "msmgmt":
+#         full_endpoint = f"https://accounts.azuredatabricks.net/oidc/accounts/{self._account_id}/v1/token" #url for accounts api
+#     else: #workspace
+#         full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
-    #    def _update_token_master_old(self):
-    #     '''update token master in http header'''
-    #     LOGGR.info("in _update_token_master")
-    #     if(self._cloud_type == 'gcp'):
-    #         self._url = "https://accounts.gcp.databricks.com"  #url for gcp accounts api
-    #         self._token = {
-    #             "Authorization": f"Bearer {self._master_name}",
-    #             "X-Databricks-GCP-SA-Access-Token": f"{self._master_password}",
-    #             "User-Agent": "databricks-sat/0.1.0"
-    #         }
-    #         LOGGR.info(f'GCP self._token {self._token}')
-    #     elif(self._cloud_type == 'azure'):
-    #         #azure is only oauth to accounts/msmgmt
-    #         self._url, self._master_password = self.getAzureToken('msmgmt')
-    #         self._token = {
-    #             "Authorization": f"Bearer {self._master_password}",
-    #             "User-Agent": "databricks-sat/0.1.0"
-    #         }
-    #     else:     #AWS
-    #         self._url = "https://accounts.cloud.databricks.com" #url for accounts api
-    #         if (self._use_sp_auth): # Service Principal authentication flow
-    #             oauth = self.getAWSTokenwithOAuth(True, self._client_id, self._client_secret)
-    #             self._token = {
-    #                 "Authorization": f"Bearer {oauth}",
-    #                 "User-Agent": "databricks-sat/0.1.0"
-    #             } 
-    #         else:
-    #             LOGGR.info('OAuth flow for master')
-    #             user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
-    #             self._token = {
-    #                 "Authorization" : f"Basic {user_pass}",
-    #                 "User-Agent": "databricks-sat/0.1.0"
-    #             }
+#     response = requests.post(full_endpoint, headers=oidc_token,
+#                                 auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)
 
-    # def _update_token_old(self):
-    #     '''update token in http header'''
-    #     self._url=self._raw_url #accounts api uses a different url
-
-    #     if self._cloud_type == 'aws' and self._use_sp_auth is True:# AWS Service Principal authentication flow
-    #         LOGGR.info("OAuth flow for workspace")
-    #         oauth = self.getAWSTokenwithOAuth(False, self._client_id, self._client_secret)
-    #         self._token = {
-    #             "Authorization": f"Bearer {oauth}",
-    #             "User-Agent": "databricks-sat/0.1.0"
-    #         } 
-    #     elif self._use_mastercreds is False:
-    #         self._token = {
-    #             "Authorization": f"Bearer {self._raw_token}",
-    #             "User-Agent": "databricks-sat/0.1.0"
-    #         }
-    #     else: # use master creds for workspaces also
-    #         if(self._cloud_type == 'gcp'):
-    #             self._token = {
-    #             "Authorization": f"Bearer {self._raw_token}",
-    #             "User-Agent": "databricks-sat/0.1.0"
-    #             }   
-    #             LOGGR.info(f'In GCP  self._url {self._url}')
-    #         elif (self._cloud_type == 'azure'):
-    #             self._raw_token = self.getAzureTokenWithMSAL('dbmgmt')
-
-    #             self._token = {
-    #             "Authorization": f"Bearer {self._raw_token}",
-    #             "User-Agent": "databricks-sat/0.1.0"
-    #             }      
-    #         else:    
-    #             user_pass = base64.b64encode(f"{self._master_name}:{self._master_password}".encode("ascii")).decode("ascii")
-    #             self._token = {
-    #                 "Authorization" : f"Basic {user_pass}",
-    #                 "User-Agent": "databricks-sat/0.1.0"
-    #             }
-    #     return None
-
-    # def getAzureTokenwithOAuth(self, baccount):
-    #     '''generates OAuth token for Service Principal authentication flow'''
-    #     '''baccount if generating for account. False for workspace'''
-    #     response = None
-    #     print(f'{self._client_id}========{self._client_secret}')
-    #     user_pass = (self._client_id,self._client_secret)
-    #     oidc_token = {
-    #         "User-Agent": "databricks-sat/0.1.0"
-    #     }
-    #     json_params = {
-    #         "grant_type": "client_credentials",
-    #         "scope": "all-apis"
-    #     }
-    #     if baccount in "msmgmt":
-    #         full_endpoint = f"https://accounts.azuredatabricks.net/oidc/accounts/{self._account_id}/v1/token" #url for accounts api  
-    #     else: #workspace
-    #         full_endpoint = f'{self._raw_url}/oidc/v1/token'
-
-    #     response = requests.post(full_endpoint, headers=oidc_token,
-    #                                 auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)  
-
-    #     if response is not None and response.status_code == 200:
-    #         return response.json()['access_token']
-    #     LOGGR.debug(json.dumps(response.json()))
-    #     return None
+#     if response is not None and response.status_code == 200:
+#         return response.json()['access_token']
+#     LOGGR.debug(json.dumps(response.json()))
+#     return None
