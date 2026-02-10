@@ -110,7 +110,7 @@ class SatDBClient:
             self._ACCTURL = f"https://accounts.azuredatabricks.{domain}"
             self._MGMTURL = "https://management.azure.com"
             self._subscription_id = configs["subscription_id"].strip()
-            self._tenant_id = configs["tenant_id"].strip().strip()
+            self._tenant_id = configs["tenant_id"].strip()
 
     def _update_token_master(self, endpoint=None):
         """Refresh the OAuth token for account-level API calls.
