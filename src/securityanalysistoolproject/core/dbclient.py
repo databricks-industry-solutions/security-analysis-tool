@@ -144,9 +144,7 @@ class SatDBClient:
         elif self._cloud_type == "azure":
             # azure is only oauth to accounts/msmgmt
             self._url = self._ACCTURL
-            oauth = self.getAzureToken(
-                True, endpoint, self._client_id, self._client_secret
-            )
+            oauth = self.getAzureToken(True, endpoint)
             if endpoint is None or "?api-version=" in endpoint:
                 self._url = self._MGMTURL
             self._token = {
@@ -187,9 +185,7 @@ class SatDBClient:
                 "User-Agent": "databricks-sat/0.1.0",
             }
         elif self._cloud_type == "azure":
-            oauth = self.getAzureToken(
-                False, endpoint, self._client_id, self._client_secret
-            )
+            oauth = self.getAzureToken(False, endpoint)
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0",
@@ -437,7 +433,7 @@ class SatDBClient:
         """
         resultsArray = []
         elementName = ""
-        for i in range(self._maxpages):
+        for _ in range(self._maxpages):
             LOGGR.debug(f"{endpoint}---{json_params}")
             if "get" in reqtype:
                 raw_results = requests.get(
@@ -896,7 +892,7 @@ class SatDBClient:
             )
         return cloudtype
 
-    def getAzureToken(self, baccount: bool, endpoint: Optional[str], client_id: str, client_secret: str) -> Optional[str]:
+    def getAzureToken(self, baccount, endpoint):
         """Route to the correct MSAL token scope for Azure.
 
         Determines whether the request targets Azure Management APIs or
