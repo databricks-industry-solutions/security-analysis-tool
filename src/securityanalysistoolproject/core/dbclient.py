@@ -877,10 +877,14 @@ class SatDBClient:
         cloudtype = ""
         if "azuredatabricks.net" in self._raw_url:
             cloudtype = "azure"
-        if "cloud.databricks" in self._raw_url:
+        elif "cloud.databricks" in self._raw_url:
             cloudtype = "aws"
-        if "gcp.databricks" in self._raw_url:
+        elif "gcp.databricks" in self._raw_url:
             cloudtype = "gcp"
+        else:
+            LOGGR.error(
+                f"Failed to parse {self._raw_url}. No match for AWS, Azure, or GCP"
+            )
         return cloudtype
 
     def getAzureToken(self, baccount, endpoint, client_id, client_secret):
