@@ -46,6 +46,16 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "warehouse_type" {
+  description = "Type of SQL warehouse to deploy: CLASSIC, PRO, or SERVERLESS"
+  type        = string
+  validation {
+    condition     = contains(["CLASSIC", "PRO", "SERVERLESS"], var.warehouse_type)
+    error_message = "warehouse_type must be one of: CLASSIC, PROD, or SERVERLESS"
+  }
+  default = "CLASSIC"
+}
+
 variable "workspace_id" {
   description = "Should be the string of numbers in the workspace URL arg (e.g. https://<workspace>.azuredatabricks.net/?o=1234567890123456)"
 }
