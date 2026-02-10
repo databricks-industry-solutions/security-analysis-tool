@@ -2,12 +2,10 @@
 # This job collects permissions data and builds the permissions graph for security analysis
 
 resource "databricks_job" "brickhound_data_collection" {
-  name = "BrickHound Permissions Analysis - Data Collection"
+  name = "SAT Permissions Analysis - Data Collection (Experimental)"
 
   tags = {
-    Application = "SAT-BrickHound"
-    Component   = "Permissions"
-    Purpose     = "Security Analysis"
+    Application = "SAT-PermissionsAnalysis"
   }
 
   # Use same serverless/cluster pattern as SAT

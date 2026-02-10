@@ -3,6 +3,13 @@
 # MAGIC # Impersonation Analysis
 # MAGIC *Discover impersonation paths between principals*
 # MAGIC
+# MAGIC <div style="background-color: #fff3e0; border-left: 4px solid #d32f2f; padding: 12px; margin: 16px 0;">
+# MAGIC   <p style="margin: 0; font-size: 0.85em; color: #d32f2f; font-weight: bold;">⚠️ DISCLAIMER</p>
+# MAGIC   <p style="margin: 8px 0 0 0; font-size: 0.8em; color: #555;">
+# MAGIC     This tool may have incomplete data. Outputs are visibility and audit aids, not authoritative compliance determinations.
+# MAGIC   </p>
+# MAGIC </div>
+# MAGIC
 # MAGIC ## Overview
 # MAGIC **Question:** Can one principal reach another through the security graph?
 # MAGIC

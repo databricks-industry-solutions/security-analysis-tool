@@ -1,5 +1,5 @@
 name: brickhound-sat
-display_name: "BrickHound - Databricks Permissions Analysis (SAT)"
+display_name: "BrickHound - Databricks Permissions Analysis (SAT) - Experimental"
 description: "Interactive permissions analysis for Databricks (part of SAT)"
 
 # App configuration
@@ -11,18 +11,15 @@ config:
 
 # Environment variables
 # REQUIRED: Replace placeholders with actual values from your SAT configuration
-# Example: If your SAT schema is "main.security_analysis", use:
-#   BRICKHOUND_CATALOG: "main"
-#   BRICKHOUND_SCHEMA: "security_analysis"
+# Example: Use full catalog and schema name exaple if your SAT schema is "security_catalog.security_analysis", use:
+# BRICKHOUND_SCHEMA: "security_catalog.security_analysis"
 env:
   - name: "PORT"
     value: "8000"
-  - name: "BRICKHOUND_CATALOG"
-    value: "<catalog_name_of_sat>"
   - name: "BRICKHOUND_SCHEMA"
-    value: "<schema_name_of_sat>"
+    valueFrom: "analysis_schema_name"
   - name: "WAREHOUSE_ID"
-    value: "<warehouse_id_of_sat>"
+    valueFrom: "sql-warehouse-id"
 
 # Resource requirements
 resources:

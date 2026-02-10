@@ -2,7 +2,7 @@
 resources:
   apps:
     sat_permissions_analysis:
-      name: "sat-permission-app"
+      name: "sat-permissions-exp"
       description: "SAT Permissions Analysis App"
       source_code_path: "../app/brickhound"
       resources: 
@@ -22,11 +22,9 @@ resources:
             key: sql-warehouse-id
   jobs:
     brickhound_data_collection:
-      name: "SAT Permissions Analysis - Data Collection"
+      name: "SAT Permissions Analysis - Data Collection (Experimental)"
       tags:
         Application: SAT-PermissionsAnalysis
-        Component: Permissions
-        Purpose: Security Analysis
       schedule:
         quartz_cron_expression: "{{.brickhound_schedule}}"
         timezone_id: {{.job_timezone}}

@@ -20,25 +20,35 @@ logger = logging.getLogger(__name__)
 # Configuration - Read from environment variables (set in app.yaml)
 # These MUST be configured in app.yaml - no hardcoded defaults
 logger.info("[CONFIG] Environment variables check:")
-logger.info(f"  BRICKHOUND_CATALOG = {os.getenv('BRICKHOUND_CATALOG')}")
 logger.info(f"  BRICKHOUND_SCHEMA = {os.getenv('BRICKHOUND_SCHEMA')}")
 logger.info(f"  WAREHOUSE_ID = {os.getenv('WAREHOUSE_ID')}")
 
 # Validate required environment variables
-CATALOG = os.getenv("BRICKHOUND_CATALOG")
-SCHEMA = os.getenv("BRICKHOUND_SCHEMA")
+BRICKHOUND_SCHEMA = os.getenv("BRICKHOUND_SCHEMA")
 
-if not CATALOG or not SCHEMA:
-    error_msg = "FATAL: Missing required environment variables in app.yaml:\n"
-    if not CATALOG:
-        error_msg += "  - BRICKHOUND_CATALOG is not set\n"
-    if not SCHEMA:
+# Parse catalog.schema from environment variable
+if BRICKHOUND_SCHEMA:
+    parts = BRICKHOUND_SCHEMA.split(".")
+    if len(parts) == 2:
+        CATALOG, SCHEMA = parts
+    else:
+        CATALOG = None
+        SCHEMA = None
+else:
+    CATALOG = None
+    SCHEMA = None
+
+if not BRICKHOUND_SCHEMA or not CATALOG or not SCHEMA:
+    error_msg = "FATAL: Missing or invalid BRICKHOUND_SCHEMA in app.yaml:\n"
+    if not BRICKHOUND_SCHEMA:
         error_msg += "  - BRICKHOUND_SCHEMA is not set\n"
-    error_msg += "\nPlease configure these values in app.yaml before deploying."
+    else:
+        error_msg += f"  - BRICKHOUND_SCHEMA must be in format 'catalog.schema', got: {BRICKHOUND_SCHEMA}\n"
+    error_msg += "\nPlease configure BRICKHOUND_SCHEMA in app.yaml before deploying."
     logger.error(error_msg)
     raise ValueError(error_msg)
 
-logger.info(f"[CONFIG] Using CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+logger.info(f"[CONFIG] BRICKHOUND_SCHEMA={BRICKHOUND_SCHEMA} -> CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 
 # Define table names
 VERTICES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_vertices"
@@ -1289,7 +1299,12 @@ def get_main_html():
             <div class="sidebar-header">
                 <div class="logo" style="cursor: pointer;" data-page="home">
                     <div class="logo-icon">🛡️</div>
-                    <span class="logo-text">Principal and Resource Permissions Analysis Tool</span>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span class="logo-text">Principal and Resource Permissions Analysis Tool (Experimental)</span>
+                        <div style="font-size: 0.65em; color: #d32f2f; line-height: 1.2;">
+                            <strong>⚠️ Note:</strong> May have incomplete data. Outputs are visibility/audit aids, not authoritative compliance determinations.
+                        </div>
+                    </div>
                 </div>
             </div>
 

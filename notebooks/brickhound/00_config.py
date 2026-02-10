@@ -1,4 +1,12 @@
 # Databricks notebook source
+# MAGIC %run ../Includes/install_sat_sdk
+
+# COMMAND ----------
+
+# MAGIC %run ../Utils/initialize
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Permissions Analysis Tool Configuration
 # MAGIC
@@ -69,11 +77,9 @@
 # ==============================================================================
 # Configuration is automatically read from SAT's sat_scope
 
-# Secrets scope name (uses SAT's secret scope)
-SECRETS_SCOPE = "sat_scope"
 
 # Read catalog and schema from SAT configuration
-analysis_schema = dbutils.secrets.get(scope="sat_scope", key="analysis_schema_name")
+analysis_schema = dbutils.secrets.get(scope=SECRETS_SCOPE, key="analysis_schema_name")
 CATALOG = analysis_schema.split('.')[0]
 SCHEMA = analysis_schema.split('.')[1]
 
