@@ -450,6 +450,9 @@ class SatDBClient:
                 )  # throttle otherwise gives a too many requests error
             elif "post" in reqtype:
                 if json_params is None:
+                    raise ValueError(
+                        f"json_params payload required for {reqtype.upper()} requests."
+                    )
                     LOGGR.info("Must have a payload in json_args param.")
                 if files_json:
                     raw_results = requests.post(
@@ -470,7 +473,9 @@ class SatDBClient:
                     )
             elif "put" in reqtype:
                 if json_params is None:
-                    LOGGR.info("Must have a payload in json_args param.")
+                    raise ValueError(
+                        f"json_params payload is required for {reqtype.upper()} requests."
+                    )
                 raw_results = requests.put(
                     endpoint,
                     headers=self._token,
@@ -480,7 +485,9 @@ class SatDBClient:
                 )
             elif "patch" in reqtype:
                 if json_params is None:
-                    LOGGR.info("Must have a payload in json_args param.")
+                    raise ValueError(
+                        f"json_params payload is required for {reqtype.upper()} requests."
+                    )
                 raw_results = requests.patch(
                     endpoint,
                     headers=self._token,
