@@ -23,8 +23,26 @@ urllib3.disable_warnings(category=urllib3.exceptions.InsecureRequestWarning)
 LOGGR: logging.Logger = LoggingUtils.get_logger()
 
 
-if LOGGR is None:
-    LOGGR = LoggingUtils.get_logger()
+def mask_data(data, unmasked_length=4, mask_char="*") -> str:
+    """Mask all but the last ``unmasked_length`` characters of a string.
+
+    Args:
+        data: The string to mask.
+        unmasked_length: Number of trailing characters to leave visible.
+        mask_char: Character used for the masked portion.
+
+    Returns:
+        The masked string, or the original string if its length is less than
+        or equal to ``unmasked_length``.
+    """
+    length = len(data)
+    if length <= unmasked_length:
+        return data
+    else:
+        masked_part = mask_char * (length - unmasked_length)
+        unmasked_part = data[-unmasked_length:]
+        return masked_part + unmasked_part
+
 
 class PatternType(Enum):
     """Classification of Databricks API response structures.
