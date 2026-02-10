@@ -200,7 +200,7 @@ class SatDBClient:
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0",
             }
-        LOGGR.info(f"Token Updated!")
+        LOGGR.info("Token Updated!")
 
     def get_temporary_oauth_token(self):
         """Return a short-lived OAuth access token string for external use.
