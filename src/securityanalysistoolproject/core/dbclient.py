@@ -975,8 +975,7 @@ class SatDBClient:
                 return token.get("access_token")
 
         except Exception as error:
-            print(f"Exception {error}")
-            print(str(error))
+            LOGGR.error(f"Exception {error}")
 
     def getAWSTokenwithOAuth(self, baccount, client_id, client_secret):
         """Acquire an OAuth token for AWS Databricks via the OIDC endpoint.
