@@ -873,6 +873,7 @@ class SatDBClient:
             img_type = vsparkver["key"].split("-")[1][0:5]
             if img_type == "scala":
                 return vsparkver
+        raise ValueError("No Scala-based Spark runtime version found.")
 
     def get_cloud_type(self):
         """Return the detected cloud provider (``"aws"``, ``"azure"``, or ``"gcp"``)."""
