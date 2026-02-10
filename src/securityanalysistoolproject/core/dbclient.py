@@ -16,13 +16,12 @@ import requests
 import urllib3
 
 from core import parser as pars
-import msal
-import re
-from enum import Enum
+from core.logging_utils import LoggingUtils
 
-urllib3.disable_warnings(category = urllib3.exceptions.InsecureRequestWarning)
+urllib3.disable_warnings(category=urllib3.exceptions.InsecureRequestWarning)
 
-LOGGR=None
+LOGGR: logging.Logger = LoggingUtils.get_logger()
+
 
 if LOGGR is None:
     LOGGR = LoggingUtils.get_logger()
