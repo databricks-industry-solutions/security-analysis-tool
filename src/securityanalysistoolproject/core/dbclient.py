@@ -1029,7 +1029,7 @@ class SatDBClient:
         oidc_token = {"User-Agent": "databricks-sat/0.1.0"}
         json_params = {"grant_type": "client_credentials", "scope": "all-apis"}
 
-        if baccount is True:
+        if baccount:
             full_endpoint = f"{self._ACCTURL}/oidc/accounts/{self._account_id}/v1/token"  # url for accounts api
         else:  # workspace
             full_endpoint = f"{self._raw_url}/oidc/v1/token"
