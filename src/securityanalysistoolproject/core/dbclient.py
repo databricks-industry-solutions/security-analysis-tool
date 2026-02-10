@@ -587,7 +587,7 @@ class SatDBClient:
             "/api/2.0/marketplace-exchange/exchanges-for-listing",
             "/api/2.0/marketplace-exchange/filters",
             "/api/2.0/marketplace-exchange/listings-for-exchange",
-            "/api/2.0/marketplace-provider/providers"
+            "/api/2.0/marketplace-provider/providers",
             "/api/2.0/marketplace-provider/files",
             "/api/2.0/marketplace-provider/listings",
             "/api/2.0/marketplace-provider/personalization-requests",
@@ -622,7 +622,7 @@ class SatDBClient:
             "/api/2.1/unity-catalog/bindings/.+/.+",
             "/api/2.1/unity-catalog/catalogs",
             "/api/2.1/unity-catalog/connections",
-            "/api/2.1/unity-catalog/credentials"
+            "/api/2.1/unity-catalog/credentials",
             "/api/2.1/unity-catalog/external-locations",
             "/api/2.1/unity-catalog/functions",
             "/api/2.1/unity-catalog/metastores/.+/systemschemas",  # not used
