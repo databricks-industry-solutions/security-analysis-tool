@@ -5,7 +5,7 @@ terraform {
 }
 
 provider "databricks" {
-  host          = var.databricks_url
+  host = var.databricks_url
 }
 
 module "common" {
