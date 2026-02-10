@@ -925,7 +925,7 @@ class SatDBClient:
             LOGGR.debug(
                 f"This condition should never happen getAzureToken {endpoint} {baccount}"
             )
-            return None, None  # account dbtype
+            return None  # account dbtype
 
     def getAzureTokenWithMSAL(self, scopeType):
         """Acquire an Azure AD token using the MSAL confidential client flow.
