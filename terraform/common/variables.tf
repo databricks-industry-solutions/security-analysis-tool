@@ -3,8 +3,37 @@ variable "account_console_id" {
   description = "Databricks Account ID"
 }
 
-variable "workspace_id" {
-  description = "Should be the string of numbers in the workspace URL arg (e.g. https://<workspace>.azuredatabricks.net/?o=1234567890123456)"
+variable "analysis_schema_name" {
+  type        = string
+  description = "Name of the schema to be used for analysis"
+}
+
+variable "gcp_impersonate_service_account" {
+  type        = string
+  description = "GCP Service Account to impersonate (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
+  default     = ""
+}
+
+variable "notification_email" {
+  type        = string
+  description = "Optional user email for notifications. If not specified, current user's email will be used"
+  default     = ""
+}
+
+variable "proxies" {
+  type        = map(any)
+  description = "Proxies to be used for Databricks API calls"
+}
+
+variable "run_on_serverless" {
+  type        = bool
+  description = "Flag to run SAT initializer/Driver on Serverless"
+}
+
+variable "secret_scope_name" {
+  description = "Name of secret scope for SAT secrets"
+  type        = string
+  default     = "sat_scope"
 }
 
 variable "sqlw_id" {
@@ -17,35 +46,7 @@ variable "sqlw_id" {
   default = "new"
 }
 
-variable "secret_scope_name" {
-  description = "Name of secret scope for SAT secrets"
-  type        = string
-  default     = "sat_scope"
+variable "workspace_id" {
+  description = "Should be the string of numbers in the workspace URL arg (e.g. https://<workspace>.azuredatabricks.net/?o=1234567890123456)"
 }
 
-variable "notification_email" {
-  type        = string
-  description = "Optional user email for notifications. If not specified, current user's email will be used"
-  default     = ""
-}
-
-variable "gcp_impersonate_service_account" {
-  type        = string
-  description = "GCP Service Account to impersonate (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
-  default     = ""
-}
-
-variable "analysis_schema_name" {
-  type        = string
-  description = "Name of the schema to be used for analysis"
-}
-
-variable "proxies" {
-  type        = map
-  description = "Proxies to be used for Databricks API calls"
-}
-
-variable "run_on_serverless" {
-  type        = bool
-  description = "Flag to run SAT initializer/Driver on Serverless"
-}
