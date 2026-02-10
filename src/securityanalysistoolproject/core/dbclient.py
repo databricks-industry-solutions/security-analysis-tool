@@ -6,10 +6,15 @@ normalization across all three supported cloud platforms.
 """
 
 import json
+import logging
+import re
 import time
-import urllib3
+from enum import Enum
+
+import msal
 import requests
-from core.logging_utils import LoggingUtils
+import urllib3
+
 from core import parser as pars
 import msal
 import re
