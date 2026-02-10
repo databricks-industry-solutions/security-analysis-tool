@@ -33,6 +33,16 @@ variable "proxies" {
   description = "Proxies to be used for Databricks API calls"
 }
 
+variable "warehouse_type" {
+  description = "Type of SQL warehouse to deploy: CLASSIC, PRO, or SERVERLESS"
+  type        = string
+  validation {
+    condition     = contains(["CLASSIC", "PRO", "SERVERLESS"], var.warehouse_type)
+    error_message = "warehouse_type must be one of: CLASSIC, PROD, or SERVERLESS"
+  }
+  default = "CLASSIC"
+}
+
 
 ### Azure Specific Variables
 
