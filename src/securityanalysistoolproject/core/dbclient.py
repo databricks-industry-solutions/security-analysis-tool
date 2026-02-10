@@ -9,7 +9,7 @@ import json
 import logging
 import re
 import time
-from enum import Enum
+from enum import IntEnum
 
 import msal
 import requests
@@ -44,7 +44,7 @@ def mask_data(data, unmasked_length=4, mask_char="*") -> str:
         return masked_part + unmasked_part
 
 
-class PatternType(Enum):
+class PatternType(IntEnum):
     """Classification of Databricks API response structures.
 
     Used by :meth:`SatDBClient.getNumLists` to determine how to
