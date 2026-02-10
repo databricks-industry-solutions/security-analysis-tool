@@ -809,8 +809,8 @@ class SatDBClient:
         ).get("satelements", [])
         com_id = command[0].get("id", None)
         if com_id is None:
-            LOGGR.error(command)
-        # print('command_id : ' + com_id)
+            LOGGR.error(f"Command submission returned no id: {command}")
+            raise RuntimeError("Command submission failed. No command id returned.")
         result_payload = {"clusterId": cid, "contextId": ec_id, "commandId": com_id}
 
         resp = self.get(
