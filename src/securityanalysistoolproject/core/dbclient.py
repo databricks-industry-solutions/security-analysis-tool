@@ -5,17 +5,18 @@ calls with automatic OAuth token management, pagination handling, and response
 normalization across all three supported cloud platforms.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re
 import time
 from enum import IntEnum
+from typing import Any, Generator
 
 import msal
 import requests
 import urllib3
-
-from typing import Any, Generator, Optional, Union
 
 from core import parser as pars
 from core.logging_utils import LoggingUtils
@@ -73,34 +74,34 @@ class SatDBClient:
     """
 
     # set of http error codes to throw an exception if hit. Handles client and auth errors
-    http_error_codes = [401, 403]
+    http_error_codes: list[int] = [401, 403]
 
-    def __init__(self, inp_configs: Union[dict, str]) -> None:
-        self._inp_configs = inp_configs
+    def __init__(self, inp_configs: dict[str, Any] | str) -> None:
+        self._inp_configs: dict[str, Any] | str = inp_configs
         configs = pars.parse_input_jsonargs(inp_configs)
-        self._configs = configs
-        self._workspace_id = configs["workspace_id"]
-        self._raw_url = configs["url"].strip()
-        self._url = self._raw_url
-        self._account_id = configs["account_id"].strip()
-        self._cloud_type = self.parse_cloud_type()
-        self._verbosity = LoggingUtils.get_log_level(configs["verbosity"])
+        self._configs: dict[str, Any] = configs
+        self._workspace_id: str = configs["workspace_id"]
+        self._raw_url: str = configs["url"].strip()
+        self._url: str = self._raw_url
+        self._account_id: str = configs["account_id"].strip()
+        self._cloud_type: str = self.parse_cloud_type()
+        self._verbosity: int | None = LoggingUtils.get_log_level(configs["verbosity"])
         LoggingUtils.set_logger_level(self._verbosity)
-        self._cluster_id = configs["clusterid"].strip()
-        self._token = ""
+        self._cluster_id: str = configs["clusterid"].strip()
+        self._token: dict[str, str] = {}
         # self._raw_token = '' #for gcp this was populated in bootstrap notebook. Not anymore.
         # mastercreds not used anymore
-        self._proxies = configs.get("proxies", {})
+        self._proxies: dict[str, str] = configs.get("proxies", {})
         # self._use_sp_auth = True #always use sp auth by default
-        self._maxpages = configs["maxpages"]  # max pages to fetch in paginated calls
-        self._timebetweencalls = configs[
+        self._maxpages: int = configs["maxpages"]  # max pages to fetch in paginated calls
+        self._timebetweencalls: int = configs[
             "timebetweencalls"
         ]  # seconds to wait between paginated calls
         # common for all clouds
         # AWS and GCP pass in secret generated in accounts console
         # Azure pass in secret generated in azure portal
-        self._client_id = configs["client_id"].strip()
-        self._client_secret = configs["client_secret"].strip()
+        self._client_id: str = configs["client_id"].strip()
+        self._client_secret: str = configs["client_secret"].strip()
         # take care of gov cloud domains
         domain = pars.get_domain(self._raw_url)
         if "aws" in self._cloud_type:
@@ -114,7 +115,7 @@ class SatDBClient:
             self._subscription_id = configs["subscription_id"].strip()
             self._tenant_id = configs["tenant_id"].strip()
 
-    def _update_token_master(self, endpoint: Optional[str] = None) -> None:
+    def _update_token_master(self, endpoint: str | None = None) -> None:
         """Refresh the OAuth token for account-level API calls.
 
         Sets ``self._token`` to an ``Authorization: Bearer`` header and points
@@ -162,7 +163,7 @@ class SatDBClient:
             }
         LOGGR.info("Master Account Token Updated!")
 
-    def _update_token(self, endpoint: Optional[str] = None) -> None:
+    def _update_token(self, endpoint: str | None = None) -> None:
         """Refresh the OAuth token for workspace-level API calls.
 
         Sets ``self._token`` to an ``Authorization: Bearer`` header and resets
@@ -200,7 +201,7 @@ class SatDBClient:
             }
         LOGGR.info("Token Updated!")
 
-    def get_temporary_oauth_token(self) -> Optional[str]:
+    def get_temporary_oauth_token(self) -> str | None:
         """Return a short-lived OAuth access token string for external use.
 
         Returns:
@@ -277,7 +278,7 @@ class SatDBClient:
         LOGGR.debug(f"{title}-=-=-{debugs[:1250]}-=-=-{type(jsonelem)}")
 
     @staticmethod
-    def getNumLists(resp: Union[dict, list]) -> PatternType:
+    def getNumLists(resp: dict[str, Any] | list[Any]) -> PatternType:
         """Classify the structure of a Databricks API JSON response.
 
         Inspects the top-level keys of ``resp`` to determine which
@@ -324,7 +325,7 @@ class SatDBClient:
         return PatternType.PATTERN_3
 
     @staticmethod
-    def getRespArray(resp: Union[dict, list]) -> tuple[str, list]:
+    def getRespArray(resp: dict[str, Any] | list[Any]) -> tuple[str, list[Any]]:
         """Extract the element name and data list from a classified response.
 
         Args:
@@ -347,7 +348,7 @@ class SatDBClient:
         # SatDBClient.debugminijson(resp, "getRespArray")
         if (
             patterntype == PatternType.PATTERN_1
-        ):  # one list and within list we have a dict
+        ) and isinstance(resp, dict):  # one list and within list we have a dict
             for ielem in resp:
                 if isinstance(resp[ielem], list):
                     LOGGR.debug(
@@ -360,11 +361,13 @@ class SatDBClient:
         if patterntype == PatternType.PATTERN_2 or patterntype == PatternType.PATTERN_3:
             arrdict.append(resp)
             return "satelements", arrdict
-        if patterntype == PatternType.PATTERN_4:
-            return "satelements", resp  # return the list as is
+        if patterntype == PatternType.PATTERN_4 and isinstance(resp, list):
+            return "satelements", resp
+
+        return "satelements", []
 
     @staticmethod
-    def flatten(nestarr: list[tuple[dict, int]]) -> tuple[str, list, int]:
+    def flatten(nestarr: list[tuple[dict[str, list[Any]], int]]) -> tuple[str, list[Any], int]:
         """Flatten a list of paginated response tuples into a single result.
 
         Args:
@@ -409,10 +412,10 @@ class SatDBClient:
         self,
         endpoint: str,
         reqtype: str = "get",
-        json_params: Optional[dict] = None,
-        files_json: Optional[dict] = None,
+        json_params: dict[str, Any] | None = None,
+        files_json: dict[str, Any] | None = None,
         is_paginated: bool = False,
-    ) -> Generator[tuple[dict, int], None, None]:
+    ) -> Generator[tuple[dict[str, list[Any]], int], None, None]:
         """Issue one or more HTTP requests, following ``next_page_token`` pagination.
 
         Yields one ``(dict, http_status_code)`` tuple per page.  Each dict maps
@@ -451,7 +454,6 @@ class SatDBClient:
                     raise ValueError(
                         f"json_params payload required for {reqtype.upper()} requests."
                     )
-                    LOGGR.info("Must have a payload in json_args param.")
                 if files_json:
                     raw_results = requests.post(
                         endpoint,
@@ -493,6 +495,8 @@ class SatDBClient:
                     timeout=60,
                     proxies=self._proxies,
                 )
+            else:
+                raise ValueError(f"Unsupported request type: {reqtype}")
 
             http_status_code = raw_results.status_code
             if http_status_code in SatDBClient.http_error_codes:
@@ -659,11 +663,11 @@ class SatDBClient:
         self,
         http_type: str,
         endpoint: str,
-        json_params: Optional[dict],
+        json_params: dict[str, Any] | None,
         version: str = "2.0",
-        files_json: Optional[dict] = None,
+        files_json: dict[str, Any] | None = None,
         master_acct: bool = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Execute an HTTP request with automatic pagination and response flattening.
 
         This is the central dispatcher used by :meth:`get`, :meth:`post`,
@@ -734,23 +738,23 @@ class SatDBClient:
         results = {reselement: resflattenpages, "http_status_code": http_status_code}
         return results
 
-    def get(self, endpoint: str, json_params: Optional[dict] = None, version: str = "2.0", master_acct: bool = False) -> dict:
+    def get(self, endpoint: str, json_params: dict[str, Any] | None = None, version: str = "2.0", master_acct: bool = False) -> dict[str, Any]:
         """Send a GET request to the Databricks API."""
         return self.http_req("get", endpoint, json_params, version, None, master_acct)
 
     def post(
-        self, endpoint: str, json_params: dict, version: str = "2.0", files_json: Optional[dict] = None, master_acct: bool = False
-    ) -> dict:
+        self, endpoint: str, json_params: dict[str, Any], version: str = "2.0", files_json: dict[str, Any] | None = None, master_acct: bool = False
+    ) -> dict[str, Any]:
         """Send a POST request to the Databricks API."""
         return self.http_req(
             "post", endpoint, json_params, version, files_json, master_acct
         )
 
-    def put(self, endpoint: str, json_params: dict, version: str = "2.0", master_acct: bool = False) -> dict:
+    def put(self, endpoint: str, json_params: dict[str, Any], version: str = "2.0", master_acct: bool = False) -> dict[str, Any]:
         """Send a PUT request to the Databricks API."""
         return self.http_req("put", endpoint, json_params, version, None, master_acct)
 
-    def patch(self, endpoint: str, json_params: dict, version: str = "2.0", master_acct: bool = False) -> dict:
+    def patch(self, endpoint: str, json_params: dict[str, Any], version: str = "2.0", master_acct: bool = False) -> dict[str, Any]:
         """Send a PATCH request to the Databricks API."""
         return self.http_req("patch", endpoint, json_params, version, None, master_acct)
 
@@ -780,7 +784,7 @@ class SatDBClient:
             raise Exception("Remote session error. Cluster may not be started.")
         return ec_id
 
-    def submit_command(self, ec_id: str, cmd: str) -> dict:
+    def submit_command(self, ec_id: str, cmd: str) -> dict[str, Any]:
         """Submit a Python command to a remote execution context and wait for results.
 
         Args:
@@ -833,7 +837,7 @@ class SatDBClient:
         return end_results
 
     @staticmethod
-    def get_key(http_resp: dict, key_name: str) -> Any:
+    def get_key(http_resp: dict[str, Any], key_name: str) -> Any:
         """Retrieve a required key from an HTTP JSON response.
 
         Args:
@@ -851,7 +855,7 @@ class SatDBClient:
             raise ValueError("Unable to find key " + key_name)
         return value
 
-    def whoami(self) -> str:
+    def whoami(self) -> Any:
         """
         get current user userName from SCIM API
         :return: username string
@@ -863,7 +867,7 @@ class SatDBClient:
         """Return the current base URL (may be workspace or account URL)."""
         return self._url
 
-    def get_latest_spark_version(self) -> dict:
+    def get_latest_spark_version(self) -> dict[str, Any]:
         """Return the latest Scala-based Spark runtime version from the workspace."""
         versions = self.get("/clusters/spark-versions")["versions"]
         v_sorted = sorted(versions, key=lambda i: i["key"], reverse=True)
@@ -892,7 +896,7 @@ class SatDBClient:
             )
         return cloudtype
 
-    def getAzureToken(self, baccount, endpoint):
+    def getAzureToken(self, baccount: bool, endpoint: str | None) -> str | None:
         """Route to the correct MSAL token scope for Azure.
 
         Determines whether the request targets Azure Management APIs or
@@ -983,7 +987,7 @@ class SatDBClient:
             LOGGR.error(f"Acquiring Azure token failed: {error}")
             raise
 
-    def getAWSTokenwithOAuth(self, baccount: bool, client_id: str, client_secret: str) -> Optional[str]:
+    def getAWSTokenwithOAuth(self, baccount: bool, client_id: str, client_secret: str) -> str | None:
         """Acquire an OAuth token for AWS Databricks via the OIDC endpoint.
 
         Args:
@@ -1019,7 +1023,7 @@ class SatDBClient:
         # LOGGR.debug(json.dumps(response.json()))
         return None
 
-    def getGCPTokenwithOAuth(self, baccount: bool, client_id: str, client_secret: str) -> Optional[str]:
+    def getGCPTokenwithOAuth(self, baccount: bool, client_id: str, client_secret: str) -> str | None:
         """Acquire an OAuth token for GCP Databricks via the OIDC endpoint.
 
         Args:
