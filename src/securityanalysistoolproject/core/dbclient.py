@@ -697,9 +697,7 @@ class SatDBClient:
             full_endpoint = f"{self._url}/api/{version}{endpoint}"
 
         LOGGR.debug(f"http type endpoint -> {http_type}: {full_endpoint}")
-        is_paginated = (
-            True if SatDBClient.ispaginatedCall(full_endpoint) == True else False
-        )
+        is_paginated = SatDBClient.ispaginatedCall(full_endpoint)
         respageslst = list(
             self.get_paginated(
                 full_endpoint, http_type, json_params, files_json, is_paginated
@@ -993,7 +991,7 @@ class SatDBClient:
         oidc_token = {"User-Agent": "databricks-sat/0.1.0"}
         json_params = {"grant_type": "client_credentials", "scope": "all-apis"}
 
-        if baccount is True:
+        if baccount:
             full_endpoint = f"{self._ACCTURL}/oidc/accounts/{self._account_id}/v1/token"  # url for accounts api
         else:  # workspace
             full_endpoint = f"{self._raw_url}/oidc/v1/token"
