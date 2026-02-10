@@ -450,18 +450,21 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
     
     # Scan 1: Run with built-in detectors (excluding specified ones)
     excluded_detectors = ",".join(Config.EXCLUDED_DETECTORS)
-    builtin_command = (
-        f"{Config.TRUFFLEHOG_BINARY} filesystem {file_path} "
-        f"--exclude-detectors={excluded_detectors} "
-        f"--no-update -j"
-    )
+    builtin_command_args = [
+        Config.TRUFFLEHOG_BINARY,
+        "filesystem",
+        file_path,
+        f"--exclude-detectors={excluded_detectors}",
+        "--no-update",
+        "-j"
+    ]
     
     try:
         logger.info(f"Running built-in detectors scan on {file_path}")
-        logger.info(f"Built-in scan command: {builtin_command}")
+        logger.info(f"Built-in scan command: {' '.join(builtin_command_args)}")
         result = subprocess.run(
-            builtin_command,
-            shell=True,
+            builtin_command_args,
+            shell=False,
             capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
@@ -484,16 +487,21 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         logger.error(f"Built-in detectors scan timed out for file: {file_path}")
     
     # Scan 2: Run with custom detectors from config file
-    custom_command = (
-        f"{Config.TRUFFLEHOG_BINARY} filesystem {file_path} "
-        f"--no-update --config {Config.TRUFFLEHOG_CONFIG} -j"
-    )
+    custom_command_args = [
+        Config.TRUFFLEHOG_BINARY,
+        "filesystem",
+        file_path,
+        "--no-update",
+        "--config",
+        Config.TRUFFLEHOG_CONFIG,
+        "-j"
+    ]
     
     try:
         logger.info(f"Running custom detectors scan on {file_path}")
         result = subprocess.run(
-            custom_command,
-            shell=True,
+            custom_command_args,
+            shell=False,
             capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
