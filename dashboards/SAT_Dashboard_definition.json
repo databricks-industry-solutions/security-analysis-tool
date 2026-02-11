@@ -8701,7 +8701,7 @@
                             "lines": [
                                 "# <span style=\"text-align:center;display:block\"><span style=\"font-size: 36px;line-height: 1.5;\">Secrets Scanner</span></span>\n",
                                 "\n",
-                                "<span style=\"text-align:center;display:block\"><span style=\"font-size:18px\">Detects exposed credentials such as API keys, tokens, and passwords across Databricks Notebooks. Helps quickly identify, prioritize, and remediate secret leaks to keep Databricks workspaces secure.</span></span>\n",
+                                "<span style=\"text-align:center;display:block\"><span style=\"font-size:18px\">Detects exposed credentials such as API keys, tokens, and passwords across Databricks Notebooks and Cluster Configurations. Helps quickly identify, prioritize, and remediate secret leaks to keep Databricks workspaces secure.</span></span>\n",
                                 "<p>&nbsp;</p>\n"
                             ]
                         }
@@ -9237,7 +9237,7 @@
                                 "headerAlignment": "center",
                                 "title": "Workspace Secret Findings",
                                 "showDescription": true,
-                                "description": "Detailed breakdown of secrets detected in the selected workspace's notebooks from the latest scan."
+                                "description": "Detailed breakdown of secrets detected in the selected workspace's notebooks and cluster configurations from the latest scan."
                             }
                         }
                     },
@@ -9423,7 +9423,7 @@
                         "name": "aa491737",
                         "multilineTextboxSpec": {
                             "lines": [
-                                "> **Note:** To protect sensitive information, store credentials **securely** in [Databricks Secret Scopes](https://docs.databricks.com/aws/en/security/secrets#secrets-user-guide&gsc.tab=0). This approach centralizes credential management, enables controlled access across notebooks and jobs, and ensures that sharing credentials is **safe** in your Databricks environment(s)."
+                                "> **Note:** To protect sensitive information, store credentials **securely** in [Databricks Secret Scopes](https://docs.databricks.com/aws/en/security/secrets#secrets-user-guide&gsc.tab=0). This approach centralizes credential management, enables controlled access across notebooks, clusters, and jobs, and ensures that sharing credentials is **safe** in your Databricks environment(s)."
                             ]
                         }
                     },
