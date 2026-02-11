@@ -5,7 +5,7 @@ resource "databricks_job" "brickhound_data_collection" {
   name = "SAT Permissions Analysis - Data Collection (Experimental)"
 
   tags = {
-    Application = "SAT-PermissionsAnalysis"
+    Application = "SAT"
   }
 
   # Use same serverless/cluster pattern as SAT
