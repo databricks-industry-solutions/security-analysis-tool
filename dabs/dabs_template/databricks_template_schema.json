@@ -20,6 +20,18 @@
         "serverless": {
             "type": "boolean",
             "description": "Serverless"
+        },
+        "is_service_principal": {
+            "type": "boolean",
+            "description": "Whether the current identity is a service principal"
+        },
+        "user_name": {
+            "type": "string",
+            "description": "User name or service principal application ID"
+        },
+        "workspace_host": {
+            "type": "string",
+            "description": "Databricks workspace host URL"
         }
     },
     "success_message": ""
