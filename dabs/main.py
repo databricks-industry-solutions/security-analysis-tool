@@ -10,6 +10,12 @@ from sat.utils import cloud_type
 def install(client: WorkspaceClient, answers: dict, profile: str):
     cloud = cloud_type(client)
     generate_secrets(client, answers, cloud)
+
+    # Determine current identity for run_as configuration
+    current_user = client.current_user.me()
+    is_sp = current_user.user_name and "@" not in current_user.user_name
+    user_name = current_user.user_name
+
     config = {
         "catalog": answers.get("catalog", None),
         "cloud": cloud,
@@ -25,6 +31,9 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
             photon_worker_capable=True,
         ),
         "serverless": answers.get("enable_serverless", False),
+        "is_service_principal": is_sp,
+        "user_name": user_name,
+        "workspace_host": client.config.host,
     }
 
     config_file = "tmp_config.json"
