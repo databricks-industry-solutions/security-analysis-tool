@@ -1,8 +1,10 @@
 resource "databricks_sql_endpoint" "new" {
-  count            = var.sqlw_id == "new" ? 1 : 0
-  name             = "SAT Warehouse"
-  cluster_size     = "Small"
-  max_num_clusters = 1
+  count                     = var.sqlw_id == "new" ? 1 : 0
+  name                      = "SAT Warehouse"
+  cluster_size              = "Small"
+  warehouse_type            = var.warehouse_type
+  enable_serverless_compute = var.warehouse_type == "SERVERLESS" ? true : false
+  max_num_clusters          = 1
 
   tags {
     custom_tags {
