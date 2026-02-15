@@ -1311,19 +1311,21 @@ if enabled:
 
 check_id='105' #GOV-34,Governance,Monitor audit logs with system tables
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-metastores= {} # hold all the metastores that have no 'access' schema with state ENABLE_COMPLETED
+metastores= {} # hold all the metastores that have no 'access' schema enabled (ENABLE_COMPLETED or MANAGED)
 def uc_systemschemas(df):
     if df is not None and not isEmpty(df):
-        return (check_id, 0, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED found'} )
+        return (check_id, 0, {'enable_serverless_compute':'access schema enabled (ENABLE_COMPLETED or MANAGED) found'} )
     else:
-        return (check_id, 1, {'enable_serverless_compute':'access schema with state ENABLE_COMPLETED not found'}) 
+        return (check_id, 1, {'enable_serverless_compute':'access schema not enabled (state not ENABLE_COMPLETED or MANAGED)'}) 
     
 if enabled:    
     tbl_name = 'systemschemas' + '_' + workspace_id
+    # API returns "schema" and "state". Access schema can be ENABLE_COMPLETED or MANAGED (default-enabled).
     sql=f'''
         SELECT *
         FROM {tbl_name} 
-        where schema ="access" and state ="ENABLE_COMPLETED"
+        WHERE schema = "access"
+          AND (state = "ENABLE_COMPLETED" OR state = "MANAGED")
     '''
     sqlctrl(workspace_id, sql, uc_systemschemas)
 
