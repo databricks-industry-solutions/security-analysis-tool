@@ -1446,9 +1446,9 @@ def get_main_html():
                 </div>
 
                 <div class="card" style="padding: 20px;">
-                    <h2 style="font-size: 1.2em; margin-bottom: 10px; color: var(--primary);">What is Permissions Analysis Tool?</h2>
+                    <h2 style="font-size: 1.2em; margin-bottom: 10px; color: var(--primary);">What is the Principal and Resource Permissions Analysis Tool?</h2>
                     <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.92em;">
-                        Permissions Analysis Tool is a graph-based security analysis platform for Databricks environments.
+                        The Principal and Resource Permissions Analysis Tool is a graph-based security analysis platform for Databricks environments.
                         It helps to discover privilege escalation paths, identify over-privileged principals,
                         and understand complex permission relationships across workspace(s).
                     </p>
