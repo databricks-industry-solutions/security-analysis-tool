@@ -2573,13 +2573,31 @@ if COLLECTION_CONFIG.get('collect_account_level', False):
                     WORKSPACE_COLLECTION_STATUS[ws_id] = {'name': ws_name, 'status': 'pending', 'error': None}
 
                 try:
-                    # Create WorkspaceClient for this workspace using SP credentials
-                    ws_client = WorkspaceClient(
-                        host=ws_host,
-                        client_id=SP_CREDENTIALS['client_id'],
-                        client_secret=SP_CREDENTIALS['client_secret'],
-                        auth_type="oauth-m2m"
-                    )
+                    # CONDITIONAL AUTHENTICATION: Azure uses MSAL tokens, AWS/GCP use oauth-m2m
+                    if ws.azure_workspace_info:
+                        # Azure: Generate MSAL token
+                        if not SP_CREDENTIALS['tenant_id']:
+                            raise Exception(f"tenant-id required for Azure workspace {ws_name}")
+
+                        azure_token = get_azure_databricks_token(
+                            client_id=SP_CREDENTIALS['client_id'],
+                            client_secret=SP_CREDENTIALS['client_secret'],
+                            tenant_id=SP_CREDENTIALS['tenant_id']
+                        )
+                        ws_client = WorkspaceClient(
+                            host=ws_host,
+                            token=azure_token  # Pass MSAL-generated token
+                        )
+                        print(f"      Authentication: Azure MSAL")
+                    else:
+                        # AWS/GCP: Use OAuth M2M authentication
+                        ws_client = WorkspaceClient(
+                            host=ws_host,
+                            client_id=SP_CREDENTIALS['client_id'],
+                            client_secret=SP_CREDENTIALS['client_secret'],
+                            auth_type="oauth-m2m"
+                        )
+                        print(f"      Authentication: OAuth M2M")
 
                     # Collect Users from this workspace
                     print(f"      Collecting Users...")
