@@ -256,11 +256,21 @@ except ImportError:
     MSAL_AVAILABLE = False
     print("Warning: msal library not available. Azure authentication will not work.")
 
-from databricks.sdk import WorkspaceClient, AccountClient, useragent
+# Add conditional import for useragent (matches MSAL pattern above)
+try:
+    from databricks.sdk import WorkspaceClient, AccountClient, useragent
+    USERAGENT_AVAILABLE = True
+except ImportError:
+    from databricks.sdk import WorkspaceClient, AccountClient
+    USERAGENT_AVAILABLE = False
+    useragent = None
+    print("Warning: useragent module not available in databricks.sdk. User-Agent header will use SDK defaults.")
+
 from dbruntime.databricks_repl_context import get_context
 
-# Configure User-Agent for all API calls (aligns with dbclient.py)
-useragent.with_product("databricks-sat", "0.1.0")
+# Configure User-Agent for all API calls if available (aligns with dbclient.py)
+if USERAGENT_AVAILABLE:
+    useragent.with_product("databricks-sat", "0.1.0")
 
 # Add the brickhound package to path (if running from notebooks folder)
 repo_root = os.path.dirname(os.path.dirname(os.getcwd()))
