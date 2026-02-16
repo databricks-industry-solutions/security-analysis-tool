@@ -2126,6 +2126,10 @@ if COLLECTION_CONFIG.get('collect_account_level', False):
         print("⚠ Skipping account-level collection on serverless compute")
         print("  → Switch to Classic Compute for account-level data collection")
         print("="*80)
+        # Set empty credentials to prevent execution of account-level logic
+        ACCOUNT_ID = ""
+        SP_CLIENT_ID = ""
+        SP_CLIENT_SECRET = ""
     # Use credentials loaded in Step 4 (or try to load them now if not available)
     elif MULTI_WORKSPACE_MODE and SP_CREDENTIALS.get('account_id'):
         ACCOUNT_ID = SP_CREDENTIALS['account_id']
