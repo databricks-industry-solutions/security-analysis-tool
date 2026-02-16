@@ -2155,6 +2155,9 @@ if COLLECTION_CONFIG.get('collect_account_level', False):
             # If not available (credentials loaded directly here), compute it using helper functions
             if SP_CREDENTIALS.get('account_host'):
                 account_host = SP_CREDENTIALS['account_host']
+                # Reuse cloud_type from initialization
+                workspace_url = spark.conf.get("spark.databricks.workspaceUrl", "")
+                cloud_type = parse_cloud_type(workspace_url)
             else:
                 # Fallback: compute account host using domain-aware logic
                 workspace_url = spark.conf.get("spark.databricks.workspaceUrl", "")
@@ -2171,15 +2174,42 @@ if COLLECTION_CONFIG.get('collect_account_level', False):
             print(f"\n📡 Connecting to {account_host}")
             print(f"   Account ID: {ACCOUNT_ID}")
             print(f"   Client ID: {SP_CLIENT_ID[:8]}...")
+            print(f"   Cloud Type: {cloud_type}")
 
-            # Initialize Account Client with explicit OAuth M2M auth type
-            account = AccountClient(
-                host=account_host,
-                account_id=ACCOUNT_ID,
-                client_id=SP_CLIENT_ID,
-                client_secret=SP_CLIENT_SECRET,
-                auth_type="oauth-m2m"
-            )
+            # CONDITIONAL AUTHENTICATION: Azure uses MSAL tokens, AWS/GCP use oauth-m2m
+            if cloud_type == 'azure':
+                # Azure: Generate MSAL token and pass to AccountClient
+                TENANT_ID = SP_CREDENTIALS.get('tenant_id')
+                if not TENANT_ID:
+                    # Try to load from secrets if not in SP_CREDENTIALS
+                    try:
+                        TENANT_ID = dbutils.secrets.get(scope=secrets_scope, key="tenant-id")
+                    except:
+                        raise Exception("tenant-id secret is required for Azure authentication")
+
+                print(f"   Generating Azure MSAL token...")
+                azure_token = get_azure_databricks_token(
+                    client_id=SP_CLIENT_ID,
+                    client_secret=SP_CLIENT_SECRET,
+                    tenant_id=TENANT_ID
+                )
+
+                account = AccountClient(
+                    host=account_host,
+                    account_id=ACCOUNT_ID,
+                    token=azure_token  # Pass MSAL-generated token
+                )
+                print(f"   ✓ Using Azure MSAL authentication")
+            else:
+                # AWS/GCP: Use OAuth M2M authentication
+                account = AccountClient(
+                    host=account_host,
+                    account_id=ACCOUNT_ID,
+                    client_id=SP_CLIENT_ID,
+                    client_secret=SP_CLIENT_SECRET,
+                    auth_type="oauth-m2m"
+                )
+                print(f"   ✓ Using OAuth M2M authentication")
 
             # Test connection
             print(f"\n🔍 Testing connection by listing workspaces...")
