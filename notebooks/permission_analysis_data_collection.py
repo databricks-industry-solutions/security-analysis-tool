@@ -12,6 +12,20 @@
 # MAGIC   </p>
 # MAGIC </div>
 # MAGIC
+# MAGIC ## Compute Requirements
+# MAGIC
+# MAGIC **Serverless Compute:**
+# MAGIC - Restricts collection to **current workspace only**
+# MAGIC - Skips account-level data collection
+# MAGIC - Useful for quick single-workspace analysis
+# MAGIC
+# MAGIC **Classic Compute (Recommended for Multi-Workspace):**
+# MAGIC - Collects from all configured workspaces
+# MAGIC - Includes account-level resources (Service Principals, Groups, etc.)
+# MAGIC - Requires Service Principal credentials in `sat_scope`
+# MAGIC
+# MAGIC This notebook automatically detects compute type and adjusts collection scope accordingly.
+# MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
 # MAGIC ### For Multi-Workspace Collection (Recommended)
@@ -399,7 +413,14 @@ try:
         print(f"   Account ID: {SP_CREDENTIALS['account_id'][:8]}...")
         print(f"   Client ID: {SP_CREDENTIALS['client_id'][:8]}...")
         print(f"   Account Host: {SP_CREDENTIALS['account_host']}")
-        MULTI_WORKSPACE_MODE = True
+
+        # Override for serverless: even with credentials, restrict to current workspace
+        if is_serverless:
+            print(f"   ⚠ Running on SERVERLESS compute - restricting to current workspace only")
+            print(f"   → Switch to Classic Compute for multi-workspace collection")
+            MULTI_WORKSPACE_MODE = False
+        else:
+            MULTI_WORKSPACE_MODE = True
     else:
         print(f"   ⚠ Some credentials missing in scope '{secrets_scope}'")
         MULTI_WORKSPACE_MODE = False
@@ -740,11 +761,17 @@ if MULTI_WORKSPACE_MODE:
 else:
     print("📍 SINGLE WORKSPACE MODE")
     print(f"   Collecting from current workspace only: {current_workspace_url}")
-    print("\n   ⚠ To collect from all workspaces:")
-    print(f"   1. Set up a Service Principal with Account Admin role")
-    print(f"   2. Add secrets to scope '{secrets_scope}':")
-    print(f"      - account-id, sp-client-id, sp-client-secret")
-    print(f"   3. Re-run this notebook")
+
+    if is_serverless:
+        print("\n   ℹ Running on Serverless Compute")
+        print("   → Serverless restricts to current workspace only")
+        print("   → Switch to Classic Compute for multi-workspace collection")
+    else:
+        print("\n   ⚠ To collect from all workspaces:")
+        print(f"   1. Set up a Service Principal with Account Admin role")
+        print(f"   2. Add secrets to scope '{secrets_scope}':")
+        print(f"      - account-id, sp-client-id, sp-client-secret")
+        print(f"   3. Re-run this notebook")
 print("="*80 + "\n")
 
 # Try to import from installed package, otherwise use direct imports
@@ -2094,8 +2121,13 @@ if COLLECTION_CONFIG.get('collect_account_level', False):
     print("Account-Level & Multi-Workspace Collection")
     print("="*80)
 
+    # Skip account-level collection on serverless even if enabled
+    if is_serverless:
+        print("⚠ Skipping account-level collection on serverless compute")
+        print("  → Switch to Classic Compute for account-level data collection")
+        print("="*80)
     # Use credentials loaded in Step 4 (or try to load them now if not available)
-    if MULTI_WORKSPACE_MODE and SP_CREDENTIALS.get('account_id'):
+    elif MULTI_WORKSPACE_MODE and SP_CREDENTIALS.get('account_id'):
         ACCOUNT_ID = SP_CREDENTIALS['account_id']
         SP_CLIENT_ID = SP_CREDENTIALS['client_id']
         SP_CLIENT_SECRET = SP_CREDENTIALS['client_secret']
