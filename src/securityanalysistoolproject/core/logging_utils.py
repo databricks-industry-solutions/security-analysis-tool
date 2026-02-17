@@ -111,6 +111,8 @@ class LoggingUtils:
         elif vloglevel == "CRITICAL":
             return logging.CRITICAL
 
+        return logging.INFO
+
     @staticmethod
     def basePath():
         """Resolve the workspace base path for log file storage.
