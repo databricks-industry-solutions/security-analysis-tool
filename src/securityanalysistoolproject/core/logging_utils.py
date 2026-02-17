@@ -4,6 +4,8 @@ Provides a centralized logging configuration that outputs to both stdout and a
 rotating log file under the workspace ``logs/`` directory.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import sys
@@ -21,10 +23,10 @@ class LoggingUtils:
             Defaults to ``logging.INFO``.
     """
 
-    loglevel = logging.INFO
+    loglevel: int = logging.INFO
 
     @classmethod
-    def set_logger_level(cls, loglevel_v):
+    def set_logger_level(cls, loglevel_v: int) -> None:
         """Set the default logging level for subsequently created loggers.
 
         Args:
@@ -36,7 +38,7 @@ class LoggingUtils:
 
     # DEBUG < INFO < WARNING < ERROR < CRITICAL
     @classmethod
-    def get_logger(cls, modname="_profiler_"):
+    def get_logger(cls, modname: str = "_profiler_") -> logging.Logger:
         """Create or retrieve a logger with console and file handlers.
 
         If the logger for *modname* has no handlers yet, a ``StreamHandler``
@@ -88,7 +90,7 @@ class LoggingUtils:
 
     # DEBUG < INFO < WARNING < ERROR < CRITICAL
     @staticmethod
-    def get_log_level(vloglevel):
+    def get_log_level(vloglevel: str) -> int:
         """Convert a log-level name string to its ``logging`` module constant.
 
         Args:
@@ -96,8 +98,8 @@ class LoggingUtils:
                 ``"INFO"``, ``"WARNING"``, ``"ERROR"``, or ``"CRITICAL"``.
 
         Returns:
-            int | None: The corresponding ``logging`` level constant, or
-            ``None`` if *vloglevel* does not match a known level.
+            int: The corresponding ``logging`` level constant, or
+            ``logging.INFO`` if *vloglevel* does not match a known level.
         """
         vloglevel = vloglevel.upper()
         if vloglevel == "DEBUG":
@@ -114,7 +116,7 @@ class LoggingUtils:
         return logging.INFO
 
     @staticmethod
-    def basePath():
+    def basePath() -> str:
         """Resolve the workspace base path for log file storage.
 
         Derives the path by stripping everything after ``/notebooks`` in the
