@@ -7,17 +7,15 @@ import AccordionItem from '@site/src/components/AccordionItem';
 
 # Permissions Analysis
 
-<Admonition type="info" title="Version 0.6.0 Feature">
-Permissions Analysis is a graph-based permissions analysis tool that extends SAT's proven configuration security checks with comprehensive "who can access what" analysis across your entire Databricks account.
-</Admonition>
+Permissions Analysis is a graph-based permissions analysis tool that extends SAT's proven configuration security checks with comprehensive "who can access what resources" across your entire Databricks account. 
 
 <Admonition type="warning" title="Important Consideration">
-Permissions Analysis may have incomplete and point-in-time data. Outputs are visibility/audit aids, not authoritative compliance determinations.
+Permissions Analysis may have incomplete and point-in-time data. Outputs are visibility and audit aids, not authoritative compliance determinations.
 </Admonition>
 
-## What Permissions Analysis Does
+## What Permissions Analysis does
 
-Permissions Analysis transforms the invisible Databricks permissions into a queryable graph database, enabling you to:
+Permissions Analysis transforms the Databricks permissions into a queryable graph database, enabling you to:
 
 - **Query Access Patterns**: Find all resources a user/group/service principal can access—including indirect access via group membership and parent resource inheritance
 - **Reverse Lookup Security**: Discover all principals (users, groups, service principals) that have access to a specific resource
@@ -63,8 +61,7 @@ Permissions Analysis transforms the invisible Databricks permissions into a quer
 
 ### Step 1: Run Data Collection
 
-SAT automatically deploys a **"SAT Permissions Analysis - Data Collection"** job when you install SAT.
-
+SAT automatically creates a "SAT Permissions Analysis - Data Collection" job when you consent to “Deploy Permissions Analysis”  during your  SAT installation and runs automatically on a schedule. 
 **To run it manually:**
 1. Navigate to **Jobs & Pipelines**
 2. Locate **"SAT Permissions Analysis - Data Collection"**
@@ -73,7 +70,7 @@ SAT automatically deploys a **"SAT Permissions Analysis - Data Collection"** job
 
 The collection job queries Databricks APIs to build a complete graph of your environment's identities, resources, and permission relationships.
 
-### Step 2: Analyze Permissions
+### Step 2: Analyze Permissions - notebooks
 
 Once data collection completes, use the pre-built interactive notebooks in `/notebooks/brickhound/`:
 
@@ -169,18 +166,3 @@ Produce audit-ready reports showing:
 - [Usage Guide](/docs/usage) - Instructions on running SAT workflows
 - [Installation Guide](/docs/installation) - Set up SAT and Permissions Analysis
 - [GitHub Issues](https://github.com/databricks-industry-solutions/security-analysis-tool/issues) - Report issues or request features
-
----
-
-<Admonition type="warning" title="Terraform Installation Requirements">
-If you installed SAT using Terraform, you will need to manually deploy the Permissions Analysis app and configure Unity Catalog access:
-
-1. **Deploy the app** using the Databricks CLI:
-   ```bash
-   databricks app deploy
-   ```
-
-2. **Manually add Unity Catalog access permissions and values** in the Permissions Analysis app configuration.
-
-The standard installation method automatically handles these steps, but Terraform installations require manual configuration.
-</Admonition>
