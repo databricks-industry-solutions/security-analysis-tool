@@ -55,7 +55,6 @@ class LoggingUtils:
         return logger
 
     # DEBUG < INFO < WARNING < ERROR < CRITICAL
-    # pylint: disable=multiple-statements
     @staticmethod
     def get_log_level(vloglevel):
         """get log level that is set"""
@@ -70,8 +69,6 @@ class LoggingUtils:
             return logging.ERROR
         elif vloglevel == "CRITICAL":
             return logging.CRITICAL
-
-    # pylint: enable=multiple-statements
 
     @staticmethod
     def basePath():
