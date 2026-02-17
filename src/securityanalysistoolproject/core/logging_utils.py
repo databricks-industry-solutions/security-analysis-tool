@@ -2,10 +2,7 @@
 
 import logging
 import os
-import platform
 import sys
-
-# from databricks.sdk.runtime import dbutils
 
 
 class LoggingUtils:
