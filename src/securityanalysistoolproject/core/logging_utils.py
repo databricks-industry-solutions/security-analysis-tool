@@ -1,4 +1,8 @@
-"""logging module"""
+"""Utility module for configuring and managing application-wide logging.
+
+Provides a centralized logging configuration that outputs to both stdout and a
+rotating log file under the workspace ``logs/`` directory.
+"""
 
 import logging
 import os
@@ -6,19 +10,47 @@ import sys
 
 
 class LoggingUtils:
-    """Logging utils helper"""
+    """Centralized logging utility for the Security Analysis Tool.
+
+    Manages logger creation with consistent formatting across the application.
+    Loggers are configured with both a console (stdout) handler and a file
+    handler that writes to ``<basePath>/logs/sat.log``.
+
+    Attributes:
+        loglevel: The default logging level applied to new loggers.
+            Defaults to ``logging.INFO``.
+    """
 
     loglevel = logging.INFO
 
     @classmethod
     def set_logger_level(cls, loglevel_v):
-        """set the logger level before calling get_logger"""
+        """Set the default logging level for subsequently created loggers.
+
+        Args:
+            loglevel_v: A logging level constant (e.g. ``logging.DEBUG``,
+                ``logging.WARNING``). Must be called before ``get_logger``
+                for the level to take effect on new loggers.
+        """
         cls.loglevel = loglevel_v
 
     # DEBUG < INFO < WARNING < ERROR < CRITICAL
     @classmethod
     def get_logger(cls, modname="_profiler_"):
-        """get logger object"""
+        """Create or retrieve a logger with console and file handlers.
+
+        If the logger for *modname* has no handlers yet, a ``StreamHandler``
+        (stdout) and a ``FileHandler`` (``<basePath>/logs/sat.log``) are
+        attached with the format
+        ``%(asctime)s - %(name)s - %(levelname)s - %(message)s``.
+
+        Args:
+            modname: Name for the logger, typically the calling module's name.
+                Defaults to ``"_profiler_"``.
+
+        Returns:
+            logging.Logger: Configured logger instance.
+        """
         log_base_dir = f"{cls.basePath()}/logs"
 
         if not os.path.isdir(log_base_dir):
@@ -57,7 +89,16 @@ class LoggingUtils:
     # DEBUG < INFO < WARNING < ERROR < CRITICAL
     @staticmethod
     def get_log_level(vloglevel):
-        """get log level that is set"""
+        """Convert a log-level name string to its ``logging`` module constant.
+
+        Args:
+            vloglevel: Case-insensitive level name — one of ``"DEBUG"``,
+                ``"INFO"``, ``"WARNING"``, ``"ERROR"``, or ``"CRITICAL"``.
+
+        Returns:
+            int | None: The corresponding ``logging`` level constant, or
+            ``None`` if *vloglevel* does not match a known level.
+        """
         vloglevel = vloglevel.upper()
         if vloglevel == "DEBUG":
             return logging.DEBUG
@@ -72,6 +113,16 @@ class LoggingUtils:
 
     @staticmethod
     def basePath():
+        """Resolve the workspace base path for log file storage.
+
+        Derives the path by stripping everything after ``/notebooks`` in the
+        current working directory and ensuring a ``/Workspace`` prefix. Falls
+        back to ``~/temp`` if the working directory does not contain
+        ``/notebooks``.
+
+        Returns:
+            str: The resolved workspace base path.
+        """
         path = os.getcwd()
         ind = path.find("/notebooks")
         if ind == -1:
@@ -80,4 +131,3 @@ class LoggingUtils:
         if path.startswith("/Workspace"):
             return f"{path}"
         return f"/Workspace{path}"
-
