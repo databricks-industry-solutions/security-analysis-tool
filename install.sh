@@ -16,6 +16,6 @@ if [[ $major -lt 3 || $minor -lt 9 ]]; then
     exit 1
 fi
 
-cd $folder
+cd $folder || exit
 pip install -r requirements.txt
 python main.py
