@@ -43,7 +43,7 @@ class LoggingUtils:
 
         If the logger for *modname* has no handlers yet, a ``StreamHandler``
         (stdout) and a ``FileHandler`` (``<base_path>/logs/sat.log``) are
-        attached with the format
+        attached with a shared formatter using the format
         ``%(asctime)s - %(name)s - %(levelname)s - %(message)s``.
 
         Args:
@@ -64,20 +64,13 @@ class LoggingUtils:
         logger = logging.getLogger(modname)
 
         if not logger.handlers:
-            # Create handlers
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
             c_handler = logging.StreamHandler(sys.stdout)
             f_handler = logging.FileHandler(logpath)
-            # Create formatters and add it to handlers
-            c_format = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            f_format = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            c_handler.setFormatter(c_format)
-            f_handler.setFormatter(f_format)
-
-            # Add handlers to the logger
+            c_handler.setFormatter(formatter)
+            f_handler.setFormatter(formatter)
             logger.addHandler(c_handler)
             logger.addHandler(f_handler)
         logger.setLevel(cls.loglevel)
