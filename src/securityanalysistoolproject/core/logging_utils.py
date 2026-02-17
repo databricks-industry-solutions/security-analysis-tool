@@ -16,7 +16,7 @@ class LoggingUtils:
 
     Manages logger creation with consistent formatting across the application.
     Loggers are configured with both a console (stdout) handler and a file
-    handler that writes to ``<basePath>/logs/sat.log``.
+    handler that writes to ``<base_path>/logs/sat.log``.
 
     Attributes:
         loglevel: The default logging level applied to new loggers.
@@ -42,7 +42,7 @@ class LoggingUtils:
         """Create or retrieve a logger with console and file handlers.
 
         If the logger for *modname* has no handlers yet, a ``StreamHandler``
-        (stdout) and a ``FileHandler`` (``<basePath>/logs/sat.log``) are
+        (stdout) and a ``FileHandler`` (``<base_path>/logs/sat.log``) are
         attached with the format
         ``%(asctime)s - %(name)s - %(levelname)s - %(message)s``.
 
@@ -53,7 +53,7 @@ class LoggingUtils:
         Returns:
             logging.Logger: Configured logger instance.
         """
-        log_base_dir = f"{cls.basePath()}/logs"
+        log_base_dir = f"{cls.base_path()}/logs"
 
         if not os.path.isdir(log_base_dir):
             os.makedirs(log_base_dir)
@@ -116,7 +116,7 @@ class LoggingUtils:
         return logging.INFO
 
     @staticmethod
-    def basePath() -> str:
+    def base_path() -> str:
         """Resolve the workspace base path for log file storage.
 
         Derives the path by stripping everything after ``/notebooks`` in the
