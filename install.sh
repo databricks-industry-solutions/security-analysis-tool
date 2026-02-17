@@ -8,8 +8,8 @@ if [[ -z "$version" ]]; then
     exit 1
 fi
 
-major=$(echo $version | cut -d ',' -f 1 | tr -d '(')
-minor=$(echo $version | cut -d ',' -f 2)
+major=$(echo "$version" | cut -d ',' -f 1 | tr -d '(')
+minor=$(echo "$version" | cut -d ',' -f 2)
 
 if [[ $major -lt 3 || $minor -lt 9 ]]; then
     echo "Python 3.9 or higher is required"
