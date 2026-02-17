@@ -1,0 +1,77 @@
+---
+sidebar_position: 3
+---
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
+import AccordionItem from '@site/src/components/AccordionItem';
+import FeatureCards from '@site/src/components/FeatureCards';
+
+# Functionality
+
+The **Security Analysis Tool (SAT)** is an observability utility designed to improve the security posture of Databricks deployments. It helps you identify deviations from established security best practices and monitor the security health of your Databricks workspaces.
+
+---
+
+## Core Features
+
+<FeatureCards features={[
+  {
+    title: 'General Dashboard',
+    href: 'general-dashboard',
+    description: 'Comprehensive dashboard with detailed security findings across all categories. Provides a centralized view of your Databricks security posture.'
+  },
+  {
+    title: 'Executive Dashboard',
+    href: 'executive-dashboard',
+    description: 'High-level view designed for stakeholders and executives. Consolidates key findings for quick security posture overview.'
+  },
+  {
+    title: 'Permissions Analysis',
+    href: 'permissions-analysis',
+    description: 'Graph-based permissions analysis that reveals who can access what resources across your Databricks environment.'
+  },
+  {
+    title: 'Secret Scanning',
+    href: 'cluster-secrets-scanning',
+    description: 'Comprehensive secret detection across notebooks and cluster configurations using TruffleHog with 800+ detector patterns.'
+  }
+]} />
+
+---
+
+## How SAT Works
+
+SAT is typically run daily as an automated workflow within your environment:
+
+* **Data Collection**  
+  Collects configuration details from Databricks accounts and workspaces via REST APIs.
+
+* **Historical Tracking**  
+  Persists results in Delta tables within your storage environment for historical tracking and trend analysis.
+
+* **Centralized Reporting**  
+  Displays results in a centralized Databricks SQL dashboard, categorized into five distinct sections to help stakeholders review relevant workspace settings.
+
+---
+
+## Security Categories
+
+SAT evaluates over **60 security best practices** across five key categories:
+
+* **Network Security** - Network policies, VPC configurations, and network isolation
+* **Identity & Access** - User management, group memberships, and access controls
+* **Data Protection** - Encryption, data classification, and data governance
+* **Governance** - Compliance, audit logging, and policy enforcement
+* **Informational** - Observations and recommendations for continuous improvement
+
+**Severity Levels:**
+* **High** - Critical issues requiring immediate attention
+* **Medium** - Important issues to address soon
+* **Low** - Minor issues for continuous improvement
+
+---
+
+## Getting Started
+
+* [**Installation Guides**](../installation/) - Set up SAT using standard installation or Terraform
+* [**Usage Guide**](../usage) - Instructions on running workflows, viewing dashboards, and customizing security checks

@@ -1,0 +1,186 @@
+---
+sidebar_position: 3
+---
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
+import AccordionItem from '@site/src/components/AccordionItem';
+
+# Permissions Analysis
+
+<Admonition type="info" title="Version 0.6.0 Feature">
+Permissions Analysis is a graph-based permissions analysis tool that extends SAT's proven configuration security checks with comprehensive "who can access what" analysis across your entire Databricks account.
+</Admonition>
+
+<Admonition type="warning" title="Important Consideration">
+Permissions Analysis may have incomplete and point-in-time data. Outputs are visibility/audit aids, not authoritative compliance determinations.
+</Admonition>
+
+## What Permissions Analysis Does
+
+Permissions Analysis transforms the invisible Databricks permissions into a queryable graph database, enabling you to:
+
+- **Query Access Patterns**: Find all resources a user/group/service principal can access—including indirect access via group membership and parent resource inheritance
+- **Reverse Lookup Security**: Discover all principals (users, groups, service principals) that have access to a specific resource
+- **Detect Escalation Paths**: Identify privilege escalation risks by finding paths from any principal to admin roles (Account Admin, Metastore Admin, Workspace Admin, Catalog Owner)
+- **Analyze Impersonation Risk**: Discover lateral movement opportunities where users can modify jobs or clusters that run as elevated service principals
+- **Generate Compliance Reports**: Produce audit-ready reports showing over-privileged users, orphaned resources, and high-risk principals
+
+## Common Use Cases
+
+<AccordionItem question="Access Audit - Identify all principals with access to a specific resource">
+
+**Challenge:** Manual verification takes 45+ minutes and may miss nested group memberships.
+
+**Solution:** Permissions Analysis provides instant reverse lookup showing all principals with access to a specific resource, including indirect access paths through group memberships and inheritance.
+
+</AccordionItem>
+
+<AccordionItem question="Privilege Escalation Assessment - Determine if a principal can reach admin roles">
+
+**Challenge:** Manual verification requires traversing dozens of relationships to identify potential escalation paths.
+
+**Solution:** Permissions Analysis maps the entire attack surface, identifying all paths from any principal to admin roles (Account Admin, Metastore Admin, Workspace Admin, Catalog Owner), not just the obvious paths.
+
+</AccordionItem>
+
+<AccordionItem question="Blast Radius Assessment - Assess impact if a service principal is compromised">
+
+**Challenge:** Determining accessible resources and running jobs requires extensive investigation before revoking credentials.
+
+**Solution:** Permissions Analysis queries the graph to show all resources accessible by a principal, including tables, models, clusters, warehouses, and jobs that run under the compromised identity.
+
+</AccordionItem>
+
+<AccordionItem question="Orphaned Resource Identification - Find resources without clear ownership">
+
+**Challenge:** Identifying current responsibility for resources created by departed users is complex, especially when resources still run in production.
+
+**Solution:** Permissions Analysis generates compliance reports identifying orphaned resources and their current access patterns, helping determine who has implicit admin rights through ownership.
+
+</AccordionItem>
+
+## Getting Started
+
+### Step 1: Run Data Collection
+
+SAT automatically deploys a **"SAT Permissions Analysis - Data Collection"** job when you install SAT.
+
+**To run it manually:**
+1. Navigate to **Jobs & Pipelines**
+2. Locate **"SAT Permissions Analysis - Data Collection"**
+3. Select **"Run Now"**
+4. Allow 10-30 minutes for completion (varies by account size)
+
+The collection job queries Databricks APIs to build a complete graph of your environment's identities, resources, and permission relationships.
+
+### Step 2: Analyze Permissions
+
+Once data collection completes, use the pre-built interactive notebooks in `/notebooks/brickhound/`:
+
+| Notebook | Purpose | Sample Query |
+|----------|---------|--------------|
+| `01_principal_resource_analysis.py` | Query access patterns | "What tables can john.doe@company.com access?"<br/>"Who can access XYZ resource" |
+| `02_escalation_paths.py` | Find privilege escalation paths | "Can this contractor reach Account Admin?" |
+| `03_impersonation_analysis.py` | Analyze impersonation risks | "Who can run jobs as elevated service principals?" |
+| `04_advanced_reports.py` | Generate compliance reports | "List all users with access to 50+ resources" |
+
+### Step 3: Web UI (Recommended)
+
+For a user-friendly interface, deploy the Permissions Analysis Databricks App:
+
+**Access at:** `https://<workspace-url>/apps/sat-permissions-exp`
+
+The web UI provides:
+
+- Interactive search for principals and resources
+- Escalation paths visualization
+- Impersonation analysis reports
+- Security reports including:
+  - Secret scope access
+  - High privilege principals
+  - Over-privileged users
+  - Orphaned resources
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+  <img src={useBaseUrl('/img/principal_analysis_home.png')} alt="Permissions Analysis Web UI Home" />
+</div>
+
+## Key Capabilities
+
+### Query Access Patterns
+
+Find all resources accessible by a specific principal, including:
+- Direct permissions
+- Group memberships (including nested groups)
+- Inherited permissions from parent resources
+- Service principal impersonation
+
+**Example Query:** Determine what resources the principal `john.doe@company.com` can access.
+
+### Reverse Lookup Security
+
+Discover all principals with access to a specific resource:
+- Users with direct access
+- Groups with access (and their members)
+- Service principals with access
+- Inherited access paths
+
+**Example Query:** Identify all principals that can access the `production.finance.revenue` table.
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+  <img src={useBaseUrl('/img/principal_analysis_p_with_access.png')} alt="Resource Analysis - Principals with Access" />
+</div>
+
+### Detect Escalation Paths
+
+Identify privilege escalation risks by finding paths to:
+- Account Admin
+- Metastore Admin
+- Workspace Admin
+- Catalog Owner
+
+**Example Query:** Determine whether the principal `contractor@external.com` can reach Account Admin privileges.
+
+### Analyze Impersonation Risk
+
+Discover lateral movement opportunities:
+- Users who can modify jobs that run as service principals
+- Service principals with elevated privileges
+- Clusters configured to run as specific service principals
+
+**Example Query:** Identify principals that can run jobs as elevated service principals.
+
+### Generate Compliance Reports
+
+Produce audit-ready reports showing:
+- Over-privileged users (access to 50+ resources)
+- Orphaned resources (created by departed users)
+- High-risk principals (multiple escalation paths)
+- Secret scope access patterns
+
+## Best Practices
+
+- **Regular Data Collection**: Run the data collection job regularly (weekly or bi-weekly) to maintain an up-to-date permissions graph as your environment changes.
+- **Web UI for Ad-Hoc Queries**: Use the web UI for ad-hoc queries and quick access audits. Use the notebooks for automated reporting and compliance checks.
+- **Point-in-Time Data**: Permissions data represents a point-in-time snapshot. For critical access reviews, ensure data collection has run recently.
+
+## Learn More
+
+- [Usage Guide](/docs/usage) - Instructions on running SAT workflows
+- [Installation Guide](/docs/installation) - Set up SAT and Permissions Analysis
+- [GitHub Issues](https://github.com/databricks-industry-solutions/security-analysis-tool/issues) - Report issues or request features
+
+---
+
+<Admonition type="warning" title="Terraform Installation Requirements">
+If you installed SAT using Terraform, you will need to manually deploy the Permissions Analysis app and configure Unity Catalog access:
+
+1. **Deploy the app** using the Databricks CLI:
+   ```bash
+   databricks app deploy
+   ```
+
+2. **Manually add Unity Catalog access permissions and values** in the Permissions Analysis app configuration.
+
+The standard installation method automatically handles these steps, but Terraform installations require manual configuration.
+</Admonition>
