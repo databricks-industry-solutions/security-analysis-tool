@@ -93,27 +93,19 @@ class LoggingUtils:
     def get_log_level(vloglevel: str) -> int:
         """Convert a log-level name string to its ``logging`` module constant.
 
+        Looks up *vloglevel* as a module-level attribute on ``logging``
+        (e.g. ``logging.DEBUG``), falling back to ``logging.INFO`` when the
+        name does not correspond to a known level constant.
+
         Args:
-            vloglevel: Case-insensitive level name — one of ``"DEBUG"``,
-                ``"INFO"``, ``"WARNING"``, ``"ERROR"``, or ``"CRITICAL"``.
+            vloglevel: Case-insensitive level name (e.g. ``"DEBUG"``,
+                ``"INFO"``, ``"WARNING"``, ``"ERROR"``, ``"CRITICAL"``).
 
         Returns:
             int: The corresponding ``logging`` level constant, or
             ``logging.INFO`` if *vloglevel* does not match a known level.
         """
-        vloglevel = vloglevel.upper()
-        if vloglevel == "DEBUG":
-            return logging.DEBUG
-        elif vloglevel == "INFO":
-            return logging.INFO
-        elif vloglevel == "WARNING":
-            return logging.WARNING
-        elif vloglevel == "ERROR":
-            return logging.ERROR
-        elif vloglevel == "CRITICAL":
-            return logging.CRITICAL
-
-        return logging.INFO
+        return getattr(logging, vloglevel.upper(), logging.INFO)
 
     @staticmethod
     def base_path() -> str:
