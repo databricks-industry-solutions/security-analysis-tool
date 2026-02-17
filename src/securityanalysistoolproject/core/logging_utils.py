@@ -58,12 +58,7 @@ class LoggingUtils:
         if not os.path.isdir(log_base_dir):
             os.makedirs(log_base_dir)
 
-        # logpath='/var/log/dbrprofiler.log'
         logpath = f"{log_base_dir}/sat.log"
-
-        if not os.path.exists(logpath):
-            with open(logpath, "w") as f:
-                f.write("")
 
         # Create a custom logger
         logger = logging.getLogger(modname)
