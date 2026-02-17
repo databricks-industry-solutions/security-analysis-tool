@@ -63,7 +63,7 @@ class LoggingUtils:
         # Create a custom logger
         logger = logging.getLogger(modname)
 
-        if logger.handlers == []:
+        if not logger.handlers:
             # Create handlers
             c_handler = logging.StreamHandler(sys.stdout)
             f_handler = logging.FileHandler(logpath)
