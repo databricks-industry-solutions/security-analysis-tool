@@ -1,0 +1,14 @@
+bundle:
+  name: brickhound
+  
+resources:
+  apps:
+    brickhound_app:
+      name: brickhound
+      description: "Databricks Security & Permission Analysis Tool"
+      source_code_path: ./app
+      config:
+        command:
+          - "python"
+          - "app.py"
+

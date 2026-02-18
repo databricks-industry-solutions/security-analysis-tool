@@ -31,6 +31,10 @@ variable "warehouse_type" {
     error_message = "warehouse_type must be one of: CLASSIC, PROD, or SERVERLESS"
   }
   default = "CLASSIC"
+variable "secret_scope_name" {
+  description = "Name of secret scope for SAT secrets"
+  type        = string
+  default     = "sat_scope"
 }
 
 ### AWS Specific Variables
@@ -63,6 +67,7 @@ variable "client_secret" {
   description = "SP Secret"
   type        = string
   default     = "value"
+  sensitive   = true
 }
 
 variable "analysis_schema_name" {
@@ -78,5 +83,45 @@ variable "proxies" {
 variable "run_on_serverless" {
   type        = bool
   description = "Flag to run SAT initializer/Driver on Serverless"
+}
+
+variable "secrets_scanner_cron_expression" {
+  type        = string
+  description = "Quartz cron expression for the secrets scanner job schedule"
+  default     = "0 0 8 ? * *"
+}
+
+variable "driver_cron_expression" {
+  type        = string
+  description = "Quartz cron expression for the driver job schedule"
+  default     = "0 0 8 ? * Mon,Wed,Fri"
+}
+
+variable "job_compute_num_workers" {
+  type        = number
+  description = "Number of worker nodes that this cluster should have."
+  default     = 5
+}
+
+variable "sql_warehouse_enable_serverless" {
+  type        = bool
+  description = "Flag to enable serverless compute for the SQL warehouse"
+  default     = false
+}
+
+variable "sql_warehouse_auto_stop_mins" {
+  type        = number
+  description = "Auto stop time in minutes for the SQL warehouse"
+  default     = 120
+}
+
+variable "job_schedule_timezone_id" {
+  type        = string
+  description = "Time zone ID for job schedules."
+  default     = "UTC"
+  validation {
+    condition     = can(regex("^([A-Za-z]+(/[A-Za-z0-9_+\\-]+)+|UTC)$", var.job_schedule_timezone_id))
+    error_message = "Must be a valid IANA time zone ID (e.g. America/New_York, Etc/UTC) or UTC."
+  }
 }
 

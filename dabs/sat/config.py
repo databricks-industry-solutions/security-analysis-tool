@@ -70,7 +70,42 @@ def form():
             default="",
         ),
     ]
-    questions = questions + cloud_specific_questions(client) + proxies
+
+    # Job Scheduling Configuration
+    scheduling = [
+        Text(
+            name="driver_schedule",
+            message="Driver job schedule (Quartz cron expression)",
+            default="0 0 8 ? * Mon,Wed,Fri",
+        ),
+        Text(
+            name="secrets_scanner_schedule", 
+            message="Secrets scanner job schedule (Quartz cron expression)",
+            default="0 0 8 ? * *",
+        ),
+        Text(
+            name="job_timezone",
+            message="Job schedule timezone (IANA timezone ID)",
+            default="UTC",
+        ),
+    ]
+
+    # Permissions Analysis Configuration
+    brickhound = [
+        Confirm(
+            name="enable_brickhound",
+            message="Deploy Permissions Analysis?",
+            default=True,
+        ),
+        Text(
+            name="brickhound_schedule",
+            message="Permissions Analysis schedule (Quartz cron expression)",
+            default="0 0 2 ? * *",
+            ignore=lambda x: not x.get("enable_brickhound", False),
+        ),
+    ]
+
+    questions = questions + cloud_specific_questions(client) + proxies + scheduling + brickhound
     return client, prompt(questions), profile
 
 

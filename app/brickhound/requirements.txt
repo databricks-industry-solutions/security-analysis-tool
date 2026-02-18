@@ -1,0 +1,6 @@
+flask>=2.0.0
+pandas>=1.5.0
+databricks-sql-connector>=3.0.0
+databricks-sdk>=0.20.0
+werkzeug>=2.0.0
+
