@@ -99,17 +99,53 @@ db_client = SatDBClient(json_)
 
 # COMMAND ----------
 
-# MAGIC %sh 
+# MAGIC %sh
 # MAGIC # Install required Python packages
 # MAGIC pip install requests pyyaml
 # MAGIC
-# MAGIC # Download and install TruffleHog binary to /tmp directory
-# MAGIC echo "Installing TruffleHog..."
-# MAGIC curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp
+# MAGIC # Check if TruffleHog is already installed (idempotent installation)
+# MAGIC if [ -f /tmp/trufflehog ]; then
+# MAGIC     echo "TruffleHog already installed at /tmp/trufflehog"
+# MAGIC     echo "Skipping installation (already exists)"
+# MAGIC else
+# MAGIC     # Download and install TruffleHog binary to /tmp directory
+# MAGIC     echo "Installing TruffleHog..."
+# MAGIC     if curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp; then
+# MAGIC         if [ -f /tmp/trufflehog ]; then
+# MAGIC             echo "Setup completed successfully!"
+# MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
+# MAGIC             echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
+# MAGIC         else
+# MAGIC             echo "ERROR: TruffleHog binary not found after installation!"
+# MAGIC             echo "Please verify network access and try again."
+# MAGIC             exit 1
+# MAGIC         fi
+# MAGIC     else
+# MAGIC         echo "=========================================="
+# MAGIC         echo "ERROR: Failed to download TruffleHog"
+# MAGIC         echo "=========================================="
+# MAGIC         echo ""
+# MAGIC         echo "The TruffleHog security scanner could not be downloaded from:"
+# MAGIC         echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
+# MAGIC         echo ""
+# MAGIC         echo "Possible causes:"
+# MAGIC         echo "  1. Network connectivity issues"
+# MAGIC         echo "  2. Firewall or proxy blocking external downloads"
+# MAGIC         echo "  3. GitHub.com access is restricted in your environment"
+# MAGIC         echo ""
+# MAGIC         echo "ACTION REQUIRED:"
+# MAGIC         echo "Please contact your IT/Security team to allowlist access to:"
+# MAGIC         echo "  - raw.githubusercontent.com"
+# MAGIC         echo "  - github.com/trufflesecurity"
+# MAGIC         echo ""
+# MAGIC         echo "Alternatively, you may need to configure a proxy or use an"
+# MAGIC         echo "internal mirror of the TruffleHog installation package."
+# MAGIC         echo "=========================================="
+# MAGIC         exit 1
+# MAGIC     fi
+# MAGIC fi
 # MAGIC
-# MAGIC echo "Setup completed successfully!"
-# MAGIC echo "TruffleHog binary location: /tmp/trufflehog"
-# MAGIC echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
+# MAGIC echo "✅ TruffleHog setup verified!"
 
 # COMMAND ----------
 
@@ -226,6 +262,31 @@ except Exception as e:
 # Create temporary directories if they don't exist
 os.makedirs(Config.TEMP_NOTEBOOKS_DIR, exist_ok=True)
 logger.info(f"Temporary directory created: {Config.TEMP_NOTEBOOKS_DIR}")
+
+# Verify TruffleHog binary exists
+if not os.path.exists(Config.TRUFFLEHOG_BINARY):
+    error_msg = f"""
+    ==========================================
+    ERROR: TruffleHog binary not found!
+    ==========================================
+
+    Expected location: {Config.TRUFFLEHOG_BINARY}
+
+    The TruffleHog security scanner was not successfully installed.
+    This could be due to network restrictions or firewall policies.
+
+    ACTION REQUIRED:
+    Please contact your IT/Security team to allowlist access to:
+      - raw.githubusercontent.com
+      - github.com/trufflesecurity
+
+    Or configure a proxy/mirror for downloading TruffleHog.
+    ==========================================
+    """
+    logger.error(error_msg)
+    raise FileNotFoundError(error_msg)
+
+logger.info(f"✓ TruffleHog binary verified at: {Config.TRUFFLEHOG_BINARY}")
 
 print("✅ Configuration loaded from external file and authentication setup completed successfully!")
 print(f"📁 Config file: {Config.TRUFFLEHOG_CONFIG}")
@@ -389,20 +450,22 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
     
     # Scan 1: Run with built-in detectors (excluding specified ones)
     excluded_detectors = ",".join(Config.EXCLUDED_DETECTORS)
-    builtin_command = (
-        f"{Config.TRUFFLEHOG_BINARY} filesystem {file_path} "
-        f"--exclude-detectors={excluded_detectors} "
-        f"--no-update -j"
-    )
+    builtin_command_args = [
+        Config.TRUFFLEHOG_BINARY,
+        "filesystem",
+        file_path,
+        f"--exclude-detectors={excluded_detectors}",
+        "--no-update",
+        "-j"
+    ]
     
     try:
         logger.info(f"Running built-in detectors scan on {file_path}")
-        logger.info(f"Built-in scan command: {builtin_command}")
+        logger.info(f"Built-in scan command: {' '.join(builtin_command_args)}")
         result = subprocess.run(
-            builtin_command, 
-            shell=True, 
-            check=True,  # Don't raise exception on non-zero exit code
-            capture_output=True, 
+            builtin_command_args,
+            shell=False,
+            capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
         )
@@ -424,18 +487,22 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         logger.error(f"Built-in detectors scan timed out for file: {file_path}")
     
     # Scan 2: Run with custom detectors from config file
-    custom_command = (
-        f"{Config.TRUFFLEHOG_BINARY} filesystem {file_path} "
-        f"--no-update --config {Config.TRUFFLEHOG_CONFIG} -j"
-    )
+    custom_command_args = [
+        Config.TRUFFLEHOG_BINARY,
+        "filesystem",
+        file_path,
+        "--no-update",
+        "--config",
+        Config.TRUFFLEHOG_CONFIG,
+        "-j"
+    ]
     
     try:
         logger.info(f"Running custom detectors scan on {file_path}")
         result = subprocess.run(
-            custom_command, 
-            shell=True, 
-            check=True,  # Don't raise exception on non-zero exit code
-            capture_output=True, 
+            custom_command_args,
+            shell=False,
+            capture_output=True,
             text=True,
             timeout=300  # 5 minute timeout
         )
@@ -512,19 +579,19 @@ print("✅ Utility functions defined successfully!")
 
 def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, Any], run_id: int) -> None:
     """
-    Insert secret scan results into the secret_scan_results table.
+    Insert secret scan results into the notebooks_secret_scan_results table.
     Only inserts records when secrets are actually found to avoid database bloat.
-    
+
     Args:
         workspace_id (str): Workspace ID being scanned
         notebook_metadata (Dict[str, Any]): Notebook metadata with secret details
         run_id (int): SAT run ID for tracking
     """
     import time
-    
+
     try:
         # Create the table if it doesn't exist
-        create_secret_scan_results_table()
+        create_notebooks_secret_scan_results_table()
         logger.debug(f"Inserting secret scan results for workspace_id: {workspace_id}")
         logger.debug(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
         scan_time = time.time()
@@ -532,27 +599,36 @@ def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, A
         notebook_path = notebook_metadata.get("path", "")
         notebook_name = notebook_metadata.get("name", "")
         secrets_found = notebook_metadata.get("secrets_found", 0)
-        
+
         if secrets_found > 0:
             # Only insert records when secrets are found
             secret_details = notebook_metadata.get("secret_details", [])
-            
+
             for secret in secret_details:
                 detector_name = secret.get("DetectorName", "Unknown")
                 secret_sha256 = secret.get("Raw_SHA", "")
                 source_file = secret.get("SourceFile", "")
                 verified = secret.get("Verified", False)
-                
+
+                # Escape single quotes in string values for SQL (replace ' with '')
+                workspace_id_escaped = workspace_id.replace("'", "''")
+                notebook_id_escaped = notebook_id.replace("'", "''")
+                notebook_path_escaped = notebook_path.replace("'", "''")
+                notebook_name_escaped = notebook_name.replace("'", "''")
+                detector_name_escaped = detector_name.replace("'", "''")
+                secret_sha256_escaped = secret_sha256.replace("'", "''")
+                source_file_escaped = source_file.replace("'", "''")
+
                 # Insert individual secret record
                 sql = f"""
-                INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results 
-                (workspace_id, notebook_id, notebook_path, notebook_name, detector_name, 
+                INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
+                (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
                  secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-                VALUES ('{workspace_id}', '{notebook_id}', '{notebook_path}', '{notebook_name}', 
-                        '{detector_name}', '{secret_sha256}', '{source_file}', {verified}, 
+                VALUES ('{workspace_id_escaped}', '{notebook_id_escaped}', '{notebook_path_escaped}', '{notebook_name_escaped}',
+                        '{detector_name_escaped}', '{secret_sha256_escaped}', '{source_file_escaped}', {verified},
                         {secrets_found}, {run_id}, cast({scan_time} as timestamp))
                 """
-                
+
                 spark.sql(sql)
                 logger.debug(f"Inserted secret scan result for notebook {notebook_id}, detector: {detector_name}")
         else:
@@ -570,13 +646,13 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     """
     try:
         # Ensure table exists
-        create_secret_scan_results_table()
+        create_notebooks_secret_scan_results_table()
         logger.info(f"Inserting no-secrets tracking row for workspace_id: {workspace_id}, run_id: {run_id}")
 
         # Check if a row already exists for this run_id
         existing = spark.sql(f"""
             SELECT COUNT(*) as cnt
-            FROM {json_["analysis_schema_name"]}.secret_scan_results
+            FROM {json_["analysis_schema_name"]}.notebooks_secret_scan_results
             WHERE run_id = {run_id}
         """).collect()[0]["cnt"]
 
@@ -584,12 +660,15 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
             logger.info(f"No-secrets row already exists for run_id {run_id}, skipping insert")
             return
 
+        # Escape single quotes in workspace_id for SQL
+        workspace_id_escaped = workspace_id.replace("'", "''")
+
         # Insert placeholder row
         spark.sql(f"""
-            INSERT INTO {json_["analysis_schema_name"]}.secret_scan_results
+            INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
             (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
              secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-            VALUES ('{workspace_id}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
+            VALUES ('{workspace_id_escaped}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
         """)
         logger.info(f"No-secrets tracking row inserted successfully for run_id: {run_id}")
 
@@ -600,33 +679,30 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
 def get_current_run_id() -> int:
     """
     Get a new SAT run ID for tracking scan results.
-    Each call generates a new run_id by incrementing the last run_id
-    and inserts a new row into the run_number_table.
-    
+    Inserts a new row into run_number_table and retrieves the auto-generated runID.
+
     Returns:
-        int: New run ID
+        int: New run ID (auto-generated by IDENTITY column)
     """
     try:
-        # Get current max runID
+        # Insert new run into run_number_table (runID is auto-generated as IDENTITY column)
+        # Only insert check_time, let the database auto-generate runID
+        spark.sql(f'''
+            INSERT INTO {json_["analysis_schema_name"]}.run_number_table (check_time)
+            VALUES (current_timestamp())
+        ''')
+
+        # Retrieve the auto-generated runID (it will be the max value)
         result = spark.sql(f'''
-            SELECT max(runID) as max_run_id 
+            SELECT max(runID) as new_run_id
             FROM {json_["analysis_schema_name"]}.run_number_table
         ''').collect()
-        
-        current_max = result[0]["max_run_id"] if result and result[0]["max_run_id"] is not None else 0
-        
-        # Increment to get new run_id
-        new_run_id = current_max + 1
-        
-        # Insert new run into run_number_table
-        spark.sql(f'''
-            INSERT INTO {json_["analysis_schema_name"]}.run_number_table (runID, run_time)
-            VALUES ({new_run_id}, current_timestamp())
-        ''')
-        
+
+        new_run_id = result[0]["new_run_id"]
+
         logger.info(f"Created new SAT run_id: {new_run_id}")
         return new_run_id
-    
+
     except Exception as e:
         logger.error(f"Failed to get or create new run ID: {str(e)}")
         # Fallback: use current timestamp as unique run ID
@@ -817,11 +893,20 @@ def main_scanning_workflow():
     """
     print("🔍 Starting TruffleHog Secret Scanning Workflow")
     print("=" * 60)
-    
+
     # Get current workspace ID and run ID for database storage
     workspace_id = json_.get("workspace_id", "unknown")
-    current_run_id = get_current_run_id()
-    
+
+    # Check if run_id was passed from orchestrator (for shared correlation with cluster scan)
+    # If not, generate a new one for standalone execution
+    passed_run_id = json_.get("run_id")
+    if passed_run_id:
+        current_run_id = passed_run_id
+        logger.info(f"Using run_id from orchestrator: {current_run_id}")
+    else:
+        current_run_id = get_current_run_id()
+        logger.info(f"Generated new run_id for standalone execution: {current_run_id}")
+
     logger.info(f"TruffleHog scan starting for workspace: {workspace_id}, run_id: {current_run_id}")
     
     # Get time range for notebook search

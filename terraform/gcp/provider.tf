@@ -1,7 +1,8 @@
 terraform {
   required_providers {
     databricks = {
-      source = "databricks/databricks"
+      source  = "databricks/databricks"
+      version = "~> 1.88.0"
     }
   }
 }
@@ -20,4 +21,5 @@ module "common" {
   analysis_schema_name = var.analysis_schema_name
   proxies              = var.proxies
   run_on_serverless    = var.run_on_serverless
+  secret_scope_name    = var.secret_scope_name
 }
