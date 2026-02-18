@@ -492,31 +492,31 @@ bootstrap('unitycatalogcredentials' + '_' + workspace_id, uc_client.get_credenti
 
 # COMMAND ----------
 
- bootstrap('unitycatalogcatlist' + '_' + workspace_id, uc_client.get_catalogs_list)
+bootstrap('unitycatalogcatlist' + '_' + workspace_id, uc_client.get_catalogs_list)
 
 # COMMAND ----------
 
- bootstrap('metastorepermissions' + '_' + workspace_id, uc_client.get_grants_effective_permissions_ext)
+bootstrap('metastorepermissions' + '_' + workspace_id, uc_client.get_grants_effective_permissions_ext)
 
 # COMMAND ----------
 
- bootstrap('registered_models' + '_' + workspace_id, uc_client.get_registered_models)
+bootstrap('registered_models' + '_' + workspace_id, uc_client.get_registered_models)
 
 # COMMAND ----------
 
- bootstrap('workspace_metastore_summary' + '_' + workspace_id, uc_client.get_workspace_metastore_summary)
+bootstrap('workspace_metastore_summary' + '_' + workspace_id, uc_client.get_workspace_metastore_summary)
 
 # COMMAND ----------
 
- bootstrap('artifacts_allowlists_init_scripts' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="INIT_SCRIPT")
+bootstrap('artifacts_allowlists_init_scripts' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="INIT_SCRIPT")
 
 # COMMAND ----------
 
- bootstrap('artifacts_allowlists_library_jars' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="LIBRARY_JAR")
+bootstrap('artifacts_allowlists_library_jars' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="LIBRARY_JAR")
 
 # COMMAND ----------
 
- bootstrap('artifacts_allowlists_library_mavens' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="LIBRARY_MAVEN")
+bootstrap('artifacts_allowlists_library_mavens' + '_' + workspace_id, uc_client.get_artifacts_allowlists, artifact_type="LIBRARY_MAVEN")
 
 # COMMAND ----------
 
@@ -548,15 +548,15 @@ except:
 
 # COMMAND ----------
 
- bootstrap('delta_sharing_providers_list' + '_' + workspace_id, delta_sharing.get_sharing_providers_list)
+bootstrap('delta_sharing_providers_list' + '_' + workspace_id, delta_sharing.get_sharing_providers_list)
 
 # COMMAND ----------
 
- bootstrap('delta_sharing_recepients_list' + '_' + workspace_id, delta_sharing.get_sharing_recepients_list)
+bootstrap('delta_sharing_recepients_list' + '_' + workspace_id, delta_sharing.get_sharing_recepients_list)
 
 # COMMAND ----------
 
- bootstrap('delta_list_shares' + '_' + workspace_id, delta_sharing.get_list_shares)
+bootstrap('delta_list_shares' + '_' + workspace_id, delta_sharing.get_list_shares)
 
 # COMMAND ----------
 
@@ -592,7 +592,7 @@ except:
 
 # COMMAND ----------
 
- bootstrap('model_serving_endpoints' + '_' + workspace_id, serving_endpoints.get_endpoints)
+bootstrap('model_serving_endpoints' + '_' + workspace_id, serving_endpoints.get_endpoints)
 
 # COMMAND ----------
 
@@ -609,7 +609,7 @@ except:
 
 # COMMAND ----------
 
- bootstrap('vector_search_endpoint_list' + '_' + workspace_id, vector_search.get_endpoint_list)
+bootstrap('vector_search_endpoint_list' + '_' + workspace_id, vector_search.get_endpoint_list)
 
 # COMMAND ----------
 

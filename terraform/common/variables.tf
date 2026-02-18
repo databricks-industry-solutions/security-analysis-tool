@@ -29,6 +29,12 @@ variable "notification_email" {
   default     = ""
 }
 
+variable "provisioner_name" {
+  type        = string
+  description = "Optional owner tag value for SQL warehouse compute resources; defaults to the current user."
+  default     = ""
+}
+
 variable "gcp_impersonate_service_account" {
   type        = string
   description = "GCP Service Account to impersonate (e.g. xyz-sa-2@project.iam.gserviceaccount.com)"
@@ -48,4 +54,44 @@ variable "proxies" {
 variable "run_on_serverless" {
   type        = bool
   description = "Flag to run SAT initializer/Driver on Serverless"
+}
+
+variable "job_compute_num_workers" {
+  type        = number
+  description = "Number of worker nodes that this cluster should have."
+  default     = 5
+}
+
+variable "job_schedule_timezone_id" {
+  type        = string
+  description = "Time zone ID for job schedules. The system default is UTC; For more details: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+  default     = "UTC"
+  validation {
+    condition     = can(regex("^([A-Za-z]+(/[A-Za-z0-9_+\\-]+)+|UTC)$", var.job_schedule_timezone_id))
+    error_message = "Must be a valid IANA time zone ID (e.g. America/New_York, Etc/UTC) or UTC."
+  }
+}
+
+variable "secrets_scanner_cron_expression" {
+  type        = string
+  description = "Quartz cron expression for the secrets scanner job schedule"
+  default     = "0 0 8 ? * *"
+}
+
+variable "driver_cron_expression" {
+  type        = string
+  description = "Quartz cron expression for the driver job schedule"
+  default     = "0 0 8 ? * Mon,Wed,Fri"
+}
+
+variable "sql_warehouse_enable_serverless" {
+  type        = bool
+  description = "Flag to run SQL Warehouse on Serverless Compute"
+  default     = false
+}
+
+variable "sql_warehouse_auto_stop_mins" {
+  type        = number
+  description = "Time in minutes until an idle SQL warehouse terminates all clusters and stops. This field is optional. The default is 120, set to 0 to disable the auto stop."
+  default     = 120
 }
