@@ -38,24 +38,24 @@ class DeltaSharingClient(SatDBClient):
         return sharingproviderslist
 
 
-    def get_sharing_recipients_list(self):
+    def get_sharing_recepients_list(self):
         """
-        Returns an array of json objects for sharing recipients
+        Returns an array of json objects for sharing recepients
         """
-        # fetch all sharing recipients list
-        sharingrecipientslist = self.get(f"/unity-catalog/recipients", version='2.1').get('recipients', [])
-        return sharingrecipientslist
+        # fetch all sharing recepients list
+        sharingrecepientslist = self.get(f"/unity-catalog/recipients", version='2.1').get('recipients', [])
+        return sharingrecepientslist
     
-    def get_sharing_recipient(self, sharename):
+    def get_sharing_recepient(self, sharename):
         """
-        Returns an array of json objects for sharing recipients
+        Returns an array of json objects for sharing recepients
         """
         sharingjsonlist = self.get(f"/unity-catalog/recipients/{sharename}", version='2.1').get('satelements', [])
         return sharingjsonlist  
     
-    def get_sharing_recipient_permissions(self, sharename):
+    def get_sharing_recepient_permissions(self, sharename):
         """
-        Returns an array of json objects for sharing recipients permission
+        Returns an array of json objects for sharing recepients permission
         """
         # fetch all acls list
         sharingacl = self.get(f"/unity-catalog/recipients/{sharename}/share-permissions", version='2.1').get('permissions_out', [])

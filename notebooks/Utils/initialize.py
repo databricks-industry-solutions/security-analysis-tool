@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC **Notebook name:** initialize
-# MAGIC **Functionality:** initializes the necessary configuration values for the rest of the process into a json
+# MAGIC **Functionality:** initializes the necessary configruation values for the rest of the process into a json
 
 # COMMAND ----------
 

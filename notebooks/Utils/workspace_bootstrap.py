@@ -488,7 +488,7 @@ bootstrap('unitycatalogcredentials' + '_' + workspace_id, uc_client.get_credenti
 
 # COMMAND ----------
 
-#bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_sharing_recipients_list)
+#bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_sharing_recepients_list)
 
 # COMMAND ----------
 
@@ -552,7 +552,7 @@ bootstrap('delta_sharing_providers_list' + '_' + workspace_id, delta_sharing.get
 
 # COMMAND ----------
 
-bootstrap('delta_sharing_recipients_list' + '_' + workspace_id, delta_sharing.get_sharing_recipients_list)
+bootstrap('delta_sharing_recepients_list' + '_' + workspace_id, delta_sharing.get_sharing_recepients_list)
 
 # COMMAND ----------
 
