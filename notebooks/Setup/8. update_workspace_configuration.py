@@ -5,7 +5,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install PyYAML
+# MAGIC %run ../Includes/install_sat_sdk
 
 # COMMAND ----------
 

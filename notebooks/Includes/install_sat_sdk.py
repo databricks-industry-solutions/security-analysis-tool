@@ -29,12 +29,27 @@ if is_sat_compatible== False:
 
 # COMMAND ----------
 
-SDK_VERSION='0.1.38'
+SDK_VERSION='0.1.40'
 
 # COMMAND ----------
 
-#%pip install dbl-sat-sdk=={SDK_VERSION} --find-links /dbfs/FileStore/tables/dbl_sat_sdk-0.1.37-py3-none-any.whl
+def getLibPath():
+    path = (
+        dbutils.notebook.entry_point.getDbutils()
+        .notebook()
+        .getContext()
+        .notebookPath()
+        .get()
+    )
+    path = path[: path.find("/notebooks")]
+    return f"/Workspace{path}/lib"
 
 # COMMAND ----------
 
-# MAGIC %pip install PyYAML dbl-sat-sdk=={SDK_VERSION} 
+# Construct workspace path to wheel file dynamically
+WHEEL_PATH = f'{getLibPath()}/dbl_sat_sdk-{SDK_VERSION}-py3-none-any.whl'
+print(f"Installing SAT SDK from: {WHEEL_PATH}")
+
+# COMMAND ----------
+
+# MAGIC %pip install PyYAML {WHEEL_PATH} 

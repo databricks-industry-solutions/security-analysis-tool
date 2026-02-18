@@ -69,6 +69,77 @@ terraform apply
 2. Run "SAT Driver Notebook":
 * This notebook can be scheduled to run periodically (e.g., every Monday, Wednesday, and Friday).
 
+### BrickHound App Deployment (Optional)
+
+The BrickHound data collection job is automatically deployed by Terraform. To deploy the BrickHound web app for interactive permissions analysis, follow these steps:
+
+#### 1. Deploy the App
+
+Using the **Databricks CLI** (recommended):
+```bash
+databricks apps deploy brickhound-sat \
+  --source-code-path /Workspace/Repos/SAT-TF/app/brickhound
+```
+
+Or using the **Databricks UI**:
+1. Navigate to **Compute → Apps**
+2. Click **Create App**
+3. **Edit metadata** (Step 1):
+   - App name: `permissions-analysis-app` (or your preferred name)
+   - Description: `Databricks Permission Analysis companion app for SAT`
+   - Click **Next: Configure**
+4. Select source code path: `/Workspace/Repos/SAT-TF/app/brickhound`
+
+#### 2. Configure App Resources
+
+On the **Configure resources** page (Step 2):
+
+**App resources:**
+1. Click **+ Add resource**
+2. Select **SQL warehouse**
+3. Choose your warehouse (e.g., "SAT Warehouse" created by Terraform)
+4. Permission: **Can use**
+5. Resource key: `sql-warehouse`
+
+**User authorization** (API Scopes - automatically configured):
+The app requires these scopes (preview feature):
+- `catalog.catalogs:read` - Read catalogs in Unity Catalog
+- `catalog.schemas:read` - Read schemas in Unity Catalog
+- `catalog.tables:read` - Read tables in Unity Catalog
+- `sql` - Execute SQL and manage SQL resources
+
+**Compute:**
+- Instance size: **Medium** (Up to 2 vCPU, 6 GB memory) - sufficient for most use cases
+- Can increase to **Large** if analyzing very large accounts
+
+Click **Save** to complete configuration.
+
+#### 3. Grant Unity Catalog Permissions
+
+Grant the app's service principal access to BrickHound tables:
+1. Copy the **service principal ID** from the app's **Authorization** tab
+2. Run these SQL commands in your workspace (replace `<catalog>.<schema>` with your `analysis_schema_name`):
+
+```sql
+-- Grant catalog access (REQUIRED - Unity Catalog hierarchical permissions)
+GRANT USE CATALOG ON CATALOG `<catalog>` TO `<service-principal-id>`;
+
+-- Grant schema access
+GRANT USE SCHEMA ON SCHEMA `<catalog>`.`<schema>` TO `<service-principal-id>`;
+
+-- Grant table access
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_vertices TO `<service-principal-id>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_edges TO `<service-principal-id>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata TO `<service-principal-id>`;
+```
+
+**Note**: The `USE CATALOG` grant is critical. Without it, the app cannot access tables even with SELECT permissions due to Unity Catalog's hierarchical permission model.
+
+**References:**
+- [Deploy Databricks Apps](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy)
+- [Add Resources to Apps](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)
+- [Configure App Authorization](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth)
+
 ### Step 8: Access the SAT Dashboard
 1. Navigate to the <b>SQL > Dashboard </b> in the left menu from the Databricks workspace.
 2. Select the <b>SAT Dashboard</b>, pic a Workspace from the dropdown, and refresh the dashboard.

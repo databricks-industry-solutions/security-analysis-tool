@@ -151,7 +151,9 @@ def insertIntoControlTable(workspace_id, id, score, additional_details):
         f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table'
     ).collect()[0][0]
     jsonstr = json.dumps(additional_details)
-    sql = """INSERT INTO {}.`security_checks` (`workspaceid`, `id`, `score`, `additional_details`, `run_id`, `check_time`) 
+    # Escape single quotes for SQL by doubling them
+    jsonstr = jsonstr.replace("'", "''")
+    sql = """INSERT INTO {}.`security_checks` (`workspaceid`, `id`, `score`, `additional_details`, `run_id`, `check_time`)
             VALUES ('{}', '{}', cast({} as int),  from_json('{}', 'MAP<STRING,STRING>'), {}, cast({} as timestamp))""".format(
         json_["analysis_schema_name"], workspace_id, id, score, jsonstr, run_id, ts
     )
@@ -179,7 +181,9 @@ def insertIntoInfoTable(workspace_id, name, value, category):
         f'select max(runID) from {json_["analysis_schema_name"]}.run_number_table'
     ).collect()[0][0]
     jsonstr = json.dumps(value)
-    sql = """INSERT INTO {}.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`) 
+    # Escape single quotes for SQL by doubling them
+    jsonstr = jsonstr.replace("'", "''")
+    sql = """INSERT INTO {}.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`)
             VALUES ('{}','{}', from_json('{}', 'MAP<STRING,STRING>'), '{}', '{}', cast({} as timestamp))""".format(
         json_["analysis_schema_name"], workspace_id, name, jsonstr, category, run_id, ts
     )
@@ -485,13 +489,37 @@ def create_account_workspaces_table():
 # COMMAND ----------
 
 
-def create_secret_scan_results_table():
+def create_notebooks_secret_scan_results_table():
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.secret_scan_results (
+        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.notebooks_secret_scan_results (
         workspace_id STRING,
         notebook_id STRING,
         notebook_path STRING,
         notebook_name STRING,
+        detector_name STRING,
+        secret_sha256 STRING,
+        source_file STRING,
+        verified BOOLEAN,
+        secrets_found INTEGER,
+        run_id BIGINT,
+        scan_time TIMESTAMP,
+        scan_date DATE GENERATED ALWAYS AS (CAST(scan_time AS DATE)),
+        scan_hhmm INTEGER GENERATED ALWAYS AS (CAST(CAST(hour(scan_time) as STRING) || CAST(minute(scan_time) as STRING) as INTEGER))
+    )
+    USING DELTA
+    PARTITIONED BY (scan_date)
+    """
+    )
+
+
+def create_clusters_secret_scan_results_table():
+    df = spark.sql(
+        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.clusters_secret_scan_results (
+        workspace_id STRING,
+        cluster_id STRING,
+        cluster_name STRING,
+        config_field STRING,
+        config_key STRING,
         detector_name STRING,
         secret_sha256 STRING,
         source_file STRING,
