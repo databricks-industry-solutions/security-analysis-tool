@@ -2,22 +2,6 @@
 
 The **Security Analysis Tool (SAT)** analyzes your Databricks account and workspace configurations, providing recommendations to help you follow Databricks' security best practices.
 
-## BrickHound Permissions Analysis
-
-SAT now includes **BrickHound**, a graph-based permissions analysis tool that complements SAT's configuration security checks:
-
-- **Interactive Notebooks**: Query permissions across your Databricks account
-- **Web UI**: User-friendly interface for permissions exploration
-- **Graph Analysis**: Find privilege escalation paths and impersonation risks
-- **Compliance Reports**: Generate access audit reports
-
-**Get Started:**
-1. Run the BrickHound data collection job: Workflows → Jobs → "BrickHound Permissions Analysis"
-2. Use analysis notebooks in `/notebooks/brickhound/`
-3. Or access the web UI at `https://<workspace-url>/apps/brickhound-sat`
-
-**Documentation**: [BrickHound Integration Guide](docs/BRICKHOUND_INTEGRATION.md)
-
 ## Documentation
 
 Refer to the [SAT documentation](https://databricks-industry-solutions.github.io/security-analysis-tool/) for detailed information on how to use SAT, its features, and configuration options.
