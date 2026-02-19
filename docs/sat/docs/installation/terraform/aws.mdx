@@ -12,10 +12,6 @@ import Admonition from '@theme/Admonition';
 <Admonition type="warning" title="Unity Catalog Required">
 **SAT v0.5.0 and higher requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT.
 </Admonition>
-
-<Admonition type="note" title="Note">
-**SAT v0.2.0** or higher introduces full support for Unity Catalog. You can now pick your own catalog instead of being limited to the hive_metastore. Additionally, you have the flexibility to choose your own schema name.
-</Admonition>
 ### Step 1: Install Required Tools
 1. Install [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli).
 2. Install [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on your local machine.
@@ -90,4 +86,8 @@ If a pre-existing secret scope named `sat_scope` causes jobs to fail:
 3. Update the secret scope name in 6 locations (`CMD 4` and `CMD 5`) of `Workspace -> Applications -> SAT-TF/notebooks/Utils/initialize`.
 4. Re-run failed jobs
 
-Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../../functionality.mdx) for a detailed description on how to run and use it.
+<Admonition type="note" title="Permissions Analysis App Setup">
+To set up the Permissions Analysis app and make it execute correctly, refer to the [Permissions Analysis Setup](./index.mdx#permissions-analysis-setup) section.
+</Admonition>
+
+Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../../../functionality) for a detailed description on how to run and use it.

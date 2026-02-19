@@ -23,3 +23,63 @@ SAT can be set up on any of the cloud platforms where Databricks is hosted using
 - [AWS Terraform Install](./aws.mdx)
 - [Azure Terraform Install](./azure.mdx)
 - [GCP Terraform Install](./gcp.mdx)
+
+---
+
+## Permissions Analysis Setup
+
+After installing SAT, you will need to manually complete the Permissions Analysis app deployment and configuration by following these steps:
+
+### 1. Deploy the app using the Databricks CLI
+
+Deploy the app using the appropriate command based on your installation method:
+
+**For DABs installations:**
+```bash
+databricks apps deploy sat-permissions-exp --source-code-path /Workspace/Applications/SAT/files/app/brickhound
+```
+
+**For Terraform installations:**
+```bash
+databricks apps deploy sat-permissions-exp --source-code-path /Workspace/Repos/Applications/SAT_TF/app/brickhound
+databricks app deploy
+```
+
+<Admonition type="note" title="Note">
+The app compute may take a few minutes to start. Please make sure that **Compute > Apps > sat-permissions-exp** is "running" in your workspace before proceeding to the next step.
+</Admonition>
+
+### 2. Configure app resources
+
+Edit the app configuration in the Databricks UI and assign the following resources:
+
+| Resource Type | Resource Key | Secret Scope | Secret Key | Value |
+|--------------|--------------|--------------|------------|-------|
+| SQL warehouse | `sql-warehouse` | — | — | — |
+| Secret | — | `sat_scope` | `sql-warehouse-id` | `sql-warehouse-id` |
+| Secret | — | `sat_scope` | `analysis_schema_name` | `analysis_schema_name` |
+
+### 3. Grant Unity Catalog permissions
+
+After running the jobs and before the first use of the app, you need to grant Unity Catalog permissions to the app's service principal.
+
+1. Copy the [App authorization service principal](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth#app-authorization) (not the name, the actual service principal ID)
+2. Run the following SQL commands to grant the necessary permissions:
+
+```sql
+-- Grant USE CATALOG permission
+GRANT USE CATALOG ON CATALOG <your SAT UC catalog>
+TO `<app authorization service principal>`;
+
+-- Grant USE SCHEMA permission
+GRANT USE SCHEMA ON SCHEMA <your SAT UC catalog>.<SAT Schema>
+TO `<app authorization service principal>`;
+
+-- Grant SELECT on all tables in the schema
+GRANT SELECT ON SCHEMA <your SAT UC catalog>.<SAT Schema>
+TO `<app authorization service principal>`;
+```
+
+<Admonition type="tip" title="Tip">
+Replace `<your SAT UC catalog>`, `<SAT Schema>`, and `<app authorization service principal>` with your actual values.
+</Admonition>
