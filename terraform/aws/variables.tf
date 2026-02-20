@@ -23,6 +23,14 @@ variable "sqlw_id" {
   default = "new"
 }
 
+variable "warehouse_type" {
+  description = "Type of SQL warehouse to deploy: CLASSIC, PRO, or SERVERLESS"
+  type        = string
+  validation {
+    condition     = contains(["CLASSIC", "PRO", "SERVERLESS"], var.warehouse_type)
+    error_message = "warehouse_type must be one of: CLASSIC, PROD, or SERVERLESS"
+  }
+  default = "CLASSIC"
 variable "secret_scope_name" {
   description = "Name of secret scope for SAT secrets"
   type        = string
