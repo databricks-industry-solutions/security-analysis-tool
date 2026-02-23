@@ -20,7 +20,19 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 const sidebars = {
   tutorialSidebar: [
     'motivation',
-    'functionality',
+    {
+      type: 'category',
+      label: 'Functionality',
+      link: { type: 'doc', id: 'functionality/index' },
+      collapsible: true,
+      collapsed: false,
+      items: [
+        'functionality/general-dashboard',
+        'functionality/executive-dashboard',
+        'functionality/permissions-analysis',
+        'functionality/cluster-secrets-scanning',
+      ],
+    },
     {
       type: 'category',
       label: 'Installation',
