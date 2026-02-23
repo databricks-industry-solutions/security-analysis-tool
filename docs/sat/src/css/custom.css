@@ -54,3 +54,64 @@ button {
 .header-github-link:hover::before {
   background-color: var(--ifm-navbar-link-hover-color);
 }
+
+/* Feature Cards */
+.feature-card {
+  display: block;
+  padding: 1.5rem;
+  border: 3px solid #e0e0e0;
+  border-radius: 8px;
+  transition: border-color 0.2s ease;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.feature-card:hover {
+  border-color: #ff6b35;
+  border-width: 3px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.feature-card h3 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  color: inherit;
+}
+
+.feature-card p {
+  margin-bottom: 0;
+  color: #666;
+}
+
+/* Pagination Navigation Cards */
+.pagination-nav__link {
+  color: #000000;
+  text-decoration: none;
+  border-width: 2px;
+  transition: border-color 0.2s ease;
+}
+
+.pagination-nav__link:hover {
+  border-color: #ff6b35;
+  border-width: 2px;
+  color: #000000;
+  text-decoration: none;
+}
+
+.pagination-nav__link .pagination-nav__label {
+  color: #000000;
+}
+
+.pagination-nav__link:hover .pagination-nav__label {
+  color: #000000;
+}
+
+.pagination-nav__link .pagination-nav__sublabel {
+  color: #666;
+}
+
+.pagination-nav__link:hover .pagination-nav__sublabel {
+  color: #666;
+}
