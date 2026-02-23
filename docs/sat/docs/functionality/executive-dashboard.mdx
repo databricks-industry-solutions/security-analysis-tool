@@ -1,0 +1,169 @@
+---
+sidebar_position: 2
+---
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
+
+# Executive Dashboard
+
+The **Executive Dashboard** is a streamlined, high-level view designed for stakeholders and executives who need a quick overview of the security posture without getting into technical details.
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/executive_dashboard.png')} alt="Executive Dashboard" />
+</div>
+
+## Overview
+
+In addition to the comprehensive SAT dashboard, an **Executive Dashboard** is also provided. This view consolidates key findings from the complete dashboard and presents them in an easy-to-digest format that's perfect for leadership and business stakeholders.
+
+<Admonition type="tip" title="Databricks One Integration">
+You can use **Databricks One** to access and share the SAT dashboards across your organization, making it easier to distribute security insights to stakeholders.
+</Admonition>
+
+## What Leadership Can Do
+
+The Executive Dashboard enables leadership to:
+
+- ✅ **Quickly understand** the overall security health of Databricks deployments
+- ✅ **Identify critical security issues** that require immediate attention
+- ✅ **Track security improvements** over time
+- ✅ **Make informed decisions** about security investments and priorities
+
+This executive-level view complements the detailed technical dashboard, ensuring that both technical teams and business stakeholders have access to the security insights they need.
+
+## Key Metrics
+
+The Executive Dashboard focuses on high-level metrics and trends:
+
+### Security Health Score
+
+A consolidated view of overall security posture across all workspaces, typically displayed as:
+- Overall security score or rating
+- Trend indicators (improving, stable, declining)
+- Comparison across workspaces or time periods
+
+### Critical Issues Summary
+
+High-level summary of critical security findings:
+- Count of high-severity issues
+- Count of medium-severity issues
+- Count of low-severity issues
+- Trend analysis showing improvement or regression
+
+### Workspace Overview
+
+Summary information about monitored workspaces:
+- Number of workspaces analyzed
+- Workspace health status
+- Geographic distribution
+- Cloud provider breakdown
+
+### Compliance Status
+
+High-level compliance indicators:
+- Overall compliance score
+- Key compliance categories status
+- Audit readiness indicators
+
+## Benefits for Different Audiences
+
+### For Executives
+
+- **Time-efficient**: Get security insights in minutes, not hours
+- **Actionable**: Clear priorities and recommendations
+- **Trend-focused**: Understand security posture over time
+- **Risk-aware**: Identify critical issues requiring attention
+
+### For Security Leadership
+
+- **Strategic view**: Understand security posture across the organization
+- **Resource planning**: Identify areas needing investment
+- **Compliance tracking**: Monitor compliance status and trends
+- **Stakeholder communication**: Share security status with business leaders
+
+### For Business Stakeholders
+
+- **Non-technical**: Easy to understand without deep technical knowledge
+- **Business-aligned**: Focus on business impact and risk
+- **Transparent**: Clear visibility into security posture
+- **Confidence-building**: Demonstrate proactive security management
+
+## Dashboard Configuration
+
+The Executive Dashboard follows the same configuration process as the General Dashboard:
+
+1. Click on the dashboard and in the top right, click on the **"Share"** button.
+2. Click on the cogwheel icon and select **"Assign new owner"**. Choose the new owner of the dashboard.
+3. Click on the **"Published"** icon next to the name of the dashboard, and switch to the **"Draft"** version. Click on the **"Publish"** button.
+   - Choose from one of the two credential options:
+     - **Embed credentials (default):** All viewers run queries using the owner's credentials and compute.
+     - **Don't embed credentials:** Each viewer must have access to the workspace and associated data to view the dashboard.
+       > We recommend using this option for more secure access control.
+4. The dashboard can be shared with other team members by clicking the **"Share"** button from the **"Published"** mode.
+
+<Admonition type="tip" title="Sharing Configuration">
+Consider creating different sharing groups for executives vs. technical teams. Executives may only need view access, while technical teams may need access to drill down into details.
+</Admonition>
+
+## When to Use
+
+### Regular Reviews
+
+Use the Executive Dashboard for:
+- **Weekly security briefings** with leadership
+- **Monthly security reviews** with stakeholders
+- **Quarterly business reviews** including security posture
+- **Board presentations** on security status
+
+### Decision Making
+
+The Executive Dashboard supports:
+- **Budget planning** for security improvements
+- **Resource allocation** for security initiatives
+- **Risk assessment** for business decisions
+- **Compliance reporting** to auditors and regulators
+
+### Communication
+
+Share the Executive Dashboard to:
+- **Demonstrate progress** on security initiatives
+- **Highlight achievements** in security improvements
+- **Raise awareness** of security priorities
+- **Build confidence** in security posture
+
+## Relationship to General Dashboard
+
+The Executive Dashboard and General Dashboard work together:
+
+| **Executive Dashboard** | **General Dashboard** |
+|-------------------------|----------------------|
+| High-level metrics | Detailed findings |
+| Business-focused | Technical-focused |
+| Strategic view | Operational view |
+| Quick overview | Deep dive analysis |
+| For leadership | For technical teams |
+
+<Admonition type="info" title="Dashboard Relationship">
+Both dashboards use the same underlying data, ensuring consistency. The Executive Dashboard provides the "what" and "why," while the General Dashboard provides the "how" and "where."
+</Admonition>
+
+## Best Practices
+
+<Admonition type="tip" title="Regular Updates">
+Ensure the Executive Dashboard is updated regularly (weekly or bi-weekly) to provide current security insights to leadership.
+</Admonition>
+
+<Admonition type="tip" title="Customization">
+Consider customizing the Executive Dashboard to highlight metrics most relevant to your organization's security priorities and compliance requirements.
+</Admonition>
+
+<Admonition type="tip" title="Dashboard Usage">
+Use both dashboards together: Executive Dashboard for high-level status, General Dashboard for detailed remediation.
+</Admonition>
+
+## Learn More
+
+- [General Dashboard](../general-dashboard) - Detailed technical dashboard
+- [Permissions Analysis](../permissions-analysis) - Graph-based access analysis
+- [Cluster Secrets Scanning](../cluster-secrets-scanning) - Detect exposed credentials
+- [Usage Guide](/docs/usage) - Instructions on running SAT workflows and accessing dashboards
