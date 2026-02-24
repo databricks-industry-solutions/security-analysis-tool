@@ -25,28 +25,28 @@ def test_get_sharing_provider(get_db_client):
     artifactsList = deltasharingobj.get_sharing_provider('americanairlines')
     print(artifactsList) 
 
-def test_get_sharing_recepients_list(get_db_client):
+def test_get_sharing_recipients_list(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     deltasharingobj = DeltaSharingClient(jsonstr)
-    artifactsList = deltasharingobj.get_sharing_recepients_list()
+    artifactsList = deltasharingobj.get_sharing_recipients_list()
     print(artifactsList)    
 
-def test_get_sharing_recepient(get_db_client):
+def test_get_sharing_recipient(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     deltasharingobj = DeltaSharingClient(jsonstr)
-    artifactsList = deltasharingobj.get_sharing_recepient('aaron_binns_metronome_contigname_1')
+    artifactsList = deltasharingobj.get_sharing_recipient('aaron_binns_metronome_contigname_1')
     print(artifactsList)  
 
-def test_get_sharing_recepient_permissions(get_db_client):
+def test_get_sharing_recipient_permissions(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     deltasharingobj = DeltaSharingClient(jsonstr)
-    artifactsList = deltasharingobj.get_sharing_recepient_permissions('aaron_binns_metronome_contigname_1')
+    artifactsList = deltasharingobj.get_sharing_recipient_permissions('aaron_binns_metronome_contigname_1')
     print(artifactsList)  
 
 def test_get_list_shares(get_db_client):
