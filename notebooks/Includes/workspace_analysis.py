@@ -1145,11 +1145,11 @@ if enabled:
 check_id='53' #	GOV-16 Workspace Unity Catalog metastore assignment
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-def uc_metasore_assignment(df):
+def uc_metastore_assignment(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {i.metastore_id : [i.workspace_id] for i in uc_metasore}
-        return (check_id, 0, uc_metasore_dict )
+        uc_metastore = df.collect()
+        uc_metastore_dict = {i.metastore_id : [i.workspace_id] for i in uc_metastore}
+        return (check_id, 0, uc_metastore_dict )
     else:
         return (check_id, 1, {})   
 if enabled:    
@@ -1160,18 +1160,18 @@ if enabled:
         WHERE workspace_id="{workspaceId}"
             
     '''
-    sqlctrl(workspace_id, sql, uc_metasore_assignment)
+    sqlctrl(workspace_id, sql, uc_metastore_assignment)
 
 # COMMAND ----------
 
 check_id='54' #	GOV-17 Lifetime of metastore delta sharing recipient token set less than 90 days
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 life_in_days_evaluation_value = sbp_rec['evaluation_value']
-def uc_metasore_token(df):
+def uc_metastore_token(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {num: [row.name,row.owner,row.delta_sharing_recipient_token_lifetime_in_seconds] for num,row in enumerate(uc_metasore)}
-        return (check_id, 1, uc_metasore_dict )
+        uc_metastore = df.collect()
+        uc_metastore_dict = {num: [row.name,row.owner,row.delta_sharing_recipient_token_lifetime_in_seconds] for num,row in enumerate(uc_metastore)}
+        return (check_id, 1, uc_metastore_dict )
     else:
         return (check_id, 0, {})   
 if enabled:    
@@ -1181,7 +1181,7 @@ if enabled:
         FROM {tbl_name} 
         WHERE delta_sharing_scope ="INTERNAL_AND_EXTERNAL" AND delta_sharing_recipient_token_lifetime_in_seconds >{life_in_days_evaluation_value * 86400}
     '''
-    sqlctrl(workspace_id, sql, uc_metasore_token)
+    sqlctrl(workspace_id, sql, uc_metastore_token)
     
 
 # COMMAND ----------
@@ -1191,9 +1191,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_delta_share_ip_accesslist(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {num: [row.name,row.owner] for num,row in enumerate(uc_metasore)}
-        return (check_id, 1, uc_metasore_dict )
+        uc_metastore = df.collect()
+        uc_metastore_dict = {num: [row.name,row.owner] for num,row in enumerate(uc_metastore)}
+        return (check_id, 1, uc_metastore_dict )
     else:
         return (check_id, 0, {})   
 if enabled:    
@@ -1213,9 +1213,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_delta_share_expiration_time(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {num: [row.name,row.owner] for num,row in enumerate(uc_metasore)}
-        return (check_id, 1, uc_metasore_dict )
+        uc_metastore = df.collect()
+        uc_metastore_dict = {num: [row.name,row.owner] for num,row in enumerate(uc_metastore)}
+        return (check_id, 1, uc_metastore_dict )
     else:
         return (check_id, 0, {})   
 if enabled:    
@@ -1235,9 +1235,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_metastore(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {i.name : [i.owner] for i in uc_metasore}
-        return (check_id, 0, uc_metasore_dict )
+        uc_metastore = df.collect()
+        uc_metastore_dict = {i.name : [i.owner] for i in uc_metastore}
+        return (check_id, 0, uc_metastore_dict )
     else:
         return (check_id, 1, {})   
 if enabled:    
@@ -1257,9 +1257,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_metastore_owner(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {i.name : [i.owner, i.created_by] for i in uc_metasore}
-        return (check_id, 1, uc_metasore_dict )
+        uc_metastore = df.collect()
+        uc_metastore_dict = {i.name : [i.owner, i.created_by] for i in uc_metastore}
+        return (check_id, 1, uc_metastore_dict )
     else:
         return (check_id, 0, {})   
 if enabled:    
@@ -1281,9 +1281,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_metastore_storage_creds(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {num: [row.name,row.owner, row.created_by] for num,row in enumerate(uc_metasore)}
-        return (check_id, 1, uc_metasore_dict )
+        uc_metastore = df.collect()
+        uc_metastore_dict = {num: [row.name,row.owner, row.created_by] for num,row in enumerate(uc_metastore)}
+        return (check_id, 1, uc_metastore_dict )
     else:
         return (check_id, 0, {})   
 if enabled:    
@@ -1303,10 +1303,10 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def uc_dws(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {i.name : [i.creator_name] for i in uc_metasore}
+        uc_metastore = df.collect()
+        uc_metastore_dict = {i.name : [i.creator_name] for i in uc_metastore}
         
-        return (check_id, 1, uc_metasore_dict )
+        return (check_id, 1, uc_metastore_dict )
     else:
         return (check_id, 0, {})   
 if enabled:    
@@ -1429,9 +1429,9 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def metastore_delta_sharing_permissions(df):
     if df is not None and not isEmpty(df):
-        uc_metasore = df.collect()
-        uc_metasore_dict = {num: [row.metastore_name,row.principal, row.privilege] for num,row in enumerate(uc_metasore)}
-        return (check_id, 0, uc_metasore_dict ) # intentionally kept the score to 0 as its not a pass or fail. Its more of FYI
+        uc_metastore = df.collect()
+        uc_metastore_dict = {num: [row.metastore_name,row.principal, row.privilege] for num,row in enumerate(uc_metastore)}
+        return (check_id, 0, uc_metastore_dict ) # intentionally kept the score to 0 as its not a pass or fail. Its more of FYI
     else:
         return (check_id, 0, {})   # intentionally kept the score to 0 as its not a pass or fail. Its more of FYI
 if enabled:    
