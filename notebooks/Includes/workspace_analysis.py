@@ -1197,7 +1197,7 @@ def uc_delta_share_ip_accesslist(df):
     else:
         return (check_id, 0, {})   
 if enabled:    
-    tbl_name = 'delta_sharing_recepients_list' + '_' + workspace_id
+    tbl_name = 'delta_sharing_recipients_list' + '_' + workspace_id
     sql=f'''
         SELECT name, owner
         FROM {tbl_name} 
@@ -1219,7 +1219,7 @@ def uc_delta_share_expiration_time(df):
     else:
         return (check_id, 0, {})   
 if enabled:    
-    tbl_name = 'delta_sharing_recepients_list' + '_' + workspace_id
+    tbl_name = 'delta_sharing_recipients_list' + '_' + workspace_id
     sql=f'''
         SELECT tokens.* FROM (select explode(tokens) as tokens, full_name, owner
         FROM {tbl_name} 
