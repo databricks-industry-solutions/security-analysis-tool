@@ -202,3 +202,8 @@ readBestPracticesConfigsFile()
 
 # Initialize sat dasf mapping
 load_sat_dasf_mapping()
+
+# COMMAND ----------
+
+# Apply Genie-optimized comments to schema, tables, and columns
+apply_schema_comments()

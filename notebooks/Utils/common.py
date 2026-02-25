@@ -554,6 +554,269 @@ def create_workspace_run_complete_table():
 
 # COMMAND ----------
 
+
+def _set_table_comment(schema, table, comment):
+    spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{comment}'")
+
+
+def _set_column_comments(schema, table, col_comments):
+    for col, comment in col_comments.items():
+        spark.sql(f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{comment}'")
+
+
+def apply_schema_comments():
+    """Apply Genie-optimized descriptions to security_analysis schema, tables, and columns."""
+    schema = json_["analysis_schema_name"]
+
+    # 1. Schema-level comment
+    spark.sql(
+        f"COMMENT ON SCHEMA {schema} IS "
+        f"'Databricks Security Analysis Tool (SAT) results. Contains security check findings, "
+        f"workspace configurations, secret scan results, and Permission Analysis graph data (BrickHound), "
+        f"all evaluated against Databricks best practices.'"
+    )
+
+    # 2. security_checks
+    _set_table_comment(
+        schema, "security_checks",
+        "Core SAT results table. One row per security check per workspace per run. "
+        "Score=0 means the check passed; a positive integer is the number of violations found. "
+        "Join to security_best_practices on id for check details, and to run_number_table on run_id for run context."
+    )
+    _set_column_comments(schema, "security_checks", {
+        "workspaceid":        "Databricks workspace ID that was analyzed",
+        "id":                 "Security check ID — foreign key to security_best_practices.id",
+        "score":              "0 = check passed; positive integer = number of violations found",
+        "additional_details": "Map of violation context keyed by detail type (e.g. ''message'', ''workspaceId'', resource names). Value is a descriptive string.",
+        "run_id":             "SAT run ID — foreign key to run_number_table.runID",
+        "check_time":         "Timestamp when this check was evaluated",
+        "chk_date":           "Date partition derived from check_time for efficient time-range queries",
+        "chk_hhmm":           "Hour and minute as integer (HHMM format) derived from check_time",
+    })
+
+    # 3. security_best_practices
+    _set_table_comment(
+        schema, "security_best_practices",
+        "Reference catalog of all SAT security checks. Each row defines one check: its category, severity, "
+        "actionable recommendation, and which clouds it applies to. Join to security_checks on id to interpret results."
+    )
+    _set_column_comments(schema, "security_best_practices", {
+        "id":                 "Unique integer identifier for this security check",
+        "check_id":           "Human-readable check code (e.g. DP-1, GOV-5, NS-3, IA-2, INFO-4)",
+        "category":           "Security category: Data Protection, Governance, Identity & Access, Network Security, or Informational",
+        "check":              "Short descriptive name of the security check",
+        "evaluation_value":   "Threshold used during evaluation. -1 means a presence/absence check (any violation = fail); positive integer means the acceptable limit",
+        "severity":           "Risk level if this check fails: Critical, High, Medium, or Low",
+        "recommendation":     "Actionable guidance for remediating a failed check",
+        "doc_url":            "Databricks documentation URL for this security topic",
+        "aws":                "1 if this check applies to AWS-hosted workspaces, 0 otherwise",
+        "azure":              "1 if this check applies to Azure-hosted workspaces, 0 otherwise",
+        "gcp":                "1 if this check applies to GCP-hosted workspaces, 0 otherwise",
+        "enable":             "1 if this check is currently enabled for evaluation, 0 if disabled",
+        "alert":              "1 if alerts are configured for failures of this check, 0 otherwise",
+        "logic":              "Human-readable description of the check evaluation logic",
+        "api":                "Databricks API endpoint or command used to collect data for this check",
+    })
+
+    # 4. account_info
+    _set_table_comment(
+        schema, "account_info",
+        "Workspace-level statistics and properties collected during each SAT run. Each row is one named metric for a workspace. "
+        "The name column uses coded keys: AS-1=account ID, AS-2=cloud region, AS-3=deployment name, AS-4=pricing tier, "
+        "AS-5=workspace ID, AS-6=workspace status, WST-1=total job count, WST-2=orphaned external job count."
+    )
+    _set_column_comments(schema, "account_info", {
+        "workspaceid":  "Databricks workspace ID this metric belongs to",
+        "name":         "Coded metric key (e.g. AS-1=account ID, AS-2=cloud region, AS-4=pricing tier, WST-1=job count)",
+        "value":        'JSON-encoded metric value, always in format: {"value": "<metric_value>"}',
+        "category":     "Metric category: ''Account Stats'' for account-level properties, ''Workspace Stats'' for workspace-level counts",
+        "run_id":       "SAT run ID when this metric was collected — foreign key to run_number_table.runID",
+        "check_time":   "Timestamp when this metric was collected",
+        "chk_date":     "Date partition derived from check_time",
+        "chk_hhmm":     "Hour and minute as integer (HHMM) derived from check_time",
+    })
+
+    # 5. account_workspaces
+    _set_table_comment(
+        schema, "account_workspaces",
+        "Registry of Databricks workspaces configured for SAT analysis, with high-level security posture flags set during "
+        "workspace enablement. Used by Genie to answer questions like ''which workspaces have SSO enabled?''"
+    )
+    _set_column_comments(schema, "account_workspaces", {
+        "workspace_id":              "Databricks workspace ID",
+        "deployment_url":            "Workspace hostname (e.g. myworkspace.cloud.databricks.com)",
+        "workspace_name":            "Human-readable workspace name",
+        "workspace_status":          "Current Databricks workspace status (e.g. RUNNING)",
+        "analysis_enabled":          "True if SAT is configured to analyze this workspace",
+        "sso_enabled":               "True if Single Sign-On is enabled for this workspace",
+        "scim_enabled":              "True if SCIM user provisioning is enabled",
+        "vpc_peering_done":          "True if VPC/VNet peering has been configured (AWS/Azure)",
+        "object_storage_encrypted":  "True if object storage encryption is configured",
+        "table_access_control_enabled": "True if table access control is enabled",
+    })
+
+    # 6. run_number_table
+    _set_table_comment(
+        schema, "run_number_table",
+        "Sequence table that issues a unique run_id for each SAT analysis execution. "
+        "Join all other tables to this on run_id to correlate findings from the same run. "
+        "Typically has one row per SAT job execution."
+    )
+    _set_column_comments(schema, "run_number_table", {
+        "runID":       "Auto-incrementing unique identifier for each SAT analysis run",
+        "check_time":  "Timestamp when this SAT run was initiated",
+    })
+
+    # 7. workspace_run_complete
+    _set_table_comment(
+        schema, "workspace_run_complete",
+        "Tracks per-workspace completion status for each SAT run. Use to identify which workspaces completed "
+        "successfully and which failed in a given run. Join to run_number_table on run_id."
+    )
+    _set_column_comments(schema, "workspace_run_complete", {
+        "workspace_id":  "Databricks workspace ID",
+        "run_id":        "SAT run ID — foreign key to run_number_table.runID",
+        "completed":     "True if the workspace analysis completed successfully in this run",
+        "check_time":    "Timestamp when the workspace analysis completed",
+        "chk_date":      "Date partition derived from check_time",
+    })
+
+    # 8. notebooks_secret_scan_results
+    _set_table_comment(
+        schema, "notebooks_secret_scan_results",
+        "TruffleHog secret scan results for Databricks notebooks. Identifies potential hardcoded secrets, API keys, "
+        "and credentials in notebook source code. When secrets_found=0 and other fields are NULL, it means the "
+        "workspace was scanned and no secrets were detected."
+    )
+    _set_column_comments(schema, "notebooks_secret_scan_results", {
+        "workspace_id":   "Databricks workspace ID where the notebook resides",
+        "notebook_id":    "Databricks notebook ID that was scanned",
+        "notebook_path":  "Full workspace path to the scanned notebook",
+        "notebook_name":  "Display name of the scanned notebook",
+        "detector_name":  "TruffleHog detector that matched (e.g. AWS, Slack, GitHub, GitLab)",
+        "secret_sha256":  "SHA-256 hash of the detected secret value — the actual secret is never stored",
+        "source_file":    "Source file within the notebook where the secret was detected",
+        "verified":       "True if TruffleHog confirmed the secret is currently active and valid",
+        "secrets_found":  "Count of secrets detected. 0 with NULL other fields means the workspace was clean.",
+        "run_id":         "SAT secret scan run ID",
+        "scan_time":      "Timestamp when the scan was performed",
+        "scan_date":      "Date partition derived from scan_time",
+        "scan_hhmm":      "Hour and minute as integer (HHMM) derived from scan_time",
+    })
+
+    # 9. clusters_secret_scan_results
+    _set_table_comment(
+        schema, "clusters_secret_scan_results",
+        "TruffleHog secret scan results for Databricks cluster configurations. Detects hardcoded secrets in Spark config, "
+        "environment variables, and init scripts. When secrets_found=0 and other fields are NULL, the workspace was "
+        "scanned and found clean."
+    )
+    _set_column_comments(schema, "clusters_secret_scan_results", {
+        "workspace_id":   "Databricks workspace ID where the cluster was found",
+        "cluster_id":     "Databricks cluster ID that was scanned",
+        "cluster_name":   "Display name of the scanned cluster",
+        "config_field":   "Cluster configuration section where the secret was found (e.g. spark_conf, env_vars)",
+        "config_key":     "Specific configuration key containing the potential secret",
+        "detector_name":  "TruffleHog detector that matched (e.g. AWS, Slack, GitHub, GitLab)",
+        "secret_sha256":  "SHA-256 hash of the detected secret value — the actual secret is never stored",
+        "source_file":    "Source location within the cluster config where the secret was detected",
+        "verified":       "True if TruffleHog confirmed the secret is currently active and valid",
+        "secrets_found":  "Count of secrets detected. 0 with NULL other fields means the cluster config was clean.",
+        "run_id":         "SAT secret scan run ID",
+        "scan_time":      "Timestamp when the scan was performed",
+        "scan_date":      "Date partition derived from scan_time",
+        "scan_hhmm":      "Hour and minute as integer (HHMM) derived from scan_time",
+    })
+
+    # 10. sat_dasf_mapping
+    _set_table_comment(
+        schema, "sat_dasf_mapping",
+        "Maps SAT security checks to Databricks AI Security Framework (DASF) controls for compliance reporting. "
+        "The dasf_control_id field encodes both the control ID and name (e.g. ''DASF-33:Manage credentials securely'') "
+        "and may be comma-separated when one SAT check maps to multiple DASF controls."
+    )
+    _set_column_comments(schema, "sat_dasf_mapping", {
+        "sat_id":           "SAT check ID — corresponds to the id column in security_best_practices",
+        "dasf_control_id":  "Databricks AI Security Framework (DASF) control identifier including the control name "
+                            "(format: ''DASF-N:Control Name''). Comma-separated when mapping to multiple controls.",
+        "dasf_control_name": "DASF control name — currently NULL; the name is encoded in dasf_control_id",
+    })
+
+    # 11. BrickHound tables (optional — skip if not installed)
+    brickhound_tables = [
+        (
+            "brickhound_vertices",
+            "Permission Analysis graph nodes representing all Databricks entities. "
+            "Known node_type values from live data: Table, View, Secret, Alert, Cluster, Schema, Job, User, SecretScope, "
+            "Query, ServingEndpoint, AccountServicePrincipal, Catalog, Group, AccountUser. "
+            "Vertex IDs follow different formats: workspace-scoped entities use ''ws_{workspace_id}_{type}:{id}'', "
+            "UC objects use ''catalog.schema.table'', account-level entities use ''account_{type}:{id}''. "
+            "Use with brickhound_edges to trace who can access what.",
+            {
+                "run_id":         "BrickHound collection run ID (format: YYYYMMDD_HHMMSS_hash). Foreign key to brickhound_collection_metadata.run_id",
+                "id":             "Unique vertex identifier. Format varies by entity type: ''ws_{workspace_id}_{type}:{entity_id}'' for workspace entities, ''catalog.schema.table'' for UC objects, ''account_{type}:{id}'' for account-level entities",
+                "node_type":      "Entity type — e.g. User, Group, AccountServicePrincipal, Table, View, Schema, Catalog, Cluster, Job, SecretScope, Query, Alert, ServingEndpoint",
+                "name":           "Technical identifier: email address for users, full catalog.schema.table path for tables, display name for other entity types",
+                "display_name":   "Human-readable display name (e.g. user full name, table name)",
+                "owner":          "Owner email or identity of this entity in Databricks",
+                "email":          "Email address — populated for User and AccountServicePrincipal node types",
+                "application_id": "OAuth application ID — populated for ServicePrincipal vertices",
+                "active":         "True if this entity is currently active in Databricks",
+                "created_at":     "Timestamp when the entity was created in Databricks",
+                "updated_at":     "Timestamp when the entity was last updated in Databricks",
+                "comment":        "Description or comment associated with this entity in Unity Catalog",
+                "properties":     "Additional entity-specific properties as JSON",
+                "metadata":       "Additional metadata about this vertex as JSON",
+            },
+        ),
+        (
+            "brickhound_edges",
+            "Permission Analysis graph edges representing relationships and permissions between Databricks entities. "
+            "UC privilege types: ALL PRIVILEGES, SELECT, USE SCHEMA, USE CATALOG, EXECUTE, READ VOLUME, "
+            "EXTERNAL USE SCHEMA, CREATE TABLE, BROWSE, MANAGE. "
+            "Structural relationship types: Contains (hierarchy), MemberOf (group membership). "
+            "Access control: WorkspaceAccess, CanManageSecret, CanReadSecret. "
+            "Use with brickhound_vertices to answer ''who can access what'' and ''what groups does this user belong to'' questions.",
+            {
+                "run_id":           "BrickHound collection run ID — foreign key to brickhound_collection_metadata.run_id",
+                "src":              "Source vertex ID or user email — the entity that holds the relationship or permission",
+                "dst":              "Destination vertex ID or object path — the entity being accessed or contained",
+                "relationship":     "Relationship type. UC grants: ALL PRIVILEGES, SELECT, USE SCHEMA, USE CATALOG, EXECUTE, READ VOLUME, CREATE TABLE. Structural: Contains, MemberOf. Access: WorkspaceAccess, CanManageSecret, CanReadSecret, MANAGE, BROWSE",
+                "permission_level": "Permission level granted. Matches relationship for UC privilege edges; NULL for structural relationships (MemberOf, Contains)",
+                "inherited":        "True if this permission is inherited through group membership or UC hierarchy; False if directly granted",
+                "properties":       "Additional edge properties as JSON",
+                "created_at":       "Timestamp when this edge record was created",
+            },
+        ),
+        (
+            "brickhound_collection_metadata",
+            "One row per Permission Analysis (BrickHound) data collection run. Tracks what was collected, "
+            "from which workspaces, and the outcome. The collection_config JSON documents exactly which entity "
+            "types were included in each run.",
+            {
+                "run_id":               "Unique run identifier in format YYYYMMDD_HHMMSS_hash (e.g. ''20260218_212211_4a73dbfd'')",
+                "collection_timestamp": "Timestamp when the data collection started",
+                "vertices_count":       "Total number of graph vertices (entities) collected in this run",
+                "edges_count":          "Total number of graph edges (relationships/permissions) collected in this run",
+                "collected_by":         "Email or identity of the service principal or user that ran the collection",
+                "collection_config":    "JSON object with 30+ boolean flags controlling which entity types were collected (e.g. collect_clusters, collect_jobs, collect_unity_catalog)",
+                "workspaces_collected": 'JSON array of workspace names successfully collected (e.g. ["plain","csp","sfe"])',
+                "workspaces_failed":    "JSON array of workspace names that failed during collection. Empty array means all workspaces succeeded.",
+                "workspace_status":     "JSON map of workspace_id to status object: {name, status, error} for each workspace",
+                "collection_mode":      "Collection scope: ''multi-workspace'' when collecting across workspaces, ''single-workspace'' for isolated runs",
+            },
+        ),
+    ]
+    for bh_table, bh_comment, bh_cols in brickhound_tables:
+        try:
+            _set_table_comment(schema, bh_table, bh_comment)
+            _set_column_comments(schema, bh_table, bh_cols)
+        except Exception:
+            loggr.warning(f"Skipping comments for {bh_table} — table may not exist in this deployment")
+
+
+# COMMAND ----------
+
 def generateGCPWSToken(deployment_url, cred_file_path,target_principal):
     from google.oauth2 import service_account
     import gcsfs
