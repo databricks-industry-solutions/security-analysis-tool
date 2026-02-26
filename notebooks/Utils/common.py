@@ -580,13 +580,13 @@ def apply_schema_comments():
     _set_table_comment(
         schema, "security_checks",
         "Core SAT results table. One row per security check per workspace per run. "
-        "Score=0 means the check passed; a positive integer is the number of violations found. "
+        "Score=0 means the check passed; Score=1 means violations found. "
         "Join to security_best_practices on id for check details, and to run_number_table on run_id for run context."
     )
     _set_column_comments(schema, "security_checks", {
         "workspaceid":        "Databricks workspace ID that was analyzed",
         "id":                 "Security check ID — foreign key to security_best_practices.id",
-        "score":              "0 = check passed; positive integer = number of violations found",
+        "score":              "0 = check passed; 1 = violation found",
         "additional_details": "Map of violation context keyed by detail type (e.g. ''message'', ''workspaceId'', resource names). Value is a descriptive string.",
         "run_id":             "SAT run ID — foreign key to run_number_table.runID",
         "check_time":         "Timestamp when this check was evaluated",
@@ -598,11 +598,12 @@ def apply_schema_comments():
     _set_table_comment(
         schema, "security_best_practices",
         "Reference catalog of all SAT security checks. Each row defines one check: its category, severity, "
-        "actionable recommendation, and which clouds it applies to. Join to security_checks on id to interpret results."
+        "actionable recommendation, and which clouds it applies to. Both id and check_id are unique per row. "
+        "Join to security_checks on id to interpret results."
     )
     _set_column_comments(schema, "security_best_practices", {
-        "id":                 "Unique integer identifier for this security check",
-        "check_id":           "Human-readable check code (e.g. DP-1, GOV-5, NS-3, IA-2, INFO-4)",
+        "id":                 "Unique integer identifier for this security check — no two rows may share the same value",
+        "check_id":           "Unique human-readable check code (e.g. DP-1, GOV-5, NS-3, IA-2, INFO-4) — no two rows may share the same value",
         "category":           "Security category: Data Protection, Governance, Identity & Access, Network Security, or Informational",
         "check":              "Short descriptive name of the security check",
         "evaluation_value":   "Threshold used during evaluation. -1 means a presence/absence check (any violation = fail); positive integer means the acceptable limit",
@@ -731,7 +732,7 @@ def apply_schema_comments():
     # 10. sat_dasf_mapping
     _set_table_comment(
         schema, "sat_dasf_mapping",
-        "Maps SAT security checks to Databricks AI Security Framework (DASF) controls for compliance reporting. "
+        "Maps SAT security checks to Databricks AI Security Framework (DASF) controls for validating each workspace against data and AI security best practices. "
         "The dasf_control_id field encodes both the control ID and name (e.g. ''DASF-33:Manage credentials securely'') "
         "and may be comma-separated when one SAT check maps to multiple DASF controls."
     )
