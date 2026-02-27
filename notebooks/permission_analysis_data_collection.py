@@ -778,7 +778,7 @@ print("="*80 + "\n")
 try:
     from brickhound.collector.core import DatabricksCollector
     from brickhound.utils.config import DatabricksConfig, CollectorConfig
-    from brickhound.graph.schema import NodeType, EdgeType
+    from brickhound.graph.schema import NodeType, EdgeType, GraphSchema
     print("Using installed Permissions Analysis Tool package")
 except ImportError:
     print("Permissions Analysis Tool package not installed, using notebook implementation")
@@ -1974,6 +1974,7 @@ metadata_schema = StructType([
     StructField("workspace_status", StringType(), True),
     StructField("collection_mode", StringType(), True),
 ])
+spark.sql(GraphSchema.get_metadata_schema().format(table_name=COLLECTION_METADATA_TABLE))
 metadata_df = spark.createDataFrame(metadata, schema=metadata_schema)
 metadata_df.write \
     .format("delta") \
