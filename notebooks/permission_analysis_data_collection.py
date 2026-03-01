@@ -782,6 +782,7 @@ try:
     print("Using installed Permissions Analysis Tool package")
 except ImportError:
     print("Permissions Analysis Tool package not installed, using notebook implementation")
+    GraphSchema = None
 
 # COMMAND ----------
 
@@ -1974,7 +1975,8 @@ metadata_schema = StructType([
     StructField("workspace_status", StringType(), True),
     StructField("collection_mode", StringType(), True),
 ])
-spark.sql(GraphSchema.get_metadata_schema().format(table_name=COLLECTION_METADATA_TABLE))
+if GraphSchema is not None:
+    spark.sql(GraphSchema.get_metadata_schema().format(table_name=COLLECTION_METADATA_TABLE))
 metadata_df = spark.createDataFrame(metadata, schema=metadata_schema)
 metadata_df.write \
     .format("delta") \
