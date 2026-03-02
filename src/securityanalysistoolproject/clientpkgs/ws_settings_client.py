@@ -31,6 +31,7 @@ class WSSettingsClient(SatDBClient):
             {"name": "enableProjectTypeInWorkspace", "defn":"Enable or disable Repos. You should see a new Repos icon in your workspace's left navigation when this feature is enabled"},
             {"name": "enableWorkspaceFilesystem", "defn":"Enable or disable Files in Repos."},
             {"name": "enableProjectsAllowList", "defn":"Enable or disable restricting commit and push operations in Repos to a configurable allow list. The allow list will be empty by default."},
+            {"name": "projectsAllowList", "defn":"Comma-separated list of allowed Git URL prefixes when the Git repository allowlist is enabled."},
             {"name": "intercomAdminConsent", "defn":"Allow Databricks to make suggestions to end users and turn on product tours to help with onboarding and engagement."},
             {"name": "enable-X-Frame-Options", "defn":"Sending the 'X-Frame-Options: sameorigin' response header prevents third-party domains from iframing Databricks."},
             {"name": "enable-X-Content-Type-Options","defn": "Sending the 'X-Content-Type-Options: nosniff' response header instructs browsers not to perform MIME type sniffing."},

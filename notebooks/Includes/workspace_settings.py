@@ -489,11 +489,15 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 def enableProjectsAllowList(df):
     value = 'false'
     defn = {'defn' : ''}
+    allowlist = ''
     for row in df.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
+        if row.name == 'enableProjectsAllowList':
+            value = row.value if row.value else 'false'
+            defn = {'defn' : row.defn.replace("'", '')}
+        elif row.name == 'projectsAllowList':
+            allowlist = row.value if row.value else ''
     if value == 'true':
-        return (id, 0, defn)
+        return (id, 0, {**defn, 'allowlist': allowlist})
     else:
         return (id, 1, defn)
 
@@ -501,7 +505,7 @@ if enabled:
     tbl_name = 'workspacesettings' + '_' + workspace_id
     sql = f'''
         SELECT * FROM {tbl_name}
-        WHERE name="enableProjectsAllowList"
+        WHERE name IN ("enableProjectsAllowList", "projectsAllowList")
     '''
     sqlctrl(workspace_id, sql, enableProjectsAllowList)
 
