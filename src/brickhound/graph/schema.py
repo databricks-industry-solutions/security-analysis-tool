@@ -173,53 +173,78 @@ class GraphSchema:
     def get_vertex_schema() -> str:
         """
         Get Spark SQL schema for vertices table
-        
+
         Returns:
             DDL string for creating vertices table
         """
         return """
             CREATE TABLE IF NOT EXISTS {table_name} (
-                id STRING NOT NULL,
-                node_type STRING NOT NULL,
-                name STRING,
-                display_name STRING,
-                email STRING,
-                application_id STRING,
-                active BOOLEAN,
-                created_at TIMESTAMP,
-                modified_at TIMESTAMP,
-                owner STRING,
-                properties MAP<STRING, STRING>,
-                metadata MAP<STRING, STRING>
+                id STRING NOT NULL COMMENT 'Unique vertex identifier. Format varies by entity type: ws_{{workspace_id}}_{{type}}:{{entity_id}} for workspace entities, catalog.schema.table for UC objects, account_{{type}}:{{id}} for account-level entities',
+                node_type STRING NOT NULL COMMENT 'Entity type — e.g. User, Group, AccountServicePrincipal, Table, View, Schema, Catalog, Cluster, Job, SecretScope, Query, Alert, ServingEndpoint',
+                name STRING COMMENT 'Technical identifier: email address for users, full catalog.schema.table path for tables, display name for other entity types',
+                display_name STRING COMMENT 'Human-readable display name (e.g. user full name, table name)',
+                email STRING COMMENT 'Email address — populated for User and AccountServicePrincipal node types',
+                application_id STRING COMMENT 'OAuth application ID — populated for ServicePrincipal vertices',
+                active BOOLEAN COMMENT 'True if this entity is currently active in Databricks',
+                created_at TIMESTAMP COMMENT 'Timestamp when the entity was created in Databricks',
+                modified_at TIMESTAMP COMMENT 'Timestamp when the entity was last updated in Databricks',
+                owner STRING COMMENT 'Owner email or identity of this entity in Databricks',
+                properties MAP<STRING, STRING> COMMENT 'Additional entity-specific properties as JSON',
+                metadata MAP<STRING, STRING> COMMENT 'Additional metadata about this vertex as JSON'
             )
             USING DELTA
             PARTITIONED BY (node_type)
-            COMMENT 'BrickHound graph vertices - Databricks objects and identities'
+            COMMENT 'BrickHound graph vertices — Databricks objects and identities. Known node_type values: Table, View, Secret, Alert, Cluster, Schema, Job, User, SecretScope, Query, ServingEndpoint, AccountServicePrincipal, Catalog, Group, AccountUser. Use with brickhound_edges to trace who can access what.'
         """
     
     @staticmethod
     def get_edge_schema() -> str:
         """
         Get Spark SQL schema for edges table
-        
+
         Returns:
             DDL string for creating edges table
         """
         return """
             CREATE TABLE IF NOT EXISTS {table_name} (
-                src STRING NOT NULL,
-                dst STRING NOT NULL,
-                relationship STRING NOT NULL,
-                permission_level STRING,
-                inherited BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP,
-                properties MAP<STRING, STRING>
+                src STRING NOT NULL COMMENT 'Source vertex ID or user email — the entity that holds the relationship or permission',
+                dst STRING NOT NULL COMMENT 'Destination vertex ID or object path — the entity being accessed or contained',
+                relationship STRING NOT NULL COMMENT 'Relationship type. UC grants: ALL PRIVILEGES, SELECT, USE SCHEMA, USE CATALOG, EXECUTE, READ VOLUME, CREATE TABLE. Structural: Contains, MemberOf. Access: WorkspaceAccess, CanManageSecret, CanReadSecret, MANAGE, BROWSE',
+                permission_level STRING COMMENT 'Permission level granted. Matches relationship for UC privilege edges; NULL for structural relationships (MemberOf, Contains)',
+                inherited BOOLEAN DEFAULT FALSE COMMENT 'True if this permission is inherited through group membership or UC hierarchy; False if directly granted',
+                created_at TIMESTAMP COMMENT 'Timestamp when this edge record was created',
+                properties MAP<STRING, STRING> COMMENT 'Additional edge properties as JSON'
             )
             USING DELTA
             PARTITIONED BY (relationship)
-            COMMENT 'BrickHound graph edges - relationships and permissions'
+            COMMENT 'BrickHound graph edges — relationships and permissions between Databricks entities. UC privilege types: ALL PRIVILEGES, SELECT, USE SCHEMA, USE CATALOG, EXECUTE, READ VOLUME, CREATE TABLE. Structural: Contains, MemberOf. Access: WorkspaceAccess, CanManageSecret, CanReadSecret. Use with brickhound_vertices to answer who can access what.'
         """
     
+    @staticmethod
+    def get_metadata_schema() -> str:
+        """
+        Get Spark SQL schema for collection metadata table
+
+        Returns:
+            DDL string for creating the brickhound_collection_metadata table
+        """
+        return """
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                run_id STRING NOT NULL COMMENT 'Unique run identifier in format YYYYMMDD_HHMMSS_hash (e.g. 20260218_212211_4a73dbfd)',
+                collection_timestamp TIMESTAMP NOT NULL COMMENT 'Timestamp when the data collection started',
+                vertices_count STRING COMMENT 'Total number of graph vertices (entities) collected in this run',
+                edges_count STRING COMMENT 'Total number of graph edges (relationships/permissions) collected in this run',
+                collected_by STRING COMMENT 'Email or identity of the service principal or user that ran the collection',
+                collection_config STRING COMMENT 'JSON object with 30+ boolean flags controlling which entity types were collected (e.g. collect_clusters, collect_jobs, collect_unity_catalog)',
+                workspaces_collected STRING COMMENT 'JSON array of workspace names successfully collected (e.g. ["plain","csp","sfe"])',
+                workspaces_failed STRING COMMENT 'JSON array of workspace names that failed during collection. Empty array means all workspaces succeeded.',
+                workspace_status STRING COMMENT 'JSON map of workspace_id to status object: {name, status, error} for each workspace',
+                collection_mode STRING COMMENT 'Collection scope: multi-workspace when collecting across workspaces, single-workspace for isolated runs'
+            )
+            USING DELTA
+            COMMENT 'One row per Permission Analysis (BrickHound) data collection run. Tracks what was collected, from which workspaces, and the outcome. The collection_config JSON documents exactly which entity types were included in each run.'
+        """
+
     @staticmethod
     def vertex_columns() -> List[str]:
         """Get list of vertex table columns"""

@@ -11,7 +11,6 @@
 /configs/security_best_practices_user.csv
 .databricks/
 .vscode/settings.json
-CLAUDE.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -194,5 +193,4 @@ notebooks/.ipynb_checkpoints/
 **/terraform.tfstate*
 
 # Project documentation and planning files
-CLAUDE.md
 docs/*Implementation_Plan.html

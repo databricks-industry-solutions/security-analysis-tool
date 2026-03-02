@@ -778,10 +778,11 @@ print("="*80 + "\n")
 try:
     from brickhound.collector.core import DatabricksCollector
     from brickhound.utils.config import DatabricksConfig, CollectorConfig
-    from brickhound.graph.schema import NodeType, EdgeType
+    from brickhound.graph.schema import NodeType, EdgeType, GraphSchema
     print("Using installed Permissions Analysis Tool package")
 except ImportError:
     print("Permissions Analysis Tool package not installed, using notebook implementation")
+    GraphSchema = None
 
 # COMMAND ----------
 
@@ -1923,6 +1924,24 @@ vertices_df.write \
     .format("delta") \
     .mode("append") \
     .saveAsTable(VERTICES_TABLE)
+spark.sql(f"COMMENT ON TABLE {VERTICES_TABLE} IS 'BrickHound graph vertices — Databricks objects and identities. Known node_type values: Table, View, Secret, Alert, Cluster, Schema, Job, User, SecretScope, Query, ServingEndpoint, AccountServicePrincipal, Catalog, Group, AccountUser. Use with brickhound_edges to trace who can access what.'")
+for _col, _comment in {
+    "run_id":         "Collection run identifier linking this vertex to a brickhound_collection_metadata row",
+    "id":             "Unique vertex identifier. Format: ws_{workspace_id}_{type}:{entity_id} for workspace entities, catalog.schema.table for UC objects, account_{type}:{id} for account-level entities",
+    "node_type":      "Entity type — e.g. User, Group, AccountServicePrincipal, Table, View, Schema, Catalog, Cluster, Job, SecretScope, Query, Alert, ServingEndpoint",
+    "name":           "Technical identifier: email address for users, full catalog.schema.table path for tables, display name for other entity types",
+    "display_name":   "Human-readable display name (e.g. user full name, table name)",
+    "owner":          "Owner email or identity of this entity in Databricks",
+    "email":          "Email address — populated for User and AccountServicePrincipal node types",
+    "application_id": "OAuth application ID — populated for ServicePrincipal vertices",
+    "active":         "True if this entity is currently active in Databricks",
+    "created_at":     "Timestamp when the entity was created in Databricks",
+    "updated_at":     "Timestamp when the entity was last updated in Databricks",
+    "comment":        "Description or comment associated with the entity (e.g. UC table or schema comments)",
+    "properties":     "Additional entity-specific properties as JSON",
+    "metadata":       "Additional metadata about this vertex as JSON",
+}.items():
+    spark.sql(f"ALTER TABLE {VERTICES_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment}'")
 print(f"    Vertices saved!")
 
 # Save edges (append mode for point-in-time snapshots)
@@ -1931,6 +1950,18 @@ edges_df.write \
     .format("delta") \
     .mode("append") \
     .saveAsTable(EDGES_TABLE)
+spark.sql(f"COMMENT ON TABLE {EDGES_TABLE} IS 'BrickHound graph edges — relationships and permissions between Databricks entities. UC privilege types: ALL PRIVILEGES, SELECT, USE SCHEMA, USE CATALOG, EXECUTE, READ VOLUME, CREATE TABLE. Structural: Contains, MemberOf. Access: WorkspaceAccess, CanManageSecret, CanReadSecret. Use with brickhound_vertices to answer who can access what.'")
+for _col, _comment in {
+    "run_id":           "Collection run identifier linking this edge to a brickhound_collection_metadata row",
+    "src":              "Source vertex ID or user email — the entity that holds the relationship or permission",
+    "dst":              "Destination vertex ID or object path — the entity being accessed or contained",
+    "relationship":     "Relationship type. UC grants: ALL PRIVILEGES, SELECT, USE SCHEMA, USE CATALOG, EXECUTE, READ VOLUME, CREATE TABLE. Structural: Contains, MemberOf. Access: WorkspaceAccess, CanManageSecret, CanReadSecret, MANAGE, BROWSE",
+    "permission_level": "Permission level granted. Matches relationship for UC privilege edges; NULL for structural relationships (MemberOf, Contains)",
+    "inherited":        "True if this permission is inherited through group membership or UC hierarchy; False if directly granted",
+    "properties":       "Additional edge properties as JSON",
+    "created_at":       "Timestamp when this edge record was created",
+}.items():
+    spark.sql(f"ALTER TABLE {EDGES_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment}'")
 print(f"    Edges saved!")
 
 # Save collection metadata (timestamp and statistics)
@@ -1979,6 +2010,20 @@ metadata_df.write \
     .format("delta") \
     .mode("append") \
     .saveAsTable(COLLECTION_METADATA_TABLE)
+spark.sql(f"COMMENT ON TABLE {COLLECTION_METADATA_TABLE} IS 'One row per Permission Analysis (BrickHound) data collection run. Tracks what was collected, from which workspaces, and the outcome. The collection_config JSON documents exactly which entity types were included in each run.'")
+for _col, _comment in {
+    "run_id":               "Unique run identifier in format YYYYMMDD_HHMMSS_hash (e.g. 20260218_212211_4a73dbfd)",
+    "collection_timestamp": "Timestamp when the data collection started",
+    "vertices_count":       "Total number of graph vertices (entities) collected in this run",
+    "edges_count":          "Total number of graph edges (relationships/permissions) collected in this run",
+    "collected_by":         "Email or identity of the service principal or user that ran the collection",
+    "collection_config":    "JSON object with 30+ boolean flags controlling which entity types were collected (e.g. collect_clusters, collect_jobs, collect_unity_catalog)",
+    "workspaces_collected": "JSON array of workspace names successfully collected",
+    "workspaces_failed":    "JSON array of workspace names that failed during collection. Empty array means all workspaces succeeded.",
+    "workspace_status":     "JSON map of workspace_id to status object with name, status, and error for each workspace",
+    "collection_mode":      "Collection scope: multi-workspace when collecting across workspaces, single-workspace for isolated runs",
+}.items():
+    spark.sql(f"ALTER TABLE {COLLECTION_METADATA_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment}'")
 print(f"    Metadata saved!")
 print(f"    Collection timestamp: {collection_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"    Workspaces collected: {len(workspaces_collected)}")
