@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC **Notebook name:** workspace_settings  
-# MAGIC **Functionality:** runs analysis logic on the workspace settings api respones and writes the results into a checks tables 
+# MAGIC **Functionality:** runs analysis logic on the workspace settings api responses and writes the results into a checks tables 
 
 # COMMAND ----------
 
