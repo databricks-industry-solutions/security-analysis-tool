@@ -386,9 +386,12 @@ All new checks leverage data already collected by SAT's existing bootstrap infra
 | **Severity** | Medium |
 | **Cloud** | AWS, Azure, GCP |
 | **Enable** | 1 |
-| **Data Source** | `workspacesettings` table: `enableProjectsAllowList` |
-| **Logic** | PASS if the Git repository allowlist is enabled (`enableProjectsAllowList = true`). Without an allowlist, workspace users can connect notebooks to any external Git repository, enabling code exfiltration to unauthorized services and introduction of malicious code from unreviewed repositories. |
-| **API** | `GET https://<workspace_url>/api/2.0/preview/workspace-conf?keys=enableProjectsAllowList` |
+| **Data Source** | `workspacesettings` table: `enableProjectsAllowList` + `projectsAllowList` |
+| **Logic** | PASS if the Git repository allowlist is enabled (`enableProjectsAllowList = true`). Without an allowlist, workspace users can connect notebooks to any external Git repository, enabling code exfiltration to unauthorized services and introduction of malicious code from unreviewed repositories. On PASS, the actual allowed URL prefixes (from `projectsAllowList`) are included in additional details so reviewers can verify the list is properly scoped. |
+| **Additional details (pass)** | `allowlist`: comma-separated allowed Git URL prefixes (e.g. `github.com/myorg,gitlab.mycompany.com`). Empty string means allowlist is enabled but no URLs have been configured yet — which is effectively the same as disabled. |
+| **Additional details (fail)** | `defn`: description of the setting only. |
+| **API** | `GET https://<workspace_url>/api/2.0/preview/workspace-conf?keys=enableProjectsAllowList,projectsAllowList` |
+| **SDK change required** | Add `projectsAllowList` to `ws_keymap` in `ws_settings_client.py` — same API call, second key. Requires wheel rebuild. |
 | **AWS Doc** | https://docs.databricks.com/repos/repos-setup.html#configure-an-allowlist-for-repos |
 | **Azure Doc** | https://learn.microsoft.com/en-us/azure/databricks/repos/repos-setup#configure-an-allowlist-for-repos |
 | **GCP Doc** | https://docs.gcp.databricks.com/repos/repos-setup.html#configure-an-allowlist-for-repos |
@@ -712,3 +715,171 @@ data already in the `workspacesettings_<workspace_id>` table — no new bootstra
 | `jobsListBackendPaginationEnabled` | Backend pagination feature flag. Not a security control. |
 | `enableDatabricksAutologgingAdminConf` | Auto-logging is a productivity feature; disabling it does not reduce data security posture. |
 | `aibi_dashboard_embedding_approved_domains` | Domain allowlist is context-dependent; no universal pass/fail. GOV-40 covers whether any embedding is allowed. |
+
+---
+
+## Phase 7: New Checks — CBI Ingress, Cross-Geo, PAT Lifetime, AI/ML Audit (Post-v0.7.0)
+
+**Sources:** Product dashboard additions (CBI, cross-geo processing, PAT lifetime columns/metrics)
+and Ares Management customer deep-dive feedback (remove confusing checks, clarify wording, add
+AI/ML guardrail checks for FMAPI and Genie).
+
+### Summary
+
+| ID | Check ID | Category | Check Name | Severity | Data Available? |
+|---|---|---|---|---|---|
+| 121 | NS-12 | Network Security | Context-Based Ingress (CBI) policy configured | High | ✅ Already in `account_networkpolicies` |
+| 122 | IA-10 | Identity & Access | Maximum PAT token lifetime ≤ 90 days | Medium | ✅ Already in `workspacesettings` |
+| 123 | GOV-44 | Governance | Model serving inference tables enabled | Low | ✅ Already in `model_serving_endpoints` |
+| 124 | NS-13 | Network Security | Cross-Geo processing restricted for AI Designated Services | Medium | ⚠️ Settings V2 type name TBD |
+
+Additionally: **IA-5 `evaluation_value` should be updated to `90`** (CSV-only change — no code needed).
+
+---
+
+### CSV-Only Fix: Tighten IA-5 threshold to 90 days
+
+| Field | Value |
+|---|---|
+| **Check ID** | IA-5 |
+| **Change** | Set `evaluation_value` from current value → `90` |
+| **Rationale** | The product standard (surfaced in the `percent_workspaces_with_pat_tokens_less_than_91d` metric) is 91 days. IA-5 currently checks whether any max-lifetime limit is set, but does not enforce how short it is. A workspace with `maxTokenLifetimeDays = 180` passes IA-5 today. Updating `evaluation_value` to 90 makes the check flag workspaces above the 90-day threshold. IA-10 (below) provides a separate explicit check for the same boundary. |
+
+---
+
+### Tier 1 — Zero new data collection required
+
+#### NS-12 (id=121) — Context-Based Ingress (CBI) policy configured
+
+| Field | Value |
+|---|---|
+| **Check ID** | NS-12 |
+| **CSV id** | 121 |
+| **Category** | Network Security |
+| **Severity** | High |
+| **Cloud** | AWS, Azure, GCP |
+| **Enable** | 1 |
+| **Status** | CBI is Public Preview as of Dec 2025 — enable check now, monitor for GA |
+| **Data Source** | `account_networkpolicies` table: `ingress.restriction_mode` (already in explicit schema at `accounts_bootstrap.py` lines 250–254) |
+| **Logic** | PASS if the network policy assigned to the workspace has `ingress.restriction_mode = 'RESTRICTED_ACCESS'`. VIOLATION if no policy is assigned or ingress mode is `FULL_ACCESS`. Context-Based Ingress controls who can call Databricks APIs and reach the workspace UI based on a combination of identity (user/SP/group), network source (IP/CIDR), and access scope (UI, REST API, Apps, Lakehouse Compute). Without CBI, any authenticated identity can call the workspace from any network. Complements NS-9 (which checks egress only). Both NS-9 and NS-12 evaluate the same `account_networkpolicies` table — NS-12 evaluates the `ingress` subtree instead of `egress`. |
+| **API** | `GET https://accounts.cloud.databricks.com/api/2.0/accounts/<account_id>/network-policies` |
+| **AWS Doc** | https://docs.databricks.com/aws/en/security/network/front-end/context-based-ingress |
+| **Azure Doc** | https://learn.microsoft.com/en-us/azure/databricks/security/network/front-end/context-based-ingress |
+| **GCP Doc** | https://docs.gcp.databricks.com/en/security/network/front-end/context-based-ingress |
+| **DASF** | DASF-4:Restrict access using private link |
+| **Bootstrap change** | None. `ingress.restriction_mode` is already in the explicit schema. Check logic mirrors NS-9's SQL but queries `np.ingress.restriction_mode` instead of `np.egress.network_access.restriction_mode`. |
+
+#### IA-10 (id=122) — Maximum PAT token lifetime ≤ 90 days
+
+| Field | Value |
+|---|---|
+| **Check ID** | IA-10 |
+| **CSV id** | 122 |
+| **Category** | Identity & Access |
+| **Severity** | Medium |
+| **Cloud** | AWS, Azure, GCP |
+| **Enable** | 1 |
+| **Evaluation value** | 90 |
+| **Data Source** | `workspacesettings` table: `maxTokenLifetimeDays` (already collected) |
+| **Logic** | PASS if `maxTokenLifetimeDays` is set AND its numeric value ≤ 90. IA-5 checks whether any finite token lifetime limit exists at all; IA-10 enforces that the limit meets the 91-day industry standard. A workspace with `maxTokenLifetimeDays = 180` passes IA-5 but fails IA-10. Both checks are needed: IA-5 catches the "no limit at all" case, IA-10 catches the "limit is too permissive" case. |
+| **API** | `GET https://<workspace_url>/api/2.0/preview/workspace-conf?keys=maxTokenLifetimeDays` |
+| **AWS Doc** | https://docs.databricks.com/administration-guide/access-control/tokens.html |
+| **Azure Doc** | https://learn.microsoft.com/en-us/azure/databricks/administration-guide/access-control/tokens |
+| **GCP Doc** | https://docs.gcp.databricks.com/administration-guide/access-control/tokens.html |
+| **DASF** | DASF-33:Manage credentials securely |
+| **Bootstrap change** | None. `maxTokenLifetimeDays` is already in `workspacesettings`. |
+
+#### GOV-44 (id=123) — Model serving inference tables enabled
+
+| Field | Value |
+|---|---|
+| **Check ID** | GOV-44 |
+| **CSV id** | 123 |
+| **Category** | Governance |
+| **Severity** | Low |
+| **Cloud** | AWS, Azure, GCP |
+| **Enable** | 1 |
+| **Data Source** | `model_serving_endpoints` table: `auto_capture_config.enabled` field (already bootstrapped) |
+| **Logic** | PASS if ALL model serving endpoints have `auto_capture_config.enabled = true`. Applies to all endpoint types (Foundation Model, External Model, custom). Inference tables capture every request and response sent to serving endpoints, creating the audit trail needed to detect data exfiltration via model queries, prompt injection, or misuse of Foundation Model APIs. Without inference tables there is no forensic record of what data was sent to which model. This is the AI/ML equivalent of audit log enablement (GOV-3/GOV-15). |
+| **API** | `GET https://<workspace_url>/api/2.0/serving-endpoints` |
+| **AWS Doc** | https://docs.databricks.com/machine-learning/model-serving/inference-tables.html |
+| **Azure Doc** | https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/inference-tables |
+| **GCP Doc** | https://docs.gcp.databricks.com/machine-learning/model-serving/inference-tables.html |
+| **DASF** | DASF-55:Monitor Audit logs |
+| **Bootstrap change** | None. `model_serving_endpoints` table is already bootstrapped. Verify `auto_capture_config` struct is included in the bootstrap response (check `serving_endpoints_client.py`). |
+
+---
+
+### Tier 2 — Requires Settings V2 type name discovery
+
+#### NS-13 (id=124) — Cross-Geo processing restricted for AI Designated Services
+
+| Field | Value |
+|---|---|
+| **Check ID** | NS-13 |
+| **CSV id** | 124 |
+| **Category** | Network Security |
+| **Severity** | Medium |
+| **Cloud** | AWS, Azure, GCP |
+| **Enable** | 1 |
+| **Data Source** | Workspace Settings V2 — type name **TBD** |
+| **Logic** | PASS if cross-Geo processing is restricted, meaning Foundation Model API, Genie, and other Designated Services are not permitted to process data outside the workspace's geographic region. This is the primary data residency control for AI features. For workspaces in US/EU Geos the default is already restricted; the check catches workspaces outside US/EU or where the default was overridden, which is a data sovereignty risk for regulated industries (HIPAA, GDPR, PCI-DSS). |
+| **Default behavior** | Restricted (on) for US/EU workspaces; unrestricted (off) for workspaces in other Geos without Compliance Security Profile. |
+| **Blocker** | The exact Settings V2 type name is not publicly documented. Discover via `list_settings_metadata` MCP tool or Databricks account console → workspace Security & Compliance tab. Once confirmed, add method to `ws_settings_client.py` + bootstrap call in `workspace_bootstrap.py`. |
+| **AWS Doc** | https://docs.databricks.com/aws/en/resources/designated-services |
+| **Azure Doc** | https://learn.microsoft.com/en-us/azure/databricks/resources/designated-services |
+| **GCP Doc** | https://docs.gcp.databricks.com/en/resources/designated-services |
+| **DASF** | DASF-8:Encrypt data at rest |
+
+---
+
+### Ares Customer Feedback: Action Items
+
+#### 1. Outdated/Inapplicable Checks (Customer Confusion)
+
+The most common source of confusion is cloud-specific checks showing for the wrong cloud type.
+Verify that the `aws`/`azure`/`gcp` columns in `security_best_practices.csv` are correct for
+each check and that SAT's cloud-type filter excludes them before display:
+
+| Check | Cloud Flag to Verify |
+|---|---|
+| GOV-14 — Enforce AWS IMDSv2 | `aws=1, azure=0, gcp=0` |
+| NS-6 — Secure cluster connectivity (NoPublicIP) | `aws=0, azure=1, gcp=0` |
+| GOV-3 — Log delivery configurations | `aws=1, azure=1, gcp=0` |
+| DP-3 — Customer-managed keys for managed services | `aws=1, azure=0, gcp=0` |
+| INFO-37 — Compliance security profile (account) | `aws=1, azure=0, gcp=0` |
+| INFO-39/INFO-40/INFO-41 — CSP/ESM workspace+account | `aws=1, azure=1, gcp=0` |
+
+Also review checks with `enable=0` — consider removing from output entirely rather than
+surfacing as disabled, since disabled checks with visible check IDs confuse customers.
+
+#### 2. Wording Clarification (Priority Candidates)
+
+| Check | Wording Issue |
+|---|---|
+| NS-9 — Workspaces have proper network policy configuration | "Proper" is vague. Reword to: "Workspaces have serverless egress network policy assigned and enforced." |
+| GOV-13 — Enforce User Isolation | Name doesn't make clear this is about shared clusters. Suggest: "Shared clusters use UC isolation mode (not No Isolation Shared)." |
+| INFO-38 — Third-party library control | "Artifact allowlists" as the underlying mechanism is unfamiliar. Suggest: "Workspace artifact allowlist restricts library installation to approved sources." |
+| IA-4 — PAT tokens with no lifetime limit | Wording implies "no limit" is the violation — but customers read it as "tokens that have no limit" being checked, which is correct. However, the recommendation text could be clearer that unlimited-lifetime tokens are the problem. |
+| GOV-10/GOV-11 — DBFS root / DBFS mounts | These appear redundant to customers who don't understand the distinction. Add explicit note: "DBFS root (GOV-10) = Hive Metastore managed table location. DBFS mounts (GOV-11) = FUSE mount points bypassing UC." |
+
+#### 3. AI/ML Guardrails (FMAPI and Genie)
+
+Key findings from research:
+
+- **Foundation Model API (FMAPI):** No workspace-level admin toggle for safety filters — those are per-request parameters. The meaningful admin controls are: (a) inference table logging (GOV-44 above), (b) cross-Geo data residency (NS-13 above), (c) IP access list enforcement (NS-5, already checked). No additional FMAPI-specific admin check is feasible with current APIs.
+
+- **Genie (AI/BI):** Security is governed by Unity Catalog table permissions (already covered by GOV-12/22), IP access lists (NS-5), and the AI/BI embedding policy (GOV-40). No separate Genie-specific admin security toggle exists. A Genie space permissions check (verifying explicit CAN_VIEW/CAN_MANAGE assignments per space) is technically possible via `GET /api/2.0/genie/spaces/{id}/permissions` but is expensive at scale (one API call per space) and deferred pending Genie API GA and bulk permission retrieval support.
+
+- **Recommended messaging for customers:** Frame GOV-44 (inference tables) and NS-13 (cross-geo) as the primary AI/ML guardrail additions. These directly address the "what data is being sent to AI services and is it leaving my region?" concerns.
+
+---
+
+### Not Recommended (Phase 7)
+
+| Item | Reason |
+|---|---|
+| FMAPI safety filter check | `enable_safety_filter` is a per-request parameter, not an admin workspace setting. |
+| Genie space permissions check | One API call per space — too expensive at scale. Defer pending bulk API. |
+| Composite "frontend network protection" check | NS-3 + NS-5 + NS-12 individually provide clearer remediation paths. Composite belongs in the dashboard scoring layer, not the check table. |
+| `mlflowModelServingEndpointCreationEnabled` (as FMAPI control) | Disabling this disables ALL model serving (not just FMAPI). Too broad as a security recommendation. Already in Phase 6 as DP-17 for the data protection angle. |
