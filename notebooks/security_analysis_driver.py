@@ -93,7 +93,7 @@ display(workspacesdf)
 workspaces = workspacesdf.collect()
 if workspaces is None or len(workspaces) == 0:
     loggr.info(
-        "Workspaes are not configured for analyis, check the workspace_configs.csv and "
+        "Workspaces are not configured for analysis, check the workspace_configs.csv and "
         + json_["analysis_schema_name"]
         + ".account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. "
     )
@@ -110,21 +110,10 @@ def processWorkspace(wsrow):
     hostname = "https://" + wsrow.deployment_url
     cloud_type = getCloudType(hostname)
     workspace_id = wsrow.workspace_id
-    sso = wsrow.sso_enabled
-    scim = wsrow.scim_enabled
-    vpc_peering_done = wsrow.vpc_peering_done
-    object_storage_encrypted = wsrow.object_storage_encrypted
-    table_access_control_enabled = wsrow.table_access_control_enabled
-
     clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
     ws_json = dict(json_)
     ws_json.update(
         {
-            "sso": sso,
-            "scim": scim,
-            "object_storage_encryption": object_storage_encrypted,
-            "vpc_peering": vpc_peering_done,
-            "table_access_control_enabled": table_access_control_enabled,
             "url": hostname,
             "workspace_id": workspace_id,
             "cloud_type": cloud_type,

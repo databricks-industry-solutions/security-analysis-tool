@@ -195,30 +195,6 @@ if enabled:
 
 # COMMAND ----------
 
-id = '40' # Enforce User Isolation
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def enforceUserIsolation(df): 
-    value = 'false'
-    defn = {'defn' : ''}
-    for row in df.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'): 
-        return (id, 0, defn)
-    else:
-        return (id, 1, defn)
-
-if enabled:
-    tbl_name = 'workspacesettings' + '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name} 
-        WHERE name="enforceUserIsolation"
-    '''
-    sqlctrl(workspace_id, sql, enforceUserIsolation)
-
-# COMMAND ----------
-
 id = '43' # Enable Enforce ImdsV2
 enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 
@@ -291,78 +267,6 @@ if enabled:
 
 # COMMAND ----------
 
-id = '46' # Manage third-party iFraming prevention
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def enableXFrameOptions(df): 
-    value = 'false'
-    defn = {'defn' : ''}
-    for row in df.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
-    if(value == None or value == 'true'): # if is set or left as default (None)
-        return (id, 0, defn)
-    else:
-        return (id, 1, defn)
-
-if enabled:
-    tbl_name = 'workspacesettings' + '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name} 
-        WHERE name="enable-X-Frame-Options"
-    '''
-    sqlctrl(workspace_id, sql, enableXFrameOptions)
-
-# COMMAND ----------
-
-id = '47' # Manage MIME type sniffing prevention
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def enableXContentTypeOptions(df): 
-    value = 'false'
-    defn = {'defn' : ''}
-    for row in df.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
-    if(value == None or value == 'true'): # if is set or left as default (None)
-        return (id, 0, defn)
-    else:
-        return (id, 1, defn)
-
-if enabled:
-    tbl_name = 'workspacesettings' + '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name} 
-        WHERE name="enable-X-Content-Type-Options"
-    '''
-    sqlctrl(workspace_id, sql, enableXContentTypeOptions)
-
-# COMMAND ----------
-
-id = '48' # Manage XSS attack page rendering prevention
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def enableXXSSProtection(df): 
-    value = 'false'
-    defn = {'defn' : ''}
-    for row in df.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
-    if(value == None or value == 'true'): # if is set or left as default (None)
-        return (id, 0, defn)
-    else:
-        return (id, 1, defn)
-
-if enabled:
-    tbl_name = 'workspacesettings'+ '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name} 
-        WHERE name="enable-X-XSS-Protection"
-    '''
-    sqlctrl(workspace_id, sql, enableXXSSProtection)
-
-# COMMAND ----------
-
 id = '49' # Store Interactive Notebook Results in Customer Account
 enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 
@@ -432,54 +336,6 @@ if enabled:
         WHERE name="enableFileStoreEndpoint"
     '''
     sqlctrl(workspace_id, sql, enableFileStoreEndpoint)
-
-# COMMAND ----------
-
-id = '63' # Legacy Global Init Scripts
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def enableDeprecatedGlobalInitScripts(df): 
-    value = 'false'
-    defn = {'defn' : ''}
-    for row in df.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'):
-        return (id, 1, defn)
-    else:
-        return (id, 0, defn)
-
-if enabled:
-    tbl_name = 'workspacesettings' + '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name} 
-        WHERE name="enableDeprecatedGlobalInitScripts"
-    '''
-    sqlctrl(workspace_id, sql, enableDeprecatedGlobalInitScripts)
-
-# COMMAND ----------
-
-id = '65' # Legacy Global Init Scripts
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def enableDeprecatedClusterNamedInitScripts(df): 
-    value = 'false'
-    defn = {'defn' : ''}
-    for row in df.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'):
-        return (id, 1, defn)
-    else:
-        return (id, 0, defn)
-
-if enabled:
-    tbl_name = 'workspacesettings' + '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name} 
-        WHERE name="enableDeprecatedClusterNamedInitScripts"
-    '''
-    sqlctrl(workspace_id, sql, enableDeprecatedClusterNamedInitScripts)
 
 # COMMAND ----------
 

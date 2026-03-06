@@ -213,7 +213,7 @@ def readWorkspaceConfigFile():
     prefix = getConfigPath()
 
     dfa = pd.DataFrame()
-    schema = "workspace_id string, deployment_url string, workspace_name string,workspace_status string, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encrypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean"
+    schema = "workspace_id string, deployment_url string, workspace_name string,workspace_status string, connection_test boolean, analysis_enabled boolean"
     dfexist = spark.createDataFrame([], schema)
     try:
         dict = {
@@ -562,12 +562,7 @@ def create_account_workspaces_table():
             deployment_url string,
             workspace_name string,
             workspace_status string,
-            analysis_enabled boolean,
-            sso_enabled boolean,
-            scim_enabled boolean,
-            vpc_peering_done boolean,
-            object_storage_encrypted boolean,
-            table_access_control_enabled boolean
+            analysis_enabled boolean
             )
             USING DELTA"""
     )
@@ -582,11 +577,6 @@ def create_account_workspaces_table():
         "workspace_name":               "Human-readable workspace name",
         "workspace_status":             "Current Databricks workspace status (e.g. RUNNING)",
         "analysis_enabled":             "True if SAT is configured to analyze this workspace",
-        "sso_enabled":                  "True if Single Sign-On is enabled for this workspace",
-        "scim_enabled":                 "True if SCIM user provisioning is enabled",
-        "vpc_peering_done":             "True if VPC/VNet peering has been configured (AWS/Azure)",
-        "object_storage_encrypted":     "True if object storage encryption is configured",
-        "table_access_control_enabled": "True if table access control is enabled",
     })
 
 
@@ -792,8 +782,8 @@ def process_json_schema(df):
 # COMMAND ----------
 
 # For testing
-JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": false, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false}'
+JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll"}'
 
 # COMMAND ----------
 
-JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68",  "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "sso": true, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false,  "cloud_type":"azure"}'
+JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68",  "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "cloud_type":"azure"}'
