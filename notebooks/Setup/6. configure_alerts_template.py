@@ -183,27 +183,12 @@ folder_id = create_ws_folder(ws, 'SAT_alerts')
 # COMMAND ----------
 
 import requests
-from core.dbclient import SatDBClient
 
-data_source_id =''
 user_id = None
 DOMAIN = ws.deployment_url
-  
-   
-loggr.info(f"Looking for data_source_id for : {json_['sql_warehouse_id']}!") 
-       
-response = requests.get(
-          'https://%s/api/2.0/preview/sql/data_sources' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % token},
-          json=None,
-          timeout=60  
-        )
-resources = json.loads(response.text)
-#print (resources)
-for resource in resources:
-    if resource['endpoint_id'] == json_['sql_warehouse_id']:
-        data_source_id = resource['id']
-        loggr.info(f"Found data_source_id for : {json_['sql_warehouse_id']} -> {data_source_id}!") 
+
+data_source_id = json_['sql_warehouse_id']
+loggr.info(f"Using warehouse ID as data_source_id: {data_source_id}")
 
 # COMMAND ----------
 
@@ -221,21 +206,6 @@ loggr.info(f"Creating alerts on: {DOMAIN}!")
 for ws_to_load in workspaces:
 
     alert_name = "sat_alerts_"+ws_to_load.workspace_id
-    body = {"name" : alert_name}
-    response = requests.get(
-              'https://%s/api/2.0/sql/alerts' % (DOMAIN),
-              json = body,
-              headers={'Authorization': 'Bearer %s' % token},
-              timeout=60)
-    alerts = response.json()
-    found = False
-    #for alert in alerts:
-    #    if (alert['name'] == alert_name):
-    #        found = True
-    #if alert is already configured, or folder is not found move on to next ws
-    if (response.status_code == 200 and found):
-        loggr.info(f"Alert already configured for workspace {ws_to_load.workspace_id}") 
-        continue
 
     if (folder_id is None):
         loggr.info(f"Folder can't be created or found {ws_to_load.workspace_id}") 
