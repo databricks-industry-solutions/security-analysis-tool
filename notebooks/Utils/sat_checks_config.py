@@ -19,8 +19,8 @@ def get_sat_check_config():
     check_id = sat_check.split("_")[0]
 
     s_sql = """
-                SELECT enable, evaluation_value, alert
-                FROM {analysis_schema_name}.security_best_practices 
+                SELECT enable, evaluation_value
+                FROM {analysis_schema_name}.security_best_practices
                 WHERE check_id= '{check_id}'
             """.format(
         check_id=check_id, analysis_schema_name=json_["analysis_schema_name"]
@@ -31,13 +31,11 @@ def get_sat_check_config():
 
     enable = check["enable"][0]
     evaluate = check["evaluation_value"][0]
-    alert = check["alert"][0]
 
     dbutils.widgets.dropdown(
         "check_enabled", str(enable), ["0", "1"], "b. Check Enabled"
     )
     dbutils.widgets.text("evaluation_value", str(evaluate), "c. Evaluation Value")
-    dbutils.widgets.text("alert", str(alert), "d. Alert")
 
 
 def set_sat_check_config():
@@ -45,20 +43,17 @@ def set_sat_check_config():
     sat_check = dbutils.widgets.get("sat_check")
     enable = dbutils.widgets.get("check_enabled")
     evaluation_value = dbutils.widgets.get("evaluation_value")
-    alert = dbutils.widgets.get("alert")
 
     check_id = sat_check.split("_")[0]
 
     s_sql = """
-                UPDATE  {analysis_schema_name}.security_best_practices 
-                SET enable = {enable}, 
-                    evaluation_value={evaluation_value}, 
-                    alert = {alert}
+                UPDATE  {analysis_schema_name}.security_best_practices
+                SET enable = {enable},
+                    evaluation_value={evaluation_value}
                 WHERE check_id= '{check_id}'
             """.format(
         enable=enable,
         evaluation_value=evaluation_value,
-        alert=alert,
         check_id=check_id,
         analysis_schema_name=json_["analysis_schema_name"],
     )

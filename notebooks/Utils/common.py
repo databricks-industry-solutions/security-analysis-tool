@@ -282,14 +282,13 @@ def readBestPracticesConfigsFile():
             "azure",
             "gcp",
             "enable",
-            "alert",
             "logic",
             "api",
             doc_url,
         ]
 
         schema = """id int, check_id string,category string,check string, evaluation_value int,severity string,
-                recommendation string,aws int,azure int,gcp int,enable int,alert int, logic string, api string,  doc_url string"""
+                recommendation string,aws int,azure int,gcp int,enable int, logic string, api string,  doc_url string"""
 
         security_best_practices_pd = pd.read_csv(
             origfile, header=0, usecols=schema_list
@@ -310,7 +309,6 @@ def readBestPracticesConfigsFile():
             "azure",
             "gcp",
             "enable",
-            "alert",
             "logic",
             "api",
         )
@@ -336,7 +334,6 @@ def readBestPracticesConfigsFile():
             "azure":            "1 if this check applies to Azure-hosted workspaces, 0 otherwise",
             "gcp":              "1 if this check applies to GCP-hosted workspaces, 0 otherwise",
             "enable":           "1 if this check is currently enabled for evaluation, 0 if disabled",
-            "alert":            "1 if alerts are configured for failures of this check, 0 otherwise",
             "logic":            "Human-readable description of the check evaluation logic",
             "api":              "Databricks API endpoint or command used to collect data for this check",
         })
