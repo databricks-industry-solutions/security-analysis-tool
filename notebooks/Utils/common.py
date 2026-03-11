@@ -367,13 +367,13 @@ def load_sat_dasf_mapping():
   _set_table_comment(
       json_["analysis_schema_name"], "sat_dasf_mapping",
       "Maps SAT security checks to Databricks AI Security Framework (DASF) controls for validating each workspace against data and AI security best practices. "
-      "The dasf_control_id field encodes both the control ID and name (e.g. ''DASF-33:Manage credentials securely'') "
+      "The dasf_control_id field encodes both the control ID and name (e.g. DASF-33:Manage credentials securely) "
       "and may be comma-separated when one SAT check maps to multiple DASF controls."
   )
   _set_column_comments(json_["analysis_schema_name"], "sat_dasf_mapping", {
       "sat_id":            "SAT check ID — corresponds to the id column in security_best_practices",
       "dasf_control_id":   "Databricks AI Security Framework (DASF) control identifier including the control name "
-                           "(format: ''DASF-N:Control Name''). Comma-separated when mapping to multiple controls.",
+                           "(format: DASF-N:Control Name). Comma-separated when mapping to multiple controls.",
       "dasf_control_name": "DASF control name — currently NULL; the name is encoded in dasf_control_id",
   })
   display(sat_dasf_mapping)
@@ -542,7 +542,7 @@ def create_account_info_table():
         "workspaceid": "Databricks workspace ID this metric belongs to",
         "name":        "Coded metric key (e.g. AS-1=account ID, AS-2=cloud region, AS-4=pricing tier, WST-1=job count)",
         "value":       'JSON-encoded metric value, always in format: {"value": "<metric_value>"}',
-        "category":    "Metric category: ''Account Stats'' for account-level properties, ''Workspace Stats'' for workspace-level counts",
+        "category":    "Metric category: Account Stats for account-level properties, Workspace Stats for workspace-level counts",
         "run_id":      "SAT run ID when this metric was collected — foreign key to run_number_table.runID",
         "check_time":  "Timestamp when this metric was collected",
         "chk_date":    "Date partition derived from check_time",
@@ -568,7 +568,7 @@ def create_account_workspaces_table():
     _set_table_comment(
         schema, "account_workspaces",
         "Registry of Databricks workspaces configured for SAT analysis, with high-level security posture flags set during "
-        "workspace enablement. Used by Genie to answer questions like ''which workspaces have SSO enabled?''"
+        "workspace enablement. Used by Genie to answer questions like: which workspaces have SSO enabled?"
     )
     _set_column_comments(schema, "account_workspaces", {
         "workspace_id":                 "Databricks workspace ID",
