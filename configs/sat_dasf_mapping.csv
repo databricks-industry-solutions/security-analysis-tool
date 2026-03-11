@@ -2,7 +2,6 @@ sat_id,dasf_control_id,dasf_control_name
 1,DASF-33:Manage credentials securely,
 2,"DASF-8:Encrypt data at rest, DASF-30:Encrypt models",
 3,"DASF-8:Encrypt data at rest, DASF-30:Encrypt models",
-4,DASF-8:Encrypt data at rest,
 8,"DASF-14:Audit actions performed on datasets, DASF-55:Monitor Audit logs",
 9,DASF-38:Platform security — vulnerability management,
 10,DASF-38:Platform security — vulnerability management,

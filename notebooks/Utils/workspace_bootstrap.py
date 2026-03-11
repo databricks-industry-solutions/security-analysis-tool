@@ -150,14 +150,6 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('dbsql_workspaceconfig' + '_' + workspace_id, db_sql_client.get_sql_warehouse_configuration)
-
-# COMMAND ----------
-
-bootstrap('dbsql_alerts' + '_' + workspace_id, db_sql_client.get_alerts_list)
-
-# COMMAND ----------
-
 bootstrap('dbsql_warehouselistv2' + '_' + workspace_id, db_sql_client.get_sql_warehouse_listv2)
 
 # COMMAND ----------

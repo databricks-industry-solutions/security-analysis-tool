@@ -75,12 +75,6 @@ spark.sql(f"USE {json_['intermediate_schema']}")
 # COMMAND ----------
 
 
-sso = bool(json_['sso'])
-scim = bool(json_['scim'])
-object_storage_encryption = bool(json_['object_storage_encryption'])
-vpc_peering = bool(json_['vpc_peering'])
-table_access_control =  bool(json_['table_access_control_enabled'])
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -90,61 +84,6 @@ table_access_control =  bool(json_['table_access_control_enabled'])
 # MAGIC * BYOVPC
 # MAGIC * IPAccessList
 # MAGIC * VPC Peering
-
-# COMMAND ----------
-
-# DBTITLE 1,NPIP - SSH Public Keys
-check_id='33' #All Purpose Cluster Public Keys
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-import pyspark.sql.functions as F
-
-#ssh_public_keys
-def ssh_public_keys(df):
-    if df is not None and not isEmpty(df):
-        df = df.select(F.col('cluster_id'),F.regexp_replace(F.col('cluster_name'), '[\"\'\\\\]', '_').alias('cluster_name')) 
-        clusters = df.collect()
-        cluster_dict = {i.cluster_id:i.cluster_name for i in clusters}
-        print(cluster_dict)
-        return (check_id, 1, cluster_dict)
-    else:
-        return (check_id, 0, {})   
-
-if enabled:
-    tbl_name = 'clusters' + '_' + workspace_id
-    sql=f'''
-          SELECT * 
-          FROM {tbl_name} 
-          WHERE size(ssh_public_keys) > 0  AND 
-            (cluster_source='UI' OR cluster_source='API') AND workspace_id = "{workspaceId}" 
-    '''
-    sqlctrl(workspace_id, sql, ssh_public_keys)
-
-# COMMAND ----------
-
-# DBTITLE 1,NPIP - SSH Public Keys - Job Cluster
-check_id='34' #Job Cluster Public Keys
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-#ssh_public_keys
-def ssh_public_keysjob(df):
-    if df is not None and len(df.columns)==0:
-        return (check_id, 0, {'ssh':'no clusters have ssh public key'})
-    elif df is not None and not isEmpty(df):
-        jobcluster = df.collect()
-        jobcluster_dict = {i.job_id:"ssh_key_present" for i in jobcluster}    
-        print(jobcluster_dict)
-        return (check_id, 1, jobcluster_dict)
-    else:
-        return (check_id, 0, {})    
-
-if enabled:
-    tbl_name = 'jobs' + '_' + workspace_id
-    sql =f'''
-      SELECT job_id 
-      FROM  {tbl_name}
-      WHERE settings.new_cluster.ssh_public_keys is not null AND workspace_id = "{workspaceId}" 
-    '''
-    sqlctrl(workspace_id, sql, ssh_public_keys)
 
 # COMMAND ----------
 
@@ -305,25 +244,6 @@ if enabled:
 
 # COMMAND ----------
 
-# DBTITLE 1,VPC Peer
-check_id='28' #VPC Peering
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-workspaceId = workspace_id
-
-def vpc_peering(df):
-    if vpc_peering:
-        return (check_id, 0,  {})
-    else:
-        return (check_id, 1, {'workspaceId': workspaceId})
-
-    
-# The 1=1 logic is intentional to get the human input as an answer for this check 
-if enabled:  
-    sqlctrl(workspace_id, '''select * where 1=1''', vpc_peering) 
-
-# COMMAND ----------
-
 check_id='89' #NS-7 Secure model serving endpoints
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -343,64 +263,6 @@ if enabled:
         
     '''
     sqlctrl(workspace_id, sql, model_serving_endpoints)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # Identity & Access
-# MAGIC * SSO
-# MAGIC * SCIM
-# MAGIC * RBAC
-# MAGIC * Token Management (IA-4)
-
-# COMMAND ----------
-
-# DBTITLE 1,SSO
-check_id='18' #SSO
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def sso_rule(df):
-    if sso:
-        return (check_id, 0, {})
-    else:
-        return (check_id, 1, {'workspaceId': workspaceId})
-    
-
-    #The 1=1 logic is intentional to get the human input as an answer for this check
-if enabled:
-    sqlctrl(workspace_id, '''select * where 1=1''', sso_rule) 
-
-# COMMAND ----------
-
-# DBTITLE 1,SCIM
-check_id='19' #SCIM  
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def scim_rule(df):
-    if scim:
-        return (check_id, 0,  {})
-    else:
-        return (check_id, 1, {'workspaceId': workspaceId})
-
-#The 1=1 logic is intentional to get the human input as an answer for this check
-if enabled:
-   sqlctrl(workspace_id, '''select * where 1=1''', scim_rule) 
-
-# COMMAND ----------
-
-# DBTITLE 1,Table Access Control - in workspace admin
-check_id='20' #Table Access Control
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def rbac_rule(df):
-    if table_access_control:
-        return (check_id, 0,  {})
-    else:
-        return (check_id, 1, {'workspaceId': workspaceId})
-
-#The 1=1 logic is intentional to get the human input as an answer for this check
-if enabled:
-    sqlctrl(workspace_id, '''select * where 1=1''', rbac_rule) 
 
 # COMMAND ----------
 
@@ -535,25 +397,6 @@ if enabled:
 
 # COMMAND ----------
 
-check_id='42' #Use service principals
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-service_principals_evaluation_value = sbp_rec['evaluation_value']
-def use_service_principals(df):  
-    if df is not None and not isEmpty(df) and  len(df.collect()) >= service_principals_evaluation_value:
-        return (check_id, 0, {'SPs': len(df.collect())})
-    else:
-        return (check_id, 1, {'SPs':'no serviceprincipals found'})
-
-if enabled:
-    tbl_name = 'serviceprincipals' + '_' + workspace_id
-    sql=f'''
-         SELECT displayName as serviceprincipals 
-         FROM {tbl_name} 
-    '''
-    sqlctrl(workspace_id, sql, use_service_principals)
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Data Protection
 # MAGIC * Secrets
@@ -642,23 +485,6 @@ if enabled:
 
 # COMMAND ----------
 
-# DBTITLE 1,Object Storage  Encryption
-check_id='4' #Object Storage  Encryption
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-# Report on Clusters that do not have a byok id associated with them
-def object_storage_encryption_rule(df):
-    if object_storage_encryption:
-        return (check_id, 0, {})
-    else:
-        return (check_id, 1, {'workspaceId': workspaceId})
-
-#The 1=1 logic is intentional to get the human/manual input as an answer for this check
-if enabled:  
-    sqlctrl(workspace_id, '''select * where 1=1''', object_storage_encryption_rule)
-
-# COMMAND ----------
-
 check_id='101' #DP-14 Store and retrieve embeddings securely
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -686,151 +512,6 @@ if enabled:
 # MAGIC # Compliance
 # MAGIC * Cluster Policies
 # MAGIC * BYOK
-
-# COMMAND ----------
-
-# DBTITLE 1,Cluster Policy Check
-check_id='6' #Cluster Policies
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-# Report on Clusters that do not have a policy id associated with them
-def cluster_policy_check(df):
-    if df is not None and len(df.columns)==0:
-        cluster_dict = {'clusters' : 'all_interactive_clusters'}
-        print(cluster_dict)
-        return (check_id, 1, cluster_dict)    
-    elif df is not None and not isEmpty(df):
-        df = df.withColumn('cluster_name', regexp_replace(col('cluster_name'), '[\"\'\\\\]', '_')).select('cluster_id', 'cluster_name')     
-        clusters = df.collect()
-        cluster_dict = {'clusters' : clusters}
-        return (check_id, 1, cluster_dict)
-    else:
-        return (check_id, 0,  {})   
-  
-if enabled:  
-    tbl_name = 'clusters' + '_' + workspace_id
-    sql = f'''
-        SELECT cluster_id, cluster_name, policy_id
-        FROM {tbl_name}
-        WHERE policy_id is null  and (cluster_source='UI' OR cluster_source='API')
-    '''
-    sqlctrl(workspace_id, sql, cluster_policy_check)
-
-# COMMAND ----------
-
-## Policy needed for job clusters?
-
-# COMMAND ----------
-
-# DBTITLE 1,Custom Tags All Purpose Cluster
-check_id='11' #All Purpose Cluster Custom Tags 
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def ctags_check(df):
-  
-    if df is not None and not isEmpty(df) :
-        df = df.withColumn('cluster_name', regexp_replace(col('cluster_name'), '[\"\'\\\\]', '_')).select('cluster_id', 'cluster_name')  
-        clusters = df.collect()
-        clusters_dict = {'clusters' : [[i.cluster_id, i.cluster_name] for i in clusters]}
-        print(clusters_dict)
-        return (check_id, 1, clusters_dict)
-    else:
-        return (check_id, 0, {})   
- 
-
-if enabled: 
-    tbl_name = 'clusters' + '_' + workspace_id
-    sql = f'''
-        SELECT cluster_id, cluster_name
-          FROM {tbl_name}
-          WHERE custom_tags is null and (cluster_source='UI' OR cluster_source='API') 
-    '''
-    sqlctrl(workspace_id, sql, ctags_check)
-
-# COMMAND ----------
-
-# DBTITLE 1,Custom Tags Job Clusters
-check_id='12' #Job Cluster Custom Tags
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def ctags_checkjobs(df):
-  
-    if df is not None and not isEmpty(df):
-        jobclusters = df.collect()
-        jobclusters_dict = {'clusters' : [i.job_id for i in jobclusters]}
-        print(jobclusters_dict)
-        return (check_id, 1, jobclusters_dict)
-    else:
-        return (check_id, 0, {})   
-  
-
-if enabled:  
-    tbl_name = 'jobs' + '_' + workspace_id
-    sql = f'''
-        SELECT job_id
-          FROM {tbl_name}
-          WHERE settings.new_cluster.custom_tags is null 
-      '''
-    sqlctrl(workspace_id, sql, ctags_checkjobs)
-
-# COMMAND ----------
-
-# DBTITLE 1,AllPurpose Cluster Log Conf
-check_id='13' #All Purpose Cluster Log Configuration
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def logconf_check(df):
-    if df is not None and len(df.columns)==0:
-        cluster_dict = {'clusters' : 'no log conf in any job'}
-        print(cluster_dict)
-        return (check_id, 1, cluster_dict)     
-    elif df is not None and not isEmpty(df): 
-        df = df.withColumn('cluster_name', regexp_replace(col('cluster_name'), '[\"\'\\\\]', '_')).select('cluster_id', 'cluster_name')  
-        clusters = df.collect()
-        clusters_dict = {'clusters' : [[i.cluster_id, i.cluster_name] for i in clusters]}
-        print(clusters_dict)
-        return (check_id, 1, clusters_dict)
-    else:
-        return (check_id, 0, {})   
-    
-if enabled:
-    tbl_name = 'clusters' + '_' + workspace_id
-    sql=f'''
-      SELECT cluster_id, cluster_name
-      FROM {tbl_name}
-      WHERE cluster_log_conf is null  and (cluster_source='UI' OR cluster_source='API') 
-    '''
-    sqlctrl(workspace_id, sql, logconf_check)
-
-# COMMAND ----------
-
-# DBTITLE 1,Cluster Log Conf jobs
-check_id='14' #Job Cluster Log Configuration 
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def logconf_check_job(df):
-  
-    if df is not None and len(df.columns)==0:
-        cluster_dict = {'clusters' : 'no log conf in any job'}
-        print(cluster_dict)
-        return (check_id, 1, cluster_dict)    
-    elif df is not None and not isEmpty(df):
-        jobclusters = df.collect()
-        jobclusters_dict = {'jobs' : [i.job_id for i in jobclusters]}
-        print(jobclusters_dict)
-        return (check_id, 1, jobclusters_dict)
-    else:
-        return (check_id, 0, {})   
-
-    
-if enabled:  
-    tbl_name = 'jobs' + '_' + workspace_id
-    sql = f'''
-        SELECT job_id 
-        FROM {tbl_name} 
-        WHERE settings.new_cluster.cluster_log_conf is null AND workspace_id="{workspaceId}"
-    '''
-    sqlctrl(workspace_id, sql, logconf_check_job)
 
 # COMMAND ----------
 
@@ -931,57 +612,6 @@ if enabled:
 
 # COMMAND ----------
 
-# DBTITLE 1,Instance pools - Custom tags
-check_id='22' #Instance Pool Custom Tag
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def pool_check(df):
-    if df is not None and not isEmpty(df):
-        df = df.withColumn('instance_pool_name', regexp_replace(col('instance_pool_name'), '[\"\'\\\\]', '_')).select('instance_pool_name', 'instance_pool_id') 
-        ipool = df.collect()
-        ipool_dict = {'instancepools' : [[i.instance_pool_name, i.instance_pool_id] for i in ipool]}
-        print(ipool_dict)
-        return (check_id, 1,  ipool_dict)  
-    else:
-        return (check_id, 0, {}) 
-
-    
-if enabled:
-    tbl_name = 'pools' + '_' + workspace_id
-    sql = f'''
-        SELECT instance_pool_name, instance_pool_id
-          FROM {tbl_name} 
-            where custom_tags is null 
-    '''
-    sqlctrl(workspace_id, sql, pool_check)
-
-# COMMAND ----------
-
-# DBTITLE 1,jobs - max concurrent runs >=5 (Denial of Service)
-check_id='23' #Max concurrent runs
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-max_concurrent_runs_evaluation_value = sbp_rec['evaluation_value']
-def mcr_check(df):
-    if df is not None and not isEmpty(df):
-        mcr = df.collect()
-        mcr_dict = {'maxruns' : [[i.job_id, i.max_concurrent_runs] for i in mcr]}
-        print(mcr_dict)
-        return (check_id, 1, mcr_dict)
-    else:
-        return (check_id, 0, {})   
-
-    
-if enabled:  
-    tbl_name = 'jobs' + '_' + workspace_id
-    sql = f'''
-        SELECT job_id, settings.max_concurrent_runs
-        FROM {tbl_name}
-        WHERE settings.max_concurrent_runs >= {max_concurrent_runs_evaluation_value} 
-    '''
-    sqlctrl(workspace_id, sql, mcr_check)
-
-# COMMAND ----------
-
 # DBTITLE 1,Libraries api - is_library_for_all_clusters": TRUE
 check_id='24' #Global libraries
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
@@ -1005,35 +635,6 @@ if enabled:
         WHERE glob_lib=true 
     '''
     sqlctrl(workspace_id, sql, lib_check) 
-
-# COMMAND ----------
-
-# DBTITLE 1,Multiple users have cluster create privileges
-check_id='25' #User Privileges
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-max_cluster_create_count_evaluation_value = sbp_rec['evaluation_value']
-# Report on Clusters that do not have a policy id associated with them
-def cc_check(df):
-    if df is not None and not isEmpty(df) and len(df.collect())>max_cluster_create_count_evaluation_value:
-        libc = df.collect()
-        libc_dict = {'clus_create' : [[i.userName, i.perm] for i in libc]}
-        print(libc_dict)
-        return (check_id, 1, libc_dict)
-    else:
-        return (check_id, 0, {})   
-
-    
-if enabled:  
-    tbl_name = 'users' + '_' + workspace_id
-    sql=f'''
-        SELECT userName, perm 
-        FROM 
-         (SELECT userName, explode(entitlements.value) as perm  
-          FROM {tbl_name} 
-         ) a
-        WHERE perm in ('allow-cluster-create', 'allow-instance-pool-create')     
-    '''
-    sqlctrl(workspace_id, sql, cc_check)
 
 # COMMAND ----------
 
@@ -1298,29 +899,6 @@ if enabled:
 
 # COMMAND ----------
 
-check_id='60' #	GOV-23  Check UC enabled Data warehouses
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def uc_dws(df):
-    if df is not None and not isEmpty(df):
-        uc_metastore = df.collect()
-        uc_metastore_dict = {i.name : [i.creator_name] for i in uc_metastore}
-        
-        return (check_id, 1, uc_metastore_dict )
-    else:
-        return (check_id, 0, {})   
-if enabled:    
-    tbl_name = 'dbsql_warehouselistv2' + '_' + workspace_id
-    sql=f'''
-        SELECT warehouse.name as name , warehouse.creator_name as creator_name  from (select explode(warehouses) as warehouse  
-        FROM {tbl_name} ) 
-        where warehouse.disable_uc = true
-    '''
-    sqlctrl(workspace_id, sql, uc_dws)
- 
-
-# COMMAND ----------
-
 check_id='78' #	GOV-28  Check Govern model assets
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -1401,26 +979,6 @@ if enabled:
         where automatic_cluster_update_workspace.enabled = true
     '''
     sqlctrl(workspace_id, sql, automatic_cluster_update)
-
-# COMMAND ----------
-
-check_id='61' #	INFO-17  Check Serverless Compute enabled
-enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
-
-def dbsql_enable_serverless_compute(df):
-    if df is not None and not isEmpty(df):
-        return (check_id, 0, {'enable_serverless_compute':'Serverless Compute enabled'} )
-    else:
-        return (check_id, 1, {'enable_serverless_compute':'Serverless Compute not enabled'})   
-if enabled:    
-    tbl_name = 'dbsql_workspaceconfig' + '_' + workspace_id
-    sql=f'''
-        SELECT enable_serverless_compute FROM
-        FROM {tbl_name} 
-        WHERE enable_serverless_compute = true
-    '''
-    sqlctrl(workspace_id, sql, dbsql_enable_serverless_compute)
- 
 
 # COMMAND ----------
 
@@ -1612,29 +1170,34 @@ def comprehensive_network_policy_check(df):
             # Policy is enforced - PASS
             return (check_id, 0, {})
 
-        # Step 3: If DRY_RUN, check dry_run_mode_product_filter
-        if enforcement_mode and enforcement_mode.upper() in ['DRY_RUN']:
-            # Try to get dry_run_filter from row (may not exist for all policies)
+        # Step 3: Any DRY_RUN mode is a violation regardless of filter
+        if enforcement_mode and enforcement_mode.upper() == 'DRY_RUN':
             dry_run_filter = row.dry_run_filter if hasattr(row, 'dry_run_filter') else None
-
-            # Check if dry_run_filter is empty or None
             if dry_run_filter is None or len(dry_run_filter) == 0:
-                # Empty filter = all products in dry-run = VIOLATION
                 violation = {
                     workspace_id: [
                         "DRY_RUN_ALL_PRODUCTS",
                         f"Policy '{policy_id}' is in DRY_RUN mode for all products (not enforced)"
                     ]
                 }
-                return (check_id, 1, violation)
             else:
-                # Non-empty filter = selective dry-run = PASS
-                # Some products are enforced, others in dry-run for testing
-                return (check_id, 0, {})
+                violation = {
+                    workspace_id: [
+                        "DRY_RUN_SELECTIVE",
+                        f"Policy '{policy_id}' is in DRY_RUN mode for products {dry_run_filter} (not fully enforced)"
+                    ]
+                }
+            return (check_id, 1, violation)
 
-        # If we reach here, policy exists but mode is unclear - log and pass
+        # Step 4: Unknown/missing enforcement mode is also a violation
         loggr.warning(f"Workspace {workspace_id}: Unable to determine enforcement status for policy {policy_id}")
-        return (check_id, 0, {})
+        violation = {
+            workspace_id: [
+                "UNKNOWN_ENFORCEMENT_MODE",
+                f"Policy '{policy_id}' has unknown or missing enforcement mode (expected ENFORCED)"
+            ]
+        }
+        return (check_id, 1, violation)
 
     except Exception as e:
         loggr.error(f"Error evaluating network policy check: {e}")
