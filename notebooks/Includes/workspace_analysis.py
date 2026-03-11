@@ -1170,29 +1170,34 @@ def comprehensive_network_policy_check(df):
             # Policy is enforced - PASS
             return (check_id, 0, {})
 
-        # Step 3: If DRY_RUN, check dry_run_mode_product_filter
-        if enforcement_mode and enforcement_mode.upper() in ['DRY_RUN']:
-            # Try to get dry_run_filter from row (may not exist for all policies)
+        # Step 3: Any DRY_RUN mode is a violation regardless of filter
+        if enforcement_mode and enforcement_mode.upper() == 'DRY_RUN':
             dry_run_filter = row.dry_run_filter if hasattr(row, 'dry_run_filter') else None
-
-            # Check if dry_run_filter is empty or None
             if dry_run_filter is None or len(dry_run_filter) == 0:
-                # Empty filter = all products in dry-run = VIOLATION
                 violation = {
                     workspace_id: [
                         "DRY_RUN_ALL_PRODUCTS",
                         f"Policy '{policy_id}' is in DRY_RUN mode for all products (not enforced)"
                     ]
                 }
-                return (check_id, 1, violation)
             else:
-                # Non-empty filter = selective dry-run = PASS
-                # Some products are enforced, others in dry-run for testing
-                return (check_id, 0, {})
+                violation = {
+                    workspace_id: [
+                        "DRY_RUN_SELECTIVE",
+                        f"Policy '{policy_id}' is in DRY_RUN mode for products {dry_run_filter} (not fully enforced)"
+                    ]
+                }
+            return (check_id, 1, violation)
 
-        # If we reach here, policy exists but mode is unclear - log and pass
+        # Step 4: Unknown/missing enforcement mode is also a violation
         loggr.warning(f"Workspace {workspace_id}: Unable to determine enforcement status for policy {policy_id}")
-        return (check_id, 0, {})
+        violation = {
+            workspace_id: [
+                "UNKNOWN_ENFORCEMENT_MODE",
+                f"Policy '{policy_id}' has unknown or missing enforcement mode (expected ENFORCED)"
+            ]
+        }
+        return (check_id, 1, violation)
 
     except Exception as e:
         loggr.error(f"Error evaluating network policy check: {e}")
