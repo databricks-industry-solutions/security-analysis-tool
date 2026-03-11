@@ -183,9 +183,11 @@ def insertIntoInfoTable(workspace_id, name, value, category):
     jsonstr = json.dumps(value)
     # Escape single quotes for SQL by doubling them
     jsonstr = jsonstr.replace("'", "''")
+    safe_name = name.replace("'", "''")
+    safe_category = category.replace("'", "''")
     sql = """INSERT INTO {}.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`)
             VALUES ('{}','{}', from_json('{}', 'MAP<STRING,STRING>'), '{}', '{}', cast({} as timestamp))""".format(
-        json_["analysis_schema_name"], workspace_id, name, jsonstr, category, run_id, ts
+        json_["analysis_schema_name"], workspace_id, safe_name, jsonstr, safe_category, run_id, ts
     )
     ### print(sql)
     spark.sql(sql)
@@ -705,13 +707,13 @@ def create_workspace_run_complete_table():
 
 
 def _set_table_comment(schema, table, comment):
-    safe = comment.replace("'", "\\'")
+    safe = comment.replace("'", "''")
     spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{safe}'")
 
 
 def _set_column_comments(schema, table, col_comments):
     for col, comment in col_comments.items():
-        safe = comment.replace("'", "\\'")
+        safe = comment.replace("'", "''")
         spark.sql(f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{safe}'")
 
 
