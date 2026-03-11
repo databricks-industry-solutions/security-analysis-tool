@@ -503,7 +503,7 @@ def create_security_checks_table():
         "workspaceid":        "Databricks workspace ID that was analyzed",
         "id":                 "Security check ID — foreign key to security_best_practices.id",
         "score":              "0 = check passed; 1 = violation found",
-        "additional_details": "Map of violation context keyed by detail type (e.g. ''message'', ''workspaceId'', resource names). Value is a descriptive string.",
+        "additional_details": "Map of violation context keyed by detail type (e.g. message, workspaceId, resource names). Value is a descriptive string.",
         "run_id":             "SAT run ID — foreign key to run_number_table.runID",
         "check_time":         "Timestamp when this check was evaluated",
         "chk_date":           "Date partition derived from check_time for efficient time-range queries",
@@ -705,12 +705,14 @@ def create_workspace_run_complete_table():
 
 
 def _set_table_comment(schema, table, comment):
-    spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{comment}'")
+    safe = comment.replace("'", "\\'")
+    spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{safe}'")
 
 
 def _set_column_comments(schema, table, col_comments):
     for col, comment in col_comments.items():
-        spark.sql(f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{comment}'")
+        safe = comment.replace("'", "\\'")
+        spark.sql(f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{safe}'")
 
 
 # COMMAND ----------
