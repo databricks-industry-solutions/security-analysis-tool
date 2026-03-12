@@ -8052,14 +8052,10 @@
                 },
                 {
                     "widget": {
-                        "name": "c4fe8ad6",
+                        "name": "f06d4b64",
                         "multilineTextboxSpec": {
                             "lines": [
-                                "**Note:** Complete the self-assessment for **SSO, SCIM, and Table Access Control** as described in the [Usage Instructions](https://databricks-industry-solutions.github.io/security-analysis-tool/docs/usage/). Update the file at:\n",
-                                "\n",
-                                "`Workspace \u2192 Applications \u2192 SAT \u2192 files \u2192 configs \u2192 self_assessment_checks.yaml`\n",
-                                "\n",
-                                "Set the `\"enabled\"` values to `true` or `false` based on your environment. The **Security Analysis Tool (SAT)** will automatically validate all other configurations."
+                                " Review the SAT report with your business stakeholders, administrators, security team and auditors. Assess your organizational security requirements *carefully* before making changes based on the report - not all deviations require mitigation. Some recommendations may have cost implications, and some of the security recommendations may have dependency limitations. Always thoroughly review the associated feature documentation before modifying your security configurations."
                             ]
                         }
                     },
@@ -8067,7 +8063,7 @@
                         "x": 0,
                         "y": 0,
                         "width": 6,
-                        "height": 3
+                        "height": 2
                     }
                 },
                 {
