@@ -8052,7 +8052,7 @@
                 },
                 {
                     "widget": {
-                        "name": "f06d4b64",
+                        "name": "c4fe8ad6",
                         "multilineTextboxSpec": {
                             "lines": [
                                 " Review the SAT report with your business stakeholders, administrators, security team and auditors. Assess your organizational security requirements *carefully* before making changes based on the report - not all deviations require mitigation. Some recommendations may have cost implications, and some of the security recommendations may have dependency limitations. Always thoroughly review the associated feature documentation before modifying your security configurations."
