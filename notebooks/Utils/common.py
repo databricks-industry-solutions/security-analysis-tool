@@ -7,7 +7,7 @@
 
 def bootstrap(viewname, func, **kwargs):
     """bootstrap with function and store resulting dataframe as a global temp view
-    if the function doesnt return a value, creates an empty dataframe and corresponding view
+    if the function doesn't return a value, creates an empty dataframe and corresponding view
     :param str viewname - name of the view
     :param func - Name of the function to call
     :**kwargs - named args to pass to the function
@@ -183,9 +183,11 @@ def insertIntoInfoTable(workspace_id, name, value, category):
     jsonstr = json.dumps(value)
     # Escape single quotes for SQL by doubling them
     jsonstr = jsonstr.replace("'", "''")
+    safe_name = name.replace("'", "''")
+    safe_category = category.replace("'", "''")
     sql = """INSERT INTO {}.`account_info` (`workspaceid`,`name`, `value`, `category`, `run_id`, `check_time`)
             VALUES ('{}','{}', from_json('{}', 'MAP<STRING,STRING>'), '{}', '{}', cast({} as timestamp))""".format(
-        json_["analysis_schema_name"], workspace_id, name, jsonstr, category, run_id, ts
+        json_["analysis_schema_name"], workspace_id, safe_name, jsonstr, safe_category, run_id, ts
     )
     ### print(sql)
     spark.sql(sql)
@@ -213,7 +215,7 @@ def readWorkspaceConfigFile():
     prefix = getConfigPath()
 
     dfa = pd.DataFrame()
-    schema = "workspace_id string, deployment_url string, workspace_name string,workspace_status string, sso_enabled boolean, scim_enabled boolean, vpc_peering_done boolean, object_storage_encrypted boolean, table_access_control_enabled boolean, connection_test boolean, analysis_enabled boolean"
+    schema = "workspace_id string, deployment_url string, workspace_name string,workspace_status string, connection_test boolean, analysis_enabled boolean"
     dfexist = spark.createDataFrame([], schema)
     try:
         dict = {
@@ -282,14 +284,13 @@ def readBestPracticesConfigsFile():
             "azure",
             "gcp",
             "enable",
-            "alert",
             "logic",
             "api",
             doc_url,
         ]
 
         schema = """id int, check_id string,category string,check string, evaluation_value int,severity string,
-                recommendation string,aws int,azure int,gcp int,enable int,alert int, logic string, api string,  doc_url string"""
+                recommendation string,aws int,azure int,gcp int,enable int, logic string, api string,  doc_url string"""
 
         security_best_practices_pd = pd.read_csv(
             origfile, header=0, usecols=schema_list
@@ -310,13 +311,34 @@ def readBestPracticesConfigsFile():
             "azure",
             "gcp",
             "enable",
-            "alert",
             "logic",
             "api",
         )
         security_best_practices.write.format("delta").mode("overwrite").saveAsTable(
             json_["analysis_schema_name"] + ".security_best_practices"
         )
+        _set_table_comment(
+            json_["analysis_schema_name"], "security_best_practices",
+            "Reference catalog of all SAT security checks. Each row defines one check: its category, severity, "
+            "actionable recommendation, and which clouds it applies to. Both id and check_id are unique per row. "
+            "Join to security_checks on id to interpret results."
+        )
+        _set_column_comments(json_["analysis_schema_name"], "security_best_practices", {
+            "id":               "Unique integer identifier for this security check — no two rows may share the same value",
+            "check_id":         "Unique human-readable check code (e.g. DP-1, GOV-5, NS-3, IA-2, INFO-4) — no two rows may share the same value",
+            "category":         "Security category: Data Protection, Governance, Identity & Access, Network Security, or Informational",
+            "check":            "Short descriptive name of the security check",
+            "evaluation_value": "Threshold used during evaluation. -1 means a presence/absence check (any violation = fail); positive integer means the acceptable limit",
+            "severity":         "Risk level if this check fails: Critical, High, Medium, or Low",
+            "recommendation":   "Actionable guidance for remediating a failed check",
+            "doc_url":          "Databricks documentation URL for this security topic",
+            "aws":              "1 if this check applies to AWS-hosted workspaces, 0 otherwise",
+            "azure":            "1 if this check applies to Azure-hosted workspaces, 0 otherwise",
+            "gcp":              "1 if this check applies to GCP-hosted workspaces, 0 otherwise",
+            "enable":           "1 if this check is currently enabled for evaluation, 0 if disabled",
+            "logic":            "Human-readable description of the check evaluation logic",
+            "api":              "Databricks API endpoint or command used to collect data for this check",
+        })
         display(security_best_practices)
 
 
@@ -342,7 +364,19 @@ def load_sat_dasf_mapping():
                             .select('sat_id', 'dasf_control_id','dasf_control_name'))
     
   sat_dasf_mapping.write.format('delta').mode('overwrite').saveAsTable(json_["analysis_schema_name"]+'.sat_dasf_mapping')
-  display(sat_dasf_mapping) 
+  _set_table_comment(
+      json_["analysis_schema_name"], "sat_dasf_mapping",
+      "Maps SAT security checks to Databricks AI Security Framework (DASF) controls for validating each workspace against data and AI security best practices. "
+      "The dasf_control_id field encodes both the control ID and name (e.g. DASF-33:Manage credentials securely) "
+      "and may be comma-separated when one SAT check maps to multiple DASF controls."
+  )
+  _set_column_comments(json_["analysis_schema_name"], "sat_dasf_mapping", {
+      "sat_id":            "SAT check ID — corresponds to the id column in security_best_practices",
+      "dasf_control_id":   "Databricks AI Security Framework (DASF) control identifier including the control name "
+                           "(format: DASF-N:Control Name). Comma-separated when mapping to multiple controls.",
+      "dasf_control_name": "DASF control name — currently NULL; the name is encoded in dasf_control_id",
+  })
+  display(sat_dasf_mapping)
 
 
 # COMMAND ----------
@@ -387,15 +421,32 @@ def basePath():
 
 
 def create_schema():
-    df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {json_["analysis_schema_name"]}')
+    schema = json_["analysis_schema_name"]
+    df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {schema}')
     df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {json_["intermediate_schema"]}')
+    spark.sql(
+        f"COMMENT ON SCHEMA {schema} IS "
+        f"'Databricks Security Analysis Tool (SAT) results. Contains security check findings, "
+        f"workspace configurations, secret scan results, and Permission Analysis graph data (BrickHound), "
+        f"all evaluated against Databricks best practices.'"
+    )
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.run_number_table (
+        f"""CREATE TABLE IF NOT EXISTS {schema}.run_number_table (
                         runID BIGINT GENERATED ALWAYS AS IDENTITY,
-                        check_time TIMESTAMP 
+                        check_time TIMESTAMP
                         )
                         USING DELTA"""
     )
+    _set_table_comment(
+        schema, "run_number_table",
+        "Sequence table that issues a unique run_id for each SAT analysis execution. "
+        "Join all other tables to this on run_id to correlate findings from the same run. "
+        "Typically has one row per SAT job execution."
+    )
+    _set_column_comments(schema, "run_number_table", {
+        "runID":      "Auto-incrementing unique identifier for each SAT analysis run",
+        "check_time": "Timestamp when this SAT run was initiated",
+    })
 
 
 # COMMAND ----------
@@ -429,11 +480,12 @@ def notifyworkspaceCompleted(workspaceID, completed):
 
 
 def create_security_checks_table():
+    schema = json_["analysis_schema_name"]
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.security_checks ( 
+        f"""CREATE TABLE IF NOT EXISTS {schema}.security_checks (
                 workspaceid string,
                 id int,
-                score integer, 
+                score integer,
                 additional_details map<string, string>,
                 run_id bigint,
                 check_time timestamp,
@@ -443,55 +495,97 @@ def create_security_checks_table():
                 USING DELTA
                 PARTITIONED BY (chk_date)"""
     )
+    _set_table_comment(
+        schema, "security_checks",
+        "Core SAT results table. One row per security check per workspace per run. "
+        "Score=0 means the check passed; Score=1 means violations found. "
+        "Join to security_best_practices on id for check details, and to run_number_table on run_id for run context."
+    )
+    _set_column_comments(schema, "security_checks", {
+        "workspaceid":        "Databricks workspace ID that was analyzed",
+        "id":                 "Security check ID — foreign key to security_best_practices.id",
+        "score":              "0 = check passed; 1 = violation found",
+        "additional_details": "Map of violation context keyed by detail type (e.g. message, workspaceId, resource names). Value is a descriptive string.",
+        "run_id":             "SAT run ID — foreign key to run_number_table.runID",
+        "check_time":         "Timestamp when this check was evaluated",
+        "chk_date":           "Date partition derived from check_time for efficient time-range queries",
+        "chk_hhmm":           "Hour and minute as integer (HHMM format) derived from check_time",
+    })
 
 
 # COMMAND ----------
 
 
 def create_account_info_table():
+    schema = json_["analysis_schema_name"]
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.account_info (
+        f"""CREATE TABLE IF NOT EXISTS {schema}.account_info (
         workspaceid string,
-        name string, 
-        value map<string, string>, 
+        name string,
+        value map<string, string>,
         category string,
         run_id bigint,
         check_time timestamp,
-        chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),\
+        chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE)),
         chk_hhmm integer GENERATED ALWAYS AS (CAST(CAST(hour(check_time) as STRING) || CAST(minute(check_time) as STRING) as INTEGER))
         )
         USING DELTA
         PARTITIONED BY (chk_date)"""
     )
+    _set_table_comment(
+        schema, "account_info",
+        "Workspace-level statistics and properties collected during each SAT run. Each row is one named metric for a workspace. "
+        "The name column uses coded keys: AS-1=account ID, AS-2=cloud region, AS-3=deployment name, AS-4=pricing tier, "
+        "AS-5=workspace ID, AS-6=workspace status, WST-1=total job count, WST-2=orphaned external job count."
+    )
+    _set_column_comments(schema, "account_info", {
+        "workspaceid": "Databricks workspace ID this metric belongs to",
+        "name":        "Coded metric key (e.g. AS-1=account ID, AS-2=cloud region, AS-4=pricing tier, WST-1=job count)",
+        "value":       'JSON-encoded metric value, always in format: {"value": "<metric_value>"}',
+        "category":    "Metric category: Account Stats for account-level properties, Workspace Stats for workspace-level counts",
+        "run_id":      "SAT run ID when this metric was collected — foreign key to run_number_table.runID",
+        "check_time":  "Timestamp when this metric was collected",
+        "chk_date":    "Date partition derived from check_time",
+        "chk_hhmm":    "Hour and minute as integer (HHMM) derived from check_time",
+    })
 
 
 # COMMAND ----------
 
 
 def create_account_workspaces_table():
+    schema = json_["analysis_schema_name"]
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.account_workspaces (
+        f"""CREATE TABLE IF NOT EXISTS {schema}.account_workspaces (
             workspace_id string,
             deployment_url string,
             workspace_name string,
             workspace_status string,
-            analysis_enabled boolean,
-            sso_enabled boolean,
-            scim_enabled boolean,
-            vpc_peering_done boolean,
-            object_storage_encrypted boolean,
-            table_access_control_enabled boolean
+            analysis_enabled boolean
             )
             USING DELTA"""
     )
+    _set_table_comment(
+        schema, "account_workspaces",
+        "Registry of Databricks workspaces configured for SAT analysis, with high-level security posture flags set during "
+        "workspace enablement. Used by Genie to answer questions like: which workspaces have SSO enabled?"
+    )
+    _set_column_comments(schema, "account_workspaces", {
+        "workspace_id":                 "Databricks workspace ID",
+        "deployment_url":               "Workspace hostname (e.g. myworkspace.cloud.databricks.com)",
+        "workspace_name":               "Human-readable workspace name",
+        "workspace_status":             "Current Databricks workspace status (e.g. RUNNING)",
+        "analysis_enabled":             "True if SAT is configured to analyze this workspace",
+    })
 
 
 # COMMAND ----------
 
 
 def create_notebooks_secret_scan_results_table():
+    schema = json_["analysis_schema_name"]
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.notebooks_secret_scan_results (
+        f"""CREATE TABLE IF NOT EXISTS {schema}.notebooks_secret_scan_results (
         workspace_id STRING,
         notebook_id STRING,
         notebook_path STRING,
@@ -510,11 +604,33 @@ def create_notebooks_secret_scan_results_table():
     PARTITIONED BY (scan_date)
     """
     )
+    _set_table_comment(
+        schema, "notebooks_secret_scan_results",
+        "TruffleHog secret scan results for Databricks notebooks. Identifies potential hardcoded secrets, API keys, "
+        "and credentials in notebook source code. When secrets_found=0 and other fields are NULL, it means the "
+        "workspace was scanned and no secrets were detected."
+    )
+    _set_column_comments(schema, "notebooks_secret_scan_results", {
+        "workspace_id":  "Databricks workspace ID where the notebook resides",
+        "notebook_id":   "Databricks notebook ID that was scanned",
+        "notebook_path": "Full workspace path to the scanned notebook",
+        "notebook_name": "Display name of the scanned notebook",
+        "detector_name": "TruffleHog detector that matched (e.g. AWS, Slack, GitHub, GitLab)",
+        "secret_sha256": "SHA-256 hash of the detected secret value — the actual secret is never stored",
+        "source_file":   "Source file within the notebook where the secret was detected",
+        "verified":      "True if TruffleHog confirmed the secret is currently active and valid",
+        "secrets_found": "Count of secrets detected. 0 with NULL other fields means the workspace was clean.",
+        "run_id":        "SAT secret scan run ID",
+        "scan_time":     "Timestamp when the scan was performed",
+        "scan_date":     "Date partition derived from scan_time",
+        "scan_hhmm":     "Hour and minute as integer (HHMM) derived from scan_time",
+    })
 
 
 def create_clusters_secret_scan_results_table():
+    schema = json_["analysis_schema_name"]
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.clusters_secret_scan_results (
+        f"""CREATE TABLE IF NOT EXISTS {schema}.clusters_secret_scan_results (
         workspace_id STRING,
         cluster_id STRING,
         cluster_name STRING,
@@ -534,14 +650,37 @@ def create_clusters_secret_scan_results_table():
     PARTITIONED BY (scan_date)
     """
     )
+    _set_table_comment(
+        schema, "clusters_secret_scan_results",
+        "TruffleHog secret scan results for Databricks cluster configurations. Detects hardcoded secrets in Spark config, "
+        "environment variables, and init scripts. When secrets_found=0 and other fields are NULL, the workspace was "
+        "scanned and found clean."
+    )
+    _set_column_comments(schema, "clusters_secret_scan_results", {
+        "workspace_id":  "Databricks workspace ID where the cluster was found",
+        "cluster_id":    "Databricks cluster ID that was scanned",
+        "cluster_name":  "Display name of the scanned cluster",
+        "config_field":  "Cluster configuration section where the secret was found (e.g. spark_conf, env_vars)",
+        "config_key":    "Specific configuration key containing the potential secret",
+        "detector_name": "TruffleHog detector that matched (e.g. AWS, Slack, GitHub, GitLab)",
+        "secret_sha256": "SHA-256 hash of the detected secret value — the actual secret is never stored",
+        "source_file":   "Source location within the cluster config where the secret was detected",
+        "verified":      "True if TruffleHog confirmed the secret is currently active and valid",
+        "secrets_found": "Count of secrets detected. 0 with NULL other fields means the cluster config was clean.",
+        "run_id":        "SAT secret scan run ID",
+        "scan_time":     "Timestamp when the scan was performed",
+        "scan_date":     "Date partition derived from scan_time",
+        "scan_hhmm":     "Hour and minute as integer (HHMM) derived from scan_time",
+    })
 
 
 # COMMAND ----------
 
 
 def create_workspace_run_complete_table():
+    schema = json_["analysis_schema_name"]
     df = spark.sql(
-        f"""CREATE TABLE IF NOT EXISTS {json_["analysis_schema_name"]}.workspace_run_complete(
+        f"""CREATE TABLE IF NOT EXISTS {schema}.workspace_run_complete(
                     workspace_id string,
                     run_id bigint,
                     completed boolean,
@@ -550,6 +689,32 @@ def create_workspace_run_complete_table():
                     )
                     USING DELTA"""
     )
+    _set_table_comment(
+        schema, "workspace_run_complete",
+        "Tracks per-workspace completion status for each SAT run. Use to identify which workspaces completed "
+        "successfully and which failed in a given run. Join to run_number_table on run_id."
+    )
+    _set_column_comments(schema, "workspace_run_complete", {
+        "workspace_id": "Databricks workspace ID",
+        "run_id":       "SAT run ID — foreign key to run_number_table.runID",
+        "completed":    "True if the workspace analysis completed successfully in this run",
+        "check_time":   "Timestamp when the workspace analysis completed",
+        "chk_date":     "Date partition derived from check_time",
+    })
+
+
+# COMMAND ----------
+
+
+def _set_table_comment(schema, table, comment):
+    safe = comment.replace("'", "''")
+    spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{safe}'")
+
+
+def _set_column_comments(schema, table, col_comments):
+    for col, comment in col_comments.items():
+        safe = comment.replace("'", "''")
+        spark.sql(f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{safe}'")
 
 
 # COMMAND ----------
@@ -618,8 +783,8 @@ def process_json_schema(df):
 # COMMAND ----------
 
 # For testing
-JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "sso": false, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false}'
+JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll"}'
 
 # COMMAND ----------
 
-JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68",  "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "sso": true, "scim": false, "object_storage_encryption": false, "vpc_peering": false, "table_access_control_enabled": false,  "cloud_type":"azure"}'
+JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68",  "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "cloud_type":"azure"}'

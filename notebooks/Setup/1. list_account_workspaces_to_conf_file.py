@@ -125,15 +125,6 @@ def generateWorkspaceConfigFile():
                 concat(col("deployment_url"), lit(".gcp.databricks."), lit(domain)),
             )  # GCP
 
-        # both azure and gcp require sso
-        if cloud_type == "azure" or cloud_type == "gcp":
-            df = df.withColumn("sso_enabled", lit(True))
-        else:
-            df = df.withColumn("sso_enabled", lit(False))
-        df = df.withColumn("scim_enabled", lit(False))
-        df = df.withColumn("vpc_peering_done", lit(False))
-        df = df.withColumn("object_storage_encrypted", lit(True))
-        df = df.withColumn("table_access_control_enabled", lit(False))
         df = df.withColumn("connection_test", lit(False))
         df = df.withColumn("analysis_enabled", lit(True))
 
@@ -163,5 +154,5 @@ dbutils.notebook.exit("OK")
 
 # MAGIC %md
 # MAGIC #### Look in the Configs folder for generated Files
-# MAGIC * ##### Modify workspace_configs.csv. Update the analysis_enabled flag and verify sso_enabled,scim_enabled,vpc_peering_done,object_storage_encrypted,table_access_control_enabled for each workspace.
+# MAGIC * ##### Modify workspace_configs.csv. Update the analysis_enabled flag for each workspace.
 # MAGIC * ##### New workspaces will be added to end of the file

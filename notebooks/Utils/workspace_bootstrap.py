@@ -150,14 +150,6 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('dbsql_workspaceconfig' + '_' + workspace_id, db_sql_client.get_sql_warehouse_configuration)
-
-# COMMAND ----------
-
-bootstrap('dbsql_alerts' + '_' + workspace_id, db_sql_client.get_alerts_list)
-
-# COMMAND ----------
-
 bootstrap('dbsql_warehouselistv2' + '_' + workspace_id, db_sql_client.get_sql_warehouse_listv2)
 
 # COMMAND ----------
@@ -488,7 +480,7 @@ bootstrap('unitycatalogcredentials' + '_' + workspace_id, uc_client.get_credenti
 
 # COMMAND ----------
 
-#bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_sharing_recepients_list)
+#bootstrap('unitycatalogsharerecipients' + '_' + workspace_id, uc_client.get_sharing_recipients_list)
 
 # COMMAND ----------
 
@@ -552,7 +544,7 @@ bootstrap('delta_sharing_providers_list' + '_' + workspace_id, delta_sharing.get
 
 # COMMAND ----------
 
-bootstrap('delta_sharing_recepients_list' + '_' + workspace_id, delta_sharing.get_sharing_recepients_list)
+bootstrap('delta_sharing_recipients_list' + '_' + workspace_id, delta_sharing.get_sharing_recipients_list)
 
 # COMMAND ----------
 

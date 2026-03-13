@@ -423,7 +423,6 @@ class SatDBClient:
             '/api/2.0/policy-families',
             '/api/2.0/repos',
             '/api/2.0/sql/history/queries',
-            '/api/2.0/sql/queries',
             '/api/2.0/vector-search/endpoints',
             '/api/2.0/vector-search/indexes',
             '/api/2.0/vector-search/indexes/.+/query', #not used
@@ -633,7 +632,7 @@ class SatDBClient:
     def getAzureToken(self, baccount, endpoint, client_id, client_secret):
         LOGGR.debug(f"getAzureToken {endpoint} {baccount}")
         databrickstype=True
-        #microsft apis have the api-version string
+        #microsoft apis have the api-version string
         if endpoint is not None and '?api-version=' in endpoint:
             databrickstype=False
         if endpoint is None:

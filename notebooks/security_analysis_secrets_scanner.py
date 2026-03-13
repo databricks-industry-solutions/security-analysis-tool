@@ -131,21 +131,10 @@ def processTruffleHogScan(wsrow, run_id):
     hostname = "https://" + wsrow.deployment_url
     cloud_type = getCloudType(hostname)
     workspace_id = wsrow.workspace_id
-    sso = wsrow.sso_enabled
-    scim = wsrow.scim_enabled
-    vpc_peering_done = wsrow.vpc_peering_done
-    object_storage_encrypted = wsrow.object_storage_encrypted
-    table_access_control_enabled = wsrow.table_access_control_enabled
-
     clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
     ws_json = dict(json_)
     ws_json.update(
         {
-            "sso": sso,
-            "scim": scim,
-            "object_storage_encryption": object_storage_encrypted,
-            "vpc_peering": vpc_peering_done,
-            "table_access_control_enabled": table_access_control_enabled,
             "url": hostname,
             "workspace_id": workspace_id,
             "cloud_type": cloud_type,
