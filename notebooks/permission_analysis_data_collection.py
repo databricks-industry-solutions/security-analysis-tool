@@ -786,12 +786,9 @@ except ImportError:
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Step 5: Run Data Collection
-# MAGIC
-# MAGIC This step collects all configured object types. In **multi-workspace mode**, it iterates over
-# MAGIC all workspaces and collects data from each one. In **single workspace mode**, it only collects
-# MAGIC from the current workspace.
+# Initialize data structures for collection
+all_vertices = []
+all_edges = []
 
 # COMMAND ----------
 
@@ -894,973 +891,1523 @@ print("Collection helper functions defined.")
 
 # COMMAND ----------
 
-# DBTITLE 1,Run Collection Using Permissions Analysis Tool Module
-print("="*80)
-print("Running Data Collection")
-print("="*80)
-print(f"\nStarted at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+# MAGIC %md
+# MAGIC ## Step 5: Account-Level Collection (Multi-Workspace Only)
+# MAGIC
+# MAGIC Collects account-level principals, workspace assignments, and metastores.
+# MAGIC This runs before workspace-level collection so account data is available first.
+# MAGIC Skipped in single-workspace and serverless modes.
 
-# Initialize data structures
-all_vertices = []
-all_edges = []
+# COMMAND ----------
 
-# Note: In MULTI_WORKSPACE_MODE, additional workspaces will be collected in Step 9 (Account-Level Collection)
+# DBTITLE 1,Account-Level Collection
 if MULTI_WORKSPACE_MODE:
-    print(f"\n🌐 Multi-workspace mode enabled")
-    print(f"   Step 5-6: Collect from CURRENT workspace")
-    print(f"   Step 9: Collect from ALL {len(workspaces_to_collect)} workspaces + account-level data")
-else:
-    print(f"\n📍 Single workspace mode: Collecting from current workspace only")
+    import traceback
+    print("="*80)
+    print("Account-Level Collection")
+    print("="*80)
 
-# ============================================================================
-# IDENTITY COLLECTION
-# ============================================================================
-
-# Collect Users
-if COLLECTION_CONFIG['collect_users']:
-    print("\n1. Collecting Users...")
     try:
-        users = list(w.users.list())
-        for user in tqdm(users, desc="Users"):
+        # ================================================================
+        # Collect Workspaces
+        # ================================================================
+        print("\n📦 Collecting Workspaces...")
+        for ws in tqdm(workspaces_to_collect, desc="Workspaces"):
+            ws_id = str(ws.workspace_id)
             all_vertices.append({
-                'id': str(user.id),
-                'node_type': 'User',
-                'name': safe_get(user, 'user_name'),
-                'display_name': safe_get(user, 'display_name'),
-                'email': user.emails[0].value if user.emails else None,
-                'owner': None,
-                'active': safe_get(user, 'active', True),
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': safe_json({'external_id': safe_get(user, 'external_id')})
-            })
-        print(f"    Collected {len(users)} users")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# Collect Groups
-if COLLECTION_CONFIG['collect_groups']:
-    print("\n2. Collecting Groups...")
-    try:
-        groups = list(w.groups.list())
-        for group in tqdm(groups, desc="Groups"):
-            all_vertices.append({
-                'id': str(group.id),
-                'node_type': 'Group',
-                'name': safe_get(group, 'display_name'),
-                'display_name': safe_get(group, 'display_name'),
+                'id': f"workspace:{ws_id}",
+                'node_type': 'Workspace',
+                'name': ws.workspace_name,
+                'display_name': ws.workspace_name,
                 'email': None,
                 'owner': None,
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': safe_json({'external_id': safe_get(group, 'external_id')})
-            })
-
-            # Collect memberships
-            if hasattr(group, 'members') and group.members:
-                for member in group.members:
-                    all_edges.append({
-                        'src': str(member.value),
-                        'dst': str(group.id),
-                        'relationship': 'MemberOf',
-                        'permission_level': None,
-                        'inherited': False,
-                        'properties': None,
-                        'created_at': datetime.now()
-                    })
-        print(f"    Collected {len(groups)} groups")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# Collect Service Principals
-if COLLECTION_CONFIG['collect_service_principals']:
-    print("\n3. Collecting Service Principals...")
-    try:
-        sps = list(w.service_principals.list())
-        for sp in tqdm(sps, desc="Service Principals"):
-            all_vertices.append({
-                'id': str(sp.id),
-                'node_type': 'ServicePrincipal',
-                'name': safe_get(sp, 'application_id') or safe_get(sp, 'display_name'),
-                'display_name': safe_get(sp, 'display_name'),
-                'email': None,
-                'application_id': safe_get(sp, 'application_id'),
-                'owner': None,
-                'active': safe_get(sp, 'active', True),
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': safe_json({'application_id': safe_get(sp, 'application_id')})
-            })
-        print(f"    Collected {len(sps)} service principals")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# ============================================================================
-# COMPUTE COLLECTION
-# ============================================================================
-
-# Collect Clusters (only in single-workspace mode; multi-workspace mode collects in Step 9)
-if COLLECTION_CONFIG['collect_clusters'] and not MULTI_WORKSPACE_MODE:
-    print("\n4. Collecting Clusters...")
-    try:
-        clusters = list(w.clusters.list())
-        for cluster in tqdm(clusters, desc="Clusters"):
-            cluster_id = safe_get(cluster, 'cluster_id')
-            all_vertices.append({
-                'id': cluster_id,
-                'node_type': 'Cluster',
-                'name': safe_get(cluster, 'cluster_name'),
-                'display_name': safe_get(cluster, 'cluster_name'),
-                'email': None,
-                'owner': safe_get(cluster, 'creator_user_name'),
-                'active': safe_get(cluster, 'state') == 'RUNNING',
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': safe_json({'spark_version': safe_get(cluster, 'spark_version')}),
-                'metadata': safe_json({'state': safe_get(cluster, 'state')})
-            })
-
-            # Collect permissions
-            if COLLECTION_CONFIG['collect_permissions']:
-                try:
-                    perms = w.permissions.get("clusters", cluster_id)
-                    if perms and perms.access_control_list:
-                        for acl in perms.access_control_list:
-                            principal = None
-                            if acl.user_name:
-                                principal = acl.user_name
-                            elif acl.group_name:
-                                principal = acl.group_name
-                            elif acl.service_principal_name:
-                                principal = acl.service_principal_name
-
-                            if principal and acl.all_permissions:
-                                for perm in acl.all_permissions:
-                                    all_edges.append({
-                                        'src': principal,
-                                        'dst': cluster_id,
-                                        'relationship': safe_get(perm, 'permission_level'),
-                                        'permission_level': safe_get(perm, 'permission_level'),
-                                        'inherited': safe_get(perm, 'inherited', False),
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                except:
-                    pass
-        print(f"    Collected {len(clusters)} clusters")
-    except Exception as e:
-        print(f"    Error: {e}")
-elif COLLECTION_CONFIG['collect_clusters'] and MULTI_WORKSPACE_MODE:
-    print("\n4. Clusters: Skipped (collected per-workspace in Step 9)")
-
-# Collect Instance Pools
-if COLLECTION_CONFIG['collect_instance_pools']:
-    print("\n5. Collecting Instance Pools...")
-    try:
-        pools = list(w.instance_pools.list())
-        for pool in tqdm(pools, desc="Instance Pools"):
-            pool_id = safe_get(pool, 'instance_pool_id')
-            all_vertices.append({
-                'id': pool_id,
-                'node_type': 'InstancePool',
-                'name': safe_get(pool, 'instance_pool_name'),
-                'display_name': safe_get(pool, 'instance_pool_name'),
-                'email': None,
-                'owner': None,
-                'active': safe_get(pool, 'state') == 'ACTIVE',
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': safe_json({'node_type_id': safe_get(pool, 'node_type_id')}),
-                'metadata': None
-            })
-
-            # Collect permissions
-            if COLLECTION_CONFIG['collect_permissions']:
-                try:
-                    perms = w.permissions.get("instance-pools", pool_id)
-                    if perms and perms.access_control_list:
-                        for acl in perms.access_control_list:
-                            principal = acl.user_name or acl.group_name or acl.service_principal_name
-                            if principal and acl.all_permissions:
-                                for perm in acl.all_permissions:
-                                    all_edges.append({
-                                        'src': principal,
-                                        'dst': pool_id,
-                                        'relationship': safe_get(perm, 'permission_level'),
-                                        'permission_level': safe_get(perm, 'permission_level'),
-                                        'inherited': safe_get(perm, 'inherited', False),
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                except:
-                    pass
-        print(f"    Collected {len(pools)} instance pools")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# Collect Cluster Policies
-if COLLECTION_CONFIG['collect_cluster_policies']:
-    print("\n6. Collecting Cluster Policies...")
-    try:
-        policies = list(w.cluster_policies.list())
-        for policy in tqdm(policies, desc="Cluster Policies"):
-            policy_id = safe_get(policy, 'policy_id')
-            all_vertices.append({
-                'id': policy_id,
-                'node_type': 'ClusterPolicy',
-                'name': safe_get(policy, 'name'),
-                'display_name': safe_get(policy, 'name'),
-                'email': None,
-                'owner': safe_get(policy, 'creator_user_name'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': None
-            })
-
-            # Collect permissions
-            if COLLECTION_CONFIG['collect_permissions']:
-                try:
-                    perms = w.permissions.get("cluster-policies", policy_id)
-                    if perms and perms.access_control_list:
-                        for acl in perms.access_control_list:
-                            principal = acl.user_name or acl.group_name or acl.service_principal_name
-                            if principal and acl.all_permissions:
-                                for perm in acl.all_permissions:
-                                    all_edges.append({
-                                        'src': principal,
-                                        'dst': policy_id,
-                                        'relationship': safe_get(perm, 'permission_level'),
-                                        'permission_level': safe_get(perm, 'permission_level'),
-                                        'inherited': safe_get(perm, 'inherited', False),
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                except:
-                    pass
-        print(f"    Collected {len(policies)} cluster policies")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# ============================================================================
-# AI/ML COLLECTION
-# ============================================================================
-
-# Collect Serving Endpoints
-if COLLECTION_CONFIG['collect_serving_endpoints']:
-    print("\n7. Collecting Serving Endpoints...")
-    try:
-        endpoints = list(w.serving_endpoints.list())
-        for ep in tqdm(endpoints, desc="Serving Endpoints"):
-            ep_name = safe_get(ep, 'name')
-            all_vertices.append({
-                'id': f"serving_endpoint:{ep_name}",
-                'node_type': 'ServingEndpoint',
-                'name': ep_name,
-                'display_name': ep_name,
-                'email': None,
-                'owner': safe_get(ep, 'creator'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': None
-            })
-
-            # Collect permissions
-            if COLLECTION_CONFIG['collect_permissions']:
-                try:
-                    perms = w.permissions.get("serving-endpoints", ep_name)
-                    if perms and perms.access_control_list:
-                        for acl in perms.access_control_list:
-                            principal = acl.user_name or acl.group_name or acl.service_principal_name
-                            if principal and acl.all_permissions:
-                                for perm in acl.all_permissions:
-                                    all_edges.append({
-                                        'src': principal,
-                                        'dst': f"serving_endpoint:{ep_name}",
-                                        'relationship': safe_get(perm, 'permission_level'),
-                                        'permission_level': safe_get(perm, 'permission_level'),
-                                        'inherited': safe_get(perm, 'inherited', False),
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                except:
-                    pass
-        print(f"    Collected {len(endpoints)} serving endpoints")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# Collect Vector Search Endpoints
-if COLLECTION_CONFIG['collect_vector_search_endpoints']:
-    print("\n8. Collecting Vector Search Endpoints...")
-    try:
-        vs_endpoints = list(w.vector_search_endpoints.list_endpoints())
-        for ep in tqdm(vs_endpoints, desc="Vector Search Endpoints"):
-            ep_name = safe_get(ep, 'name')
-            all_vertices.append({
-                'id': f"vs_endpoint:{ep_name}",
-                'node_type': 'VectorSearchEndpoint',
-                'name': ep_name,
-                'display_name': ep_name,
-                'email': None,
-                'owner': safe_get(ep, 'creator'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': None
-            })
-        print(f"    Collected {len(vs_endpoints)} vector search endpoints")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# Collect Experiments
-if COLLECTION_CONFIG['collect_experiments']:
-    print("\n9. Collecting MLflow Experiments...")
-    try:
-        experiments = list(w.experiments.list_experiments())
-        for exp in tqdm(experiments, desc="Experiments"):
-            exp_id = safe_get(exp, 'experiment_id')
-            all_vertices.append({
-                'id': f"experiment:{exp_id}",
-                'node_type': 'Experiment',
-                'name': safe_get(exp, 'name'),
-                'display_name': safe_get(exp, 'name'),
-                'email': None,
-                'owner': None,
-                'active': safe_get(exp, 'lifecycle_stage') == 'active',
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': None
-            })
-
-            # Collect permissions
-            if COLLECTION_CONFIG['collect_permissions']:
-                try:
-                    perms = w.permissions.get("experiments", exp_id)
-                    if perms and perms.access_control_list:
-                        for acl in perms.access_control_list:
-                            principal = acl.user_name or acl.group_name or acl.service_principal_name
-                            if principal and acl.all_permissions:
-                                for perm in acl.all_permissions:
-                                    all_edges.append({
-                                        'src': principal,
-                                        'dst': f"experiment:{exp_id}",
-                                        'relationship': safe_get(perm, 'permission_level'),
-                                        'permission_level': safe_get(perm, 'permission_level'),
-                                        'inherited': safe_get(perm, 'inherited', False),
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                except:
-                    pass
-        print(f"    Collected {len(experiments)} experiments")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# ============================================================================
-# ANALYTICS/BI COLLECTION
-# ============================================================================
-
-# Collect Dashboards
-if COLLECTION_CONFIG['collect_dashboards']:
-    print("\n10. Collecting Dashboards...")
-    try:
-        dashboards = list(w.lakeview.list())
-        for dash in tqdm(dashboards, desc="Dashboards"):
-            dash_id = safe_get(dash, 'dashboard_id')
-            all_vertices.append({
-                'id': f"dashboard:{dash_id}",
-                'node_type': 'Dashboard',
-                'name': safe_get(dash, 'display_name'),
-                'display_name': safe_get(dash, 'display_name'),
-                'email': None,
-                'owner': safe_get(dash, 'creator_name'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': safe_json({'warehouse_id': safe_get(dash, 'warehouse_id')}),
-                'metadata': None
-            })
-        print(f"    Collected {len(dashboards)} dashboards")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# Collect Queries
-if COLLECTION_CONFIG['collect_queries']:
-    print("\n11. Collecting SQL Queries...")
-    try:
-        queries = list(w.queries.list())
-        for query in tqdm(queries, desc="Queries"):
-            query_id = safe_get(query, 'id')
-            all_vertices.append({
-                'id': f"query:{query_id}",
-                'node_type': 'Query',
-                'name': safe_get(query, 'name') or safe_get(query, 'display_name'),
-                'display_name': safe_get(query, 'name') or safe_get(query, 'display_name'),
-                'email': None,
-                'owner': safe_get(query, 'owner_user_name'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': None
-            })
-        print(f"    Collected {len(queries)} queries")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# Collect Alerts
-if COLLECTION_CONFIG['collect_alerts']:
-    print("\n12. Collecting Alerts...")
-    try:
-        alerts = list(w.alerts.list())
-        for alert in tqdm(alerts, desc="Alerts"):
-            alert_id = safe_get(alert, 'id')
-            all_vertices.append({
-                'id': f"alert:{alert_id}",
-                'node_type': 'Alert',
-                'name': safe_get(alert, 'name') or safe_get(alert, 'display_name'),
-                'display_name': safe_get(alert, 'name') or safe_get(alert, 'display_name'),
-                'email': None,
-                'owner': safe_get(alert, 'owner_user_name'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': None
-            })
-        print(f"    Collected {len(alerts)} alerts")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# ============================================================================
-# ORCHESTRATION COLLECTION
-# ============================================================================
-
-# Collect Jobs (only in single-workspace mode; multi-workspace mode collects in Step 9)
-if COLLECTION_CONFIG['collect_jobs'] and not MULTI_WORKSPACE_MODE:
-    print("\n13. Collecting Jobs...")
-    try:
-        jobs = list(w.jobs.list())
-        for job in tqdm(jobs, desc="Jobs"):
-            job_id = str(safe_get(job, 'job_id'))
-            job_name = safe_get(job.settings, 'name') if job.settings else f"Job {job_id}"
-            all_vertices.append({
-                'id': job_id,
-                'node_type': 'Job',
-                'name': job_name,
-                'display_name': job_name,
-                'email': None,
-                'owner': safe_get(job, 'creator_user_name'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': None
-            })
-
-            # Collect permissions
-            if COLLECTION_CONFIG['collect_permissions']:
-                try:
-                    perms = w.permissions.get("jobs", job_id)
-                    if perms and perms.access_control_list:
-                        for acl in perms.access_control_list:
-                            principal = acl.user_name or acl.group_name or acl.service_principal_name
-                            if principal and acl.all_permissions:
-                                for perm in acl.all_permissions:
-                                    all_edges.append({
-                                        'src': principal,
-                                        'dst': job_id,
-                                        'relationship': safe_get(perm, 'permission_level'),
-                                        'permission_level': safe_get(perm, 'permission_level'),
-                                        'inherited': safe_get(perm, 'inherited', False),
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                except:
-                    pass
-        print(f"    Collected {len(jobs)} jobs")
-    except Exception as e:
-        print(f"    Error: {e}")
-elif COLLECTION_CONFIG['collect_jobs'] and MULTI_WORKSPACE_MODE:
-    print("\n13. Jobs: Skipped (collected per-workspace in Step 9)")
-
-# Collect Pipelines
-if COLLECTION_CONFIG['collect_pipelines']:
-    print("\n14. Collecting Pipelines (DLT)...")
-    try:
-        pipelines = list(w.pipelines.list_pipelines())
-        for pipeline in tqdm(pipelines, desc="Pipelines"):
-            pipeline_id = safe_get(pipeline, 'pipeline_id')
-            all_vertices.append({
-                'id': f"pipeline:{pipeline_id}",
-                'node_type': 'Pipeline',
-                'name': safe_get(pipeline, 'name'),
-                'display_name': safe_get(pipeline, 'name'),
-                'email': None,
-                'owner': safe_get(pipeline, 'creator_user_name'),
-                'active': safe_get(pipeline, 'state') in ['RUNNING', 'IDLE'],
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': None,
-                'metadata': None
-            })
-
-            # Collect permissions
-            if COLLECTION_CONFIG['collect_permissions']:
-                try:
-                    perms = w.permissions.get("pipelines", pipeline_id)
-                    if perms and perms.access_control_list:
-                        for acl in perms.access_control_list:
-                            principal = acl.user_name or acl.group_name or acl.service_principal_name
-                            if principal and acl.all_permissions:
-                                for perm in acl.all_permissions:
-                                    all_edges.append({
-                                        'src': principal,
-                                        'dst': f"pipeline:{pipeline_id}",
-                                        'relationship': safe_get(perm, 'permission_level'),
-                                        'permission_level': safe_get(perm, 'permission_level'),
-                                        'inherited': safe_get(perm, 'inherited', False),
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                except:
-                    pass
-        print(f"    Collected {len(pipelines)} pipelines")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# ============================================================================
-# SQL WAREHOUSES
-# ============================================================================
-
-# Collect SQL Warehouses (only in single-workspace mode; multi-workspace mode collects in Step 9)
-if COLLECTION_CONFIG['collect_warehouses'] and not MULTI_WORKSPACE_MODE:
-    print("\n15. Collecting SQL Warehouses...")
-    try:
-        warehouses = list(w.warehouses.list())
-        for wh in tqdm(warehouses, desc="Warehouses"):
-            wh_id = safe_get(wh, 'id')
-            all_vertices.append({
-                'id': wh_id,
-                'node_type': 'Warehouse',
-                'name': safe_get(wh, 'name'),
-                'display_name': safe_get(wh, 'name'),
-                'email': None,
-                'owner': None,
-                'active': safe_get(wh, 'state') == 'RUNNING',
+                'active': ws.workspace_status.value == 'RUNNING' if hasattr(ws.workspace_status, 'value') else True,
                 'created_at': None,
                 'updated_at': None,
                 'comment': None,
                 'properties': safe_json({
-                    'warehouse_type': safe_get(wh, 'warehouse_type'),
-                    'cluster_size': safe_get(wh, 'cluster_size')
+                    'deployment_name': ws.deployment_name,
+                    'cloud': ws.cloud,
+                    'region': ws.aws_region if hasattr(ws, 'aws_region') else ws.location if hasattr(ws, 'location') else None
                 }),
-                'metadata': None
+                'metadata': safe_json({'workspace_id': ws_id})
             })
+        print(f"   ✓ Collected {len(workspaces_to_collect)} workspaces")
 
-            # Collect permissions
-            if COLLECTION_CONFIG['collect_permissions']:
+        # ================================================================
+        # Collect Account Users (with full details including roles)
+        # ================================================================
+        print("\n👥 Collecting Account Users...")
+        account_admin_count = 0
+        try:
+            # First get list of all users
+            account_users_list = list(account_client.users.list())
+            account_users = []
+
+            # Fetch full details for each user including roles
+            for user in tqdm(account_users_list, desc="Fetching User Details"):
                 try:
-                    perms = w.permissions.get("sql/warehouses", wh_id)
-                    if perms and perms.access_control_list:
-                        for acl in perms.access_control_list:
-                            principal = acl.user_name or acl.group_name or acl.service_principal_name
-                            if principal and acl.all_permissions:
-                                for perm in acl.all_permissions:
-                                    all_edges.append({
-                                        'src': principal,
-                                        'dst': wh_id,
-                                        'relationship': safe_get(perm, 'permission_level'),
-                                        'permission_level': safe_get(perm, 'permission_level'),
-                                        'inherited': safe_get(perm, 'inherited', False),
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                except:
-                    pass
-        print(f"    Collected {len(warehouses)} warehouses")
-    except Exception as e:
-        print(f"    Error: {e}")
-elif COLLECTION_CONFIG['collect_warehouses'] and MULTI_WORKSPACE_MODE:
-    print("\n15. SQL Warehouses: Skipped (collected per-workspace in Step 9)")
+                    full_user = account_client.users.get(user.id)
+                    account_users.append(full_user)
+                except Exception as e:
+                    print(f"   ⚠ Error getting details for user {user.id}: {e}")
+                    account_users.append(user)  # Fall back to basic info
 
-# ============================================================================
-# SECURITY COLLECTION
-# ============================================================================
+            for user in tqdm(account_users, desc="Account Users"):
+                user_id = f"account_user:{user.id}"
 
-# Collect Secret Scopes (only in single-workspace mode; multi-workspace mode collects in Step 9)
-if COLLECTION_CONFIG['collect_secret_scopes'] and not MULTI_WORKSPACE_MODE:
-    print("\n16. Collecting Secret Scopes...")
-    try:
-        scopes = list(w.secrets.list_scopes())
-        for scope in tqdm(scopes, desc="Secret Scopes"):
-            scope_name = safe_get(scope, 'name')
-            all_vertices.append({
-                'id': f"secret_scope:{scope_name}",
-                'node_type': 'SecretScope',
-                'name': scope_name,
-                'display_name': scope_name,
-                'email': None,
-                'owner': None,
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': safe_json({'backend_type': safe_get(scope, 'backend_type')}),
-                'metadata': None
-            })
+                # Extract roles for metadata
+                user_roles = []
+                if hasattr(user, 'roles') and user.roles:
+                    user_roles = [r.value for r in user.roles if hasattr(r, 'value')]
 
-            # Collect secrets in scope
-            try:
-                secrets = list(w.secrets.list_secrets(scope=scope_name))
-                for secret in secrets:
-                    secret_key = safe_get(secret, 'key')
-                    all_vertices.append({
-                        'id': f"secret:{scope_name}/{secret_key}",
-                        'node_type': 'Secret',
-                        'name': secret_key,
-                        'display_name': secret_key,
-                        'email': None,
-                        'owner': None,
-                        'active': True,
-                        'created_at': None,
-                        'updated_at': None,
-                        'comment': None,
-                        'properties': safe_json({'scope': scope_name}),
-                        'metadata': None
+                all_vertices.append({
+                    'id': user_id,
+                    'node_type': 'AccountUser',
+                    'name': user.user_name,
+                    'display_name': user.display_name,
+                    'email': user.emails[0].value if user.emails else None,
+                    'owner': None,
+                    'active': user.active if hasattr(user, 'active') else True,
+                    'created_at': None,
+                    'updated_at': None,
+                    'comment': None,
+                    'properties': None,
+                    'metadata': safe_json({
+                        'external_id': user.external_id if hasattr(user, 'external_id') else None,
+                        'roles': user_roles
                     })
+                })
 
-                    # Add Contains edge
+                # Check for account_admin role and create AccountAdmin edge
+                if 'account_admin' in user_roles:
                     all_edges.append({
-                        'src': f"secret_scope:{scope_name}",
-                        'dst': f"secret:{scope_name}/{secret_key}",
-                        'relationship': 'Contains',
+                        'src': user_id,
+                        'dst': f"account:{SP_CREDENTIALS['account_id']}",
+                        'relationship': 'AccountAdmin',
                         'permission_level': None,
                         'inherited': False,
-                        'properties': None,
-                        'created_at': datetime.now()
+                        'created_at': None,
+                        'properties': None
                     })
-            except:
-                pass
+                    account_admin_count += 1
+                    print(f"   👑 Found Account Admin: {user.user_name}")
 
-            # Collect ACLs
-            try:
-                acls = list(w.secrets.list_acls(scope=scope_name))
-                for acl in acls:
-                    principal = safe_get(acl, 'principal')
-                    permission = safe_get(acl, 'permission')
-                    if principal and permission:
-                        perm_map = {'MANAGE': 'CanManageSecret', 'WRITE': 'CanWriteSecret', 'READ': 'CanReadSecret'}
-                        all_edges.append({
-                            'src': principal,
-                            'dst': f"secret_scope:{scope_name}",
-                            'relationship': perm_map.get(permission, 'CanReadSecret'),
-                            'permission_level': permission,
-                            'inherited': False,
-                            'properties': None,
-                            'created_at': datetime.now()
-                        })
-            except:
-                pass
-        print(f"    Collected {len(scopes)} secret scopes")
-    except Exception as e:
-        print(f"    Error: {e}")
-elif COLLECTION_CONFIG['collect_secret_scopes'] and MULTI_WORKSPACE_MODE:
-    print("\n16. Secret Scopes: Skipped (collected per-workspace in Step 9)")
+            print(f"   ✓ Collected {len(account_users)} account users")
+            if account_admin_count > 0:
+                print(f"   👑 Found {account_admin_count} Account Admins")
+        except Exception as e:
+            print(f"   ⚠ Error collecting account users: {e}")
 
-# Collect Tokens
-if COLLECTION_CONFIG['collect_tokens']:
-    print("\n17. Collecting Tokens...")
-    try:
-        tokens = list(w.tokens.list())
-        for token in tqdm(tokens, desc="Tokens"):
-            token_id = safe_get(token, 'token_id')
-            all_vertices.append({
-                'id': f"token:{token_id}",
-                'node_type': 'Token',
-                'name': safe_get(token, 'comment') or f"token-{token_id}",
-                'display_name': safe_get(token, 'comment') or f"token-{token_id}",
-                'email': None,
-                'owner': safe_get(token, 'created_by_username'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': safe_get(token, 'comment'),
-                'properties': None,
-                'metadata': None
-            })
-
-            # Add owner edge
-            owner = safe_get(token, 'created_by_username')
-            if owner:
-                all_edges.append({
-                    'src': owner,
-                    'dst': f"token:{token_id}",
-                    'relationship': 'Owns',
-                    'permission_level': None,
-                    'inherited': False,
-                    'properties': None,
-                    'created_at': datetime.now()
-                })
-        print(f"    Collected {len(tokens)} tokens")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-# ============================================================================
-# APPS COLLECTION
-# ============================================================================
-
-if COLLECTION_CONFIG['collect_apps']:
-    print("\n18. Collecting Databricks Apps...")
-    try:
-        apps = list(w.apps.list())
-        for app in tqdm(apps, desc="Apps"):
-            app_name = safe_get(app, 'name')
-            all_vertices.append({
-                'id': f"app:{app_name}",
-                'node_type': 'App',
-                'name': app_name,
-                'display_name': app_name,
-                'email': None,
-                'owner': safe_get(app, 'creator_name'),
-                'active': True,
-                'created_at': None,
-                'updated_at': None,
-                'comment': None,
-                'properties': safe_json({'url': safe_get(app, 'url')}),
-                'metadata': None
-            })
-        print(f"    Collected {len(apps)} apps")
-    except Exception as e:
-        print(f"    Error: {e}")
-
-print(f"\n Collection Phase 1 Complete!")
-print(f"   Vertices: {len(all_vertices)}")
-print(f"   Edges: {len(all_edges)}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Step 6: Collect Unity Catalog Objects & Grants
-
-# COMMAND ----------
-
-# DBTITLE 1,Collect Unity Catalog with SHOW GRANTS
-print("="*80)
-print("Collecting Unity Catalog Objects & Grants")
-print("="*80)
-
-if COLLECTION_CONFIG['collect_unity_catalog']:
-
-    # Get catalogs
-    catalogs = list(w.catalogs.list())
-
-    # Filter system catalogs
-    catalogs = [c for c in catalogs if c.name not in ['system', '__databricks_internal']]
-
-    # Apply limit if configured
-    if COLLECTION_CONFIG['max_catalogs']:
-        catalogs = catalogs[:COLLECTION_CONFIG['max_catalogs']]
-
-    print(f"\nFound {len(catalogs)} catalogs (excluding system)")
-
-    grant_count = 0
-
-    for cat in tqdm(catalogs, desc="Catalogs"):
-        cat_name = cat.name
-
-        # Add catalog vertex
-        all_vertices.append({
-            'id': cat_name,
-            'node_type': 'Catalog',
-            'name': cat_name,
-            'display_name': cat_name,
-            'email': None,
-            'owner': safe_get(cat, 'owner'),
-            'active': True,
-            'created_at': datetime.fromtimestamp(cat.created_at / 1000) if cat.created_at else None,
-            'updated_at': datetime.fromtimestamp(cat.updated_at / 1000) if cat.updated_at else None,
-            'comment': safe_get(cat, 'comment'),
-            'properties': safe_json(cat.properties) if cat.properties else None,
-            'metadata': safe_json({'metastore_id': safe_get(cat, 'metastore_id')})
-        })
-
-        # Collect catalog grants using SHOW GRANTS
-        if COLLECTION_CONFIG['collect_permissions']:
-            try:
-                grants_df = spark.sql(f"SHOW GRANTS ON CATALOG `{cat_name}`")
-                for grant in grants_df.collect():
-                    principal = grant.Principal if hasattr(grant, 'Principal') else grant.principal
-                    action_type = grant.ActionType if hasattr(grant, 'ActionType') else grant.action_type
-
-                    all_edges.append({
-                        'src': principal,
-                        'dst': cat_name,
-                        'relationship': action_type,
-                        'permission_level': action_type,
-                        'inherited': False,
-                        'properties': None,
-                        'created_at': datetime.now()
-                    })
-                    grant_count += 1
-            except:
-                pass
-
-        # Collect schemas
+        # ================================================================
+        # Collect Account Groups (with full member details)
+        # ================================================================
+        print("\n👥 Collecting Account Groups...")
         try:
-            schemas = list(w.schemas.list(catalog_name=cat_name))
+            # First get list of all groups (groups.list() doesn't return members)
+            account_groups_list = list(account_client.groups.list())
+            account_groups = []
 
-            if COLLECTION_CONFIG['max_schemas_per_catalog']:
-                schemas = schemas[:COLLECTION_CONFIG['max_schemas_per_catalog']]
-
-            for schema in schemas:
-                schema_id = f"{cat_name}.{schema.name}"
-
-                # Add schema vertex
-                all_vertices.append({
-                    'id': schema_id,
-                    'node_type': 'Schema',
-                    'name': schema_id,
-                    'display_name': schema.name,
-                    'email': None,
-                    'owner': safe_get(schema, 'owner'),
-                    'active': True,
-                    'created_at': datetime.fromtimestamp(schema.created_at / 1000) if schema.created_at else None,
-                    'updated_at': datetime.fromtimestamp(schema.updated_at / 1000) if schema.updated_at else None,
-                    'comment': safe_get(schema, 'comment'),
-                    'properties': safe_json(schema.properties) if schema.properties else None,
-                    'metadata': safe_json({'catalog_name': cat_name})
-                })
-
-                # Add Contains edge: Catalog -> Schema
-                all_edges.append({
-                    'src': cat_name,
-                    'dst': schema_id,
-                    'relationship': 'Contains',
-                    'permission_level': None,
-                    'inherited': False,
-                    'properties': None,
-                    'created_at': datetime.now()
-                })
-
-                # Collect schema grants
-                if COLLECTION_CONFIG['collect_permissions']:
-                    try:
-                        grants_df = spark.sql(f"SHOW GRANTS ON SCHEMA `{cat_name}`.`{schema.name}`")
-                        for grant in grants_df.collect():
-                            principal = grant.Principal if hasattr(grant, 'Principal') else grant.principal
-                            action_type = grant.ActionType if hasattr(grant, 'ActionType') else grant.action_type
-
-                            all_edges.append({
-                                'src': principal,
-                                'dst': schema_id,
-                                'relationship': action_type,
-                                'permission_level': action_type,
-                                'inherited': False,
-                                'properties': None,
-                                'created_at': datetime.now()
-                            })
-                            grant_count += 1
-                    except:
-                        pass
-
-                # Collect tables
+            # Fetch full details for each group including members
+            for group in tqdm(account_groups_list, desc="Fetching Group Details"):
                 try:
-                    tables = list(w.tables.list(catalog_name=cat_name, schema_name=schema.name))
+                    full_group = account_client.groups.get(group.id)
+                    account_groups.append(full_group)
+                except Exception as e:
+                    print(f"   ⚠ Error getting details for group {group.id}: {e}")
+                    account_groups.append(group)  # Fall back to basic info
 
-                    if COLLECTION_CONFIG['max_tables_per_schema']:
-                        tables = tables[:COLLECTION_CONFIG['max_tables_per_schema']]
+            for group in tqdm(account_groups, desc="Account Groups"):
+                group_id = f"account_group:{group.id}"
+                group_name = group.display_name
+                all_vertices.append({
+                    'id': group_id,
+                    'node_type': 'AccountGroup',
+                    'name': group_name,
+                    'display_name': group_name,
+                    'email': None,
+                    'owner': None,
+                    'active': True,
+                    'created_at': None,
+                    'updated_at': None,
+                    'comment': None,
+                    'properties': None,
+                    'metadata': None
+                })
 
-                    for table in tables:
-                        table_id = f"{cat_name}.{schema.name}.{table.name}"
-                        table_type = safe_get(table, 'table_type')
-                        node_type = 'View' if table_type and 'VIEW' in str(table_type).upper() else 'Table'
+                # Collect memberships (now available from groups.get())
+                if hasattr(group, 'members') and group.members:
+                    for member in group.members:
+                        member_type = member.type if hasattr(member, 'type') else None
+                        ref = member.ref if hasattr(member, 'ref') else ''
 
-                        # Add table vertex
-                        all_vertices.append({
-                            'id': table_id,
-                            'node_type': node_type,
-                            'name': table_id,
-                            'display_name': table.name,
-                            'email': None,
-                            'owner': safe_get(table, 'owner'),
-                            'active': True,
-                            'created_at': datetime.fromtimestamp(table.created_at / 1000) if table.created_at else None,
-                            'updated_at': datetime.fromtimestamp(table.updated_at / 1000) if table.updated_at else None,
-                            'comment': safe_get(table, 'comment'),
-                            'properties': safe_json(table.properties) if table.properties else None,
-                            'metadata': safe_json({
-                                'table_type': str(table_type),
-                                'data_source_format': safe_get(table, 'data_source_format')
-                            })
-                        })
+                        # Determine member type and prefix
+                        # Use consistent prefixes: account_user, account_group, account_sp
+                        if member_type == 'User' or 'Users' in str(ref):
+                            member_prefix = 'account_user'
+                        elif member_type == 'Group' or 'Groups' in str(ref):
+                            member_prefix = 'account_group'
+                        elif member_type == 'ServicePrincipal' or 'ServicePrincipals' in str(ref):
+                            member_prefix = 'account_sp'
+                        else:
+                            member_prefix = 'account_user'  # Default
 
-                        # Add Contains edge: Schema -> Table
+                        prefixed_member_id = f"{member_prefix}:{member.value}"
+
+                        # MemberOf edge with prefixed IDs (member -> group by ID)
                         all_edges.append({
-                            'src': schema_id,
-                            'dst': table_id,
-                            'relationship': 'Contains',
+                            'src': prefixed_member_id,
+                            'dst': group_id,
+                            'relationship': 'MemberOf',
                             'permission_level': None,
                             'inherited': False,
                             'properties': None,
                             'created_at': datetime.now()
                         })
 
-                        # Collect table grants
+                        # Also add MemberOf edge using group name as dst for query flexibility
+                        all_edges.append({
+                            'src': prefixed_member_id,
+                            'dst': group_name,
+                            'relationship': 'MemberOf',
+                            'permission_level': None,
+                            'inherited': False,
+                            'properties': None,
+                            'created_at': datetime.now()
+                        })
+            print(f"   ✓ Collected {len(account_groups)} account groups")
+        except Exception as e:
+            print(f"   ⚠ Error collecting account groups: {e}")
+
+        # ================================================================
+        # Collect Account Service Principals (with full details including roles)
+        # ================================================================
+        print("\n🤖 Collecting Account Service Principals...")
+        sp_admin_count = 0
+        try:
+            # First get list of all service principals
+            account_sps_list = list(account_client.service_principals.list())
+            account_sps = []
+
+            # Fetch full details for each SP including roles
+            for sp in tqdm(account_sps_list, desc="Fetching SP Details"):
+                try:
+                    full_sp = account_client.service_principals.get(sp.id)
+                    account_sps.append(full_sp)
+                except Exception as e:
+                    print(f"   ⚠ Error getting details for SP {sp.id}: {e}")
+                    account_sps.append(sp)  # Fall back to basic info
+
+            for sp in tqdm(account_sps, desc="Account SPs"):
+                sp_id = f"account_sp:{sp.id}"
+
+                # Extract roles for metadata
+                sp_roles = []
+                if hasattr(sp, 'roles') and sp.roles:
+                    sp_roles = [r.value for r in sp.roles if hasattr(r, 'value')]
+
+                all_vertices.append({
+                    'id': sp_id,
+                    'node_type': 'AccountServicePrincipal',
+                    'name': sp.display_name or sp.application_id,
+                    'display_name': sp.display_name,
+                    'email': None,
+                    'application_id': sp.application_id,
+                    'owner': None,
+                    'active': sp.active if hasattr(sp, 'active') else True,
+                    'created_at': None,
+                    'updated_at': None,
+                    'comment': None,
+                    'properties': None,
+                    'metadata': safe_json({
+                        'application_id': sp.application_id,
+                        'roles': sp_roles
+                    })
+                })
+
+                # Check for account_admin role and create AccountAdmin edge
+                if 'account_admin' in sp_roles:
+                    all_edges.append({
+                        'src': sp_id,
+                        'dst': f"account:{SP_CREDENTIALS['account_id']}",
+                        'relationship': 'AccountAdmin',
+                        'permission_level': None,
+                        'inherited': False,
+                        'created_at': None,
+                        'properties': None
+                    })
+                    sp_admin_count += 1
+                    print(f"   👑 Found Account Admin SP: {sp.display_name}")
+
+            print(f"   ✓ Collected {len(account_sps)} account service principals")
+            if sp_admin_count > 0:
+                print(f"   👑 Found {sp_admin_count} Account Admin Service Principals")
+        except Exception as e:
+            print(f"   ⚠ Error collecting account service principals: {e}")
+
+        # ================================================================
+        # Collect Workspace Assignments
+        # ================================================================
+        print("\n🔗 Collecting Workspace Assignments...")
+        assignment_count = 0
+        for ws in tqdm(workspaces_to_collect, desc="Workspace Assignments"):
+            try:
+                assignments = list(account_client.workspace_assignment.list(workspace_id=ws.workspace_id))
+                for assignment in assignments:
+                    principal_id = assignment.principal.principal_id
+
+                    # Determine source node based on which name field is populated
+                    # The API returns group_name, user_name, or service_principal_name
+                    # to indicate the principal type (no principal_type field exists)
+                    if hasattr(assignment.principal, 'group_name') and assignment.principal.group_name:
+                        src = f"account_group:{principal_id}"
+                    elif hasattr(assignment.principal, 'service_principal_name') and assignment.principal.service_principal_name:
+                        src = f"account_sp:{principal_id}"
+                    else:
+                        # Default to user (user_name is populated)
+                        src = f"account_user:{principal_id}"
+
+                    all_edges.append({
+                        'src': src,
+                        'dst': f"workspace:{ws.workspace_id}",
+                        'relationship': 'WorkspaceAccess',
+                        'permission_level': 'WORKSPACE_ACCESS',
+                        'inherited': False,
+                        'properties': None,
+                        'created_at': datetime.now()
+                    })
+                    assignment_count += 1
+            except Exception as e:
+                pass  # Some workspaces may not allow listing assignments
+        print(f"   ✓ Collected {assignment_count} workspace assignments")
+
+        # ================================================================
+        # Collect Metastores
+        # ================================================================
+        print("\n🗄️ Collecting Metastores...")
+        try:
+            metastores = list(account_client.metastores.list())
+            for ms in tqdm(metastores, desc="Metastores"):
+                ms_id = ms.metastore_id
+                all_vertices.append({
+                    'id': f"metastore:{ms_id}",
+                    'node_type': 'Metastore',
+                    'name': ms.name,
+                    'display_name': ms.name,
+                    'email': None,
+                    'owner': ms.owner if hasattr(ms, 'owner') else None,
+                    'active': True,
+                    'created_at': datetime.fromtimestamp(ms.created_at / 1000) if ms.created_at else None,
+                    'updated_at': datetime.fromtimestamp(ms.updated_at / 1000) if ms.updated_at else None,
+                    'comment': None,
+                    'properties': safe_json({
+                        'region': ms.region if hasattr(ms, 'region') else None,
+                        'cloud': ms.cloud if hasattr(ms, 'cloud') else None
+                    }),
+                    'metadata': safe_json({'metastore_id': ms_id})
+                })
+            print(f"   ✓ Collected {len(metastores)} metastores")
+
+            # Collect metastore assignments
+            print("\n🔗 Collecting Metastore Assignments...")
+            ms_assignment_count = 0
+            for ws in workspaces_to_collect:
+                try:
+                    ms_assignment = account_client.metastore_assignments.get(workspace_id=ws.workspace_id)
+                    if ms_assignment and ms_assignment.metastore_id:
+                        all_edges.append({
+                            'src': f"workspace:{ws.workspace_id}",
+                            'dst': f"metastore:{ms_assignment.metastore_id}",
+                            'relationship': 'UsesMetastore',
+                            'permission_level': None,
+                            'inherited': False,
+                            'properties': None,
+                            'created_at': datetime.now()
+                        })
+                        ms_assignment_count += 1
+                except:
+                    pass
+            print(f"   ✓ Collected {ms_assignment_count} metastore assignments")
+        except Exception as e:
+            print(f"   ⚠ Error collecting metastores: {e}")
+
+        print(f"\n Account-level collection complete!")
+        print(f"   Vertices: {len(all_vertices)}")
+        print(f"   Edges: {len(all_edges)}")
+
+    except Exception as e:
+        print(f"\n Failed to connect to account: {e}")
+        traceback.print_exc()
+else:
+    print("\n Single-workspace mode — skipping account-level collection")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Step 6: Per-Workspace Collection
+# MAGIC
+# MAGIC Collects workspace-level data from all workspaces. In multi-workspace mode, iterates
+# MAGIC over all workspaces (including current). In single-workspace mode, collects from the
+# MAGIC current workspace only.
+# MAGIC
+# MAGIC **Current workspace:** Full collection (all resource types + UC grants)
+# MAGIC **Remote workspaces:** Limited collection (Users, Groups, Jobs, Secret Scopes, Clusters, Warehouses)
+
+# COMMAND ----------
+
+# DBTITLE 1,Per-Workspace Collection
+print("="*80)
+print("Per-Workspace Collection")
+print("="*80)
+
+# Build workspace iteration list
+if MULTI_WORKSPACE_MODE:
+    ws_iteration_list = workspaces_to_collect
+    print(f"\n Multi-workspace mode: collecting from {len(ws_iteration_list)} workspaces")
+else:
+    ws_iteration_list = [None]  # None signals "use current workspace"
+    print(f"\n Single-workspace mode: collecting from current workspace only")
+
+for ws_idx, ws in enumerate(ws_iteration_list):
+    # Determine if this is the current workspace
+    if ws is None:
+        # Single-workspace mode
+        is_current = True
+        ws_client = w
+        ws_id = str(current_workspace_id)
+        ws_name = current_workspace_url
+    else:
+        ws_id = str(ws.workspace_id)
+        ws_name = ws.workspace_name
+        is_current = (str(ws.workspace_id) == str(current_workspace_id))
+
+        if is_current:
+            ws_client = w
+        else:
+            ws_client = get_workspace_client(ws)
+            if ws_client is None:
+                WORKSPACE_COLLECTION_STATUS[ws_id] = {
+                    'name': ws_name, 'status': 'failed',
+                    'error': 'Failed to create client'
+                }
+                continue
+
+    # Initialize status tracking
+    if ws_id not in WORKSPACE_COLLECTION_STATUS:
+        WORKSPACE_COLLECTION_STATUS[ws_id] = {'name': ws_name, 'status': 'pending', 'error': None}
+
+    mode_label = "FULL" if is_current else "LIMITED"
+    print(f"\n{'='*60}")
+    print(f"[{ws_idx+1}/{len(ws_iteration_list)}] {ws_name} ({mode_label})")
+    print(f"{'='*60}")
+
+    try:
+        # ============================================================
+        # IDENTITY COLLECTION (all workspaces)
+        # ============================================================
+        # Collect Users
+        if COLLECTION_CONFIG['collect_users']:
+            print(f"\n   Collecting Users for {ws_name}...")
+            try:
+                users = list(ws_client.users.list())
+                for user in tqdm(users, desc="Users"):
+                    all_vertices.append({
+                        'id': str(user.id),
+                        'node_type': 'User',
+                        'name': safe_get(user, 'user_name'),
+                        'display_name': safe_get(user, 'display_name'),
+                        'email': user.emails[0].value if user.emails else None,
+                        'owner': None,
+                        'active': safe_get(user, 'active', True),
+                        'created_at': None,
+                        'updated_at': None,
+                        'comment': None,
+                        'properties': None,
+                        'metadata': safe_json({'external_id': safe_get(user, 'external_id')})
+                    })
+                print(f"    Collected {len(users)} users")
+            except Exception as e:
+                print(f"    Error collecting users: {e}")
+
+        # Collect Groups
+        if COLLECTION_CONFIG['collect_groups']:
+            print(f"\n   Collecting Groups for {ws_name}...")
+            try:
+                groups = list(ws_client.groups.list())
+                for group in tqdm(groups, desc="Groups"):
+                    all_vertices.append({
+                        'id': str(group.id),
+                        'node_type': 'Group',
+                        'name': safe_get(group, 'display_name'),
+                        'display_name': safe_get(group, 'display_name'),
+                        'email': None,
+                        'owner': None,
+                        'active': True,
+                        'created_at': None,
+                        'updated_at': None,
+                        'comment': None,
+                        'properties': None,
+                        'metadata': safe_json({'external_id': safe_get(group, 'external_id')})
+                    })
+                    # Collect memberships
+                    if hasattr(group, 'members') and group.members:
+                        for member in group.members:
+                            all_edges.append({
+                                'src': str(member.value),
+                                'dst': str(group.id),
+                                'relationship': 'MemberOf',
+                                'permission_level': None,
+                                'inherited': False,
+                                'properties': None,
+                                'created_at': datetime.now()
+                            })
+                print(f"    Collected {len(groups)} groups")
+            except Exception as e:
+                print(f"    Error collecting groups: {e}")
+
+        # Collect Service Principals
+        if COLLECTION_CONFIG['collect_service_principals']:
+            print(f"\n   Collecting Service Principals for {ws_name}...")
+            try:
+                sps = list(ws_client.service_principals.list())
+                for sp in tqdm(sps, desc="Service Principals"):
+                    all_vertices.append({
+                        'id': str(sp.id),
+                        'node_type': 'ServicePrincipal',
+                        'name': safe_get(sp, 'application_id') or safe_get(sp, 'display_name'),
+                        'display_name': safe_get(sp, 'display_name'),
+                        'email': None,
+                        'application_id': safe_get(sp, 'application_id'),
+                        'owner': None,
+                        'active': safe_get(sp, 'active', True),
+                        'created_at': None,
+                        'updated_at': None,
+                        'comment': None,
+                        'properties': None,
+                        'metadata': safe_json({'application_id': safe_get(sp, 'application_id')})
+                    })
+                print(f"    Collected {len(sps)} service principals")
+            except Exception as e:
+                print(f"    Error collecting service principals: {e}")
+
+        # ============================================================
+        # FULL COLLECTION (current workspace only)
+        # ============================================================
+        if is_current:
+            # --------------------------------------------------------
+            # COMPUTE COLLECTION
+            # --------------------------------------------------------
+
+            # Collect Clusters
+            if COLLECTION_CONFIG['collect_clusters']:
+                print(f"\n   Collecting Clusters for {ws_name}...")
+                try:
+                    clusters = list(ws_client.clusters.list())
+                    for cluster in tqdm(clusters, desc="Clusters"):
+                        cluster_id = safe_get(cluster, 'cluster_id')
+                        all_vertices.append({
+                            'id': cluster_id,
+                            'node_type': 'Cluster',
+                            'name': safe_get(cluster, 'cluster_name'),
+                            'display_name': safe_get(cluster, 'cluster_name'),
+                            'email': None,
+                            'owner': safe_get(cluster, 'creator_user_name'),
+                            'active': safe_get(cluster, 'state') == 'RUNNING',
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'spark_version': safe_get(cluster, 'spark_version')}),
+                            'metadata': safe_json({'state': safe_get(cluster, 'state')})
+                        })
+
+                        # Collect permissions
                         if COLLECTION_CONFIG['collect_permissions']:
                             try:
-                                grants_df = spark.sql(f"SHOW GRANTS ON TABLE `{cat_name}`.`{schema.name}`.`{table.name}`")
-                                for grant in grants_df.collect():
-                                    principal = grant.Principal if hasattr(grant, 'Principal') else grant.principal
-                                    action_type = grant.ActionType if hasattr(grant, 'ActionType') else grant.action_type
+                                perms = ws_client.permissions.get("clusters", cluster_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = None
+                                        if acl.user_name:
+                                            principal = acl.user_name
+                                        elif acl.group_name:
+                                            principal = acl.group_name
+                                        elif acl.service_principal_name:
+                                            principal = acl.service_principal_name
 
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': cluster_id,
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+                    print(f"    Collected {len(clusters)} clusters")
+                except Exception as e:
+                    print(f"    Error collecting clusters: {e}")
+
+            # Collect Instance Pools
+            if COLLECTION_CONFIG['collect_instance_pools']:
+                print(f"\n   Collecting Instance Pools for {ws_name}...")
+                try:
+                    pools = list(ws_client.instance_pools.list())
+                    for pool in tqdm(pools, desc="Instance Pools"):
+                        pool_id = safe_get(pool, 'instance_pool_id')
+                        all_vertices.append({
+                            'id': pool_id,
+                            'node_type': 'InstancePool',
+                            'name': safe_get(pool, 'instance_pool_name'),
+                            'display_name': safe_get(pool, 'instance_pool_name'),
+                            'email': None,
+                            'owner': None,
+                            'active': safe_get(pool, 'state') == 'ACTIVE',
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'node_type_id': safe_get(pool, 'node_type_id')}),
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("instance-pools", pool_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': pool_id,
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+                    print(f"    Collected {len(pools)} instance pools")
+                except Exception as e:
+                    print(f"    Error collecting instance pools: {e}")
+
+            # Collect Cluster Policies
+            if COLLECTION_CONFIG['collect_cluster_policies']:
+                print(f"\n   Collecting Cluster Policies for {ws_name}...")
+                try:
+                    policies = list(ws_client.cluster_policies.list())
+                    for policy in tqdm(policies, desc="Cluster Policies"):
+                        policy_id = safe_get(policy, 'policy_id')
+                        all_vertices.append({
+                            'id': policy_id,
+                            'node_type': 'ClusterPolicy',
+                            'name': safe_get(policy, 'name'),
+                            'display_name': safe_get(policy, 'name'),
+                            'email': None,
+                            'owner': safe_get(policy, 'creator_user_name'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': None,
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("cluster-policies", policy_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': policy_id,
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+                    print(f"    Collected {len(policies)} cluster policies")
+                except Exception as e:
+                    print(f"    Error collecting cluster policies: {e}")
+
+            # --------------------------------------------------------
+            # AI/ML COLLECTION
+            # --------------------------------------------------------
+
+            # Collect Serving Endpoints
+            if COLLECTION_CONFIG['collect_serving_endpoints']:
+                print(f"\n   Collecting Serving Endpoints for {ws_name}...")
+                try:
+                    endpoints = list(ws_client.serving_endpoints.list())
+                    for ep in tqdm(endpoints, desc="Serving Endpoints"):
+                        ep_name = safe_get(ep, 'name')
+                        all_vertices.append({
+                            'id': f"serving_endpoint:{ep_name}",
+                            'node_type': 'ServingEndpoint',
+                            'name': ep_name,
+                            'display_name': ep_name,
+                            'email': None,
+                            'owner': safe_get(ep, 'creator'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': None,
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("serving-endpoints", ep_name)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': f"serving_endpoint:{ep_name}",
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+                    print(f"    Collected {len(endpoints)} serving endpoints")
+                except Exception as e:
+                    print(f"    Error collecting serving endpoints: {e}")
+
+            # Collect Vector Search Endpoints
+            if COLLECTION_CONFIG['collect_vector_search_endpoints']:
+                print(f"\n   Collecting Vector Search Endpoints for {ws_name}...")
+                try:
+                    vs_endpoints = list(ws_client.vector_search_endpoints.list_endpoints())
+                    for ep in tqdm(vs_endpoints, desc="Vector Search Endpoints"):
+                        ep_name = safe_get(ep, 'name')
+                        all_vertices.append({
+                            'id': f"vs_endpoint:{ep_name}",
+                            'node_type': 'VectorSearchEndpoint',
+                            'name': ep_name,
+                            'display_name': ep_name,
+                            'email': None,
+                            'owner': safe_get(ep, 'creator'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': None,
+                            'metadata': None
+                        })
+                    print(f"    Collected {len(vs_endpoints)} vector search endpoints")
+                except Exception as e:
+                    print(f"    Error collecting vector search endpoints: {e}")
+
+            # Collect Experiments
+            if COLLECTION_CONFIG['collect_experiments']:
+                print(f"\n   Collecting MLflow Experiments for {ws_name}...")
+                try:
+                    experiments = list(ws_client.experiments.list_experiments())
+                    for exp in tqdm(experiments, desc="Experiments"):
+                        exp_id = safe_get(exp, 'experiment_id')
+                        all_vertices.append({
+                            'id': f"experiment:{exp_id}",
+                            'node_type': 'Experiment',
+                            'name': safe_get(exp, 'name'),
+                            'display_name': safe_get(exp, 'name'),
+                            'email': None,
+                            'owner': None,
+                            'active': safe_get(exp, 'lifecycle_stage') == 'active',
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': None,
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("experiments", exp_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': f"experiment:{exp_id}",
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+                    print(f"    Collected {len(experiments)} experiments")
+                except Exception as e:
+                    print(f"    Error collecting experiments: {e}")
+
+            # --------------------------------------------------------
+            # ANALYTICS/BI COLLECTION
+            # --------------------------------------------------------
+
+            # Collect Dashboards
+            if COLLECTION_CONFIG['collect_dashboards']:
+                print(f"\n   Collecting Dashboards for {ws_name}...")
+                try:
+                    dashboards = list(ws_client.lakeview.list())
+                    for dash in tqdm(dashboards, desc="Dashboards"):
+                        dash_id = safe_get(dash, 'dashboard_id')
+                        all_vertices.append({
+                            'id': f"dashboard:{dash_id}",
+                            'node_type': 'Dashboard',
+                            'name': safe_get(dash, 'display_name'),
+                            'display_name': safe_get(dash, 'display_name'),
+                            'email': None,
+                            'owner': safe_get(dash, 'creator_name'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'warehouse_id': safe_get(dash, 'warehouse_id')}),
+                            'metadata': None
+                        })
+                    print(f"    Collected {len(dashboards)} dashboards")
+                except Exception as e:
+                    print(f"    Error collecting dashboards: {e}")
+
+            # Collect Queries
+            if COLLECTION_CONFIG['collect_queries']:
+                print(f"\n   Collecting SQL Queries for {ws_name}...")
+                try:
+                    queries = list(ws_client.queries.list())
+                    for query in tqdm(queries, desc="Queries"):
+                        query_id = safe_get(query, 'id')
+                        all_vertices.append({
+                            'id': f"query:{query_id}",
+                            'node_type': 'Query',
+                            'name': safe_get(query, 'name') or safe_get(query, 'display_name'),
+                            'display_name': safe_get(query, 'name') or safe_get(query, 'display_name'),
+                            'email': None,
+                            'owner': safe_get(query, 'owner_user_name'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': None,
+                            'metadata': None
+                        })
+                    print(f"    Collected {len(queries)} queries")
+                except Exception as e:
+                    print(f"    Error collecting queries: {e}")
+
+            # Collect Alerts
+            if COLLECTION_CONFIG['collect_alerts']:
+                print(f"\n   Collecting Alerts for {ws_name}...")
+                try:
+                    alerts = list(ws_client.alerts.list())
+                    for alert in tqdm(alerts, desc="Alerts"):
+                        alert_id = safe_get(alert, 'id')
+                        all_vertices.append({
+                            'id': f"alert:{alert_id}",
+                            'node_type': 'Alert',
+                            'name': safe_get(alert, 'name') or safe_get(alert, 'display_name'),
+                            'display_name': safe_get(alert, 'name') or safe_get(alert, 'display_name'),
+                            'email': None,
+                            'owner': safe_get(alert, 'owner_user_name'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': None,
+                            'metadata': None
+                        })
+                    print(f"    Collected {len(alerts)} alerts")
+                except Exception as e:
+                    print(f"    Error collecting alerts: {e}")
+
+            # --------------------------------------------------------
+            # ORCHESTRATION COLLECTION
+            # --------------------------------------------------------
+
+            # Collect Jobs
+            if COLLECTION_CONFIG['collect_jobs']:
+                print(f"\n   Collecting Jobs for {ws_name}...")
+                try:
+                    jobs = list(ws_client.jobs.list())
+                    for job in tqdm(jobs, desc="Jobs"):
+                        job_id = str(safe_get(job, 'job_id'))
+                        job_name = safe_get(job.settings, 'name') if job.settings else f"Job {job_id}"
+                        all_vertices.append({
+                            'id': job_id,
+                            'node_type': 'Job',
+                            'name': job_name,
+                            'display_name': job_name,
+                            'email': None,
+                            'owner': safe_get(job, 'creator_user_name'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': None,
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("jobs", job_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': job_id,
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+                    print(f"    Collected {len(jobs)} jobs")
+                except Exception as e:
+                    print(f"    Error collecting jobs: {e}")
+
+            # Collect Pipelines
+            if COLLECTION_CONFIG['collect_pipelines']:
+                print(f"\n   Collecting Pipelines (DLT) for {ws_name}...")
+                try:
+                    pipelines = list(ws_client.pipelines.list_pipelines())
+                    for pipeline in tqdm(pipelines, desc="Pipelines"):
+                        pipeline_id = safe_get(pipeline, 'pipeline_id')
+                        all_vertices.append({
+                            'id': f"pipeline:{pipeline_id}",
+                            'node_type': 'Pipeline',
+                            'name': safe_get(pipeline, 'name'),
+                            'display_name': safe_get(pipeline, 'name'),
+                            'email': None,
+                            'owner': safe_get(pipeline, 'creator_user_name'),
+                            'active': safe_get(pipeline, 'state') in ['RUNNING', 'IDLE'],
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': None,
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("pipelines", pipeline_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': f"pipeline:{pipeline_id}",
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+                    print(f"    Collected {len(pipelines)} pipelines")
+                except Exception as e:
+                    print(f"    Error collecting pipelines: {e}")
+
+            # --------------------------------------------------------
+            # SQL WAREHOUSES
+            # --------------------------------------------------------
+
+            if COLLECTION_CONFIG['collect_warehouses']:
+                print(f"\n   Collecting SQL Warehouses for {ws_name}...")
+                try:
+                    warehouses = list(ws_client.warehouses.list())
+                    for wh in tqdm(warehouses, desc="Warehouses"):
+                        wh_id = safe_get(wh, 'id')
+                        all_vertices.append({
+                            'id': wh_id,
+                            'node_type': 'Warehouse',
+                            'name': safe_get(wh, 'name'),
+                            'display_name': safe_get(wh, 'name'),
+                            'email': None,
+                            'owner': None,
+                            'active': safe_get(wh, 'state') == 'RUNNING',
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({
+                                'warehouse_type': safe_get(wh, 'warehouse_type'),
+                                'cluster_size': safe_get(wh, 'cluster_size')
+                            }),
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("sql/warehouses", wh_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': wh_id,
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+                    print(f"    Collected {len(warehouses)} warehouses")
+                except Exception as e:
+                    print(f"    Error collecting warehouses: {e}")
+
+            # --------------------------------------------------------
+            # SECURITY COLLECTION
+            # --------------------------------------------------------
+
+            # Collect Secret Scopes
+            if COLLECTION_CONFIG['collect_secret_scopes']:
+                print(f"\n   Collecting Secret Scopes for {ws_name}...")
+                try:
+                    scopes = list(ws_client.secrets.list_scopes())
+                    for scope in tqdm(scopes, desc="Secret Scopes"):
+                        scope_name = safe_get(scope, 'name')
+                        all_vertices.append({
+                            'id': f"secret_scope:{scope_name}",
+                            'node_type': 'SecretScope',
+                            'name': scope_name,
+                            'display_name': scope_name,
+                            'email': None,
+                            'owner': None,
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'backend_type': safe_get(scope, 'backend_type')}),
+                            'metadata': None
+                        })
+
+                        # Collect secrets in scope
+                        try:
+                            secrets = list(ws_client.secrets.list_secrets(scope=scope_name))
+                            for secret in secrets:
+                                secret_key = safe_get(secret, 'key')
+                                all_vertices.append({
+                                    'id': f"secret:{scope_name}/{secret_key}",
+                                    'node_type': 'Secret',
+                                    'name': secret_key,
+                                    'display_name': secret_key,
+                                    'email': None,
+                                    'owner': None,
+                                    'active': True,
+                                    'created_at': None,
+                                    'updated_at': None,
+                                    'comment': None,
+                                    'properties': safe_json({'scope': scope_name}),
+                                    'metadata': None
+                                })
+
+                                # Add Contains edge
+                                all_edges.append({
+                                    'src': f"secret_scope:{scope_name}",
+                                    'dst': f"secret:{scope_name}/{secret_key}",
+                                    'relationship': 'Contains',
+                                    'permission_level': None,
+                                    'inherited': False,
+                                    'properties': None,
+                                    'created_at': datetime.now()
+                                })
+                        except:
+                            pass
+
+                        # Collect ACLs
+                        try:
+                            acls = list(ws_client.secrets.list_acls(scope=scope_name))
+                            for acl in acls:
+                                principal = safe_get(acl, 'principal')
+                                permission = safe_get(acl, 'permission')
+                                if principal and permission:
+                                    perm_map = {'MANAGE': 'CanManageSecret', 'WRITE': 'CanWriteSecret', 'READ': 'CanReadSecret'}
                                     all_edges.append({
                                         'src': principal,
-                                        'dst': table_id,
-                                        'relationship': action_type,
-                                        'permission_level': action_type,
+                                        'dst': f"secret_scope:{scope_name}",
+                                        'relationship': perm_map.get(permission, 'CanReadSecret'),
+                                        'permission_level': permission,
                                         'inherited': False,
                                         'properties': None,
                                         'created_at': datetime.now()
                                     })
-                                    grant_count += 1
+                        except:
+                            pass
+                    print(f"    Collected {len(scopes)} secret scopes")
+                except Exception as e:
+                    print(f"    Error collecting secret scopes: {e}")
+
+            # Collect Tokens
+            if COLLECTION_CONFIG['collect_tokens']:
+                print(f"\n   Collecting Tokens for {ws_name}...")
+                try:
+                    tokens = list(ws_client.tokens.list())
+                    for token in tqdm(tokens, desc="Tokens"):
+                        token_id = safe_get(token, 'token_id')
+                        all_vertices.append({
+                            'id': f"token:{token_id}",
+                            'node_type': 'Token',
+                            'name': safe_get(token, 'comment') or f"token-{token_id}",
+                            'display_name': safe_get(token, 'comment') or f"token-{token_id}",
+                            'email': None,
+                            'owner': safe_get(token, 'created_by_username'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': safe_get(token, 'comment'),
+                            'properties': None,
+                            'metadata': None
+                        })
+
+                        # Add owner edge
+                        owner = safe_get(token, 'created_by_username')
+                        if owner:
+                            all_edges.append({
+                                'src': owner,
+                                'dst': f"token:{token_id}",
+                                'relationship': 'Owns',
+                                'permission_level': None,
+                                'inherited': False,
+                                'properties': None,
+                                'created_at': datetime.now()
+                            })
+                    print(f"    Collected {len(tokens)} tokens")
+                except Exception as e:
+                    print(f"    Error collecting tokens: {e}")
+
+            # --------------------------------------------------------
+            # APPS COLLECTION
+            # --------------------------------------------------------
+
+            if COLLECTION_CONFIG['collect_apps']:
+                print(f"\n   Collecting Databricks Apps for {ws_name}...")
+                try:
+                    apps = list(ws_client.apps.list())
+                    for app in tqdm(apps, desc="Apps"):
+                        app_name = safe_get(app, 'name')
+                        all_vertices.append({
+                            'id': f"app:{app_name}",
+                            'node_type': 'App',
+                            'name': app_name,
+                            'display_name': app_name,
+                            'email': None,
+                            'owner': safe_get(app, 'creator_name'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'url': safe_get(app, 'url')}),
+                            'metadata': None
+                        })
+                    print(f"    Collected {len(apps)} apps")
+                except Exception as e:
+                    print(f"    Error collecting apps: {e}")
+
+            # --------------------------------------------------------
+            # UNITY CATALOG OBJECTS & GRANTS
+            # --------------------------------------------------------
+
+            if COLLECTION_CONFIG['collect_unity_catalog']:
+                print(f"\n   Collecting Unity Catalog Objects & Grants for {ws_name}...")
+
+                # Get catalogs
+                try:
+                    catalogs = list(ws_client.catalogs.list())
+                except Exception as e:
+                    print(f"    Error listing catalogs: {e}")
+                    catalogs = []
+
+                # Filter system catalogs
+                catalogs = [c for c in catalogs if c.name not in ['system', '__databricks_internal']]
+
+                # Apply limit if configured
+                if COLLECTION_CONFIG['max_catalogs']:
+                    catalogs = catalogs[:COLLECTION_CONFIG['max_catalogs']]
+
+                print(f"    Found {len(catalogs)} catalogs (excluding system)")
+
+                grant_count = 0
+
+                for cat in tqdm(catalogs, desc="Catalogs"):
+                    cat_name = cat.name
+
+                    # Add catalog vertex
+                    all_vertices.append({
+                        'id': cat_name,
+                        'node_type': 'Catalog',
+                        'name': cat_name,
+                        'display_name': cat_name,
+                        'email': None,
+                        'owner': safe_get(cat, 'owner'),
+                        'active': True,
+                        'created_at': datetime.fromtimestamp(cat.created_at / 1000) if cat.created_at else None,
+                        'updated_at': datetime.fromtimestamp(cat.updated_at / 1000) if cat.updated_at else None,
+                        'comment': safe_get(cat, 'comment'),
+                        'properties': safe_json(cat.properties) if cat.properties else None,
+                        'metadata': safe_json({'metastore_id': safe_get(cat, 'metastore_id')})
+                    })
+
+                    # Collect catalog grants using SHOW GRANTS
+                    if COLLECTION_CONFIG['collect_permissions']:
+                        try:
+                            grants_df = spark.sql(f"SHOW GRANTS ON CATALOG `{cat_name}`")
+                            for grant in grants_df.collect():
+                                principal = grant.Principal if hasattr(grant, 'Principal') else grant.principal
+                                action_type = grant.ActionType if hasattr(grant, 'ActionType') else grant.action_type
+
+                                all_edges.append({
+                                    'src': principal,
+                                    'dst': cat_name,
+                                    'relationship': action_type,
+                                    'permission_level': action_type,
+                                    'inherited': False,
+                                    'properties': None,
+                                    'created_at': datetime.now()
+                                })
+                                grant_count += 1
+                        except:
+                            pass
+
+                    # Collect schemas
+                    try:
+                        schemas = list(ws_client.schemas.list(catalog_name=cat_name))
+
+                        if COLLECTION_CONFIG['max_schemas_per_catalog']:
+                            schemas = schemas[:COLLECTION_CONFIG['max_schemas_per_catalog']]
+
+                        for schema in schemas:
+                            schema_id = f"{cat_name}.{schema.name}"
+
+                            # Add schema vertex
+                            all_vertices.append({
+                                'id': schema_id,
+                                'node_type': 'Schema',
+                                'name': schema_id,
+                                'display_name': schema.name,
+                                'email': None,
+                                'owner': safe_get(schema, 'owner'),
+                                'active': True,
+                                'created_at': datetime.fromtimestamp(schema.created_at / 1000) if schema.created_at else None,
+                                'updated_at': datetime.fromtimestamp(schema.updated_at / 1000) if schema.updated_at else None,
+                                'comment': safe_get(schema, 'comment'),
+                                'properties': safe_json(schema.properties) if schema.properties else None,
+                                'metadata': safe_json({'catalog_name': cat_name})
+                            })
+
+                            # Add Contains edge: Catalog -> Schema
+                            all_edges.append({
+                                'src': cat_name,
+                                'dst': schema_id,
+                                'relationship': 'Contains',
+                                'permission_level': None,
+                                'inherited': False,
+                                'properties': None,
+                                'created_at': datetime.now()
+                            })
+
+                            # Collect schema grants
+                            if COLLECTION_CONFIG['collect_permissions']:
+                                try:
+                                    grants_df = spark.sql(f"SHOW GRANTS ON SCHEMA `{cat_name}`.`{schema.name}`")
+                                    for grant in grants_df.collect():
+                                        principal = grant.Principal if hasattr(grant, 'Principal') else grant.principal
+                                        action_type = grant.ActionType if hasattr(grant, 'ActionType') else grant.action_type
+
+                                        all_edges.append({
+                                            'src': principal,
+                                            'dst': schema_id,
+                                            'relationship': action_type,
+                                            'permission_level': action_type,
+                                            'inherited': False,
+                                            'properties': None,
+                                            'created_at': datetime.now()
+                                        })
+                                        grant_count += 1
+                                except:
+                                    pass
+
+                            # Collect tables
+                            try:
+                                tables = list(ws_client.tables.list(catalog_name=cat_name, schema_name=schema.name))
+
+                                if COLLECTION_CONFIG['max_tables_per_schema']:
+                                    tables = tables[:COLLECTION_CONFIG['max_tables_per_schema']]
+
+                                for table in tables:
+                                    table_id = f"{cat_name}.{schema.name}.{table.name}"
+                                    table_type = safe_get(table, 'table_type')
+                                    node_type = 'View' if table_type and 'VIEW' in str(table_type).upper() else 'Table'
+
+                                    # Add table vertex
+                                    all_vertices.append({
+                                        'id': table_id,
+                                        'node_type': node_type,
+                                        'name': table_id,
+                                        'display_name': table.name,
+                                        'email': None,
+                                        'owner': safe_get(table, 'owner'),
+                                        'active': True,
+                                        'created_at': datetime.fromtimestamp(table.created_at / 1000) if table.created_at else None,
+                                        'updated_at': datetime.fromtimestamp(table.updated_at / 1000) if table.updated_at else None,
+                                        'comment': safe_get(table, 'comment'),
+                                        'properties': safe_json(table.properties) if table.properties else None,
+                                        'metadata': safe_json({
+                                            'table_type': str(table_type),
+                                            'data_source_format': safe_get(table, 'data_source_format')
+                                        })
+                                    })
+
+                                    # Add Contains edge: Schema -> Table
+                                    all_edges.append({
+                                        'src': schema_id,
+                                        'dst': table_id,
+                                        'relationship': 'Contains',
+                                        'permission_level': None,
+                                        'inherited': False,
+                                        'properties': None,
+                                        'created_at': datetime.now()
+                                    })
+
+                                    # Collect table grants
+                                    if COLLECTION_CONFIG['collect_permissions']:
+                                        try:
+                                            grants_df = spark.sql(f"SHOW GRANTS ON TABLE `{cat_name}`.`{schema.name}`.`{table.name}`")
+                                            for grant in grants_df.collect():
+                                                principal = grant.Principal if hasattr(grant, 'Principal') else grant.principal
+                                                action_type = grant.ActionType if hasattr(grant, 'ActionType') else grant.action_type
+
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': table_id,
+                                                    'relationship': action_type,
+                                                    'permission_level': action_type,
+                                                    'inherited': False,
+                                                    'properties': None,
+                                                    'created_at': datetime.now()
+                                                })
+                                                grant_count += 1
+                                        except:
+                                            pass
                             except:
                                 pass
-                except:
-                    pass
-        except:
-            pass
+                    except:
+                        pass
 
-    print(f"\n Unity Catalog collection complete!")
-    print(f"   Total grants collected: {grant_count}")
-else:
-    print("\n Unity Catalog collection disabled")
+                print(f"    Unity Catalog collection complete! Total grants: {grant_count}")
+            else:
+                print(f"\n   Unity Catalog collection disabled")
 
-print(f"\n Total Vertices: {len(all_vertices)}")
-print(f" Total Edges: {len(all_edges)}")
+        # ============================================================
+        # LIMITED RESOURCE COLLECTION (remote workspaces only)
+        # ============================================================
+        if not is_current:
+            # Collect Jobs from this workspace (important for escalation paths)
+            print(f"    Collecting Jobs...")
+            try:
+                ws_jobs = list(ws_client.jobs.list())
+                for job in ws_jobs:
+                    job_id = f"ws_{ws_id}_job:{job.job_id}"
+                    job_settings = job.settings if hasattr(job, 'settings') else None
+                    job_owner = safe_get(job_settings, 'run_as') if job_settings else None
+                    if not job_owner:
+                        job_owner = safe_get(job, 'creator_user_name')
+                    all_vertices.append({
+                        'id': job_id,
+                        'node_type': 'Job',
+                        'name': job_settings.name if job_settings else str(job.job_id),
+                        'display_name': job_settings.name if job_settings else str(job.job_id),
+                        'email': None,
+                        'owner': str(job_owner) if job_owner else None,
+                        'active': True,
+                        'created_at': datetime.fromtimestamp(job.created_time / 1000) if job.created_time else None,
+                        'updated_at': None,
+                        'comment': None,
+                        'properties': safe_json({'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                        'metadata': None
+                    })
+                print(f"    ✓ {len(ws_jobs)} jobs")
+            except Exception as e:
+                print(f"    ⚠ Jobs: {e}")
+
+            # Collect Secret Scopes from this workspace
+            if COLLECTION_CONFIG.get('collect_secret_scopes', True):
+                print(f"    Collecting Secret Scopes...")
+                try:
+                    ws_scopes = list(ws_client.secrets.list_scopes())
+                    scope_count = 0
+                    for scope in ws_scopes:
+                        scope_name = safe_get(scope, 'name')
+                        scope_id = f"ws_{ws_id}_secret_scope:{scope_name}"
+                        all_vertices.append({
+                            'id': scope_id,
+                            'node_type': 'SecretScope',
+                            'name': scope_name,
+                            'display_name': scope_name,
+                            'email': None,
+                            'owner': None,
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'backend_type': safe_get(scope, 'backend_type'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                            'metadata': None
+                        })
+                        scope_count += 1
+
+                        # Collect secrets in scope
+                        try:
+                            ws_secrets = list(ws_client.secrets.list_secrets(scope=scope_name))
+                            for secret in ws_secrets:
+                                secret_key = safe_get(secret, 'key')
+                                secret_id = f"ws_{ws_id}_secret:{scope_name}/{secret_key}"
+                                all_vertices.append({
+                                    'id': secret_id,
+                                    'node_type': 'Secret',
+                                    'name': secret_key,
+                                    'display_name': secret_key,
+                                    'email': None,
+                                    'owner': None,
+                                    'active': True,
+                                    'created_at': None,
+                                    'updated_at': None,
+                                    'comment': None,
+                                    'properties': safe_json({'scope': scope_name, 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                                    'metadata': None
+                                })
+                                # Add Contains edge
+                                all_edges.append({
+                                    'src': scope_id,
+                                    'dst': secret_id,
+                                    'relationship': 'Contains',
+                                    'permission_level': None,
+                                    'inherited': False,
+                                    'properties': None,
+                                    'created_at': datetime.now()
+                                })
+                        except:
+                            pass
+
+                        # Collect ACLs for the scope
+                        try:
+                            ws_acls = list(ws_client.secrets.list_acls(scope=scope_name))
+                            for acl in ws_acls:
+                                principal = safe_get(acl, 'principal')
+                                permission = safe_get(acl, 'permission')
+                                if principal and permission:
+                                    perm_map = {'MANAGE': 'CanManageSecret', 'WRITE': 'CanWriteSecret', 'READ': 'CanReadSecret'}
+                                    all_edges.append({
+                                        'src': principal,
+                                        'dst': scope_id,
+                                        'relationship': perm_map.get(permission, 'CanReadSecret'),
+                                        'permission_level': permission,
+                                        'inherited': False,
+                                        'properties': safe_json({'workspace_id': str(ws_id)}),
+                                        'created_at': datetime.now()
+                                    })
+                        except:
+                            pass
+                    print(f"    ✓ {scope_count} secret scopes")
+                except Exception as e:
+                    print(f"    ⚠ Secret Scopes: {e}")
+
+            # Collect Clusters from this workspace
+            if COLLECTION_CONFIG.get('collect_clusters', True):
+                print(f"    Collecting Clusters...")
+                try:
+                    ws_clusters = list(ws_client.clusters.list())
+                    for cluster in ws_clusters:
+                        cluster_id = safe_get(cluster, 'cluster_id')
+                        all_vertices.append({
+                            'id': f"ws_{ws_id}_cluster:{cluster_id}",
+                            'node_type': 'Cluster',
+                            'name': safe_get(cluster, 'cluster_name'),
+                            'display_name': safe_get(cluster, 'cluster_name'),
+                            'email': None,
+                            'owner': safe_get(cluster, 'creator_user_name'),
+                            'active': safe_get(cluster, 'state') == 'RUNNING',
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'spark_version': safe_get(cluster, 'spark_version'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                            'metadata': safe_json({'state': safe_get(cluster, 'state')})
+                        })
+                    print(f"    ✓ {len(ws_clusters)} clusters")
+                except Exception as e:
+                    print(f"    ⚠ Clusters: {e}")
+
+            # Collect SQL Warehouses from this workspace
+            if COLLECTION_CONFIG.get('collect_warehouses', True):
+                print(f"    Collecting SQL Warehouses...")
+                try:
+                    ws_warehouses = list(ws_client.warehouses.list())
+                    for wh in ws_warehouses:
+                        wh_id = safe_get(wh, 'id')
+                        all_vertices.append({
+                            'id': f"ws_{ws_id}_warehouse:{wh_id}",
+                            'node_type': 'SQLWarehouse',
+                            'name': safe_get(wh, 'name'),
+                            'display_name': safe_get(wh, 'name'),
+                            'email': None,
+                            'owner': safe_get(wh, 'creator_name'),
+                            'active': safe_get(wh, 'state') == 'RUNNING',
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'warehouse_type': safe_get(wh, 'warehouse_type'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                            'metadata': safe_json({'state': safe_get(wh, 'state')})
+                        })
+                    print(f"    ✓ {len(ws_warehouses)} warehouses")
+                except Exception as e:
+                    print(f"    ⚠ SQL Warehouses: {e}")
+
+        WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'success'
+
+    except Exception as e:
+        print(f"   ✗ Failed: {e}")
+        WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'failed'
+        WORKSPACE_COLLECTION_STATUS[ws_id]['error'] = str(e)[:500]
+        continue
+
+print(f"\n Per-workspace collection complete!")
+print(f"   Vertices: {len(all_vertices)}")
+print(f"   Edges: {len(all_edges)}")
 
 # COMMAND ----------
 
@@ -2114,910 +2661,6 @@ else:
     print(f"\n SUCCESS! {grant_count} permission grants saved")
     print("\n Permission types:")
     display(permission_grants.groupBy("permission_level").count().orderBy(F.desc("count")))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Collection Scope Reference
-# MAGIC
-# MAGIC The following object types are now collected:
-# MAGIC
-# MAGIC | Category | Objects |
-# MAGIC |----------|---------|
-# MAGIC | **Identity** | Users, Groups, Service Principals |
-# MAGIC | **Compute** | Clusters, Instance Pools, Cluster Policies, Global Init Scripts |
-# MAGIC | **AI/ML** | Serving Endpoints, Vector Search Endpoints/Indexes, Registered Models, Experiments |
-# MAGIC | **Analytics/BI** | Dashboards, SQL Queries, Alerts |
-# MAGIC | **Development** | Notebooks, Repos |
-# MAGIC | **Orchestration** | Jobs, Pipelines (DLT) |
-# MAGIC | **Data & Analytics** | SQL Warehouses, Metastores, Catalogs, Schemas, Tables, Views, Volumes, Functions, External Locations, Storage Credentials, Connections |
-# MAGIC | **Security** | Secret Scopes, Secrets, Tokens, IP Access Lists |
-# MAGIC | **Apps** | Databricks Apps |
-# MAGIC | **Account-Level** | Workspaces, Account Users/Groups/SPs, Workspace Assignments |
-# MAGIC
-# MAGIC Run the analysis notebooks (02-06) to analyze this data!
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ---
-# MAGIC # Step 9: Account-Level & Multi-Workspace Collection
-# MAGIC
-# MAGIC This step collects:
-# MAGIC - **Account-level objects**: Workspaces, Account Users/Groups/SPs, Metastores, Workspace Assignments
-# MAGIC - **Multi-workspace data**: Users, Groups, Jobs from ALL workspaces using SP credentials
-# MAGIC
-# MAGIC **Requirements:**
-# MAGIC - Service Principal with **Account Admin** role
-# MAGIC - SP added as **Admin** to each workspace you want to collect from
-# MAGIC - Secrets configured in scope "brickhound" (see 00_config for detailed setup)
-# MAGIC
-# MAGIC **Note:** If SP credentials were loaded in Step 4, this step will:
-# MAGIC 1. Collect account-level objects
-# MAGIC 2. Iterate over ALL workspaces and collect Users, Groups, Jobs from each
-
-# COMMAND ----------
-
-# DBTITLE 1,Account-Level & Multi-Workspace Collection
-if COLLECTION_CONFIG.get('collect_account_level', False):
-    import traceback
-
-    print("="*80)
-    print("Account-Level & Multi-Workspace Collection")
-    print("="*80)
-
-    # Skip account-level collection on serverless even if enabled
-    if is_serverless:
-        print("⚠ Skipping account-level collection on serverless compute")
-        print("  → Switch to Classic Compute for account-level data collection")
-        print("="*80)
-        # Set empty credentials to prevent execution of account-level logic
-        ACCOUNT_ID = ""
-        SP_CLIENT_ID = ""
-        SP_CLIENT_SECRET = ""
-    # Use credentials loaded in Step 4 (or try to load them now if not available)
-    elif MULTI_WORKSPACE_MODE and SP_CREDENTIALS.get('account_id'):
-        ACCOUNT_ID = SP_CREDENTIALS['account_id']
-        SP_CLIENT_ID = SP_CREDENTIALS['client_id']
-        SP_CLIENT_SECRET = SP_CREDENTIALS['client_secret']
-        print("✓ Using credentials loaded in Step 4")
-    else:
-        # Try to load credentials from secrets (using SAT secret key names)
-        try:
-            ACCOUNT_ID = dbutils.secrets.get(scope=secrets_scope, key="account-console-id")
-            SP_CLIENT_ID = dbutils.secrets.get(scope=secrets_scope, key="client-id")
-            SP_CLIENT_SECRET = dbutils.secrets.get(scope=secrets_scope, key="client-secret")
-            print(f"✓ Loaded credentials from secrets scope '{secrets_scope}'")
-        except:
-            ACCOUNT_ID = ""
-            SP_CLIENT_ID = ""
-            SP_CLIENT_SECRET = ""
-            print("⚠ No credentials available")
-
-    if ACCOUNT_ID and SP_CLIENT_ID and SP_CLIENT_SECRET:
-        try:
-            # Reuse account host determined during initialization (Step 4)
-            # If not available (credentials loaded directly here), compute it using helper functions
-            if SP_CREDENTIALS.get('account_host'):
-                account_host = SP_CREDENTIALS['account_host']
-                # Reuse cloud_type from initialization
-                workspace_url = spark.conf.get("spark.databricks.workspaceUrl", "")
-                cloud_type = parse_cloud_type(workspace_url)
-            else:
-                # Fallback: compute account host using domain-aware logic
-                workspace_url = spark.conf.get("spark.databricks.workspaceUrl", "")
-                domain = get_domain_from_url(workspace_url)
-                cloud_type = parse_cloud_type(workspace_url)
-
-                if cloud_type == 'azure':
-                    account_host = f"https://accounts.azuredatabricks.{domain}"
-                elif cloud_type == 'gcp':
-                    account_host = f"https://accounts.gcp.databricks.{domain}"
-                else:  # aws
-                    account_host = f"https://accounts.cloud.databricks.{domain}"
-
-            print(f"\n📡 Connecting to {account_host}")
-            print(f"   Account ID: {ACCOUNT_ID}")
-            print(f"   Client ID: {SP_CLIENT_ID[:8]}...")
-            print(f"   Cloud Type: {cloud_type}")
-
-            # CONDITIONAL AUTHENTICATION: Azure uses MSAL tokens, AWS/GCP use oauth-m2m
-            if cloud_type == 'azure':
-                # Azure: Generate MSAL token and pass to AccountClient
-                TENANT_ID = SP_CREDENTIALS.get('tenant_id')
-                if not TENANT_ID:
-                    # Try to load from secrets if not in SP_CREDENTIALS
-                    try:
-                        TENANT_ID = dbutils.secrets.get(scope=secrets_scope, key="tenant-id")
-                    except:
-                        raise Exception("tenant-id secret is required for Azure authentication")
-
-                print(f"   Generating Azure MSAL token...")
-                azure_token = get_azure_databricks_token(
-                    client_id=SP_CLIENT_ID,
-                    client_secret=SP_CLIENT_SECRET,
-                    tenant_id=TENANT_ID
-                )
-
-                account = AccountClient(
-                    host=account_host,
-                    account_id=ACCOUNT_ID,
-                    token=azure_token  # Pass MSAL-generated token
-                )
-                print(f"   ✓ Using Azure MSAL authentication")
-            else:
-                # AWS/GCP: Use OAuth M2M authentication
-                account = AccountClient(
-                    host=account_host,
-                    account_id=ACCOUNT_ID,
-                    client_id=SP_CLIENT_ID,
-                    client_secret=SP_CLIENT_SECRET,
-                    auth_type="oauth-m2m"
-                )
-                print(f"   ✓ Using OAuth M2M authentication")
-
-            # Test connection
-            print(f"\n🔍 Testing connection by listing workspaces...")
-            workspaces = list(account.workspaces.list())
-            print(f"✓ Connected! Found {len(workspaces)} workspaces")
-
-            # ================================================================
-            # Collect Workspaces
-            # ================================================================
-            print("\n📦 Collecting Workspaces...")
-            for ws in tqdm(workspaces, desc="Workspaces"):
-                ws_id = str(ws.workspace_id)
-                all_vertices.append({
-                    'id': f"workspace:{ws_id}",
-                    'node_type': 'Workspace',
-                    'name': ws.workspace_name,
-                    'display_name': ws.workspace_name,
-                    'email': None,
-                    'owner': None,
-                    'active': ws.workspace_status.value == 'RUNNING' if hasattr(ws.workspace_status, 'value') else True,
-                    'created_at': None,
-                    'updated_at': None,
-                    'comment': None,
-                    'properties': safe_json({
-                        'deployment_name': ws.deployment_name,
-                        'cloud': ws.cloud,
-                        'region': ws.aws_region if hasattr(ws, 'aws_region') else ws.location if hasattr(ws, 'location') else None
-                    }),
-                    'metadata': safe_json({'workspace_id': ws_id})
-                })
-            print(f"   ✓ Collected {len(workspaces)} workspaces")
-
-            # ================================================================
-            # Collect Account Users (with full details including roles)
-            # ================================================================
-            print("\n👥 Collecting Account Users...")
-            account_admin_count = 0
-            try:
-                # First get list of all users
-                account_users_list = list(account.users.list())
-                account_users = []
-
-                # Fetch full details for each user including roles
-                for user in tqdm(account_users_list, desc="Fetching User Details"):
-                    try:
-                        full_user = account.users.get(user.id)
-                        account_users.append(full_user)
-                    except Exception as e:
-                        print(f"   ⚠ Error getting details for user {user.id}: {e}")
-                        account_users.append(user)  # Fall back to basic info
-
-                for user in tqdm(account_users, desc="Account Users"):
-                    user_id = f"account_user:{user.id}"
-
-                    # Extract roles for metadata
-                    user_roles = []
-                    if hasattr(user, 'roles') and user.roles:
-                        user_roles = [r.value for r in user.roles if hasattr(r, 'value')]
-
-                    all_vertices.append({
-                        'id': user_id,
-                        'node_type': 'AccountUser',
-                        'name': user.user_name,
-                        'display_name': user.display_name,
-                        'email': user.emails[0].value if user.emails else None,
-                        'owner': None,
-                        'active': user.active if hasattr(user, 'active') else True,
-                        'created_at': None,
-                        'updated_at': None,
-                        'comment': None,
-                        'properties': None,
-                        'metadata': safe_json({
-                            'external_id': user.external_id if hasattr(user, 'external_id') else None,
-                            'roles': user_roles
-                        })
-                    })
-
-                    # Check for account_admin role and create AccountAdmin edge
-                    if 'account_admin' in user_roles:
-                        all_edges.append({
-                            'src': user_id,
-                            'dst': f"account:{ACCOUNT_ID}",
-                            'relationship': 'AccountAdmin',
-                            'permission_level': None,
-                            'inherited': False,
-                            'created_at': None,
-                            'properties': None
-                        })
-                        account_admin_count += 1
-                        print(f"   👑 Found Account Admin: {user.user_name}")
-
-                print(f"   ✓ Collected {len(account_users)} account users")
-                if account_admin_count > 0:
-                    print(f"   👑 Found {account_admin_count} Account Admins")
-            except Exception as e:
-                print(f"   ⚠ Error collecting account users: {e}")
-
-            # ================================================================
-            # Collect Account Groups (with full member details)
-            # ================================================================
-            print("\n👥 Collecting Account Groups...")
-            try:
-                # First get list of all groups (groups.list() doesn't return members)
-                account_groups_list = list(account.groups.list())
-                account_groups = []
-
-                # Fetch full details for each group including members
-                for group in tqdm(account_groups_list, desc="Fetching Group Details"):
-                    try:
-                        full_group = account.groups.get(group.id)
-                        account_groups.append(full_group)
-                    except Exception as e:
-                        print(f"   ⚠ Error getting details for group {group.id}: {e}")
-                        account_groups.append(group)  # Fall back to basic info
-
-                for group in tqdm(account_groups, desc="Account Groups"):
-                    group_id = f"account_group:{group.id}"
-                    group_name = group.display_name
-                    all_vertices.append({
-                        'id': group_id,
-                        'node_type': 'AccountGroup',
-                        'name': group_name,
-                        'display_name': group_name,
-                        'email': None,
-                        'owner': None,
-                        'active': True,
-                        'created_at': None,
-                        'updated_at': None,
-                        'comment': None,
-                        'properties': None,
-                        'metadata': None
-                    })
-
-                    # Collect memberships (now available from groups.get())
-                    if hasattr(group, 'members') and group.members:
-                        for member in group.members:
-                            member_type = member.type if hasattr(member, 'type') else None
-                            ref = member.ref if hasattr(member, 'ref') else ''
-
-                            # Determine member type and prefix
-                            # Use consistent prefixes: account_user, account_group, account_sp
-                            if member_type == 'User' or 'Users' in str(ref):
-                                member_prefix = 'account_user'
-                            elif member_type == 'Group' or 'Groups' in str(ref):
-                                member_prefix = 'account_group'
-                            elif member_type == 'ServicePrincipal' or 'ServicePrincipals' in str(ref):
-                                member_prefix = 'account_sp'
-                            else:
-                                member_prefix = 'account_user'  # Default
-
-                            prefixed_member_id = f"{member_prefix}:{member.value}"
-
-                            # MemberOf edge with prefixed IDs (member -> group by ID)
-                            all_edges.append({
-                                'src': prefixed_member_id,
-                                'dst': group_id,
-                                'relationship': 'MemberOf',
-                                'permission_level': None,
-                                'inherited': False,
-                                'properties': None,
-                                'created_at': datetime.now()
-                            })
-
-                            # Also add MemberOf edge using group name as dst for query flexibility
-                            all_edges.append({
-                                'src': prefixed_member_id,
-                                'dst': group_name,
-                                'relationship': 'MemberOf',
-                                'permission_level': None,
-                                'inherited': False,
-                                'properties': None,
-                                'created_at': datetime.now()
-                            })
-                print(f"   ✓ Collected {len(account_groups)} account groups")
-            except Exception as e:
-                print(f"   ⚠ Error collecting account groups: {e}")
-
-            # ================================================================
-            # Collect Account Service Principals (with full details including roles)
-            # ================================================================
-            print("\n🤖 Collecting Account Service Principals...")
-            sp_admin_count = 0
-            try:
-                # First get list of all service principals
-                account_sps_list = list(account.service_principals.list())
-                account_sps = []
-
-                # Fetch full details for each SP including roles
-                for sp in tqdm(account_sps_list, desc="Fetching SP Details"):
-                    try:
-                        full_sp = account.service_principals.get(sp.id)
-                        account_sps.append(full_sp)
-                    except Exception as e:
-                        print(f"   ⚠ Error getting details for SP {sp.id}: {e}")
-                        account_sps.append(sp)  # Fall back to basic info
-
-                for sp in tqdm(account_sps, desc="Account SPs"):
-                    sp_id = f"account_sp:{sp.id}"
-
-                    # Extract roles for metadata
-                    sp_roles = []
-                    if hasattr(sp, 'roles') and sp.roles:
-                        sp_roles = [r.value for r in sp.roles if hasattr(r, 'value')]
-
-                    all_vertices.append({
-                        'id': sp_id,
-                        'node_type': 'AccountServicePrincipal',
-                        'name': sp.display_name or sp.application_id,
-                        'display_name': sp.display_name,
-                        'email': None,
-                        'application_id': sp.application_id,
-                        'owner': None,
-                        'active': sp.active if hasattr(sp, 'active') else True,
-                        'created_at': None,
-                        'updated_at': None,
-                        'comment': None,
-                        'properties': None,
-                        'metadata': safe_json({
-                            'application_id': sp.application_id,
-                            'roles': sp_roles
-                        })
-                    })
-
-                    # Check for account_admin role and create AccountAdmin edge
-                    if 'account_admin' in sp_roles:
-                        all_edges.append({
-                            'src': sp_id,
-                            'dst': f"account:{ACCOUNT_ID}",
-                            'relationship': 'AccountAdmin',
-                            'permission_level': None,
-                            'inherited': False,
-                            'created_at': None,
-                            'properties': None
-                        })
-                        sp_admin_count += 1
-                        print(f"   👑 Found Account Admin SP: {sp.display_name}")
-
-                print(f"   ✓ Collected {len(account_sps)} account service principals")
-                if sp_admin_count > 0:
-                    print(f"   👑 Found {sp_admin_count} Account Admin Service Principals")
-            except Exception as e:
-                print(f"   ⚠ Error collecting account service principals: {e}")
-
-            # ================================================================
-            # Collect Workspace Assignments
-            # ================================================================
-            print("\n🔗 Collecting Workspace Assignments...")
-            assignment_count = 0
-            for ws in tqdm(workspaces, desc="Workspace Assignments"):
-                try:
-                    assignments = list(account.workspace_assignment.list(workspace_id=ws.workspace_id))
-                    for assignment in assignments:
-                        principal_id = assignment.principal.principal_id
-
-                        # Determine source node based on which name field is populated
-                        # The API returns group_name, user_name, or service_principal_name
-                        # to indicate the principal type (no principal_type field exists)
-                        if hasattr(assignment.principal, 'group_name') and assignment.principal.group_name:
-                            src = f"account_group:{principal_id}"
-                        elif hasattr(assignment.principal, 'service_principal_name') and assignment.principal.service_principal_name:
-                            src = f"account_sp:{principal_id}"
-                        else:
-                            # Default to user (user_name is populated)
-                            src = f"account_user:{principal_id}"
-
-                        all_edges.append({
-                            'src': src,
-                            'dst': f"workspace:{ws.workspace_id}",
-                            'relationship': 'WorkspaceAccess',
-                            'permission_level': 'WORKSPACE_ACCESS',
-                            'inherited': False,
-                            'properties': None,
-                            'created_at': datetime.now()
-                        })
-                        assignment_count += 1
-                except Exception as e:
-                    pass  # Some workspaces may not allow listing assignments
-            print(f"   ✓ Collected {assignment_count} workspace assignments")
-
-            # ================================================================
-            # Collect Metastores
-            # ================================================================
-            print("\n🗄️ Collecting Metastores...")
-            try:
-                metastores = list(account.metastores.list())
-                for ms in tqdm(metastores, desc="Metastores"):
-                    ms_id = ms.metastore_id
-                    all_vertices.append({
-                        'id': f"metastore:{ms_id}",
-                        'node_type': 'Metastore',
-                        'name': ms.name,
-                        'display_name': ms.name,
-                        'email': None,
-                        'owner': ms.owner if hasattr(ms, 'owner') else None,
-                        'active': True,
-                        'created_at': datetime.fromtimestamp(ms.created_at / 1000) if ms.created_at else None,
-                        'updated_at': datetime.fromtimestamp(ms.updated_at / 1000) if ms.updated_at else None,
-                        'comment': None,
-                        'properties': safe_json({
-                            'region': ms.region if hasattr(ms, 'region') else None,
-                            'cloud': ms.cloud if hasattr(ms, 'cloud') else None
-                        }),
-                        'metadata': safe_json({'metastore_id': ms_id})
-                    })
-                print(f"   ✓ Collected {len(metastores)} metastores")
-
-                # Collect metastore assignments
-                print("\n🔗 Collecting Metastore Assignments...")
-                ms_assignment_count = 0
-                for ws in workspaces:
-                    try:
-                        ms_assignment = account.metastore_assignments.get(workspace_id=ws.workspace_id)
-                        if ms_assignment and ms_assignment.metastore_id:
-                            all_edges.append({
-                                'src': f"workspace:{ws.workspace_id}",
-                                'dst': f"metastore:{ms_assignment.metastore_id}",
-                                'relationship': 'UsesMetastore',
-                                'permission_level': None,
-                                'inherited': False,
-                                'properties': None,
-                                'created_at': datetime.now()
-                            })
-                            ms_assignment_count += 1
-                    except:
-                        pass
-                print(f"   ✓ Collected {ms_assignment_count} metastore assignments")
-            except Exception as e:
-                print(f"   ⚠ Error collecting metastores: {e}")
-
-            # ================================================================
-            # Collect Workspace-Level Data from ALL Workspaces
-            # ================================================================
-            print("\n" + "="*60)
-            print("🌐 COLLECTING WORKSPACE-LEVEL DATA FROM ALL WORKSPACES")
-            print("="*60)
-            print(f"   This will collect Users, Groups, Jobs, Notebooks from {len(workspaces)} workspaces")
-
-            # Skip the current workspace since we already collected from it
-            current_ws_url = spark.conf.get("spark.databricks.workspaceUrl", "").lower()
-
-            for ws_idx, ws in enumerate(workspaces):
-                ws_name = ws.workspace_name
-                ws_id = str(ws.workspace_id)  # Convert to string for consistent dict keys
-
-                # Build workspace URL
-                if ws.azure_workspace_info:
-                    ws_host = f"https://{ws.deployment_name}.azuredatabricks.net"
-                elif hasattr(ws, 'gcp_managed_network_config') and ws.gcp_managed_network_config:
-                    ws_host = f"https://{ws.workspace_id}.gcp.databricks.com"
-                else:
-                    ws_host = f"https://{ws.deployment_name}.cloud.databricks.com"
-
-                # Check if this is the current workspace
-                is_current_workspace = ws_host.lower().replace("https://", "") in current_ws_url or current_ws_url in ws_host.lower()
-
-                print(f"\n   [{ws_idx+1}/{len(workspaces)}] {ws_name}{' (current workspace)' if is_current_workspace else ''}")
-                print(f"      URL: {ws_host}")
-
-                # Initialize status tracking if not already present
-                if ws_id not in WORKSPACE_COLLECTION_STATUS:
-                    WORKSPACE_COLLECTION_STATUS[ws_id] = {'name': ws_name, 'status': 'pending', 'error': None}
-
-                try:
-                    # CONDITIONAL AUTHENTICATION: Azure uses MSAL tokens, AWS/GCP use oauth-m2m
-                    if ws.azure_workspace_info:
-                        # Azure: Generate MSAL token
-                        if not SP_CREDENTIALS['tenant_id']:
-                            raise Exception(f"tenant-id required for Azure workspace {ws_name}")
-
-                        azure_token = get_azure_databricks_token(
-                            client_id=SP_CREDENTIALS['client_id'],
-                            client_secret=SP_CREDENTIALS['client_secret'],
-                            tenant_id=SP_CREDENTIALS['tenant_id']
-                        )
-                        ws_client = WorkspaceClient(
-                            host=ws_host,
-                            token=azure_token  # Pass MSAL-generated token
-                        )
-                        print(f"      Authentication: Azure MSAL")
-                    else:
-                        # AWS/GCP: Use OAuth M2M authentication
-                        ws_client = WorkspaceClient(
-                            host=ws_host,
-                            client_id=SP_CREDENTIALS['client_id'],
-                            client_secret=SP_CREDENTIALS['client_secret'],
-                            auth_type="oauth-m2m"
-                        )
-                        print(f"      Authentication: OAuth M2M")
-
-                    # Collect Users from this workspace
-                    print(f"      Collecting Users...")
-                    try:
-                        ws_users = list(ws_client.users.list())
-                        for user in ws_users:
-                            all_vertices.append({
-                                'id': f"ws_{ws_id}_user:{user.id}",
-                                'node_type': 'User',
-                                'name': safe_get(user, 'user_name'),
-                                'display_name': safe_get(user, 'display_name'),
-                                'email': user.emails[0].value if user.emails else None,
-                                'owner': None,
-                                'active': safe_get(user, 'active', True),
-                                'created_at': None,
-                                'updated_at': None,
-                                'comment': None,
-                                'properties': safe_json({'workspace_id': str(ws_id), 'workspace_name': ws_name}),
-                                'metadata': None
-                            })
-                        print(f"      ✓ {len(ws_users)} users")
-                    except Exception as e:
-                        print(f"      ⚠ Users: {e}")
-
-                    # Collect Groups from this workspace
-                    print(f"      Collecting Groups...")
-                    try:
-                        ws_groups = list(ws_client.groups.list())
-                        for group in ws_groups:
-                            group_id = f"ws_{ws_id}_group:{group.id}"
-                            all_vertices.append({
-                                'id': group_id,
-                                'node_type': 'Group',
-                                'name': safe_get(group, 'display_name'),
-                                'display_name': safe_get(group, 'display_name'),
-                                'email': None,
-                                'owner': None,
-                                'active': True,
-                                'created_at': None,
-                                'updated_at': None,
-                                'comment': None,
-                                'properties': safe_json({'workspace_id': str(ws_id), 'workspace_name': ws_name}),
-                                'metadata': None
-                            })
-                            # Collect group memberships
-                            if hasattr(group, 'members') and group.members:
-                                for member in group.members:
-                                    all_edges.append({
-                                        'src': f"ws_{ws_id}_user:{member.value}" if 'User' in str(member.type) else f"ws_{ws_id}_group:{member.value}",
-                                        'dst': group_id,
-                                        'relationship': 'MemberOf',
-                                        'permission_level': None,
-                                        'inherited': False,
-                                        'properties': None,
-                                        'created_at': datetime.now()
-                                    })
-                        print(f"      ✓ {len(ws_groups)} groups")
-                    except Exception as e:
-                        print(f"      ⚠ Groups: {e}")
-
-                    # Collect Jobs from this workspace (important for escalation paths)
-                    print(f"      Collecting Jobs...")
-                    try:
-                        ws_jobs = list(ws_client.jobs.list())
-                        for job in ws_jobs:
-                            job_id = f"ws_{ws_id}_job:{job.job_id}"
-                            job_settings = job.settings if hasattr(job, 'settings') else None
-                            job_owner = safe_get(job_settings, 'run_as') if job_settings else None
-                            if not job_owner:
-                                job_owner = safe_get(job, 'creator_user_name')
-                            all_vertices.append({
-                                'id': job_id,
-                                'node_type': 'Job',
-                                'name': job_settings.name if job_settings else str(job.job_id),
-                                'display_name': job_settings.name if job_settings else str(job.job_id),
-                                'email': None,
-                                'owner': str(job_owner) if job_owner else None,
-                                'active': True,
-                                'created_at': datetime.fromtimestamp(job.created_time / 1000) if job.created_time else None,
-                                'updated_at': None,
-                                'comment': None,
-                                'properties': safe_json({'workspace_id': str(ws_id), 'workspace_name': ws_name}),
-                                'metadata': None
-                            })
-                        print(f"      ✓ {len(list(ws_jobs))} jobs")
-                    except Exception as e:
-                        print(f"      ⚠ Jobs: {e}")
-
-                    # Collect Secret Scopes from this workspace
-                    if COLLECTION_CONFIG.get('collect_secret_scopes', True):
-                        print(f"      Collecting Secret Scopes...")
-                        try:
-                            ws_scopes = list(ws_client.secrets.list_scopes())
-                            scope_count = 0
-                            for scope in ws_scopes:
-                                scope_name = safe_get(scope, 'name')
-                                scope_id = f"ws_{ws_id}_secret_scope:{scope_name}"
-                                all_vertices.append({
-                                    'id': scope_id,
-                                    'node_type': 'SecretScope',
-                                    'name': scope_name,
-                                    'display_name': scope_name,
-                                    'email': None,
-                                    'owner': None,
-                                    'active': True,
-                                    'created_at': None,
-                                    'updated_at': None,
-                                    'comment': None,
-                                    'properties': safe_json({'backend_type': safe_get(scope, 'backend_type'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
-                                    'metadata': None
-                                })
-                                scope_count += 1
-
-                                # Collect secrets in scope
-                                try:
-                                    ws_secrets = list(ws_client.secrets.list_secrets(scope=scope_name))
-                                    for secret in ws_secrets:
-                                        secret_key = safe_get(secret, 'key')
-                                        secret_id = f"ws_{ws_id}_secret:{scope_name}/{secret_key}"
-                                        all_vertices.append({
-                                            'id': secret_id,
-                                            'node_type': 'Secret',
-                                            'name': secret_key,
-                                            'display_name': secret_key,
-                                            'email': None,
-                                            'owner': None,
-                                            'active': True,
-                                            'created_at': None,
-                                            'updated_at': None,
-                                            'comment': None,
-                                            'properties': safe_json({'scope': scope_name, 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
-                                            'metadata': None
-                                        })
-                                        # Add Contains edge
-                                        all_edges.append({
-                                            'src': scope_id,
-                                            'dst': secret_id,
-                                            'relationship': 'Contains',
-                                            'permission_level': None,
-                                            'inherited': False,
-                                            'properties': None,
-                                            'created_at': datetime.now()
-                                        })
-                                except:
-                                    pass
-
-                                # Collect ACLs for the scope
-                                try:
-                                    ws_acls = list(ws_client.secrets.list_acls(scope=scope_name))
-                                    for acl in ws_acls:
-                                        principal = safe_get(acl, 'principal')
-                                        permission = safe_get(acl, 'permission')
-                                        if principal and permission:
-                                            perm_map = {'MANAGE': 'CanManageSecret', 'WRITE': 'CanWriteSecret', 'READ': 'CanReadSecret'}
-                                            all_edges.append({
-                                                'src': principal,
-                                                'dst': scope_id,
-                                                'relationship': perm_map.get(permission, 'CanReadSecret'),
-                                                'permission_level': permission,
-                                                'inherited': False,
-                                                'properties': safe_json({'workspace_id': str(ws_id)}),
-                                                'created_at': datetime.now()
-                                            })
-                                except:
-                                    pass
-                            print(f"      ✓ {scope_count} secret scopes")
-                        except Exception as e:
-                            print(f"      ⚠ Secret Scopes: {e}")
-
-                    # Collect Clusters from this workspace
-                    if COLLECTION_CONFIG.get('collect_clusters', True):
-                        print(f"      Collecting Clusters...")
-                        try:
-                            ws_clusters = list(ws_client.clusters.list())
-                            for cluster in ws_clusters:
-                                cluster_id = safe_get(cluster, 'cluster_id')
-                                all_vertices.append({
-                                    'id': f"ws_{ws_id}_cluster:{cluster_id}",
-                                    'node_type': 'Cluster',
-                                    'name': safe_get(cluster, 'cluster_name'),
-                                    'display_name': safe_get(cluster, 'cluster_name'),
-                                    'email': None,
-                                    'owner': safe_get(cluster, 'creator_user_name'),
-                                    'active': safe_get(cluster, 'state') == 'RUNNING',
-                                    'created_at': None,
-                                    'updated_at': None,
-                                    'comment': None,
-                                    'properties': safe_json({'spark_version': safe_get(cluster, 'spark_version'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
-                                    'metadata': safe_json({'state': safe_get(cluster, 'state')})
-                                })
-                            print(f"      ✓ {len(ws_clusters)} clusters")
-                        except Exception as e:
-                            print(f"      ⚠ Clusters: {e}")
-
-                    # Collect SQL Warehouses from this workspace
-                    if COLLECTION_CONFIG.get('collect_warehouses', True):
-                        print(f"      Collecting SQL Warehouses...")
-                        try:
-                            ws_warehouses = list(ws_client.warehouses.list())
-                            for wh in ws_warehouses:
-                                wh_id = safe_get(wh, 'id')
-                                all_vertices.append({
-                                    'id': f"ws_{ws_id}_warehouse:{wh_id}",
-                                    'node_type': 'SQLWarehouse',
-                                    'name': safe_get(wh, 'name'),
-                                    'display_name': safe_get(wh, 'name'),
-                                    'email': None,
-                                    'owner': safe_get(wh, 'creator_name'),
-                                    'active': safe_get(wh, 'state') == 'RUNNING',
-                                    'created_at': None,
-                                    'updated_at': None,
-                                    'comment': None,
-                                    'properties': safe_json({'warehouse_type': safe_get(wh, 'warehouse_type'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
-                                    'metadata': safe_json({'state': safe_get(wh, 'state')})
-                                })
-                            print(f"      ✓ {len(ws_warehouses)} warehouses")
-                        except Exception as e:
-                            print(f"      ⚠ SQL Warehouses: {e}")
-
-                    # Mark this workspace as successfully collected
-                    WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'success'
-
-                except Exception as e:
-                    print(f"      ✗ Failed to connect: {e}")
-                    WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'failed'
-                    WORKSPACE_COLLECTION_STATUS[ws_id]['error'] = str(e)[:500]
-                    continue
-
-            print(f"\n   ✓ Multi-workspace collection complete")
-
-            print(f"\n✅ Account-level collection complete!")
-            print(f"   Total vertices now: {len(all_vertices)}")
-            print(f"   Total edges now: {len(all_edges)}")
-
-        except Exception as e:
-            print(f"\n❌ Failed to connect to account: {e}")
-            print(f"   Error type: {type(e).__name__}")
-            print(f"\n📋 Full traceback:")
-            traceback.print_exc()
-            print("\n💡 Troubleshooting tips:")
-            print("   1. Verify ACCOUNT_ID format (should be a UUID)")
-            print("   2. Ensure SP has 'Account Admin' role at account level")
-            print("   3. Check if client_id and client_secret are correct")
-            print("   4. Verify the account host URL is correct for your cloud")
-    else:
-        print("\n⚠ Account credentials not configured")
-        print("   Set up secrets or hardcode credentials above")
-        print("   Required: ACCOUNT_ID, SP_CLIENT_ID, SP_CLIENT_SECRET")
-else:
-    print("\nAccount-level collection is disabled.")
-    print("Set 'collect_account_level': True in COLLECTION_CONFIG to enable.")
-
-# COMMAND ----------
-
-# DBTITLE 1,Re-save if account-level data was collected
-if COLLECTION_CONFIG.get('collect_account_level', False):
-    print("="*80)
-    print("Re-saving with Account-Level Data")
-    print("="*80)
-
-    # Add run_id to any new records (account-level data) that don't have it yet
-    print(f"\n Adding run_id '{RUN_ID}' to account-level records...")
-    for v in all_vertices:
-        if 'run_id' not in v or v.get('run_id') is None:
-            v['run_id'] = RUN_ID
-    for e in all_edges:
-        if 'run_id' not in e or e.get('run_id') is None:
-            e['run_id'] = RUN_ID
-
-    # Delete the first save for this run_id (we'll re-save everything)
-    print(f"\n Removing partial save for run_id '{RUN_ID}'...")
-    try:
-        spark.sql(f"DELETE FROM {VERTICES_TABLE} WHERE run_id = '{RUN_ID}'")
-        spark.sql(f"DELETE FROM {EDGES_TABLE} WHERE run_id = '{RUN_ID}'")
-        spark.sql(f"DELETE FROM {COLLECTION_METADATA_TABLE} WHERE run_id = '{RUN_ID}'")
-    except Exception as e:
-        print(f"   ⚠ Note: {e}")
-
-    # Recreate DataFrames with all data
-    vertices_df = spark.createDataFrame(all_vertices, schema=vertices_schema)
-    edges_df = spark.createDataFrame(all_edges, schema=edges_schema)
-
-    print(f"\n📊 Final counts:")
-    print(f"   Vertices: {vertices_df.count():,}")
-    print(f"   Edges: {edges_df.count():,}")
-
-    # Save vertices (append mode)
-    print(f"\n💾 Saving vertices to {VERTICES_TABLE}...")
-    vertices_df.write \
-        .format("delta") \
-        .mode("append") \
-        .saveAsTable(VERTICES_TABLE)
-    print(f"   ✓ Vertices saved!")
-
-    # Save edges (append mode)
-    print(f"\n💾 Saving edges to {EDGES_TABLE}...")
-    edges_df.write \
-        .format("delta") \
-        .mode("append") \
-        .saveAsTable(EDGES_TABLE)
-    print(f"   ✓ Edges saved!")
-
-    # Update collection metadata with final counts and workspace status
-    print(f"\n💾 Updating collection metadata...")
-    final_collection_time = datetime.now()
-
-    # Build final workspace collection summary
-    final_workspaces_collected = []
-    final_workspaces_failed = []
-    if MULTI_WORKSPACE_MODE:
-        for ws_id, ws_info in WORKSPACE_COLLECTION_STATUS.items():
-            if ws_info.get('status') == 'success':
-                final_workspaces_collected.append(ws_info['name'])
-            elif ws_info.get('status') == 'failed':
-                final_workspaces_failed.append(ws_info['name'])
-    else:
-        final_workspaces_collected = [current_workspace_url]
-
-    final_metadata = [{
-        'run_id': RUN_ID,
-        'collection_timestamp': final_collection_time,
-        'vertices_count': str(vertices_df.count()),
-        'edges_count': str(edges_df.count()),
-        'collected_by': current_user.user_name if current_user else 'unknown',
-        'collection_config': json.dumps({k: v for k, v in COLLECTION_CONFIG.items() if not k.startswith('output')}),
-        'workspaces_collected': json.dumps(final_workspaces_collected),
-        'workspaces_failed': json.dumps(final_workspaces_failed),
-        'workspace_status': json.dumps(WORKSPACE_COLLECTION_STATUS) if MULTI_WORKSPACE_MODE else None,
-        'collection_mode': 'multi-workspace' if MULTI_WORKSPACE_MODE else 'single-workspace'
-    }]
-    final_metadata_df = spark.createDataFrame(final_metadata, schema=metadata_schema)
-    final_metadata_df.write \
-        .format("delta") \
-        .mode("append") \
-        .saveAsTable(COLLECTION_METADATA_TABLE)
-    print(f"   ✓ Metadata updated!")
-    print(f"   Workspaces collected: {len(final_workspaces_collected)}")
-    if final_workspaces_failed:
-        print(f"   ⚠ Workspaces failed: {len(final_workspaces_failed)} - {', '.join(final_workspaces_failed)}")
-
-    # Re-apply retention policy
-    retention_days = COLLECTION_CONFIG.get('retention_days', 30)
-    print(f"\n🗑️ Re-applying data retention policy (retention_days={retention_days})...")
-    if retention_days == -1:
-        print("   Retention: Keep forever - no cleanup")
-    elif retention_days in (0, 1):
-        print("   Retention: Keep only latest run - deleting all previous runs...")
-        try:
-            spark.sql(f"DELETE FROM {VERTICES_TABLE} WHERE run_id != '{RUN_ID}'")
-            spark.sql(f"DELETE FROM {EDGES_TABLE} WHERE run_id != '{RUN_ID}'")
-            spark.sql(f"DELETE FROM {COLLECTION_METADATA_TABLE} WHERE run_id != '{RUN_ID}'")
-            print("   ✓ Previous runs deleted")
-        except Exception as e:
-            print(f"   ⚠ Cleanup error: {e}")
-    else:
-        cutoff_date = datetime.now() - timedelta(days=retention_days)
-        print(f"   Retention: Delete runs older than {retention_days} days...")
-        try:
-            old_runs_df = spark.sql(f"""
-                SELECT run_id FROM {COLLECTION_METADATA_TABLE}
-                WHERE collection_timestamp < '{cutoff_date.strftime('%Y-%m-%d %H:%M:%S')}'
-            """)
-            old_run_ids = [row.run_id for row in old_runs_df.collect()]
-            if old_run_ids:
-                run_ids_str = "', '".join(old_run_ids)
-                spark.sql(f"DELETE FROM {VERTICES_TABLE} WHERE run_id IN ('{run_ids_str}')")
-                spark.sql(f"DELETE FROM {EDGES_TABLE} WHERE run_id IN ('{run_ids_str}')")
-                spark.sql(f"DELETE FROM {COLLECTION_METADATA_TABLE} WHERE run_id IN ('{run_ids_str}')")
-                print(f"   ✓ Deleted {len(old_run_ids)} old run(s)")
-            else:
-                print("   ✓ No old runs to delete")
-        except Exception as e:
-            print(f"   ⚠ Cleanup error: {e}")
-
-    print(f"\n✅ SUCCESS! Graph data with account-level info saved to {CATALOG}.{SCHEMA}")
 
 # COMMAND ----------
 
