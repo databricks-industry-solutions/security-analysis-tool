@@ -6,12 +6,6 @@ import Admonition from '@theme/Admonition';
 
 # Usage 
 
-<Admonition type="note" title="Configuration Note">
-
-Navigate to **Workspace -> Applications -> SAT -> files -> configs ->** `self_assessment_checks.yaml` and ensure that the `"enabled"` values for the listed manual checks are set to either `true` or `false`, based on your environment. The SAT tool will automatically evaluate all other configurations.
-
-</Admonition>
-
 ## Running the SAT Jobs and Pipelines
 
 > **Note:** These jobs can take up to 10 minutes to run per workspace.
@@ -65,28 +59,6 @@ If you encounter errors when running the dashboard, they are most likely due to 
  <img src={useBaseUrl('/img/sat_dashboard_partial.png')} alt="Security Dashboard" />
 </div>
 
-## Activating Alerts
-Navigate to the `Alerts` from the left-hand pane under the `SQL` section. Click on `All Alerts` to view all of the alerts created by the **SAT** jobs. 
-
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
- <img src={useBaseUrl('/img/alerts_view.png')} alt="Alerts_View" />
-</div>
-
-Click on one of the alerts to see the details. 
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
- <img src={useBaseUrl('/img/alert_details.png')} alt="Alerts_Details" />
-</div>
-
-Click on the "Add Schedules" button. From the "Settings" tab, you can define the schedule for the alert to be triggered. 
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
- <img src={useBaseUrl('/img/alert_settings.png')} alt="Alerts_Settings" />
-</div>
-
-Next, click on the "Destinations" tab. From here, you can search for a user (email) or a destination object for the alert to be sent to. Click on "Create" to save the schedule with the selected recipient(s) for the alert. 
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
- <img src={useBaseUrl('/img/alert_destination.png')} alt="Alerts_Destination" />
-</div>
-
 ## Updating Configuration Files (Optional)
 
 ### Modifying Security Best Practices
@@ -116,13 +88,6 @@ Use this utility to:
 - Apply your configuration changes to multiple workspaces using the "Apply Setting to All Workspaces" option.
 
 [Configure widget settings](https://docs.databricks.com/aws/en/notebooks/widgets#configure-widget-settings-1) on "Widget Change" for this notebook to "Do Nothing".
-
-Update manual check values for each workspace:
-- **sso_enabled**: Set to `True` if Single Sign-On (SSO) is enabled for the workspace.
-- **scim_enabled**: Set to `True` if SCIM integration is configured for user and group provisioning.
-- **vpc_peering_done**: Set to `False` if the workspace is not peered with another VPC.
-- **object_storage_encrypted**: Set to `True` if your object storage buckets are encrypted.
-- **table_access_control_enabled**: Set to `True` if Table Access Control (ACLs) is enabled to enforce user isolation on clusters.
 
 These settings are critical for running manual checks and ensuring accurate **SAT** analysis results.
 
