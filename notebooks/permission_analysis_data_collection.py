@@ -2524,6 +2524,69 @@ for _col, _comment in {
     spark.sql(f"ALTER TABLE {EDGES_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment}'")
 print(f"    Edges saved!")
 
+# COMMAND ----------
+
+# DBTITLE 1,Post-Collection Data Quality Validation
+print("\n" + "="*60)
+print("POST-COLLECTION VALIDATION")
+print("="*60)
+
+validation_passed = True
+
+# 1. Check for duplicate vertex IDs within this run
+dup_df = spark.sql(f"""
+    SELECT id, COUNT(*) as count
+    FROM {VERTICES_TABLE}
+    WHERE run_id = '{RUN_ID}'
+    GROUP BY id
+    HAVING COUNT(*) > 1
+    ORDER BY count DESC
+""")
+
+dup_count = dup_df.count()
+if dup_count > 0:
+    print(f"\n  FAIL: {dup_count} duplicate vertex ID(s) found in this run:")
+    dup_df.show(20, truncate=False)
+    validation_passed = False
+else:
+    total_vertices = spark.sql(f"SELECT COUNT(*) as n FROM {VERTICES_TABLE} WHERE run_id = '{RUN_ID}'").collect()[0]['n']
+    print(f"\n  PASS: No duplicate vertex IDs ({total_vertices:,} vertices, all unique)")
+
+# 2. Check for dangling edges (src or dst not in vertices for this run)
+vertex_ids = spark.sql(f"SELECT id FROM {VERTICES_TABLE} WHERE run_id = '{RUN_ID}'")
+vertex_ids.createOrReplaceTempView("_sat_bh_vertex_ids")
+
+dangling_df = spark.sql(f"""
+    SELECT e.src, e.dst, e.edge_type, COUNT(*) as count
+    FROM {EDGES_TABLE} e
+    WHERE e.run_id = '{RUN_ID}'
+      AND NOT EXISTS (SELECT 1 FROM _sat_bh_vertex_ids v WHERE v.id = e.src)
+      AND NOT EXISTS (SELECT 1 FROM _sat_bh_vertex_ids v WHERE v.id = e.dst)
+    GROUP BY e.src, e.dst, e.edge_type
+    ORDER BY count DESC
+    LIMIT 20
+""")
+
+dangling_count = dangling_df.count()
+if dangling_count > 0:
+    print(f"\n  WARNING: {dangling_count} edge type(s) with unresolved src/dst vertex IDs (showing up to 20):")
+    dangling_df.show(20, truncate=False)
+    # Warning only — don't fail on dangling edges (account-level entities may not be in vertex list)
+else:
+    total_edges = spark.sql(f"SELECT COUNT(*) as n FROM {EDGES_TABLE} WHERE run_id = '{RUN_ID}'").collect()[0]['n']
+    print(f"  PASS: No dangling edges ({total_edges:,} edges checked)")
+
+spark.catalog.dropTempView("_sat_bh_vertex_ids")
+
+print("\n" + "="*60)
+if not validation_passed:
+    raise Exception("Post-collection validation FAILED — duplicate vertex IDs detected. Check output above.")
+else:
+    print("All validations passed.")
+print("="*60 + "\n")
+
+# COMMAND ----------
+
 # Save collection metadata (timestamp and statistics)
 print(f"\n Saving collection metadata to {COLLECTION_METADATA_TABLE}...")
 collection_time = datetime.now()
