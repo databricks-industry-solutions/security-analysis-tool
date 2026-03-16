@@ -190,7 +190,6 @@ print("="*80)
 
 COLLECTION_CONFIG = {
     # Scope settings
-    'collect_account_level': True,  # Set to True when account admin SP is configured
     'collect_workspace_level': True,
     'collect_unity_catalog': True,
     'collect_permissions': True,  # CRITICAL - Must be True for permission analysis!
@@ -240,7 +239,7 @@ COLLECTION_CONFIG = {
 }
 
 print("\n Collection Scope:")
-print(f"  Account Level: {'' if COLLECTION_CONFIG['collect_account_level'] else ' (requires account admin SP)'}")
+print(f"  Account Level: {'automatic in multi-workspace mode' if MULTI_WORKSPACE_MODE else 'N/A (single-workspace mode)'}")
 print(f"  Workspace Level: {'' if COLLECTION_CONFIG['collect_workspace_level'] else ''}")
 print(f"  Unity Catalog: {'' if COLLECTION_CONFIG['collect_unity_catalog'] else ''}")
 print(f"  Permissions: {'' if COLLECTION_CONFIG['collect_permissions'] else ''}")
@@ -1312,7 +1311,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 users = list(ws_client.users.list())
                 for user in tqdm(users, desc="Users"):
                     all_vertices.append({
-                        'id': str(user.id),
+                        'id': f"ws_{ws_id}_user:{user.id}",
                         'node_type': 'User',
                         'name': safe_get(user, 'user_name'),
                         'display_name': safe_get(user, 'display_name'),
@@ -1322,7 +1321,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         'created_at': None,
                         'updated_at': None,
                         'comment': None,
-                        'properties': None,
+                        'properties': safe_json({'workspace_id': str(ws_id)}),
                         'metadata': safe_json({'external_id': safe_get(user, 'external_id')})
                     })
                 print(f"    Collected {len(users)} users")
@@ -1333,10 +1332,12 @@ for ws_idx, ws in enumerate(ws_iteration_list):
         if COLLECTION_CONFIG['collect_groups']:
             print(f"\n   Collecting Groups for {ws_name}...")
             try:
+                # Workspace-level groups.list() returns members inline (unlike
+                # account-level groups.list() which requires per-group .get() calls).
                 groups = list(ws_client.groups.list())
                 for group in tqdm(groups, desc="Groups"):
                     all_vertices.append({
-                        'id': str(group.id),
+                        'id': f"ws_{ws_id}_group:{group.id}",
                         'node_type': 'Group',
                         'name': safe_get(group, 'display_name'),
                         'display_name': safe_get(group, 'display_name'),
@@ -1346,19 +1347,31 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         'created_at': None,
                         'updated_at': None,
                         'comment': None,
-                        'properties': None,
+                        'properties': safe_json({'workspace_id': str(ws_id)}),
                         'metadata': safe_json({'external_id': safe_get(group, 'external_id')})
                     })
                     # Collect memberships
                     if hasattr(group, 'members') and group.members:
                         for member in group.members:
+                            # Determine member type for correct ID prefix
+                            member_type = member.type if hasattr(member, 'type') else None
+                            ref = member.ref if hasattr(member, 'ref') else ''
+                            if member_type == 'User' or 'Users' in str(ref):
+                                member_prefix = f"ws_{ws_id}_user"
+                            elif member_type == 'Group' or 'Groups' in str(ref):
+                                member_prefix = f"ws_{ws_id}_group"
+                            elif member_type == 'ServicePrincipal' or 'ServicePrincipals' in str(ref):
+                                member_prefix = f"ws_{ws_id}_sp"
+                            else:
+                                member_prefix = f"ws_{ws_id}_user"  # Default
+
                             all_edges.append({
-                                'src': str(member.value),
-                                'dst': str(group.id),
+                                'src': f"{member_prefix}:{member.value}",
+                                'dst': f"ws_{ws_id}_group:{group.id}",
                                 'relationship': 'MemberOf',
                                 'permission_level': None,
                                 'inherited': False,
-                                'properties': None,
+                                'properties': safe_json({'workspace_id': str(ws_id)}),
                                 'created_at': datetime.now()
                             })
                 print(f"    Collected {len(groups)} groups")
@@ -1372,7 +1385,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 sps = list(ws_client.service_principals.list())
                 for sp in tqdm(sps, desc="Service Principals"):
                     all_vertices.append({
-                        'id': str(sp.id),
+                        'id': f"ws_{ws_id}_sp:{sp.id}",
                         'node_type': 'ServicePrincipal',
                         'name': safe_get(sp, 'application_id') or safe_get(sp, 'display_name'),
                         'display_name': safe_get(sp, 'display_name'),
@@ -1383,7 +1396,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         'created_at': None,
                         'updated_at': None,
                         'comment': None,
-                        'properties': None,
+                        'properties': safe_json({'workspace_id': str(ws_id)}),
                         'metadata': safe_json({'application_id': safe_get(sp, 'application_id')})
                     })
                 print(f"    Collected {len(sps)} service principals")
