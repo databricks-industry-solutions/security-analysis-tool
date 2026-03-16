@@ -982,6 +982,25 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='114'#DP-10,Data Protection,Disable legacy DBFS root and mounts
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+def disable_legacy_dbfs(df):
+    if df is not None and not isEmpty(df):
+        return (check_id, 0, {'disable_legacy_dbfs':'disable_legacy_dbfs setting is enabled — workspace cannot access DBFS root and mounts'})
+    else:
+        return (check_id, 1, {'disable_legacy_dbfs':'disable_legacy_dbfs setting is not enabled — workspace can still access DBFS root and mounts'})
+
+if enabled:
+    tbl_name = 'disable_legacy_dbfs' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name}
+        WHERE disable_legacy_dbfs.value = true
+    '''
+    sqlctrl(workspace_id, sql, disable_legacy_dbfs)
+
+# COMMAND ----------
+
 check_id='62' #	INFO-18  Check Delta Sharing CREATE_RECIPIENT and CREATE_SHARE permissions
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 

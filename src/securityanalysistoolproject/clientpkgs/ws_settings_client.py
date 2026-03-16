@@ -145,7 +145,14 @@ class WSSettingsClient(SatDBClient):
         """
         # fetch all endpoints
         endpointlist= self.get(f"/settings/types/disable_legacy_access/names/default", version='2.0').get('satelements', [])
-        return endpointlist      
+        return endpointlist
+
+    def get_disable_legacy_dbfs(self):
+        """
+        Returns an array of json objects for disable legacy DBFS setting.
+        """
+        endpointlist= self.get(f"/settings/types/disable_legacy_dbfs/names/default", version='2.0').get('satelements', [])
+        return endpointlist
 
     def get_enhanced_security_monitoring(self):
         """

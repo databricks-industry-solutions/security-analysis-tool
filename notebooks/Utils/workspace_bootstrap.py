@@ -382,6 +382,10 @@ bootstrap('restrict_workspace_admin_settings'+ '_' + workspace_id, ws_client.get
 
 # COMMAND ----------
 
+bootstrap('disable_legacy_dbfs'+ '_' + workspace_id, ws_client.get_disable_legacy_dbfs)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### DBFS
 
