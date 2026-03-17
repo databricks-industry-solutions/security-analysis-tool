@@ -1014,7 +1014,7 @@ if enabled:
     sql=f'''
         SELECT *
         FROM {tbl_name}
-        WHERE sql_results_download.value = true
+        WHERE boolean_val.value = true
     '''
     sqlctrl(workspace_id, sql, sql_results_download)
 
