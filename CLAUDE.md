@@ -236,6 +236,133 @@ SAT implements 116+ security checks across multiple categories. Checks are defin
 3. Test on sample workspace
 4. Update documentation
 
+---
+
+## New Check Pre-Flight Checklist
+
+**CRITICAL: Run ALL steps below before committing any new security check. Skipping any step has caused production bugs.**
+
+### Step 1 — Test the live API first (MANDATORY)
+
+Before writing any SQL or bootstrap code, use the Databricks MCP tools to call the actual API and inspect the real JSON shape:
+
+```python
+# For workspace settings (Settings v2 API)
+mcp__databricks__get_setting(
+    workspace_host="<workspace>.cloud.databricks.com",
+    setting_name="<setting_name>"   # e.g. "sql_results_download", "disable_legacy_dbfs"
+)
+
+# For other APIs
+mcp__databricks__get_workspace_config(workspace_host="...")
+mcp__databricks__list_clusters(workspace_host="...")
+# etc.
+```
+
+Write down the **exact top-level key names** in the response before proceeding.
+
+### Step 2 — Settings v2 API boolean column rule (MANDATORY for Settings v2 checks)
+
+The Settings v2 API always wraps boolean settings in a nested object:
+```json
+{
+  "etag": "...",
+  "setting_name": "default",
+  "boolean_val": {
+    "value": false
+  }
+}
+```
+
+The `bootstrap()` function flattens JSON into Delta columns using **top-level key names**. This means:
+
+| What you might expect | What the column is actually called |
+|-----------------------|-------------------------------------|
+| `sql_results_download.value` | `boolean_val.value` |
+| `disable_legacy_dbfs.value` | `boolean_val.value` |
+| `<any_setting_name>.value` | `boolean_val.value` |
+
+**Always use `boolean_val.value` in the WHERE clause, never `<setting_name>.value`.**
+
+```python
+# CORRECT
+WHERE boolean_val.value = true
+
+# WRONG — will fail at runtime with "cannot find field"
+WHERE sql_results_download.value = true
+```
+
+### Step 3 — Validate doc URLs in the CSV (MANDATORY)
+
+After adding a row to `configs/security_best_practices.csv`, verify that every URL in `aws_doc_url`, `azure_doc_url`, and `gcp_doc_url` returns HTTP 200. Broken URLs (404s) have been committed before and require follow-up fixes.
+
+Run this check:
+```bash
+python3 - <<'EOF'
+import csv, urllib.request, urllib.error
+
+errors = []
+with open("configs/security_best_practices.csv") as f:
+    for i, row in enumerate(csv.DictReader(f), start=2):
+        for col in ("aws_doc_url", "azure_doc_url", "gcp_doc_url"):
+            url = row.get(col, "").strip()
+            if not url:
+                continue
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                urllib.request.urlopen(req, timeout=10)
+            except urllib.error.HTTPError as e:
+                errors.append(f"  Row {i} [{row['check_id']}] {col}: HTTP {e.code} — {url}")
+            except Exception as e:
+                errors.append(f"  Row {i} [{row['check_id']}] {col}: {e} — {url}")
+
+if errors:
+    print("BROKEN URLs — fix before committing:")
+    print("\n".join(errors))
+else:
+    print("OK — all URLs reachable")
+EOF
+```
+
+**If any URL returns an error, fix it before committing.**
+
+### Step 4 — Run the standard pre-commit checks
+
+```bash
+# Uniqueness check (id + check_id)
+python3 - <<'EOF'
+import csv, sys
+ids, check_ids = {}, {}
+errors = []
+with open("configs/security_best_practices.csv") as f:
+    for i, row in enumerate(csv.DictReader(f), start=2):
+        if row["id"] in ids:
+            errors.append(f"  Duplicate id={row['id']} on rows {ids[row['id']]} and {i}")
+        else:
+            ids[row["id"]] = i
+        if row["check_id"] in check_ids:
+            errors.append(f"  Duplicate check_id={row['check_id']} on rows {check_ids[row['check_id']]} and {i}")
+        else:
+            check_ids[row["check_id"]] = i
+if errors:
+    print("UNIQUENESS VIOLATIONS:"); print("\n".join(errors)); sys.exit(1)
+else:
+    print(f"OK — {len(ids)} rows, all unique")
+EOF
+
+# Typo check
+git diff --cached --name-only | xargs codespell
+```
+
+### Lessons Learned (from DP-10 / DP-11 bugs)
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| DP-11 runtime SQL error: `cannot find field sql_results_download.value` | Assumed column name mirrors setting name; bootstrap actually uses top-level JSON key (`boolean_val`) | Always inspect live API response before writing SQL; use `boolean_val.value` for Settings v2 booleans |
+| DP-10/11 broken doc URLs | URLs added without verification | Run URL check script (Step 3) before every commit |
+
+---
+
 ## Testing
 
 Tests are in `src/securityanalysistoolproject/tests/`. The test framework uses pytest with a shared conftest fixture.
