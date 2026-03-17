@@ -386,6 +386,10 @@ bootstrap('disable_legacy_dbfs'+ '_' + workspace_id, ws_client.get_disable_legac
 
 # COMMAND ----------
 
+bootstrap('sql_results_download'+ '_' + workspace_id, ws_client.get_sql_results_download)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### DBFS
 

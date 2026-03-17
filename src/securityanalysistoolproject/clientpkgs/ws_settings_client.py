@@ -154,6 +154,13 @@ class WSSettingsClient(SatDBClient):
         endpointlist= self.get(f"/settings/types/disable_legacy_dbfs/names/default", version='2.0').get('satelements', [])
         return endpointlist
 
+    def get_sql_results_download(self):
+        """
+        Returns an array of json objects for SQL warehouse results download setting.
+        """
+        endpointlist= self.get(f"/settings/types/sql_results_download/names/default", version='2.0').get('satelements', [])
+        return endpointlist
+
     def get_enhanced_security_monitoring(self):
         """
         Returns an array of json objects for compliance security profile update.
