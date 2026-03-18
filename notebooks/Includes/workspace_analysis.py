@@ -1276,11 +1276,17 @@ if enabled:
 check_id='117'#GOV-42,Governance,Jobs run as service principal
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
+SAMPLE_LIMIT = 50
+
 def jobs_run_as_service_principal(df):
     if df is not None and not isEmpty(df):
         jobs = df.collect()
-        violation_dict = {num: {'job_id': str(row.job_id), 'job_name': row.job_name, 'run_as_user_name': row.run_as_user_name} for num, row in enumerate(jobs)}
-        return (check_id, len(jobs), violation_dict)
+        total = len(jobs)
+        sample = jobs[:SAMPLE_LIMIT]
+        violation_dict = {num: {'job_id': str(row.job_id), 'job_name': row.job_name, 'run_as_user_name': row.run_as_user_name} for num, row in enumerate(sample)}
+        if total > SAMPLE_LIMIT:
+            violation_dict['_summary'] = f'{total} jobs run as a user account — showing first {SAMPLE_LIMIT}'
+        return (check_id, total, violation_dict)
     else:
         return (check_id, 0, {})
 
