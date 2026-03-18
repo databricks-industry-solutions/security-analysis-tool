@@ -2410,6 +2410,151 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 except Exception as e:
                     print(f"    ⚠ SQL Warehouses: {e}")
 
+            # Collect Instance Pools from this workspace
+            if COLLECTION_CONFIG.get('collect_instance_pools', True):
+                print(f"    Collecting Instance Pools...")
+                try:
+                    ws_pools = list(ws_client.instance_pools.list())
+                    for pool in ws_pools:
+                        pool_id = safe_get(pool, 'instance_pool_id')
+                        all_vertices.append({
+                            'id': f"ws_{ws_id}_instance_pool:{pool_id}",
+                            'node_type': 'InstancePool',
+                            'name': safe_get(pool, 'instance_pool_name'),
+                            'display_name': safe_get(pool, 'instance_pool_name'),
+                            'email': None,
+                            'owner': None,
+                            'active': safe_get(pool, 'state') == 'ACTIVE',
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'node_type_id': safe_get(pool, 'node_type_id'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("instance-pools", pool_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': f"ws_{ws_id}_instance_pool:{pool_id}",
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': safe_json({'workspace_id': str(ws_id)}),
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+
+                    print(f"    ✓ {len(ws_pools)} instance pools")
+                except Exception as e:
+                    print(f"    ⚠ Instance Pools: {e}")
+
+            # Collect MLflow Experiments from this workspace
+            if COLLECTION_CONFIG.get('collect_experiments', True):
+                print(f"    Collecting MLflow Experiments...")
+                try:
+                    ws_experiments = list(ws_client.experiments.list_experiments())
+                    for exp in ws_experiments:
+                        exp_id = safe_get(exp, 'experiment_id')
+                        lifecycle = safe_get(exp, 'lifecycle_stage')
+                        all_vertices.append({
+                            'id': f"ws_{ws_id}_experiment:{exp_id}",
+                            'node_type': 'Experiment',
+                            'name': safe_get(exp, 'name'),
+                            'display_name': safe_get(exp, 'name'),
+                            'email': None,
+                            'owner': None,
+                            'active': lifecycle == 'active',
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'lifecycle_stage': lifecycle, 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                            'metadata': None
+                        })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("experiments", exp_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': f"ws_{ws_id}_experiment:{exp_id}",
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': safe_json({'workspace_id': str(ws_id)}),
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+
+                    print(f"    ✓ {len(ws_experiments)} experiments")
+                except Exception as e:
+                    print(f"    ⚠ MLflow Experiments: {e}")
+
+            # Collect Alerts from this workspace
+            if COLLECTION_CONFIG.get('collect_alerts', True):
+                print(f"    Collecting Alerts...")
+                try:
+                    ws_alerts = list(ws_client.alerts.list())
+                    for alert in ws_alerts:
+                        alert_id = safe_get(alert, 'id')
+                        all_vertices.append({
+                            'id': f"ws_{ws_id}_alert:{alert_id}",
+                            'node_type': 'Alert',
+                            'name': safe_get(alert, 'name') or safe_get(alert, 'display_name'),
+                            'display_name': safe_get(alert, 'name') or safe_get(alert, 'display_name'),
+                            'email': None,
+                            'owner': safe_get(alert, 'owner_user_name'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                            'metadata': None
+                        })
+                    print(f"    ✓ {len(ws_alerts)} alerts")
+                except Exception as e:
+                    print(f"    ⚠ Alerts: {e}")
+
+            # Collect Vector Search Endpoints from this workspace
+            if COLLECTION_CONFIG.get('collect_vector_search_endpoints', True):
+                print(f"    Collecting Vector Search Endpoints...")
+                try:
+                    ws_vs_endpoints = list(ws_client.vector_search_endpoints.list_endpoints())
+                    for ep in ws_vs_endpoints:
+                        ep_name = safe_get(ep, 'name')
+                        all_vertices.append({
+                            'id': f"ws_{ws_id}_vs_endpoint:{ep_name}",
+                            'node_type': 'VectorSearchEndpoint',
+                            'name': ep_name,
+                            'display_name': ep_name,
+                            'email': None,
+                            'owner': safe_get(ep, 'creator'),
+                            'active': True,
+                            'created_at': None,
+                            'updated_at': None,
+                            'comment': None,
+                            'properties': safe_json({'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                            'metadata': None
+                        })
+                    print(f"    ✓ {len(ws_vs_endpoints)} vector search endpoints")
+                except Exception as e:
+                    print(f"    ⚠ Vector Search Endpoints: {e}")
+
         WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'success'
 
     except Exception as e:
