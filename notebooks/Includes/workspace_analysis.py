@@ -1273,4 +1273,26 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='117'#GOV-42,Governance,Jobs run as service principal
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def jobs_run_as_service_principal(df):
+    if df is not None and not isEmpty(df):
+        jobs = df.collect()
+        violation_dict = {num: {'job_id': str(row.job_id), 'job_name': row.job_name, 'run_as_user_name': row.run_as_user_name} for num, row in enumerate(jobs)}
+        return (check_id, len(jobs), violation_dict)
+    else:
+        return (check_id, 0, {})
+
+if enabled:
+    tbl_name = 'jobs' + '_' + workspace_id
+    sql = f'''
+        SELECT job_id, settings.name AS job_name, run_as_user_name
+        FROM {tbl_name}
+        WHERE run_as_user_name LIKE '%@%'
+    '''
+    sqlctrl(workspace_id, sql, jobs_run_as_service_principal)
+
+# COMMAND ----------
+
 dbutils.notebook.exit(f'Completed SAT workspace analysis in {tcomp} seconds')
