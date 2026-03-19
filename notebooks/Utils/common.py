@@ -689,6 +689,18 @@ def create_workspace_run_complete_table():
                     )
                     USING DELTA"""
     )
+    _set_table_comment(schema, "acctserviceprincipalssecrets",
+        "Account-level service principal OAuth client secrets with metadata for staleness analysis")
+    _set_column_comments(schema, "acctserviceprincipalssecrets", {
+        "secret_id": "Unique identifier for the OAuth client secret",
+        "sp_id": "Account-level service principal identifier",
+        "sp_display_name": "Display name of the service principal",
+        "sp_app_id": "Application (client) ID of the service principal",
+        "create_time": "Timestamp when the secret was created",
+        "status": "Secret status: ACTIVE or INACTIVE",
+        "secret_hash": "Hashed value of the secret (not the secret itself)",
+    })
+
     _set_table_comment(
         schema, "workspace_run_complete",
         "Tracks per-workspace completion status for each SAT run. Use to identify which workspaces completed "

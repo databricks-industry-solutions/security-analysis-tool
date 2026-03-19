@@ -1301,4 +1301,32 @@ if enabled:
 
 # COMMAND ----------
 
+# COMMAND ----------
+
+check_id='119' # IA-9: Service principal client secrets not stale
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+sp_secret_age_evaluation_value = sbp_rec['evaluation_value']
+
+def sp_secret_stale_rule(df):
+    if df is not None and not isEmpty(df) and len(df.collect()) >= 1:
+        stale = df.collect()
+        stale_dict = {i.secret_id: [i.sp_display_name, i.sp_app_id, str(i.age_days)] for i in stale}
+        return (check_id, 1, stale_dict)
+    else:
+        return (check_id, 0, {})
+
+if enabled:
+    tbl_name = 'acctserviceprincipalssecrets'
+    if any(table.name == tbl_name for table in spark.catalog.listTables(json_["intermediate_schema"])):
+        sql = f'''
+            SELECT secret_id, sp_display_name, sp_app_id,
+                   datediff(current_date(), to_date(create_time)) AS age_days
+            FROM {tbl_name}
+            WHERE status = 'ACTIVE'
+              AND datediff(current_date(), to_date(create_time)) > {sp_secret_age_evaluation_value}
+        '''
+        sqlctrl(workspace_id, sql, sp_secret_stale_rule)
+
+# COMMAND ----------
+
 dbutils.notebook.exit(f'Completed SAT workspace analysis in {tcomp} seconds')
