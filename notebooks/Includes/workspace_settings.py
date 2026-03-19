@@ -391,6 +391,30 @@ if enabled:
 
 # COMMAND ----------
 
+id = '118' # PAT token creation restricted to admins
+enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
+
+def enableTokensConfig(df):
+    value = 'false'
+    defn = {'defn' : ''}
+    for row in df.collect():
+        value = row.value
+        defn = {'defn' : row.defn.replace("'", '')}
+    if(value == 'true'):
+        return (id, 0, defn)
+    else:
+        return (id, 1, defn)
+
+if enabled:
+    tbl_name = 'workspacesettings' + '_' + workspace_id
+    sql = f'''
+        SELECT * FROM {tbl_name}
+        WHERE name="enableTokensConfig"
+    '''
+    sqlctrl(workspace_id, sql, enableTokensConfig)
+
+# COMMAND ----------
+
 tcomp = time.time() - start_time
 print(f"Workspace Settings - {tcomp} seconds to run")
 

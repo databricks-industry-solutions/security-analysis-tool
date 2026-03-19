@@ -53,6 +53,7 @@ class WSSettingsClient(SatDBClient):
             {"name": "enableFileStoreEndpoint", "defn":"Enable or disable FileStore endpoint /files"},
             {"name": "jobsListBackendPaginationEnabled", "defn":"Enables 10,000 jobs per workspace and streamlined search"},
             {"name": "maxTokenLifetimeDays", "defn":"Gets the global max token lifetime days"},
+            {"name": "enableTokensConfig", "defn":"Enable or disable token management — when enabled, admins can control which users are allowed to create personal access tokens"},
             {"name": "enableDeprecatedGlobalInitScripts", "defn":"Enable Deprecated Global Scripts"},
             {"name": "enableLibraryAndInitScriptOnSharedCluster", "defn":"Enable libraries and init scripts on shared Unity Catalog clusters"}                              
             ]
@@ -91,7 +92,7 @@ class WSSettingsClient(SatDBClient):
         'enableDatabricksAutologgingAdminConf,mlflowRunArtifactDownloadEnabled,mlflowModelServingEndpointCreationEnabled,'
         'mlflowModelRegistryEmailNotificationsEnabled,heapAnalyticsAdminConsent,storeInteractiveNotebookResultsInCustomerAccount,'
         'enableVerboseAuditLogs,enableFileStoreEndpoint,jobsListBackendPaginationEnabled,'
-        'maxTokenLifetimeDays,enableDeprecatedGlobalInitScripts,enableLibraryAndInitScriptOnSharedCluster'}
+        'maxTokenLifetimeDays,enableDeprecatedGlobalInitScripts,enableLibraryAndInitScriptOnSharedCluster,enableTokensConfig'}
         endpointlist= self.get(f"/workspace-conf", json_params=json_params, version='2.0').get('satelements', [])
         return endpointlist   
 
