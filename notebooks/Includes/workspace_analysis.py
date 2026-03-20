@@ -1379,22 +1379,22 @@ if enabled:
 
 # COMMAND ----------
 
-check_id = '123' # GOV-45: Jobs not granting CAN_MANAGE to workspace users
+check_id = '123' # GOV-45: Jobs not granting CAN_MANAGE to non-admin principals
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 GOV45_SAMPLE_LIMIT = 50
 
-def jobs_not_granting_can_manage_to_users(df):
+def jobs_not_granting_can_manage_to_non_admins(df):
     if df is not None and not isEmpty(df):
-        jobs = df.collect()
-        total = len(jobs)
-        sample = jobs[:GOV45_SAMPLE_LIMIT]
+        rows = df.collect()
+        total = len(rows)
+        sample = rows[:GOV45_SAMPLE_LIMIT]
         violation_dict = {
-            num: {'job_id': row.job_id, 'job_name': row.job_name}
+            num: {'job_id': row.job_id, 'job_name': row.job_name, 'principal': row.principal}
             for num, row in enumerate(sample)
         }
         if total > GOV45_SAMPLE_LIMIT:
-            violation_dict['_summary'] = f'{total} jobs grant CAN_MANAGE to workspace users — showing first {GOV45_SAMPLE_LIMIT}'
+            violation_dict['_summary'] = f'{total} job-principal combinations grant CAN_MANAGE to non-admin principals — showing first {GOV45_SAMPLE_LIMIT}'
         return (check_id, total, violation_dict)
     else:
         return (check_id, 0, {})
@@ -1403,12 +1403,17 @@ if enabled:
     tbl_name = 'job_permissions_' + workspace_id
     if any(table.name == tbl_name for table in spark.catalog.listTables(json_["intermediate_schema"])):
         sql = f'''
-            SELECT DISTINCT job_id, job_name
+            SELECT DISTINCT job_id, job_name,
+                CASE
+                    WHEN group_name != '' THEN group_name
+                    WHEN user_name != '' THEN user_name
+                    ELSE service_principal_name
+                END AS principal
             FROM {tbl_name}
-            WHERE group_name = 'users'
-              AND permission_level = 'CAN_MANAGE'
+            WHERE permission_level = 'CAN_MANAGE'
+              AND group_name != 'admins'
         '''
-        sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_users)
+        sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_non_admins)
 
 # COMMAND ----------
 
