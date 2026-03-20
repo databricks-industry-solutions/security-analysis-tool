@@ -50,6 +50,8 @@ cp src/securityanalysistoolproject/dist/dbl_sat_sdk-{version}-py3-none-any.whl l
 - Works from any notebook depth (root, subdirectories, nested subdirectories)
 - No changes needed to the 23+ notebooks that call `%run ./Includes/install_sat_sdk`
 
+**CRITICAL: After copying a new wheel to `lib/`, update `SDK_VERSION` in `notebooks/Includes/install_sat_sdk.py` to match. A mismatch causes all notebooks to fail at install time.**
+
 ### DABS Deployment
 
 DABS (Databricks Asset Bundles) is the deployment mechanism for SAT. Located in `dabs/`.
