@@ -1379,6 +1379,39 @@ if enabled:
 
 # COMMAND ----------
 
+check_id = '123' # GOV-45: Jobs not granting CAN_MANAGE to workspace users
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+GOV45_SAMPLE_LIMIT = 50
+
+def jobs_not_granting_can_manage_to_users(df):
+    if df is not None and not isEmpty(df):
+        jobs = df.collect()
+        total = len(jobs)
+        sample = jobs[:GOV45_SAMPLE_LIMIT]
+        violation_dict = {
+            num: {'job_id': row.job_id, 'job_name': row.job_name}
+            for num, row in enumerate(sample)
+        }
+        if total > GOV45_SAMPLE_LIMIT:
+            violation_dict['_summary'] = f'{total} jobs grant CAN_MANAGE to workspace users — showing first {GOV45_SAMPLE_LIMIT}'
+        return (check_id, total, violation_dict)
+    else:
+        return (check_id, 0, {})
+
+if enabled:
+    tbl_name = 'job_permissions_' + workspace_id
+    if any(table.name == tbl_name for table in spark.catalog.listTables(json_["intermediate_schema"])):
+        sql = f'''
+            SELECT DISTINCT job_id, job_name
+            FROM {tbl_name}
+            WHERE group_name = 'users'
+              AND permission_level = 'CAN_MANAGE'
+        '''
+        sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_users)
+
+# COMMAND ----------
+
 # COMMAND ----------
 
 check_id='119' # IA-9: Service principal client secrets not stale

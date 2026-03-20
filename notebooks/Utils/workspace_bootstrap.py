@@ -190,6 +190,17 @@ bootstrap('jobs'+ '_' + workspace_id, jobs_client.get_jobs_list)
 
 # COMMAND ----------
 
+tbl_name = 'jobs' + '_' + workspace_id
+sql = f'''SELECT job_id, settings.name AS job_name FROM {tbl_name}'''
+try:
+    df = spark.sql(sql)
+    job_list = df.collect()
+    bootstrap('job_permissions_' + workspace_id, jobs_client.get_job_permissions_for_jobs, job_list=job_list)
+except Exception:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
 bootstrap('job_runs'+ '_' + workspace_id, job_runs_client.get_jobruns_list)
 
 # COMMAND ----------
