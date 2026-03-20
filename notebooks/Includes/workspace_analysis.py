@@ -1273,6 +1273,84 @@ if enabled:
 
 # COMMAND ----------
 
+# NS-12: Context-Based Ingress (CBI) policy configured
+check_id = '122'
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def context_based_ingress_check(df):
+    """
+    Check that the workspace network policy has Context-Based Ingress (CBI)
+    configured with RESTRICTED_ACCESS ingress mode.
+
+    Pass:    ingress.restriction_mode == 'RESTRICTED_ACCESS'
+    Fail:    no policy assigned, no ingress config, or mode != RESTRICTED_ACCESS
+    """
+    if df is None or isEmpty(df):
+        violation = {
+            workspace_id: [
+                'NO_POLICY_ASSIGNED',
+                'Workspace does not have a network policy assigned'
+            ]
+        }
+        return (check_id, 1, violation)
+
+    try:
+        row = df.first()
+        policy_id = row.network_policy_id if hasattr(row, 'network_policy_id') else None
+        ingress_mode = row.ingress_restriction_mode if hasattr(row, 'ingress_restriction_mode') else None
+
+        if policy_id is None:
+            violation = {
+                workspace_id: [
+                    'NO_POLICY_ASSIGNED',
+                    'Workspace does not have a network policy assigned'
+                ]
+            }
+            return (check_id, 1, violation)
+
+        if ingress_mode and ingress_mode.upper() == 'RESTRICTED_ACCESS':
+            return (check_id, 0, {})
+
+        violation = {
+            workspace_id: [
+                'CBI_NOT_CONFIGURED',
+                f"Policy '{policy_id}' does not have Context-Based Ingress configured with RESTRICTED_ACCESS mode (current: {ingress_mode})"
+            ]
+        }
+        return (check_id, 1, violation)
+
+    except Exception as e:
+        loggr.error(f'Error evaluating CBI check: {e}')
+        violation = {
+            workspace_id: [
+                'ERROR_EVALUATING_CBI',
+                f'Error checking CBI configuration: {str(e)}'
+            ]
+        }
+        return (check_id, 1, violation)
+
+if enabled:
+    tbl_workspace_config = f'workspace_network_config_{workspace_id}'
+    tbl_network_policies = 'account_networkpolicies'
+    tbl_workspaces = 'acctworkspaces'
+
+    sql = f"""
+        SELECT
+            w.workspace_id,
+            w.workspace_name,
+            wnc.satelements[0].network_policy_id as network_policy_id,
+            np.ingress.restriction_mode as ingress_restriction_mode
+        FROM {tbl_workspaces} w
+        LEFT JOIN {tbl_workspace_config} wnc ON 1=1
+        LEFT JOIN {tbl_network_policies} np
+            ON np.network_policy_id = wnc.satelements[0].network_policy_id
+        WHERE w.workspace_id = '{workspace_id}'
+    """
+
+    sqlctrl(workspace_id, sql, context_based_ingress_check)
+
+# COMMAND ----------
+
 check_id='117'#GOV-42,Governance,Jobs run as service principal
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
