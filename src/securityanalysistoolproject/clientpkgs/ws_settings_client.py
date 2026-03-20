@@ -55,7 +55,8 @@ class WSSettingsClient(SatDBClient):
             {"name": "maxTokenLifetimeDays", "defn":"Gets the global max token lifetime days"},
             {"name": "enableTokensConfig", "defn":"Enable or disable token management — when enabled, admins can control which users are allowed to create personal access tokens"},
             {"name": "enableDeprecatedGlobalInitScripts", "defn":"Enable Deprecated Global Scripts"},
-            {"name": "enableLibraryAndInitScriptOnSharedCluster", "defn":"Enable libraries and init scripts on shared Unity Catalog clusters"}                              
+            {"name": "enableLibraryAndInitScriptOnSharedCluster", "defn":"Enable libraries and init scripts on shared Unity Catalog clusters"},
+            {"name": "enableIpAccessLists", "defn":"When enabled, configured IP access lists are enforced for the workspace — users can only connect from allowed IP addresses"}
             ]
         # pylint: enable=line-too-long
         for keyn in ws_keymap:
@@ -92,7 +93,7 @@ class WSSettingsClient(SatDBClient):
         'enableDatabricksAutologgingAdminConf,mlflowRunArtifactDownloadEnabled,mlflowModelServingEndpointCreationEnabled,'
         'mlflowModelRegistryEmailNotificationsEnabled,heapAnalyticsAdminConsent,storeInteractiveNotebookResultsInCustomerAccount,'
         'enableVerboseAuditLogs,enableFileStoreEndpoint,jobsListBackendPaginationEnabled,'
-        'maxTokenLifetimeDays,enableDeprecatedGlobalInitScripts,enableLibraryAndInitScriptOnSharedCluster,enableTokensConfig'}
+        'maxTokenLifetimeDays,enableDeprecatedGlobalInitScripts,enableLibraryAndInitScriptOnSharedCluster,enableTokensConfig,enableIpAccessLists'}
         endpointlist= self.get(f"/workspace-conf", json_params=json_params, version='2.0').get('satelements', [])
         return endpointlist   
 
