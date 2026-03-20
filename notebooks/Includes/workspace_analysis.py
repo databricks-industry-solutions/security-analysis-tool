@@ -1400,18 +1400,22 @@ def jobs_not_granting_can_manage_to_non_admins(df):
         return (check_id, 0, {})
 
 if enabled:
-    tbl_name = 'job_permissions_' + workspace_id
-    if any(table.name == tbl_name for table in spark.catalog.listTables(json_["intermediate_schema"])):
+    perm_tbl = 'job_permissions_' + workspace_id
+    jobs_tbl = 'jobs_' + workspace_id
+    existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
+    if perm_tbl in existing and jobs_tbl in existing:
         sql = f'''
-            SELECT DISTINCT job_id, job_name,
+            SELECT DISTINCT jp.job_id, jp.job_name,
                 CASE
-                    WHEN group_name != '' THEN group_name
-                    WHEN user_name != '' THEN user_name
-                    ELSE service_principal_name
+                    WHEN jp.group_name != '' THEN jp.group_name
+                    WHEN jp.user_name != '' THEN jp.user_name
+                    ELSE jp.service_principal_name
                 END AS principal
-            FROM {tbl_name}
-            WHERE permission_level = 'CAN_MANAGE'
-              AND group_name != 'admins'
+            FROM {perm_tbl} jp
+            JOIN {jobs_tbl} j ON CAST(jp.job_id AS BIGINT) = j.job_id
+            WHERE jp.permission_level = 'CAN_MANAGE'
+              AND jp.group_name != 'admins'
+              AND (jp.user_name = '' OR jp.user_name != j.creator_user_name)
         '''
         sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_non_admins)
 
