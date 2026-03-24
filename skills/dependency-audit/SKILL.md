@@ -1,11 +1,11 @@
 ---
 name: dependency-audit
-description: Audit npm dependencies across all Databricks Apps in a workspace. Use when checking for malicious packages, generating dependency inventories, or investigating supply chain risks. Triggers on dependency audit, npm audit, package audit, supply chain, malicious package, dependency inventory.
+description: Audit npm and Python dependencies across all Databricks Apps in a workspace. Use when checking for malicious packages, generating dependency inventories, or investigating supply chain risks. Triggers on dependency audit, npm audit, package audit, supply chain, malicious package, dependency inventory.
 ---
 
 # Auditing Databricks App Dependencies
 
-Systematic dependency audit of all Databricks Apps deployed in a workspace. Produces a unified inventory of direct and transitive npm dependencies, checks for flagged/malicious packages, and identifies coverage gaps.
+Systematic dependency audit of all Databricks Apps deployed in a workspace. Produces a unified inventory of direct and transitive dependencies, checks for flagged/malicious packages, and identifies coverage gaps.
 
 ## Prerequisites
 
@@ -30,25 +30,25 @@ If you need modern Python, use `uv run` with inline dependencies.
 
 ## Workflow
 
-### Phase 1: Enumerate Running Apps
+### Phase 1: Enumerate Apps
 
-List all apps and filter to those with successful deployments.
+List all apps in the workspace with:
 
 ```bash
 databricks apps list --profile <PROFILE> -o json
 ```
 
-Write a Python script to parse the JSON output. Extract:
+Parse the JSON output. Extract:
 - `name`
 - `active_deployment.source_code_path`
-- `active_deployment.status.state` (filter to `SUCCEEDED`)
+- `active_deployment.status.state`
 - `creator`
 
-Save the running apps list to `running_apps.json` for reference.
+Save the apps list to `apps.json` for reference.
 
 ### Phase 2: Download Source Code
 
-Download all apps in a batch script. For each app:
+Download all apps in parallel, for each app run:
 
 ```bash
 databricks workspace export-dir <SOURCE_PATH> apps/<APP_NAME>/ --profile <PROFILE> --overwrite
@@ -66,7 +66,7 @@ databricks workspace export-dir <SOURCE_PATH> apps/<APP_NAME>/ --profile <PROFIL
 
 ### Phase 3: Find All Dependency Files
 
-Search for ALL dependency manifest and lock file types. **Do not only search for package.json.**
+Search for ALL dependency manifest and lock file types. **Do not only search for package.json or requirements.txt.**
 
 ```
 # Required searches — run ALL of these:
@@ -75,6 +75,9 @@ Search for ALL dependency manifest and lock file types. **Do not only search for
 **/yarn.lock             # Yarn transitive dependencies
 **/bun.lock              # Bun transitive dependencies
 **/bun.lockb             # Bun binary lock file (note: binary, not parseable as text)
+**/requirements*.txt     # Python direct dependencies (no lock file, may include dev dependencies)
+**/pyproject.toml        # Python direct dependencies (PEP 518)
+**/uv.lock               # uv.lock for Python dependencies (if relevant)
 ```
 
 For each file found, record:
@@ -82,15 +85,13 @@ For each file found, record:
 - Relative path within the app
 - Lock file type
 
-**Coverage tracking:** For each app with a `package.json`, note whether it also has a corresponding lock file. Apps with `package.json` but NO lock file are **coverage gaps** — their transitive dependencies cannot be confirmed.
+**Coverage tracking:** For each app with a `package.json` or `pyproject.toml`, note whether it also has a corresponding lock file. Apps with `package.json` or `pyproject.toml`, but NO lock file are **coverage gaps** — their transitive dependencies cannot be confirmed. Python apps using only a `requirements.txt` do not have lock files, so they should be flagged as gaps as well.
 
 ### Phase 4: Extract Dependencies
 
-#### 4a: Direct dependencies from package.json
+#### 4a: Direct dependencies
 
-Parse each `package.json` and extract:
-- `dependencies` (production)
-- `devDependencies` (development)
+Parse each `package.json`, `requirements.txt`, or `pyproject.toml` and extract direct and development dependencies. For `package.json`, look in `dependencies` and `devDependencies`. For Python, parse the respective formats.
 
 For each dependency: package name, version specifier, dep type, which app, which file.
 
@@ -120,6 +121,10 @@ Lock files have different formats. Handle each:
 - The `packages` field uses array format: each entry is `"pkg-path": ["name@version", "registry-url", {metadata}, "integrity"]`
 - Extract package name from index 0 (strip the `@version` suffix), version from index 0 (after `@`), integrity from index 3
 - Earlier versions used `bun.lockb` (binary) — note these as unparseable coverage gaps
+
+**uv.lock:**
+- Similar to bun.lock, but for Python dependencies
+- Also uses trailing commas — same parsing approach as bun.lock
 
 #### 4c: Error handling
 
