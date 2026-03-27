@@ -29,3 +29,23 @@ class TokensClient(SatDBClient):
         """
         tokenslist = self.get("/token/list", version='2.0').get('token_infos', [])
         return tokenslist
+
+    def get_token_permissions(self):
+        """
+        Returns flattened ACL for workspace token management.
+        Endpoint: GET /api/2.0/permissions/authorization/tokens
+        Each ACL entry is expanded into one row per permission_level.
+        """
+        acl_list = self.get("/permissions/authorization/tokens", version='2.0').get('access_control_list', [])
+        result = []
+        for entry in acl_list:
+            for perm in entry.get('all_permissions', []):
+                result.append({
+                    'group_name': entry.get('group_name', ''),
+                    'user_name': entry.get('user_name', ''),
+                    'service_principal_name': entry.get('service_principal_name', ''),
+                    'display_name': entry.get('display_name', ''),
+                    'permission_level': perm.get('permission_level', ''),
+                    'inherited': perm.get('inherited', False)
+                })
+        return result

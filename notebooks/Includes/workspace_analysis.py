@@ -186,6 +186,36 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='124' # NS-13: Account console IP access list enforcement enabled
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def account_console_ip_access_lists_enabled(df):
+    if df is not None and not isEmpty(df):
+        result_row = df.first()
+        if result_row and hasattr(result_row, 'enable_ip_access_lists'):
+            setting_value = result_row.enable_ip_access_lists
+            if setting_value and hasattr(setting_value, 'value') and setting_value.value == True:
+                return (check_id, 0, {'enable_ip_access_lists': True})
+            else:
+                return (check_id, 1, {
+                    'enable_ip_access_lists': False,
+                    'value': setting_value.value if setting_value and hasattr(setting_value, 'value') else None
+                })
+        else:
+            return (check_id, 1, {'enable_ip_access_lists': False, 'error': 'Setting not found in response'})
+    else:
+        return (check_id, 1, {'enable_ip_access_lists': False, 'error': 'No data returned from API'})
+
+if enabled:
+    tbl_name = 'account_enable_ip_access_lists'
+    sql = f'''
+        SELECT enable_ip_access_lists, etag, setting_name
+        FROM {tbl_name}
+    '''
+    sqlctrl(workspace_id, sql, account_console_ip_access_lists_enabled)
+
+# COMMAND ----------
+
 check_id='112'# GOV-37,Governance,Disable legacy features for new workspaces
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -1370,6 +1400,10 @@ def jobs_run_as_service_principal(df):
 
 if enabled:
     tbl_name = 'jobs' + '_' + workspace_id
+    # run_as_user_name is the resolved identity: emails (users) always contain '@',
+    # SP application IDs are UUIDs and never do. This covers both explicit run_as
+    # config and the implicit case where settings.run_as is absent and the job
+    # defaults to its creator's identity — which settings.run_as.user_name would miss.
     sql = f'''
         SELECT job_id, settings.name AS job_name, run_as_user_name
         FROM {tbl_name}
@@ -1421,6 +1455,27 @@ if enabled:
 
 # COMMAND ----------
 
+check_id = '118' # IA-8: PAT token creation restricted to admins
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def pat_restricted_to_admins(df):
+    # Violation if the 'users' group (all workspace users) appears in the token
+    # management ACL — meaning any user can create a PAT, not just admins.
+    if df is not None and not isEmpty(df):
+        return (check_id, 1, {})
+    else:
+        return (check_id, 0, {})
+
+if enabled:
+    tbl_name = 'token_permissions' + '_' + workspace_id
+    existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
+    if tbl_name in existing:
+        sql = f'''
+            SELECT * FROM {tbl_name}
+            WHERE group_name = 'users'
+        '''
+        sqlctrl(workspace_id, sql, pat_restricted_to_admins)
+
 # COMMAND ----------
 
 check_id='119' # IA-9: Service principal client secrets not stale
@@ -1430,7 +1485,7 @@ sp_secret_age_evaluation_value = sbp_rec['evaluation_value']
 def sp_secret_stale_rule(df):
     if df is not None and not isEmpty(df) and len(df.collect()) >= 1:
         stale = df.collect()
-        stale_dict = {i.secret_id: [i.sp_display_name, i.sp_app_id, str(i.age_days)] for i in stale}
+        stale_dict = {i.id: [i.sp_display_name, i.sp_app_id, str(i.age_days)] for i in stale}
         return (check_id, 1, stale_dict)
     else:
         return (check_id, 0, {})
@@ -1439,7 +1494,7 @@ if enabled:
     tbl_name = 'acctserviceprincipalssecrets'
     if any(table.name == tbl_name for table in spark.catalog.listTables(json_["intermediate_schema"])):
         sql = f'''
-            SELECT secret_id, sp_display_name, sp_app_id,
+            SELECT id, sp_display_name, sp_app_id,
                    datediff(current_date(), to_date(create_time)) AS age_days
             FROM {tbl_name}
             WHERE status = 'ACTIVE'

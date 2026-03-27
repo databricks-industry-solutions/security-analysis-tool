@@ -274,6 +274,10 @@ bootstrap('tokens'+ '_' + workspace_id, tokens_client.get_tokens_list)
 
 # COMMAND ----------
 
+bootstrap('token_permissions' + '_' + workspace_id, tokens_client.get_token_permissions)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### Secrets
 

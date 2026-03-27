@@ -44,7 +44,6 @@ class WSSettingsClient(SatDBClient):
             {"name": "enableWebTerminal", "defn":"Enable or disable web terminal for clusters."},
             {"name": "enableDbfsFileBrowser", "defn":"Enable or disable DBFS File Browser"},
             {"name": "enableDatabricksAutologgingAdminConf", "defn":"Enable or disable Databricks Autologging for this workspace. When enabled, ML model training runs executed interactively on clusters with supported versions of the Databricks Runtime for Machine Learning will automatically be logged to MLflow."},
-            {"name": "mlflowRunArtifactDownloadEnabled", "defn":"Enable or disable the downloading of artifacts logged to an MLflow run. They will still be viewable in the UI."},
             {"name": "mlflowModelServingEndpointCreationEnabled", "defn":"Enable or disable Classic model serving for this workspace. Disabling this option will not disable the existing model serving endpoints."},
             {"name": "mlflowModelRegistryEmailNotificationsEnabled", "defn":"Enable or disable model registry email notifications for this workspace."},
             {"name": "heapAnalyticsAdminConsent", "defn":"Allow Databricks to collect usage patterns to better support you and to improve the product"},
@@ -90,7 +89,7 @@ class WSSettingsClient(SatDBClient):
         'intercomAdminConsent,enable-X-Frame-Options,enable-X-Content-Type-Options,'
         'enable-X-XSS-Protection,enableResultsDownloading,enableUploadDataUis,enableExportNotebook,'
         'enableNotebookGitVersioning,enableNotebookTableClipboard,enableWebTerminal,enableDbfsFileBrowser,'
-        'enableDatabricksAutologgingAdminConf,mlflowRunArtifactDownloadEnabled,mlflowModelServingEndpointCreationEnabled,'
+        'enableDatabricksAutologgingAdminConf,mlflowModelServingEndpointCreationEnabled,'
         'mlflowModelRegistryEmailNotificationsEnabled,heapAnalyticsAdminConsent,storeInteractiveNotebookResultsInCustomerAccount,'
         'enableVerboseAuditLogs,enableFileStoreEndpoint,jobsListBackendPaginationEnabled,'
         'maxTokenLifetimeDays,enableDeprecatedGlobalInitScripts,enableLibraryAndInitScriptOnSharedCluster,enableTokensConfig,enableIpAccessLists'}

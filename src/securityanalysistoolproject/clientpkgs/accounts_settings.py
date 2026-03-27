@@ -53,6 +53,15 @@ class AccountsSettings(SatDBClient):
         dlf_json_list = dlf_response.get("satelements", []) if dlf_response else []
         return dlf_json_list
 
+    def get_enableipaccesslists(self):
+        """
+        Returns json object for enable_ip_access_lists account setting.
+        Extracts satelements array to match CSP/ESM/disable_legacy_features pattern.
+        """
+        account_id = self._account_id
+        response = self.get(f"/accounts/{account_id}/settings/types/enable_ip_access_lists/names/default", master_acct=True)
+        return response.get("satelements", []) if response else []
+
     def get_networkconnectivityconfigurations(self, pageToken=None):
         """
         Returns an array of json objects for network connectivity

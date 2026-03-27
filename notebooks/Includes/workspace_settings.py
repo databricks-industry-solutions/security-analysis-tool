@@ -391,54 +391,6 @@ if enabled:
 
 # COMMAND ----------
 
-id = '118' # PAT token creation restricted to admins
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def enableTokensConfig(df):
-    value = 'false'
-    defn = {'defn' : ''}
-    for row in df.collect():
-        value = row.value
-        defn = {'defn' : row.defn.replace("'", '')}
-    if(value == 'true'):
-        return (id, 0, defn)
-    else:
-        return (id, 1, defn)
-
-if enabled:
-    tbl_name = 'workspacesettings' + '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name}
-        WHERE name="enableTokensConfig"
-    '''
-    sqlctrl(workspace_id, sql, enableTokensConfig)
-
-# COMMAND ----------
-
-id = '120' # DP-15: MLflow artifact download disabled
-enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
-
-def mlflowRunArtifactDownloadEnabled(df):
-    value = 'true'
-    defn = {'defn': ''}
-    for row in df.collect():
-        value = row.value
-        defn = {'defn': row.defn.replace("'", '')}
-    if value == 'false':
-        return (id, 0, defn)
-    else:
-        return (id, 1, defn)
-
-if enabled:
-    tbl_name = 'workspacesettings' + '_' + workspace_id
-    sql = f'''
-        SELECT * FROM {tbl_name}
-        WHERE name="mlflowRunArtifactDownloadEnabled"
-    '''
-    sqlctrl(workspace_id, sql, mlflowRunArtifactDownloadEnabled)
-
-# COMMAND ----------
-
 id = '121' # NS-11: IP access list enforcement enabled
 enabled, sbp_rec = getSecurityBestPracticeRecord(id, cloud_type)
 
