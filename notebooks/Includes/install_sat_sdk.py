@@ -52,4 +52,13 @@ print(f"Installing SAT SDK from: {WHEEL_PATH}")
 
 # COMMAND ----------
 
-# MAGIC %pip install PyYAML {WHEEL_PATH} 
+import subprocess, sys
+
+if is_serverless:
+    # Serverless: PyYAML, requests, and msal are all pre-installed in the runtime.
+    # Running 'pip install PyYAML' would contact PyPI even when the package is already present,
+    # and serverless has no outbound network access — so we skip it.
+    # Install the SDK wheel only, with --no-deps to avoid any PyPI resolution.
+    subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", WHEEL_PATH], check=True)
+else:
+    subprocess.run([sys.executable, "-m", "pip", "install", "PyYAML", WHEEL_PATH], check=True)
