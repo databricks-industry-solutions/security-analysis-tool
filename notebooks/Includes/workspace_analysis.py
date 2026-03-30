@@ -186,33 +186,25 @@ if enabled:
 
 # COMMAND ----------
 
-check_id='124' # NS-13: Account console IP access list enforcement enabled
+check_id='124' # NS-13: Account console has at least one enabled ALLOW-type IP access list
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
-def account_console_ip_access_lists_enabled(df):
+def account_console_ip_allowlist_enforced(df):
     if df is not None and not isEmpty(df):
-        result_row = df.first()
-        if result_row and hasattr(result_row, 'enable_ip_access_lists'):
-            setting_value = result_row.enable_ip_access_lists
-            if setting_value and hasattr(setting_value, 'value') and setting_value.value == True:
-                return (check_id, 0, {'enable_ip_access_lists': True})
-            else:
-                return (check_id, 1, {
-                    'enable_ip_access_lists': False,
-                    'value': setting_value.value if setting_value and hasattr(setting_value, 'value') else None
-                })
-        else:
-            return (check_id, 1, {'enable_ip_access_lists': False, 'error': 'Setting not found in response'})
+        allow_lists = df.collect()
+        allow_dict = {i.label: [i.list_type, i.address_count] for i in allow_lists}
+        return (check_id, 0, allow_dict)
     else:
-        return (check_id, 1, {'enable_ip_access_lists': False, 'error': 'No data returned from API'})
+        return (check_id, 1, {'Account console has no enabled ALLOW-type IP access list': True})
 
 if enabled:
-    tbl_name = 'account_enable_ip_access_lists'
+    tbl_name = 'account_ipaccess_list'
     sql = f'''
-        SELECT enable_ip_access_lists, etag, setting_name
+        SELECT label, list_type, address_count
         FROM {tbl_name}
+        WHERE enabled = true AND list_type = 'ALLOW'
     '''
-    sqlctrl(workspace_id, sql, account_console_ip_access_lists_enabled)
+    sqlctrl(workspace_id, sql, account_console_ip_allowlist_enforced)
 
 # COMMAND ----------
 

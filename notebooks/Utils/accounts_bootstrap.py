@@ -297,10 +297,6 @@ bootstrap('account_disable_legacy_features', acct_settings.get_disablelegacyfeat
 
 # COMMAND ----------
 
-bootstrap('account_enable_ip_access_lists', acct_settings.get_enableipaccesslists)
-
-# COMMAND ----------
-
 # COMMAND ----------
 
 # MAGIC %md
