@@ -42,7 +42,7 @@ if not os.path.exists(sdk_path):
 
 print("="*60)
 
-# MAGIC %pip install networkx==3.6.1 --quiet
+# MAGIC %pip install networkx --quiet
 # MAGIC %pip install -e ../../src/brickhound
 
 # COMMAND ----------

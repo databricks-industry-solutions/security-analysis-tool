@@ -100,7 +100,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Install Dependencies
-# MAGIC %pip install databricks-sdk==0.102.0 networkx==3.6.1 tqdm==4.67.3 python-dotenv==1.2.2 --quiet
+# MAGIC %pip install databricks-sdk>=0.18.0 networkx tqdm python-dotenv --quiet
 
 # COMMAND ----------
 
