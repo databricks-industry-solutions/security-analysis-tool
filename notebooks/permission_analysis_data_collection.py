@@ -184,6 +184,9 @@ print("="*80)
 print("Collection Configuration")
 print("="*80)
 
+# Default False; set to True later once SP credentials are verified and compute is classic
+MULTI_WORKSPACE_MODE = False
+
 # ============================================================================
 # COLLECTION CONFIGURATION - Modify these settings as needed
 # ============================================================================
