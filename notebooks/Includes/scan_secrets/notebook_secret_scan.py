@@ -105,7 +105,7 @@ db_client = SatDBClient(json_)
 # MAGIC if [[ "$DATABRICKS_RUNTIME_VERSION" == client* ]]; then
 # MAGIC     echo "Serverless runtime detected - requests and pyyaml are pre-installed, skipping pip install"
 # MAGIC else
-# MAGIC     pip install requests pyyaml
+# MAGIC     pip install requests==2.32.3 PyYAML==6.0.2
 # MAGIC fi
 # MAGIC
 # MAGIC # Check if TruffleHog is already installed (idempotent installation)
