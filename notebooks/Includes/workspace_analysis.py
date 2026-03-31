@@ -1027,16 +1027,18 @@ check_id='115'#DP-11,Data Protection,SQL warehouse results download disabled
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def sql_results_download(df):
     if df is not None and not isEmpty(df):
-        return (check_id, 0, {'sql_results_download':'sql_results_download setting is enabled — users cannot download SQL query results'})
-    else:
-        return (check_id, 1, {'sql_results_download':'sql_results_download setting is not enabled — users can download SQL query results, risking data exfiltration'})
+        row = df.first()
+        bv = row['boolean_val']
+        # boolean_val.value = False means downloads are DISABLED = secure
+        if bv is not None and bv['value'] == False:
+            return (check_id, 0, {'sql_results_download':'sql_results_download setting is enabled — users cannot download SQL query results'})
+    return (check_id, 1, {'sql_results_download':'sql_results_download setting is not enabled — users can download SQL query results, risking data exfiltration'})
 
 if enabled:
     tbl_name = 'sql_results_download' + '_' + workspace_id
     sql=f'''
         SELECT *
         FROM {tbl_name}
-        WHERE boolean_val.value = false
     '''
     sqlctrl(workspace_id, sql, sql_results_download)
 

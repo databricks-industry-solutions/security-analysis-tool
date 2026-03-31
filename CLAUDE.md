@@ -263,34 +263,32 @@ mcp__databricks__list_clusters(workspace_host="...")
 
 Write down the **exact top-level key names** in the response before proceeding.
 
-### Step 2 — Settings v2 API boolean column rule (MANDATORY for Settings v2 checks)
+### Step 2 — Settings v2 API column name rule (MANDATORY for Settings v2 checks)
 
-The Settings v2 API always wraps boolean settings in a nested object:
-```json
-{
-  "etag": "...",
-  "setting_name": "default",
-  "boolean_val": {
-    "value": false
-  }
-}
-```
+**Always call the live API first (Step 1) and inspect the exact top-level key.**
 
-The `bootstrap()` function flattens JSON into Delta columns using **top-level key names**. This means:
+Settings v2 APIs do NOT all use the same key name for their value. Each setting
+uses its OWN key name as the top-level wrapper. Examples:
 
-| What you might expect | What the column is actually called |
-|-----------------------|-------------------------------------|
-| `sql_results_download.value` | `boolean_val.value` |
-| `disable_legacy_dbfs.value` | `boolean_val.value` |
-| `<any_setting_name>.value` | `boolean_val.value` |
+| Setting | Top-level key | SQL column |
+|---------|--------------|------------|
+| `sql_results_download` | `boolean_val` | `boolean_val.value` |
+| `disable_legacy_dbfs` | `disable_legacy_dbfs` | `disable_legacy_dbfs.value` |
+| `automatic_cluster_update` | `automatic_cluster_update_workspace` | `automatic_cluster_update_workspace.enabled` |
+| `restrict_workspace_admins` | `restrict_workspace_admins` | `restrict_workspace_admins.status` |
 
-**Always use `boolean_val.value` in the WHERE clause, never `<setting_name>.value`.**
+The `bootstrap()` function preserves the top-level JSON key as the column name.
+`sql_results_download` is the **only** known setting that uses `boolean_val` instead
+of its own name.
 
 ```python
-# CORRECT
-WHERE boolean_val.value = true
+# CORRECT for sql_results_download (uniquely uses boolean_val)
+WHERE boolean_val.value = false
 
-# WRONG — will fail at runtime with "cannot find field"
+# CORRECT for disable_legacy_dbfs (uses its own name)
+WHERE disable_legacy_dbfs.value = true
+
+# WRONG — never guess; always check the live API response
 WHERE sql_results_download.value = true
 ```
 
@@ -360,7 +358,7 @@ git diff --cached --name-only | xargs codespell
 
 | Bug | Root cause | Fix |
 |-----|-----------|-----|
-| DP-11 runtime SQL error: `cannot find field sql_results_download.value` | Assumed column name mirrors setting name; bootstrap actually uses top-level JSON key (`boolean_val`) | Always inspect live API response before writing SQL; use `boolean_val.value` for Settings v2 booleans |
+| DP-11 runtime SQL error: `cannot find field sql_results_download.value` | Assumed column name mirrors setting name; `sql_results_download` API uniquely uses `boolean_val` as the top-level key | Always inspect live API response before writing SQL; use the exact top-level key from the response, never guess |
 | DP-10/11 broken doc URLs | URLs added without verification | Run URL check script (Step 3) before every commit |
 
 ---
