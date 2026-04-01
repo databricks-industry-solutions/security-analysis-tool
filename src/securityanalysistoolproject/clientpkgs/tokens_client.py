@@ -1,5 +1,8 @@
 '''Tokens module'''
 from core.dbclient import SatDBClient
+from core.logging_utils import LoggingUtils
+
+LOGGR = LoggingUtils.get_logger()
 
 class TokensClient(SatDBClient):
     '''tokens client helper'''
@@ -20,8 +23,8 @@ class TokensClient(SatDBClient):
         """
         tokenlist = self.get("/token-management/tokens/{token_id}", version='2.0').get('token_info', [])
         return tokenlist
-    
-    
+
+
 
     def get_tokens_list(self):
         """
@@ -35,8 +38,15 @@ class TokensClient(SatDBClient):
         Returns flattened ACL for workspace token management.
         Endpoint: GET /api/2.0/permissions/authorization/tokens
         Each ACL entry is expanded into one row per permission_level.
+        Returns empty list if token ACLs are disabled (FEATURE_DISABLED).
         """
-        acl_list = self.get("/permissions/authorization/tokens", version='2.0').get('access_control_list', [])
+        try:
+            acl_list = self.get("/permissions/authorization/tokens", version='2.0').get('access_control_list', [])
+        except Exception as e:
+            if 'FEATURE_DISABLED' in str(e):
+                LOGGR.info("Token ACLs are disabled on this workspace — returning empty list for IA-8")
+                return []
+            raise
         result = []
         for entry in acl_list:
             for perm in entry.get('all_permissions', []):

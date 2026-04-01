@@ -54,21 +54,19 @@ class Check119_SPSecretStale(BaseValidator):
         acct_id = self.config.account_console_id
         acct_client = self.account_rest or self.rest
 
-        # Get all service principals from account API
-        try:
-            sps = acct_client.get_all_pages(
-                f"/accounts/{acct_id}/scim/v2/ServicePrincipals",
-                token=token,
-                list_key="Resources",
-            )
-        except Exception:
-            return 0, {"note": "Could not list service principals"}
+        # Get all service principals from account API.
+        # Let AccountAPIForbiddenError propagate → reported as API_ERROR.
+        sps = acct_client.get_all_pages(
+            f"/accounts/{acct_id}/scim/v2/ServicePrincipals",
+            token=token,
+            list_key="Resources",
+        )
 
         # For each SP, get their secrets
         import time
 
         now_epoch = time.time()
-        threshold_days = 90  # default evaluation_value from CSV
+        threshold_days = 365  # evaluation_value from security_best_practices.csv for IA-9
         stale = []
 
         for sp in sps:

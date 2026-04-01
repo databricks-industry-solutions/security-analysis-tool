@@ -46,9 +46,13 @@ class DatabricksRestClient:
             "Authorization": f"Bearer {token}",
             "User-Agent": "sat-test-framework/1.0",
         }
+        # Use a session with trust_env=False to prevent Python requests from
+        # reading ~/.netrc and overwriting our Bearer token with Basic auth.
+        session = requests.Session()
+        session.trust_env = False
         for attempt in range(self.MAX_RETRIES + 1):
             self._throttle()
-            resp = requests.request(
+            resp = session.request(
                 method, url, headers=headers, timeout=self.timeout, **kwargs
             )
 

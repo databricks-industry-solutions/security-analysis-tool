@@ -166,13 +166,11 @@ class Check118_PATRestrictedToAdmins(BaseValidator):
 
     def evaluate_from_api(self) -> tuple[int, dict]:
         token = self.token_provider.get_workspace_token()
-        try:
-            resp = self.rest.get(
-                "/permissions/authorization/tokens", token=token, version="2.0"
-            )
-        except Exception:
-            # If API returns 404 or error, token permissions may not be configured
-            return 0, {"note": "Token permissions API not available"}
+        # Let FeatureDisabledError propagate — base_validator will report it as
+        # FEATURE_DISABLED API_ERROR rather than masking it as a false PASS.
+        resp = self.rest.get(
+            "/permissions/authorization/tokens", token=token, version="2.0"
+        )
 
         acls = resp.get("access_control_list", [])
         # Check if the 'users' group appears — means any user can create PATs
