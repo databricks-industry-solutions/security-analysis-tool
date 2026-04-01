@@ -3,6 +3,10 @@ name: dependency-audit
 description: Audit npm and Python dependencies across all Databricks Apps in a workspace. Use when checking for malicious packages, generating dependency inventories, or investigating supply chain risks. Triggers on dependency audit, npm audit, package audit, supply chain, malicious package, dependency inventory.
 ---
 
+## Disclaimer
+
+This skill is intended to supplement your security processes and is not a substitute for security investigations. The output or skill itself may be incomplete or inaccurate for your purposes, and AI tools may hallucinate. You remain solely responsible for your security investigation and results thereof.
+
 # Auditing Databricks App Dependencies
 
 Systematic dependency audit of all Databricks Apps deployed in a workspace. Produces a unified inventory of direct and transitive dependencies, checks for flagged/malicious packages, and identifies coverage gaps.
@@ -240,3 +244,4 @@ Result: Same workflow but with `lodash.template` as the flagged package. Still p
 ### Example: Dependency inventory only
 User says: "Give me a list of all npm packages used across our Databricks Apps"
 Result: Same workflow but skip Phase 5 (no flagged packages). Produce full inventory with coverage tracking.
+
