@@ -5,7 +5,6 @@ import urllib3
 import requests
 from core.logging_utils import LoggingUtils
 from core import parser as pars
-import msal
 import re
 from enum import Enum
 
@@ -661,6 +660,7 @@ class SatDBClient:
         databricks scope for rest api '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'
         some of these will change for govcloud or DoD
         """
+        import msal  # lazy import — only needed for Azure auth; not available on all serverless envs
         try:
             if self._cloud_type != 'azure':
                 raise Exception('works only for Azure')

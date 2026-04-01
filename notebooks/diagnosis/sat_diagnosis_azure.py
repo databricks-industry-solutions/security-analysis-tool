@@ -188,7 +188,6 @@ except requests.exceptions.RequestException as err:
 
 # COMMAND ----------
 
-# pip install msal
 import msal
 import sys
 def get_msal_token():

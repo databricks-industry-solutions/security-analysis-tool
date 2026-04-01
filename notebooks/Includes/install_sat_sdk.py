@@ -29,7 +29,7 @@ if is_sat_compatible== False:
 
 # COMMAND ----------
 
-SDK_VERSION='0.1.42'
+SDK_VERSION='0.1.49'
 
 # COMMAND ----------
 
@@ -52,4 +52,12 @@ print(f"Installing SAT SDK from: {WHEEL_PATH}")
 
 # COMMAND ----------
 
-# MAGIC %pip install PyYAML {WHEEL_PATH} 
+import subprocess, sys
+
+if is_serverless:
+    # Serverless: PyYAML and requests are pre-installed in all env versions.
+    # msal is only pre-installed in env v4+; it is a lazy import in dbclient.py (Azure-only).
+    # Install the SDK wheel only, with --no-deps to avoid any PyPI resolution.
+    subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", WHEEL_PATH], check=True)
+else:
+    subprocess.run([sys.executable, "-m", "pip", "install", "PyYAML", WHEEL_PATH], check=True)

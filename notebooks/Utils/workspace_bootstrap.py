@@ -190,6 +190,17 @@ bootstrap('jobs'+ '_' + workspace_id, jobs_client.get_jobs_list)
 
 # COMMAND ----------
 
+tbl_name = 'jobs' + '_' + workspace_id
+sql = f'''SELECT job_id, settings.name AS job_name FROM {tbl_name}'''
+try:
+    df = spark.sql(sql)
+    job_list = df.collect()
+    bootstrap('job_permissions_' + workspace_id, jobs_client.get_job_permissions_for_jobs, job_list=job_list)
+except Exception:
+    loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
 bootstrap('job_runs'+ '_' + workspace_id, job_runs_client.get_jobruns_list)
 
 # COMMAND ----------
@@ -260,6 +271,10 @@ except Exception:
 # COMMAND ----------
 
 bootstrap('tokens'+ '_' + workspace_id, tokens_client.get_tokens_list)
+
+# COMMAND ----------
+
+bootstrap('token_permissions' + '_' + workspace_id, tokens_client.get_token_permissions)
 
 # COMMAND ----------
 
@@ -379,6 +394,14 @@ bootstrap('enhanced_security_monitoring'+ '_' + workspace_id, ws_client.get_enha
 # COMMAND ----------
 
 bootstrap('restrict_workspace_admin_settings'+ '_' + workspace_id, ws_client.get_restrict_workspace_admin_settings)
+
+# COMMAND ----------
+
+bootstrap('disable_legacy_dbfs'+ '_' + workspace_id, ws_client.get_disable_legacy_dbfs)
+
+# COMMAND ----------
+
+bootstrap('sql_results_download'+ '_' + workspace_id, ws_client.get_sql_results_download)
 
 # COMMAND ----------
 

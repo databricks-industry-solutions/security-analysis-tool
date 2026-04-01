@@ -297,4 +297,44 @@ bootstrap('account_disable_legacy_features', acct_settings.get_disablelegacyfeat
 
 # COMMAND ----------
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Get Service Principal Secrets
+
+# COMMAND ----------
+
+from clientpkgs.accounts_oauth import AccountsOAuth
+
+try:
+    acct_oauth = AccountsOAuth(json_)
+    sp_list = acct_oauth.get_account_service_principals()
+    sp_secrets_all = []
+    for sp in sp_list:
+        sp_id = str(sp.get('id', ''))
+        sp_display_name = sp.get('displayName', '')
+        sp_app_id = str(sp.get('applicationId', ''))
+        try:
+            secrets = acct_oauth.get_service_principal_secrets(sp_id)
+            for secret in secrets:
+                secret['sp_id'] = sp_id
+                secret['sp_display_name'] = sp_display_name
+                secret['sp_app_id'] = sp_app_id
+                sp_secrets_all.append(secret)
+        except Exception as e:
+            loggr.warning(f"Could not fetch secrets for SP {sp_id} ({sp_display_name}): {e}")
+    if sp_secrets_all:
+        sp_secrets_json = [json.dumps(s) for s in sp_secrets_all]
+        sp_secrets_df = spark.read.json(spark.sparkContext.parallelize(sp_secrets_json))
+        sp_secrets_df.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('acctserviceprincipalssecrets')
+        loggr.info(f"Table created: `acctserviceprincipalssecrets` with {len(sp_secrets_all)} secret records")
+    else:
+        from pyspark.sql.types import StructType as EmptyStructType
+        spark.createDataFrame([], EmptyStructType([])).write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('acctserviceprincipalssecrets')
+        loggr.info("No service principal secrets found")
+except Exception:
+    loggr.exception("Exception encountered while bootstrapping SP secrets")
+
+# COMMAND ----------
+
 print(f"Account Bootstrap - {time.time() - start_time} seconds to run")
