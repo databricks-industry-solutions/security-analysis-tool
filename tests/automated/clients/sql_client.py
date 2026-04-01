@@ -61,6 +61,16 @@ class SQLClient:
         """
         return self.execute_query(token, sql)
 
+    def get_workspaces(self, token: str, schema: str) -> list[dict]:
+        """Get all analysis-enabled workspaces from SAT's account_workspaces table."""
+        sql = f"""
+            SELECT workspace_id, workspace_name, deployment_url, analysis_enabled
+            FROM {schema}.account_workspaces
+            WHERE analysis_enabled = true
+            ORDER BY workspace_id
+        """
+        return self.execute_query(token, sql)
+
     def get_sat_results(
         self,
         token: str,
