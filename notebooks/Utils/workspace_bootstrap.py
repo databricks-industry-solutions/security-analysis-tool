@@ -648,6 +648,25 @@ if cloud_type == 'azure':
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ##### Egress Connectivity Test (classic compute only)
+
+# COMMAND ----------
+
+if not is_serverless:
+    from clientpkgs.egress_test_client import EgressTestClient
+    try:
+        egress_test_client = EgressTestClient(json_)
+    except Exception:
+        loggr.exception("Exception encountered")
+
+# COMMAND ----------
+
+if not is_serverless:
+    bootstrap('egress_test_results' + '_' + workspace_id, egress_test_client.get_egress_test_results)
+
+# COMMAND ----------
+
 tcomp = time.time() - start_time
 print(f"Workspace Bootstrap - {tcomp} seconds to run")
 

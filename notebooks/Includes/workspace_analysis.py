@@ -1498,4 +1498,32 @@ if enabled:
 
 # COMMAND ----------
 
+# DBTITLE 1,Egress Control from Compute (NS-14)
+check_id = '125'  # NS-14
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def egress_control_check(df):
+    if df is None or isEmpty(df):
+        return (check_id, 1, {'message': 'Egress test results not available'})
+    rows = df.collect()
+    blocked = [r.destination_name for r in rows if not r.reachable]
+    if len(blocked) > 0:
+        return (check_id, 0, {})
+    else:
+        reachable = [r.destination_name for r in rows if r.reachable]
+        return (check_id, 1, {
+            'message': f'All {len(reachable)} test destinations reachable — public internet is accessible from compute',
+            **{d: 'reachable' for d in reachable}
+        })
+
+if enabled and not is_serverless:
+    tbl_name = f'egress_test_results_{workspace_id}'
+    sql = f'''
+        SELECT destination_name, reachable
+        FROM {tbl_name}
+    '''
+    sqlctrl(workspace_id, sql, egress_control_check)
+
+# COMMAND ----------
+
 dbutils.notebook.exit(f'Completed SAT workspace analysis in {tcomp} seconds')
