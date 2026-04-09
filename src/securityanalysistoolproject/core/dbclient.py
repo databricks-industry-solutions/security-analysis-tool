@@ -85,7 +85,6 @@ class SatDBClient:
         #self._url=self._raw_url
         if(self._cloud_type == 'gcp'):
             self._url=self._ACCTURL
-            LOGGR.debug(f'GCP self._url {self._url} {self._client_id} {self._client_secret}') ##Remove
             oauth = self.getGCPTokenwithOAuth(True, self._client_id, self._client_secret)
             self._token = {
                 "Authorization": f"Bearer {oauth}",
