@@ -165,6 +165,7 @@ import base64
 import subprocess
 import hashlib
 import logging
+import shutil
 import yaml
 from datetime import timedelta, datetime
 from urllib.parse import quote
@@ -394,6 +395,15 @@ def check_notebook_status(notebook_path: str) -> int:
         logger.error(f"Error checking notebook status for {notebook_path}: {str(e)}")
         return 500  # Internal server error
 
+def get_fuse_path(workspace_path: str) -> Optional[str]:
+    """Find the actual file on the FUSE mount by trying common extensions."""
+    base_path = f"/Workspace{workspace_path}"
+    for ext in [".ipynb", ".sql", ".py", ".r", ".scala", ""]:
+        candidate = f"{base_path}{ext}"
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
 def export_notebook_content(notebook_path: str) -> Optional[Dict[str, Any]]:
     """
     Export notebook content from Databricks workspace.
@@ -544,7 +554,10 @@ def process_trufflehog_output(trufflehog_output: str) -> List[Dict[str, str]]:
     for line in trufflehog_output.strip().splitlines():
         try:
             data = json.loads(line)
-            detector_name = data.get("DetectorName", "Unknown")
+            detector_name = (
+                (data.get("ExtraData") or {}).get("name")
+                or data.get("DetectorName", "unknown")
+            )
             raw_value = data.get("Raw", "")
             
             if raw_value:
@@ -736,64 +749,67 @@ def scan_notebook_for_secrets(notebook_path: str, object_id: str) -> Optional[Li
         Optional[List[Dict[str, str]]]: List of detected secrets or None if error
     """
     try:
-        # Check if notebook exists and is accessible
-        notebook_status = check_notebook_status(notebook_path)
-        
-        if notebook_status == 200:
-            # Export notebook content
-            export_response = export_notebook_content(notebook_path)
-            if export_response is None:
-                logger.warning(f"Failed to export notebook content: {notebook_path}")
+        output_file_path = os.path.join(Config.TEMP_NOTEBOOKS_DIR, f"notebook_content_{object_id}.txt")
+
+        # Try FUSE mount first (fast local copy), fall back to API export
+        fuse_path = get_fuse_path(notebook_path)
+        if fuse_path:
+            logger.info(f"Using FUSE mount: {fuse_path}")
+            try:
+                os.makedirs(Config.TEMP_NOTEBOOKS_DIR, exist_ok=True)
+                shutil.copy2(fuse_path, output_file_path)
+            except Exception as e:
+                logger.warning(f"FUSE copy failed for {fuse_path}, falling back to API: {e}")
+                fuse_path = None  # trigger API fallback below
+
+        if not fuse_path:
+            # API fallback: check status, export, decode
+            notebook_status = check_notebook_status(notebook_path)
+
+            if notebook_status == 200:
+                export_response = export_notebook_content(notebook_path)
+                if export_response is None:
+                    logger.warning(f"Failed to export notebook content: {notebook_path}")
+                    return None
+
+                content = export_response.get("content")
+                if not content:
+                    logger.warning(f"No content found in notebook: {notebook_path}")
+                    return None
+
+                if not decode_and_write_content(content, output_file_path):
+                    logger.error(f"Failed to write notebook content to file: {output_file_path}")
+                    return None
+
+                logger.info(f"Notebook content exported via API to: {output_file_path}")
+
+            elif notebook_status == 403:
+                logger.warning(f"Access denied for notebook: {notebook_path}")
                 return None
-                
-            content = export_response.get("content")
-            if not content:
-                logger.warning(f"No content found in notebook: {notebook_path}")
+            elif notebook_status == 404:
+                logger.warning(f"Notebook not found: {notebook_path}")
                 return None
-            
-            # Write content to temporary file
-            output_file_path = os.path.join(Config.TEMP_NOTEBOOKS_DIR, f"notebook_content_{object_id}.txt")
-            if not decode_and_write_content(content, output_file_path):
-                logger.error(f"Failed to write notebook content to file: {output_file_path}")
-                return None
-                
-            logger.info(f"Notebook content exported to: {output_file_path}")
-            
-            # Scan for secrets using TruffleHog
-            trufflehog_output = scan_for_secrets(output_file_path)
-            if trufflehog_output is None:
-                logger.warning(f"TruffleHog scan failed for: {notebook_path}")
-                return None
-            
-            # Process TruffleHog output
-            results = process_trufflehog_output(trufflehog_output)
-            
-            if results:
-                logger.info(f"Found {len(results)} potential secrets in notebook: {notebook_path}")
-                # Log results securely (with hashed secrets)
-                for result in results:
-                    logger.info(f"Secret detected - Type: {result['DetectorName']}, SHA: {result['Raw_SHA'][:16]}...")
             else:
-                logger.info(f"No secrets found in notebook: {notebook_path}")
-            
-            # Clean up temporary file
-            # TEMPORARILY DISABLED FOR DEBUGGING
-            # try:
-            #     os.remove(output_file_path)
-            # except OSError as e:
-            #     logger.warning(f"Failed to clean up temporary file {output_file_path}: {str(e)}")
-            
-            return results
-            
-        elif notebook_status == 403:
-            logger.warning(f"Access denied for notebook: {notebook_path}")
+                logger.warning(f"Unexpected status {notebook_status} for notebook: {notebook_path}")
+                return None
+
+        # Scan for secrets using TruffleHog
+        trufflehog_output = scan_for_secrets(output_file_path)
+        if trufflehog_output is None:
+            logger.warning(f"TruffleHog scan failed for: {notebook_path}")
             return None
-        elif notebook_status == 404:
-            logger.warning(f"Notebook not found: {notebook_path}")
-            return None
+
+        # Process TruffleHog output
+        results = process_trufflehog_output(trufflehog_output)
+
+        if results:
+            logger.info(f"Found {len(results)} potential secrets in notebook: {notebook_path}")
+            for result in results:
+                logger.info(f"Secret detected - Type: {result['DetectorName']}, SHA: {result['Raw_SHA'][:16]}...")
         else:
-            logger.warning(f"Unexpected status {notebook_status} for notebook: {notebook_path}")
-            return None
+            logger.info(f"No secrets found in notebook: {notebook_path}")
+
+        return results
             
     except Exception as e:
         logger.error(f"Error scanning notebook {notebook_path}: {str(e)}")
@@ -945,7 +961,7 @@ def main_scanning_workflow():
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
     
     # Build filters - only include time filter if enabled
-    filters = {"result_types": ["NOTEBOOK"]}
+    filters = {"result_types": ["FILE", "NOTEBOOK"]}
     if time_filter_enabled:
         filters["last_edited_after"] = last_edited_after
     
