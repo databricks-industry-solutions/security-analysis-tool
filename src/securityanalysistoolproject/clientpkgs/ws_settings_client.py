@@ -44,7 +44,6 @@ class WSSettingsClient(SatDBClient):
             {"name": "enableWebTerminal", "defn":"Enable or disable web terminal for clusters."},
             {"name": "enableDbfsFileBrowser", "defn":"Enable or disable DBFS File Browser"},
             {"name": "enableDatabricksAutologgingAdminConf", "defn":"Enable or disable Databricks Autologging for this workspace. When enabled, ML model training runs executed interactively on clusters with supported versions of the Databricks Runtime for Machine Learning will automatically be logged to MLflow."},
-            {"name": "mlflowRunArtifactDownloadEnabled", "defn":"Enable or disable the downloading of artifacts logged to an MLflow run. They will still be viewable in the UI."},
             {"name": "mlflowModelServingEndpointCreationEnabled", "defn":"Enable or disable Classic model serving for this workspace. Disabling this option will not disable the existing model serving endpoints."},
             {"name": "mlflowModelRegistryEmailNotificationsEnabled", "defn":"Enable or disable model registry email notifications for this workspace."},
             {"name": "heapAnalyticsAdminConsent", "defn":"Allow Databricks to collect usage patterns to better support you and to improve the product"},
@@ -53,8 +52,10 @@ class WSSettingsClient(SatDBClient):
             {"name": "enableFileStoreEndpoint", "defn":"Enable or disable FileStore endpoint /files"},
             {"name": "jobsListBackendPaginationEnabled", "defn":"Enables 10,000 jobs per workspace and streamlined search"},
             {"name": "maxTokenLifetimeDays", "defn":"Gets the global max token lifetime days"},
+            {"name": "enableTokensConfig", "defn":"Enable or disable token management — when enabled, admins can control which users are allowed to create personal access tokens"},
             {"name": "enableDeprecatedGlobalInitScripts", "defn":"Enable Deprecated Global Scripts"},
-            {"name": "enableLibraryAndInitScriptOnSharedCluster", "defn":"Enable libraries and init scripts on shared Unity Catalog clusters"}                              
+            {"name": "enableLibraryAndInitScriptOnSharedCluster", "defn":"Enable libraries and init scripts on shared Unity Catalog clusters"},
+            {"name": "enableIpAccessLists", "defn":"When enabled, configured IP access lists are enforced for the workspace — users can only connect from allowed IP addresses"}
             ]
         # pylint: enable=line-too-long
         for keyn in ws_keymap:
@@ -88,10 +89,10 @@ class WSSettingsClient(SatDBClient):
         'intercomAdminConsent,enable-X-Frame-Options,enable-X-Content-Type-Options,'
         'enable-X-XSS-Protection,enableResultsDownloading,enableUploadDataUis,enableExportNotebook,'
         'enableNotebookGitVersioning,enableNotebookTableClipboard,enableWebTerminal,enableDbfsFileBrowser,'
-        'enableDatabricksAutologgingAdminConf,mlflowRunArtifactDownloadEnabled,mlflowModelServingEndpointCreationEnabled,'
+        'enableDatabricksAutologgingAdminConf,mlflowModelServingEndpointCreationEnabled,'
         'mlflowModelRegistryEmailNotificationsEnabled,heapAnalyticsAdminConsent,storeInteractiveNotebookResultsInCustomerAccount,'
         'enableVerboseAuditLogs,enableFileStoreEndpoint,jobsListBackendPaginationEnabled,'
-        'maxTokenLifetimeDays,enableDeprecatedGlobalInitScripts,enableLibraryAndInitScriptOnSharedCluster'}
+        'maxTokenLifetimeDays,enableDeprecatedGlobalInitScripts,enableLibraryAndInitScriptOnSharedCluster,enableTokensConfig,enableIpAccessLists'}
         endpointlist= self.get(f"/workspace-conf", json_params=json_params, version='2.0').get('satelements', [])
         return endpointlist   
 
@@ -145,7 +146,21 @@ class WSSettingsClient(SatDBClient):
         """
         # fetch all endpoints
         endpointlist= self.get(f"/settings/types/disable_legacy_access/names/default", version='2.0').get('satelements', [])
-        return endpointlist      
+        return endpointlist
+
+    def get_disable_legacy_dbfs(self):
+        """
+        Returns an array of json objects for disable legacy DBFS setting.
+        """
+        endpointlist= self.get(f"/settings/types/disable_legacy_dbfs/names/default", version='2.0').get('satelements', [])
+        return endpointlist
+
+    def get_sql_results_download(self):
+        """
+        Returns an array of json objects for SQL warehouse results download setting.
+        """
+        endpointlist= self.get(f"/settings/types/sql_results_download/names/default", version='2.0').get('satelements', [])
+        return endpointlist
 
     def get_enhanced_security_monitoring(self):
         """

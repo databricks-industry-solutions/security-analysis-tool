@@ -225,7 +225,8 @@ def readWorkspaceConfigFile():
         }
         dfa = pd.read_csv(f"{prefix}/workspace_configs.csv", header=0, dtype=dict)
         if len(dfa) > 0:
-            dfexist = spark.createDataFrame(dfa, schema)
+            dfa = dfa.where(dfa.notna(), None)
+            dfexist = spark.createDataFrame(dfa.values.tolist(), schema)
     except FileNotFoundError:
         print("Missing workspace Config file")
         return
@@ -296,8 +297,9 @@ def readBestPracticesConfigsFile():
             origfile, header=0, usecols=schema_list
         ).rename(columns={doc_url: "doc_url"})
         
+        security_best_practices_pd = security_best_practices_pd.where(security_best_practices_pd.notna(), None)
         security_best_practices = spark.createDataFrame(
-            security_best_practices_pd, schema
+            security_best_practices_pd.values.tolist(), schema
         ).select(
             "id",
             "check_id",
@@ -359,8 +361,9 @@ def load_sat_dasf_mapping():
   schema = '''sat_id int, dasf_control_id string,dasf_control_name string'''
 
   sat_dasf_mapping_pd = pd.read_csv(origfile, header=0, usecols=schema_list)
-    
-  sat_dasf_mapping = (spark.createDataFrame(sat_dasf_mapping_pd, schema)
+
+  sat_dasf_mapping_pd = sat_dasf_mapping_pd.where(sat_dasf_mapping_pd.notna(), None)
+  sat_dasf_mapping = (spark.createDataFrame(sat_dasf_mapping_pd.values.tolist(), schema)
                             .select('sat_id', 'dasf_control_id','dasf_control_name'))
     
   sat_dasf_mapping.write.format('delta').mode('overwrite').saveAsTable(json_["analysis_schema_name"]+'.sat_dasf_mapping')

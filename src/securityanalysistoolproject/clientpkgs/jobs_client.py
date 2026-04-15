@@ -1,5 +1,8 @@
 '''jobs client module'''
 from core.dbclient import SatDBClient
+from core.logging_utils import LoggingUtils
+
+LOGGR = LoggingUtils.get_logger()
 
 class JobsClient(SatDBClient):
     '''jobs client helper'''
@@ -19,6 +22,36 @@ class JobsClient(SatDBClient):
     #     res = self.get(f"/permissions/jobs/{job_id}/permissionLevels", version='2.0').get('permission_levels', [])
     #     return res
 
+
+    def get_job_permissions_for_jobs(self, job_list):
+        """
+        Returns a flat list of permission records for the given jobs.
+        Each row is one (job, principal, permission_level) combination.
+        job_list: list of Row objects with job_id and job_name fields.
+        """
+        result = []
+        for row in job_list:
+            job_id = row.job_id
+            job_name = row.job_name or ''
+            try:
+                acl = self.get(f"/permissions/jobs/{job_id}", version='2.0').get('access_control_list', [])
+                for entry in acl:
+                    group_name = entry.get('group_name') or ''
+                    user_name = entry.get('user_name') or ''
+                    service_principal_name = entry.get('service_principal_name') or ''
+                    for perm in entry.get('all_permissions', []):
+                        result.append({
+                            'job_id': str(job_id),
+                            'job_name': job_name,
+                            'group_name': group_name,
+                            'user_name': user_name,
+                            'service_principal_name': service_principal_name,
+                            'permission_level': perm.get('permission_level') or '',
+                            'inherited': perm.get('inherited', False)
+                        })
+            except Exception as e:
+                LOGGR.warning(f"Could not get permissions for job {job_id}: {e}")
+        return result
 
     def get_jobs_list(self):
         """

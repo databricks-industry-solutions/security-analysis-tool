@@ -50,6 +50,8 @@ cp src/securityanalysistoolproject/dist/dbl_sat_sdk-{version}-py3-none-any.whl l
 - Works from any notebook depth (root, subdirectories, nested subdirectories)
 - No changes needed to the 23+ notebooks that call `%run ./Includes/install_sat_sdk`
 
+**CRITICAL: After copying a new wheel to `lib/`, update `SDK_VERSION` in `notebooks/Includes/install_sat_sdk.py` to match. A mismatch causes all notebooks to fail at install time.**
+
 ### DABS Deployment
 
 DABS (Databricks Asset Bundles) is the deployment mechanism for SAT. Located in `dabs/`.
@@ -235,6 +237,131 @@ SAT implements 116+ security checks across multiple categories. Checks are defin
    - Call `sqlctrl(workspace_id, sql, rule_function)`
 3. Test on sample workspace
 4. Update documentation
+
+---
+
+## New Check Pre-Flight Checklist
+
+**CRITICAL: Run ALL steps below before committing any new security check. Skipping any step has caused production bugs.**
+
+### Step 1 — Test the live API first (MANDATORY)
+
+Before writing any SQL or bootstrap code, use the Databricks MCP tools to call the actual API and inspect the real JSON shape:
+
+```python
+# For workspace settings (Settings v2 API)
+mcp__databricks__get_setting(
+    workspace_host="<workspace>.cloud.databricks.com",
+    setting_name="<setting_name>"   # e.g. "sql_results_download", "disable_legacy_dbfs"
+)
+
+# For other APIs
+mcp__databricks__get_workspace_config(workspace_host="...")
+mcp__databricks__list_clusters(workspace_host="...")
+# etc.
+```
+
+Write down the **exact top-level key names** in the response before proceeding.
+
+### Step 2 — Settings v2 API column name rule (MANDATORY for Settings v2 checks)
+
+**Always call the live API first (Step 1) and inspect the exact top-level key.**
+
+Settings v2 APIs do NOT all use the same key name for their value. Each setting
+uses its OWN key name as the top-level wrapper. Examples:
+
+| Setting | Top-level key | SQL column |
+|---------|--------------|------------|
+| `sql_results_download` | `boolean_val` | `boolean_val.value` |
+| `disable_legacy_dbfs` | `disable_legacy_dbfs` | `disable_legacy_dbfs.value` |
+| `automatic_cluster_update` | `automatic_cluster_update_workspace` | `automatic_cluster_update_workspace.enabled` |
+| `restrict_workspace_admins` | `restrict_workspace_admins` | `restrict_workspace_admins.status` |
+
+The `bootstrap()` function preserves the top-level JSON key as the column name.
+`sql_results_download` is the **only** known setting that uses `boolean_val` instead
+of its own name.
+
+```python
+# CORRECT for sql_results_download (uniquely uses boolean_val)
+WHERE boolean_val.value = false
+
+# CORRECT for disable_legacy_dbfs (uses its own name)
+WHERE disable_legacy_dbfs.value = true
+
+# WRONG — never guess; always check the live API response
+WHERE sql_results_download.value = true
+```
+
+### Step 3 — Validate doc URLs in the CSV (MANDATORY)
+
+After adding a row to `configs/security_best_practices.csv`, verify that every URL in `aws_doc_url`, `azure_doc_url`, and `gcp_doc_url` returns HTTP 200. Broken URLs (404s) have been committed before and require follow-up fixes.
+
+Run this check:
+```bash
+python3 - <<'EOF'
+import csv, urllib.request, urllib.error
+
+errors = []
+with open("configs/security_best_practices.csv") as f:
+    for i, row in enumerate(csv.DictReader(f), start=2):
+        for col in ("aws_doc_url", "azure_doc_url", "gcp_doc_url"):
+            url = row.get(col, "").strip()
+            if not url:
+                continue
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                urllib.request.urlopen(req, timeout=10)
+            except urllib.error.HTTPError as e:
+                errors.append(f"  Row {i} [{row['check_id']}] {col}: HTTP {e.code} — {url}")
+            except Exception as e:
+                errors.append(f"  Row {i} [{row['check_id']}] {col}: {e} — {url}")
+
+if errors:
+    print("BROKEN URLs — fix before committing:")
+    print("\n".join(errors))
+else:
+    print("OK — all URLs reachable")
+EOF
+```
+
+**If any URL returns an error, fix it before committing.**
+
+### Step 4 — Run the standard pre-commit checks
+
+```bash
+# Uniqueness check (id + check_id)
+python3 - <<'EOF'
+import csv, sys
+ids, check_ids = {}, {}
+errors = []
+with open("configs/security_best_practices.csv") as f:
+    for i, row in enumerate(csv.DictReader(f), start=2):
+        if row["id"] in ids:
+            errors.append(f"  Duplicate id={row['id']} on rows {ids[row['id']]} and {i}")
+        else:
+            ids[row["id"]] = i
+        if row["check_id"] in check_ids:
+            errors.append(f"  Duplicate check_id={row['check_id']} on rows {check_ids[row['check_id']]} and {i}")
+        else:
+            check_ids[row["check_id"]] = i
+if errors:
+    print("UNIQUENESS VIOLATIONS:"); print("\n".join(errors)); sys.exit(1)
+else:
+    print(f"OK — {len(ids)} rows, all unique")
+EOF
+
+# Typo check
+git diff --cached --name-only | xargs codespell
+```
+
+### Lessons Learned (from DP-10 / DP-11 bugs)
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| DP-11 runtime SQL error: `cannot find field sql_results_download.value` | Assumed column name mirrors setting name; `sql_results_download` API uniquely uses `boolean_val` as the top-level key | Always inspect live API response before writing SQL; use the exact top-level key from the response, never guess |
+| DP-10/11 broken doc URLs | URLs added without verification | Run URL check script (Step 3) before every commit |
+
+---
 
 ## Testing
 

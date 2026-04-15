@@ -182,7 +182,6 @@ claude_js/
 notebooks/.ipynb_checkpoints/
 
 # Build artifacts
-*.whl
 *.tar.gz
 
 # Logs
@@ -194,3 +193,6 @@ notebooks/.ipynb_checkpoints/
 
 # Project documentation and planning files
 docs/*Implementation_Plan.html
+
+# SAT test framework generated reports
+tests/automated/reports/

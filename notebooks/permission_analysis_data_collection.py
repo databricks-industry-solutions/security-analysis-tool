@@ -100,7 +100,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Install Dependencies
-# MAGIC %pip install databricks-sdk>=0.18.0 networkx tqdm python-dotenv --quiet
+# MAGIC %pip install databricks-sdk==0.49.0 networkx==3.4.2 tqdm==4.67.1 python-dotenv==1.2.2 --quiet
 
 # COMMAND ----------
 
@@ -183,6 +183,9 @@ from datetime import datetime
 print("="*80)
 print("Collection Configuration")
 print("="*80)
+
+# Default False; set to True later once SP credentials are verified and compute is classic
+MULTI_WORKSPACE_MODE = False
 
 # ============================================================================
 # COLLECTION CONFIGURATION - Modify these settings as needed
