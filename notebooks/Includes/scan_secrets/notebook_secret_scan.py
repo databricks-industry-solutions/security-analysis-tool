@@ -114,8 +114,11 @@ db_client = SatDBClient(json_)
 # MAGIC     echo "Skipping installation (already exists)"
 # MAGIC else
 # MAGIC     # Download and install TruffleHog binary to /tmp directory
-# MAGIC     echo "Installing TruffleHog..."
-# MAGIC     if curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp; then
+# MAGIC     # Pinned to a tagged release to prevent supply-chain tampering via the
+# MAGIC     # mutable main branch. Bump TRUFFLEHOG_VERSION to upgrade.
+# MAGIC     TRUFFLEHOG_VERSION=v3.94.3
+# MAGIC     echo "Installing TruffleHog ${TRUFFLEHOG_VERSION}..."
+# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b /tmp "${TRUFFLEHOG_VERSION}"; then
 # MAGIC         if [ -f /tmp/trufflehog ]; then
 # MAGIC             echo "Setup completed successfully!"
 # MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
