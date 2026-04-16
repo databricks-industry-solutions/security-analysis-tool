@@ -489,8 +489,7 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         if result.stdout:
             all_results.append(result.stdout)
             logger.info(f"Built-in detectors scan completed with {len(result.stdout.splitlines())} output lines")
-            # Print first 1000 chars of output for debugging
-            logger.debug(f"Built-in scan found secrets: {result.stdout[:1000]}")
+            logger.debug(f"Built-in scan produced {len(result.stdout)} bytes across {len(result.stdout.splitlines())} hits")
         else:
             logger.info(f"Built-in detectors scan completed with no secrets found")
             print(f"Built-in scan stdout was empty")

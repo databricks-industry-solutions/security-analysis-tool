@@ -637,16 +637,13 @@ class SatDBClient:
             databrickstype=True
         if not databrickstype and baccount: #master and to microsoft
             oauthtok=self.getAzureTokenWithMSAL("msmgmt")
-            LOGGR.debug(f"msmgmt1 {oauthtok}")
             return oauthtok #account dbtype
         elif databrickstype and baccount:  #master but databricks
             oauthtok=self.getAzureTokenWithMSAL("dbmgmt")
-            LOGGR.debug(f"dbmgmt1 {oauthtok}")
-            return oauthtok #account dbtype  
+            return oauthtok #account dbtype
         elif databrickstype and not baccount: #not master has to be databricks
             oauthtok=self.getAzureTokenWithMSAL("dbmgmt")
-            LOGGR.debug(f"dbmgmt1 {oauthtok}")
-            return oauthtok #account dbtype  
+            return oauthtok #account dbtype
         else:
             LOGGR.debug(f"This condition should never happen getAzureToken {endpoint} {baccount}")
             return None, None #account dbtype              
