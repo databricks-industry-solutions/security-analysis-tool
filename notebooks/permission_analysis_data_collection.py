@@ -2297,6 +2297,28 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         'properties': safe_json({'workspace_id': str(ws_id), 'workspace_name': ws_name}),
                         'metadata': None
                     })
+
+                    # Collect permissions
+                    if COLLECTION_CONFIG['collect_permissions']:
+                        try:
+                            perms = ws_client.permissions.get("jobs", str(job.job_id))
+                            if perms and perms.access_control_list:
+                                for acl in perms.access_control_list:
+                                    principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                    if principal and acl.all_permissions:
+                                        for perm in acl.all_permissions:
+                                            all_edges.append({
+                                                'src': principal,
+                                                'dst': job_id,
+                                                'relationship': safe_get(perm, 'permission_level'),
+                                                'permission_level': safe_get(perm, 'permission_level'),
+                                                'inherited': safe_get(perm, 'inherited', False),
+                                                'properties': safe_json({'workspace_id': str(ws_id)}),
+                                                'created_at': datetime.now()
+                                            })
+                        except:
+                            pass
+
                 print(f"    ✓ {len(ws_jobs)} jobs")
             except Exception as e:
                 print(f"    ⚠ Jobs: {e}")
@@ -2403,6 +2425,28 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': safe_json({'spark_version': safe_get(cluster, 'spark_version'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
                             'metadata': safe_json({'state': safe_get(cluster, 'state')})
                         })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("clusters", cluster_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': f"ws_{ws_id}_cluster:{cluster_id}",
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': safe_json({'workspace_id': str(ws_id)}),
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+
                     print(f"    ✓ {len(ws_clusters)} clusters")
                 except Exception as e:
                     print(f"    ⚠ Clusters: {e}")
@@ -2428,6 +2472,28 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': safe_json({'warehouse_type': safe_get(wh, 'warehouse_type'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
                             'metadata': safe_json({'state': safe_get(wh, 'state')})
                         })
+
+                        # Collect permissions
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                perms = ws_client.permissions.get("sql/warehouses", wh_id)
+                                if perms and perms.access_control_list:
+                                    for acl in perms.access_control_list:
+                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
+                                        if principal and acl.all_permissions:
+                                            for perm in acl.all_permissions:
+                                                all_edges.append({
+                                                    'src': principal,
+                                                    'dst': f"ws_{ws_id}_warehouse:{wh_id}",
+                                                    'relationship': safe_get(perm, 'permission_level'),
+                                                    'permission_level': safe_get(perm, 'permission_level'),
+                                                    'inherited': safe_get(perm, 'inherited', False),
+                                                    'properties': safe_json({'workspace_id': str(ws_id)}),
+                                                    'created_at': datetime.now()
+                                                })
+                            except:
+                                pass
+
                     print(f"    ✓ {len(ws_warehouses)} warehouses")
                 except Exception as e:
                     print(f"    ⚠ SQL Warehouses: {e}")
