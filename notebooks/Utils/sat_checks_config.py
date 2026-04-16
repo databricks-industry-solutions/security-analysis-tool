@@ -167,7 +167,7 @@ def set_workspace_check_config():
         print(s_sql)
         spark.sql(s_sql)
     else:
-        s_sql = 'UPDATE  "{analysis_schema_name}".account_workspaces SET '
+        s_sql = 'UPDATE  {analysis_schema_name}.account_workspaces SET '
         first_param = False
         for param in params:
             if param in apply_setting_to_all_ws_enabled:

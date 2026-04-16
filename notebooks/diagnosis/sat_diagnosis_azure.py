@@ -84,7 +84,7 @@ sat_scope = json_['master_name_scope']
 for key in dbutils.secrets.list(sat_scope):
     print(key.key)
     secretvalue = dbutils.secrets.get(scope=sat_scope, key=key.key)
-    print(" ".join(secretvalue))
+    print(secretvalue)
 
 
 # COMMAND ----------
@@ -188,7 +188,6 @@ except requests.exceptions.RequestException as err:
 
 # COMMAND ----------
 
-# pip install msal
 import msal
 import sys
 def get_msal_token():

@@ -155,9 +155,9 @@ def remap_cmk_list(subslist):
 
 #Test code not used.
 # pip install msal
-import msal
 import sys
 def get_msal_token():
+    import msal  # lazy import — only needed for Azure auth
     """
     validate client id and secret from microsoft and google
     """

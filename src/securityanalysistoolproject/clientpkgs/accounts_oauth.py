@@ -84,3 +84,11 @@ class AccountsOAuth(SatDBClient):
         account_id=self._account_id
         secrets_lst = self.get(f"/accounts/{account_id}/servicePrincipals/{service_principal_id}/credentials/secrets",  master_acct=True).get('secrets',[])
         return secrets_lst
+
+    def get_account_service_principals(self):
+        """
+        Returns a list of all service principals in the account via accounts SCIM API.
+        """
+        account_id = self._account_id
+        sp_list = self.get(f"/accounts/{account_id}/scim/v2/ServicePrincipals", master_acct=True).get('Resources', [])
+        return sp_list

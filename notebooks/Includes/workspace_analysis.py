@@ -186,6 +186,28 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='124' # NS-13: Account console has at least one enabled ALLOW-type IP access list
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def account_console_ip_allowlist_enforced(df):
+    if df is not None and not isEmpty(df):
+        allow_lists = df.collect()
+        allow_dict = {i.label: [i.list_type, i.address_count] for i in allow_lists}
+        return (check_id, 0, allow_dict)
+    else:
+        return (check_id, 1, {'Account console has no enabled ALLOW-type IP access list': True})
+
+if enabled:
+    tbl_name = 'account_ipaccess_list'
+    sql = f'''
+        SELECT label, list_type, address_count
+        FROM {tbl_name}
+        WHERE enabled = true AND list_type = 'ALLOW'
+    '''
+    sqlctrl(workspace_id, sql, account_console_ip_allowlist_enforced)
+
+# COMMAND ----------
+
 check_id='112'# GOV-37,Governance,Disable legacy features for new workspaces
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -982,6 +1004,46 @@ if enabled:
 
 # COMMAND ----------
 
+check_id='114'#DP-10,Data Protection,Disable legacy DBFS root and mounts
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+def disable_legacy_dbfs(df):
+    if df is not None and not isEmpty(df):
+        return (check_id, 0, {'disable_legacy_dbfs':'disable_legacy_dbfs setting is enabled — workspace cannot access DBFS root and mounts'})
+    else:
+        return (check_id, 1, {'disable_legacy_dbfs':'disable_legacy_dbfs setting is not enabled — workspace can still access DBFS root and mounts'})
+
+if enabled:
+    tbl_name = 'disable_legacy_dbfs' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name}
+        WHERE disable_legacy_dbfs.value = true
+    '''
+    sqlctrl(workspace_id, sql, disable_legacy_dbfs)
+
+# COMMAND ----------
+
+check_id='115'#DP-11,Data Protection,SQL warehouse results download disabled
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+def sql_results_download(df):
+    if df is not None and not isEmpty(df):
+        row = df.first()
+        bv = row['boolean_val']
+        # boolean_val.value = False means downloads are DISABLED = secure
+        if bv is not None and bv['value'] == False:
+            return (check_id, 0, {'sql_results_download':'sql_results_download setting is enabled — users cannot download SQL query results'})
+    return (check_id, 1, {'sql_results_download':'sql_results_download setting is not enabled — users can download SQL query results, risking data exfiltration'})
+
+if enabled:
+    tbl_name = 'sql_results_download' + '_' + workspace_id
+    sql=f'''
+        SELECT *
+        FROM {tbl_name}
+    '''
+    sqlctrl(workspace_id, sql, sql_results_download)
+
+# COMMAND ----------
+
 check_id='62' #	INFO-18  Check Delta Sharing CREATE_RECIPIENT and CREATE_SHARE permissions
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
@@ -1232,6 +1294,235 @@ if enabled:
     """
 
     sqlctrl(workspace_id, sql, comprehensive_network_policy_check)
+
+# COMMAND ----------
+
+# NS-12: Context-Based Ingress (CBI) policy configured
+check_id = '122'
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def context_based_ingress_check(df):
+    """
+    Check that the workspace network policy has Context-Based Ingress (CBI)
+    configured with RESTRICTED_ACCESS ingress mode.
+
+    Pass:    ingress.restriction_mode == 'RESTRICTED_ACCESS'
+    Fail:    no policy assigned, no ingress config, or mode != RESTRICTED_ACCESS
+    """
+    if df is None or isEmpty(df):
+        violation = {
+            workspace_id: [
+                'NO_POLICY_ASSIGNED',
+                'Workspace does not have a network policy assigned'
+            ]
+        }
+        return (check_id, 1, violation)
+
+    try:
+        row = df.first()
+        policy_id = row.network_policy_id if hasattr(row, 'network_policy_id') else None
+        ingress_mode = row.ingress_restriction_mode if hasattr(row, 'ingress_restriction_mode') else None
+
+        if policy_id is None:
+            violation = {
+                workspace_id: [
+                    'NO_POLICY_ASSIGNED',
+                    'Workspace does not have a network policy assigned'
+                ]
+            }
+            return (check_id, 1, violation)
+
+        if ingress_mode and ingress_mode.upper() == 'RESTRICTED_ACCESS':
+            return (check_id, 0, {})
+
+        violation = {
+            workspace_id: [
+                'CBI_NOT_CONFIGURED',
+                f"Policy '{policy_id}' does not have Context-Based Ingress configured with RESTRICTED_ACCESS mode (current: {ingress_mode})"
+            ]
+        }
+        return (check_id, 1, violation)
+
+    except Exception as e:
+        loggr.error(f'Error evaluating CBI check: {e}')
+        violation = {
+            workspace_id: [
+                'ERROR_EVALUATING_CBI',
+                f'Error checking CBI configuration: {str(e)}'
+            ]
+        }
+        return (check_id, 1, violation)
+
+if enabled:
+    tbl_workspace_config = f'workspace_network_config_{workspace_id}'
+    tbl_network_policies = 'account_networkpolicies'
+    tbl_workspaces = 'acctworkspaces'
+
+    sql = f"""
+        SELECT
+            w.workspace_id,
+            w.workspace_name,
+            wnc.satelements[0].network_policy_id as network_policy_id,
+            np.ingress.restriction_mode as ingress_restriction_mode
+        FROM {tbl_workspaces} w
+        LEFT JOIN {tbl_workspace_config} wnc ON 1=1
+        LEFT JOIN {tbl_network_policies} np
+            ON np.network_policy_id = wnc.satelements[0].network_policy_id
+        WHERE w.workspace_id = '{workspace_id}'
+    """
+
+    sqlctrl(workspace_id, sql, context_based_ingress_check)
+
+# COMMAND ----------
+
+check_id='117'#GOV-42,Governance,Jobs run as service principal
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+SAMPLE_LIMIT = 50
+
+def jobs_run_as_service_principal(df):
+    if df is not None and not isEmpty(df):
+        jobs = df.collect()
+        total = len(jobs)
+        sample = jobs[:SAMPLE_LIMIT]
+        violation_dict = {num: {'job_id': str(row.job_id), 'job_name': row.job_name, 'run_as_user_name': row.run_as_user_name} for num, row in enumerate(sample)}
+        if total > SAMPLE_LIMIT:
+            violation_dict['_summary'] = f'{total} jobs run as a user account — showing first {SAMPLE_LIMIT}'
+        return (check_id, total, violation_dict)
+    else:
+        return (check_id, 0, {})
+
+if enabled:
+    tbl_name = 'jobs' + '_' + workspace_id
+    # run_as_user_name is the resolved identity: emails (users) always contain '@',
+    # SP application IDs are UUIDs and never do. This covers both explicit run_as
+    # config and the implicit case where settings.run_as is absent and the job
+    # defaults to its creator's identity — which settings.run_as.user_name would miss.
+    sql = f'''
+        SELECT job_id, settings.name AS job_name, run_as_user_name
+        FROM {tbl_name}
+        WHERE run_as_user_name LIKE '%@%'
+    '''
+    sqlctrl(workspace_id, sql, jobs_run_as_service_principal)
+
+# COMMAND ----------
+
+check_id = '123' # GOV-45: Jobs not granting CAN_MANAGE to non-admin principals
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+GOV45_SAMPLE_LIMIT = 50
+
+def jobs_not_granting_can_manage_to_non_admins(df):
+    if df is not None and not isEmpty(df):
+        rows = df.collect()
+        total = len(rows)
+        sample = rows[:GOV45_SAMPLE_LIMIT]
+        violation_dict = {
+            num: {'job_id': row.job_id, 'job_name': row.job_name, 'principal': row.principal}
+            for num, row in enumerate(sample)
+        }
+        if total > GOV45_SAMPLE_LIMIT:
+            violation_dict['_summary'] = f'{total} job-principal combinations grant CAN_MANAGE to non-admin principals — showing first {GOV45_SAMPLE_LIMIT}'
+        return (check_id, total, violation_dict)
+    else:
+        return (check_id, 0, {})
+
+if enabled:
+    perm_tbl = 'job_permissions_' + workspace_id
+    jobs_tbl = 'jobs_' + workspace_id
+    existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
+    if perm_tbl in existing and jobs_tbl in existing:
+        sql = f'''
+            SELECT DISTINCT jp.job_id, jp.job_name,
+                CASE
+                    WHEN jp.group_name != '' THEN jp.group_name
+                    WHEN jp.user_name != '' THEN jp.user_name
+                    ELSE jp.service_principal_name
+                END AS principal
+            FROM {perm_tbl} jp
+            JOIN {jobs_tbl} j ON CAST(jp.job_id AS BIGINT) = j.job_id
+            WHERE jp.permission_level = 'CAN_MANAGE'
+              AND jp.group_name != 'admins'
+              AND (jp.user_name = '' OR jp.user_name != j.creator_user_name)
+        '''
+        sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_non_admins)
+
+# COMMAND ----------
+
+check_id = '118' # IA-8: PAT token creation restricted to admins
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def pat_restricted_to_admins(df):
+    # Violation if the 'users' group (all workspace users) appears in the token
+    # management ACL — meaning any user can create a PAT, not just admins.
+    if df is not None and not isEmpty(df):
+        return (check_id, 1, {})
+    else:
+        return (check_id, 0, {})
+
+if enabled:
+    tbl_name = 'token_permissions' + '_' + workspace_id
+    existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
+    if tbl_name in existing:
+        sql = f'''
+            SELECT * FROM {tbl_name}
+            WHERE group_name = 'users'
+        '''
+        sqlctrl(workspace_id, sql, pat_restricted_to_admins)
+
+# COMMAND ----------
+
+check_id='119' # IA-9: Service principal client secrets not stale
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+sp_secret_age_evaluation_value = sbp_rec['evaluation_value']
+
+def sp_secret_stale_rule(df):
+    if df is not None and not isEmpty(df) and len(df.collect()) >= 1:
+        stale = df.collect()
+        stale_dict = {i.id: [i.sp_display_name, i.sp_app_id, str(i.age_days)] for i in stale}
+        return (check_id, 1, stale_dict)
+    else:
+        return (check_id, 0, {})
+
+if enabled:
+    tbl_name = 'acctserviceprincipalssecrets'
+    if any(table.name == tbl_name for table in spark.catalog.listTables(json_["intermediate_schema"])):
+        sql = f'''
+            SELECT id, sp_display_name, sp_app_id,
+                   datediff(current_date(), to_date(create_time)) AS age_days
+            FROM {tbl_name}
+            WHERE status = 'ACTIVE'
+              AND datediff(current_date(), to_date(create_time)) > {sp_secret_age_evaluation_value}
+        '''
+        sqlctrl(workspace_id, sql, sp_secret_stale_rule)
+
+# COMMAND ----------
+
+# DBTITLE 1,Egress Control from Compute (NS-14)
+check_id = '125'  # NS-14
+enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
+
+def egress_control_check(df):
+    if df is None or isEmpty(df):
+        return (check_id, 1, {'message': 'Egress test results not available'})
+    rows = df.collect()
+    blocked = [r.destination_name for r in rows if not r.reachable]
+    if len(blocked) > 0:
+        return (check_id, 0, {})
+    else:
+        reachable = [r.destination_name for r in rows if r.reachable]
+        return (check_id, 1, {
+            'message': f'All {len(reachable)} test destinations reachable — public internet is accessible from compute',
+            **{d: 'reachable' for d in reachable}
+        })
+
+if enabled and not is_serverless:
+    tbl_name = f'egress_test_results_{workspace_id}'
+    sql = f'''
+        SELECT destination_name, reachable
+        FROM {tbl_name}
+    '''
+    sqlctrl(workspace_id, sql, egress_control_check)
 
 # COMMAND ----------
 
