@@ -158,8 +158,8 @@ def getAWSTokenwithOAuth(source, baccount, client_id, client_secret):
 # COMMAND ----------
 
 token = getAWSTokenwithOAuth(workspaceUrl,False, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
-                             
-print(token)
+
+print("Workspace token obtained" if token else "Workspace token FAILED")
 
 # COMMAND ----------
 
@@ -198,8 +198,8 @@ print(response.json())
 # COMMAND ----------
 
 access_token = getAWSTokenwithOAuth(dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id'),True, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
-                             
-print(access_token)
+
+print("Account token obtained" if access_token else "Account token FAILED")
 
 # COMMAND ----------
 

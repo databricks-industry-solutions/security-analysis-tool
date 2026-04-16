@@ -23,6 +23,12 @@ variable "secret_scope_name" {
   default     = "sat_scope"
 }
 
+variable "sat_authorized_principals" {
+  description = "Additional principals (user email, service principal applicationId, or group display name) granted READ access on the SAT secret scope. The Terraform-apply identity always receives MANAGE. Keep this list tight — members can read the SAT service principal credentials, which typically hold account-admin privileges."
+  type        = list(string)
+  default     = []
+}
+
 variable "notification_email" {
   type        = string
   description = "Optional user email for notifications. If not specified, current user's email will be used"
@@ -47,7 +53,7 @@ variable "analysis_schema_name" {
 }
 
 variable "proxies" {
-  type        = map
+  type        = map(any)
   description = "Proxies to be used for Databricks API calls"
 }
 

@@ -8,8 +8,26 @@ Inspired by BloodHound for Active Directory analysis.
 
 from flask import Flask, request, jsonify
 import os
+import re
 import logging
 from databricks.sdk import WorkspaceClient
+
+# Strict allowlist for run_id values used in SQL identifier positions. The
+# collector generates run_ids in the format `YYYYMMDD_HHMMSS_<hex>` (see
+# notebooks/permission_analysis_data_collection.py); we accept anything that
+# could plausibly be a run_id across older schemas but refuse anything that
+# could escape a SQL string literal.
+_VALID_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _validate_run_id(value):
+    """Return value if it is a well-formed run_id, else None."""
+    if value is None:
+        return None
+    value = str(value)
+    if _VALID_RUN_ID_RE.match(value):
+        return value
+    return None
 
 app = Flask(__name__)
 
@@ -165,7 +183,8 @@ def get_latest_run_id():
             ORDER BY collection_timestamp DESC LIMIT 1
         """)
         if result and len(result) > 0:
-            return result[0].get('run_id') or result[0].get('col0')
+            value = result[0].get('run_id') or result[0].get('col0')
+            return _validate_run_id(value)
         return None
     except Exception as e:
         print(f"Error getting latest run_id: {e}")
@@ -173,17 +192,25 @@ def get_latest_run_id():
 
 
 def get_current_run_id():
-    """Get run_id from request params, body, or default to latest"""
+    """Get run_id from request params, body, or default to latest.
+
+    Every path is validated against _VALID_RUN_ID_RE before return so that
+    callers can safely interpolate the value into SQL string literals. An
+    invalid user-supplied run_id falls through to the next source (body,
+    cache, latest) rather than being returned raw.
+    """
     global _cached_run_id
     # Check if run_id is in request args (GET parameters)
-    run_id = request.args.get('run_id')
+    run_id = _validate_run_id(request.args.get('run_id'))
     if run_id:
         return run_id
     # Check if run_id is in request body (POST requests)
     if request.is_json:
         data = request.get_json(silent=True)
-        if data and data.get('run_id'):
-            return data.get('run_id')
+        if data:
+            run_id = _validate_run_id(data.get('run_id'))
+            if run_id:
+                return run_id
     # Use cached run_id if available
     if _cached_run_id:
         return _cached_run_id
@@ -4766,7 +4793,7 @@ def api_browse_resources_by_type():
     try:
         data = request.get_json() or {}
         resource_type = data.get('resource_type', '')
-        run_id = data.get('run_id') or get_current_run_id()
+        run_id = get_current_run_id()
         
         if not resource_type:
             return jsonify({'success': False, 'message': 'Resource type is required'})
@@ -4815,7 +4842,7 @@ def api_browse_principals_by_type():
     try:
         data = request.get_json() or {}
         principal_type = data.get('principal_type', '')
-        run_id = data.get('run_id') or get_current_run_id()
+        run_id = get_current_run_id()
         
         if not principal_type:
             return jsonify({'success': False, 'message': 'Principal type is required'})
@@ -6514,7 +6541,7 @@ def api_impersonation_paths():
         max_hops = int(data.get('max_hops', 5))
 
         # Get run_id from request body, then query params, then fallback to current
-        run_id = data.get('run_id') or request.args.get('run_id') or get_current_run_id()
+        run_id = get_current_run_id()
         if not run_id:
             return jsonify({'success': False, 'message': 'No collection runs available', 'paths': []})
 
@@ -6659,7 +6686,7 @@ def api_impersonation_paths():
 @app.route('/api/principals-list')
 def api_principals_list():
     """Get list of principals for dropdown selection"""
-    run_id = request.args.get('run_id') or get_current_run_id()
+    run_id = get_current_run_id()
     principal_type = request.args.get('type', 'all')  # User, Group, ServicePrincipal, or all
 
     if not run_id:
@@ -6743,7 +6770,7 @@ def report_isolated_principals():
     Find principals with minimal connections in the security graph.
     These may be orphaned accounts or misconfigured users.
     """
-    run_id = request.args.get('run_id') or get_current_run_id()
+    run_id = get_current_run_id()
     if not run_id:
         return jsonify({'error': 'No run_id available'})
 
@@ -6875,7 +6902,7 @@ def report_orphaned_resources():
     Find resources with no explicit permission grants.
     These are only accessible via ownership or inheritance.
     """
-    run_id = request.args.get('run_id') or get_current_run_id()
+    run_id = get_current_run_id()
     if not run_id:
         return jsonify({'error': 'No run_id available'})
 
@@ -6922,7 +6949,7 @@ def report_overprivileged_principals():
     Find principals with excessive permissions.
     Identifies users with ALL PRIVILEGES on multiple catalogs or MANAGE on many resources.
     """
-    run_id = request.args.get('run_id') or get_current_run_id()
+    run_id = get_current_run_id()
     if not run_id:
         return jsonify({'error': 'No run_id available'})
 
@@ -7035,7 +7062,7 @@ def report_high_privilege_principals():
     - Workspace Admin: Members of workspace admin groups
     - Catalog Owner: ALL PRIVILEGES or ownership on catalogs
     """
-    run_id = request.args.get('run_id') or get_current_run_id()
+    run_id = get_current_run_id()
     if not run_id:
         return jsonify({'error': 'No run_id available'})
 
@@ -7275,7 +7302,7 @@ def report_secret_scope_access():
     Shows who can READ, WRITE, or MANAGE secrets.
     Supports optional filters: workspace_id, scope_name
     """
-    run_id = request.args.get('run_id') or get_current_run_id()
+    run_id = get_current_run_id()
     workspace_id = request.args.get('workspace_id', '')
     scope_name_filter = request.args.get('scope_name', '')
 
@@ -7409,7 +7436,7 @@ def report_secret_scopes_filters():
     """
     Get available workspaces and secret scopes for filter dropdowns.
     """
-    run_id = request.args.get('run_id') or get_current_run_id()
+    run_id = get_current_run_id()
     workspace_id = request.args.get('workspace_id', '')
 
     if not run_id:
