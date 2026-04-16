@@ -1270,6 +1270,25 @@ else:
     ws_iteration_list = [None]  # None signals "use current workspace"
     print(f"\n Single-workspace mode: collecting from current workspace only")
 
+# ============================================================
+# METASTORE DEDUPLICATION — track which metastores have had
+# UC collected so we don't double-collect shared metastores
+# ============================================================
+COLLECTED_METASTORE_IDS = set()
+
+# Pre-register the local workspace's metastore. This guarantees that
+# remote workspaces sharing this metastore are skipped regardless of
+# loop iteration order.
+try:
+    _local_metastore = w.metastores.current()
+    if _local_metastore and _local_metastore.metastore_id:
+        COLLECTED_METASTORE_IDS.add(_local_metastore.metastore_id)
+        print(f"Local metastore registered: {_local_metastore.metastore_id}")
+        print(f"  (UC for this metastore handled by local spark.sql() collection)")
+except Exception as e:
+    print(f"⚠ Could not determine local metastore ID: {e}")
+    print(f"  Remote UC collection will proceed for all metastores found.")
+
 for ws_idx, ws in enumerate(ws_iteration_list):
     # Determine if this is the current workspace
     if ws is None:
@@ -2412,6 +2431,239 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                     print(f"    ✓ {len(ws_warehouses)} warehouses")
                 except Exception as e:
                     print(f"    ⚠ SQL Warehouses: {e}")
+
+            # --------------------------------------------------------
+            # UNITY CATALOG OBJECTS & GRANTS (remote metastores only)
+            # --------------------------------------------------------
+            # Determine this workspace's metastore and collect UC if
+            # it hasn't been collected from another workspace yet.
+
+            remote_metastore_id = None
+            remote_metastore_err = None
+            try:
+                _remote_metastore = ws_client.metastores.current()
+                if _remote_metastore:
+                    remote_metastore_id = _remote_metastore.metastore_id
+            except Exception as e:
+                remote_metastore_err = str(e)
+
+            should_collect_uc = (
+                COLLECTION_CONFIG.get('collect_unity_catalog', True)
+                and remote_metastore_id is not None
+                and remote_metastore_id not in COLLECTED_METASTORE_IDS
+            )
+
+            if not should_collect_uc:
+                if not COLLECTION_CONFIG.get('collect_unity_catalog', True):
+                    pass  # UC collection disabled globally
+                elif remote_metastore_err:
+                    print(f"    UC skipped — metastores.current() failed: {remote_metastore_err}")
+                elif remote_metastore_id is None:
+                    print(f"    UC skipped — metastores.current() returned no metastore_id")
+                else:
+                    print(f"    UC skipped — metastore {remote_metastore_id} already collected")
+            else:
+                print(f"    Collecting Unity Catalog (metastore {remote_metastore_id})...")
+                try:
+                    from databricks.sdk.service.catalog import SecurableType
+
+                    # Get catalogs (filter system catalogs)
+                    try:
+                        remote_catalogs = list(ws_client.catalogs.list())
+                    except Exception as e:
+                        print(f"    ⚠ UC: could not list catalogs: {e}")
+                        remote_catalogs = []
+
+                    remote_catalogs = [c for c in remote_catalogs if c.name not in ['system', '__databricks_internal']]
+
+                    if COLLECTION_CONFIG['max_catalogs']:
+                        remote_catalogs = remote_catalogs[:COLLECTION_CONFIG['max_catalogs']]
+
+                    uc_grant_count = 0
+
+                    for cat in remote_catalogs:
+                        cat_name = cat.name
+                        cat_vertex_id = f"ws_{ws_id}_catalog:{cat_name}"
+
+                        # Catalog vertex
+                        all_vertices.append({
+                            'id': cat_vertex_id,
+                            'node_type': 'Catalog',
+                            'name': cat_name,
+                            'display_name': cat_name,
+                            'email': None,
+                            'owner': safe_get(cat, 'owner'),
+                            'active': True,
+                            'created_at': datetime.fromtimestamp(cat.created_at / 1000) if cat.created_at else None,
+                            'updated_at': datetime.fromtimestamp(cat.updated_at / 1000) if cat.updated_at else None,
+                            'comment': safe_get(cat, 'comment'),
+                            'properties': safe_json(cat.properties) if cat.properties else None,
+                            'metadata': safe_json({'metastore_id': remote_metastore_id})
+                        })
+
+                        # Contains: Metastore -> Catalog
+                        all_edges.append({
+                            'src': f"metastore:{remote_metastore_id}",
+                            'dst': cat_vertex_id,
+                            'relationship': 'Contains',
+                            'permission_level': None,
+                            'inherited': False,
+                            'properties': None,
+                            'created_at': datetime.now()
+                        })
+
+                        # Catalog grants
+                        if COLLECTION_CONFIG['collect_permissions']:
+                            try:
+                                grant_result = ws_client.grants.get(SecurableType.CATALOG, cat_name)
+                                if grant_result and grant_result.privilege_assignments:
+                                    for pa in grant_result.privilege_assignments:
+                                        for priv in (pa.privileges or []):
+                                            all_edges.append({
+                                                'src': pa.principal,
+                                                'dst': cat_vertex_id,
+                                                'relationship': priv.value,
+                                                'permission_level': priv.value,
+                                                'inherited': False,
+                                                'properties': None,
+                                                'created_at': datetime.now()
+                                            })
+                                            uc_grant_count += 1
+                            except:
+                                pass
+
+                        # Schemas
+                        try:
+                            remote_schemas = list(ws_client.schemas.list(catalog_name=cat_name))
+
+                            if COLLECTION_CONFIG['max_schemas_per_catalog']:
+                                remote_schemas = remote_schemas[:COLLECTION_CONFIG['max_schemas_per_catalog']]
+
+                            for schema in remote_schemas:
+                                schema_full_name = f"{cat_name}.{schema.name}"
+                                schema_vertex_id = f"ws_{ws_id}_schema:{schema_full_name}"
+
+                                # Schema vertex
+                                all_vertices.append({
+                                    'id': schema_vertex_id,
+                                    'node_type': 'Schema',
+                                    'name': schema_full_name,
+                                    'display_name': schema.name,
+                                    'email': None,
+                                    'owner': safe_get(schema, 'owner'),
+                                    'active': True,
+                                    'created_at': datetime.fromtimestamp(schema.created_at / 1000) if schema.created_at else None,
+                                    'updated_at': datetime.fromtimestamp(schema.updated_at / 1000) if schema.updated_at else None,
+                                    'comment': safe_get(schema, 'comment'),
+                                    'properties': safe_json(schema.properties) if schema.properties else None,
+                                    'metadata': safe_json({'catalog_name': cat_name})
+                                })
+
+                                # Contains: Catalog -> Schema
+                                all_edges.append({
+                                    'src': cat_vertex_id,
+                                    'dst': schema_vertex_id,
+                                    'relationship': 'Contains',
+                                    'permission_level': None,
+                                    'inherited': False,
+                                    'properties': None,
+                                    'created_at': datetime.now()
+                                })
+
+                                # Schema grants
+                                if COLLECTION_CONFIG['collect_permissions']:
+                                    try:
+                                        grant_result = ws_client.grants.get(SecurableType.SCHEMA, schema_full_name)
+                                        if grant_result and grant_result.privilege_assignments:
+                                            for pa in grant_result.privilege_assignments:
+                                                for priv in (pa.privileges or []):
+                                                    all_edges.append({
+                                                        'src': pa.principal,
+                                                        'dst': schema_vertex_id,
+                                                        'relationship': priv.value,
+                                                        'permission_level': priv.value,
+                                                        'inherited': False,
+                                                        'properties': None,
+                                                        'created_at': datetime.now()
+                                                    })
+                                                    uc_grant_count += 1
+                                    except:
+                                        pass
+
+                                # Tables
+                                try:
+                                    remote_tables = list(ws_client.tables.list(catalog_name=cat_name, schema_name=schema.name))
+
+                                    if COLLECTION_CONFIG['max_tables_per_schema']:
+                                        remote_tables = remote_tables[:COLLECTION_CONFIG['max_tables_per_schema']]
+
+                                    for table in remote_tables:
+                                        table_full_name = f"{cat_name}.{schema.name}.{table.name}"
+                                        table_vertex_id = f"ws_{ws_id}_table:{table_full_name}"
+                                        table_type = safe_get(table, 'table_type')
+                                        node_type = 'View' if table_type and 'VIEW' in str(table_type).upper() else 'Table'
+
+                                        # Table vertex
+                                        all_vertices.append({
+                                            'id': table_vertex_id,
+                                            'node_type': node_type,
+                                            'name': table_full_name,
+                                            'display_name': table.name,
+                                            'email': None,
+                                            'owner': safe_get(table, 'owner'),
+                                            'active': True,
+                                            'created_at': datetime.fromtimestamp(table.created_at / 1000) if table.created_at else None,
+                                            'updated_at': datetime.fromtimestamp(table.updated_at / 1000) if table.updated_at else None,
+                                            'comment': safe_get(table, 'comment'),
+                                            'properties': safe_json(table.properties) if table.properties else None,
+                                            'metadata': safe_json({
+                                                'table_type': str(table_type),
+                                                'data_source_format': safe_get(table, 'data_source_format')
+                                            })
+                                        })
+
+                                        # Contains: Schema -> Table
+                                        all_edges.append({
+                                            'src': schema_vertex_id,
+                                            'dst': table_vertex_id,
+                                            'relationship': 'Contains',
+                                            'permission_level': None,
+                                            'inherited': False,
+                                            'properties': None,
+                                            'created_at': datetime.now()
+                                        })
+
+                                        # Table grants
+                                        if COLLECTION_CONFIG['collect_permissions']:
+                                            try:
+                                                grant_result = ws_client.grants.get(SecurableType.TABLE, table_full_name)
+                                                if grant_result and grant_result.privilege_assignments:
+                                                    for pa in grant_result.privilege_assignments:
+                                                        for priv in (pa.privileges or []):
+                                                            all_edges.append({
+                                                                'src': pa.principal,
+                                                                'dst': table_vertex_id,
+                                                                'relationship': priv.value,
+                                                                'permission_level': priv.value,
+                                                                'inherited': False,
+                                                                'properties': None,
+                                                                'created_at': datetime.now()
+                                                            })
+                                                            uc_grant_count += 1
+                                            except:
+                                                pass
+                                except:
+                                    pass
+                        except:
+                            pass
+
+                    print(f"    ✓ Unity Catalog (metastore {remote_metastore_id}): {len(remote_catalogs)} catalogs, {uc_grant_count} grants")
+                    COLLECTED_METASTORE_IDS.add(remote_metastore_id)
+
+                except Exception as e:
+                    print(f"    ⚠ Unity Catalog (metastore {remote_metastore_id}): {e}")
+                    # Still mark as attempted so we don't retry on other workspaces with this metastore
+                    COLLECTED_METASTORE_IDS.add(remote_metastore_id)
 
         WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'success'
 
