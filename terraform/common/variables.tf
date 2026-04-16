@@ -23,6 +23,16 @@ variable "secret_scope_name" {
   default     = "sat_scope"
 }
 
+variable "cloud_type" {
+  description = "Cloud where SAT is being deployed: \"aws\", \"azure\", or \"gcp\". Set by each cloud-specific wrapper module. Gates cloud-specific cluster attributes (e.g., AWS driver-on-demand protection)."
+  type        = string
+  default     = ""
+  validation {
+    condition     = contains(["", "aws", "azure", "gcp"], var.cloud_type)
+    error_message = "cloud_type must be one of: aws, azure, gcp (or empty)."
+  }
+}
+
 variable "sat_authorized_principals" {
   description = "Additional principals (user email, service principal applicationId, or group display name) granted READ access on the SAT secret scope. The Terraform-apply identity always receives MANAGE. Keep this list tight — members can read the SAT service principal credentials, which typically hold account-admin privileges."
   type        = list(string)

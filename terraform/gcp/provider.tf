@@ -15,6 +15,7 @@ provider "databricks" {
 
 module "common" {
   source               = "../common/"
+  cloud_type           = "gcp"
   account_console_id   = var.account_console_id
   workspace_id         = var.workspace_id
   sqlw_id              = var.sqlw_id
