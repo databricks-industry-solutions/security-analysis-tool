@@ -27,9 +27,9 @@
             "default": "0 0 8 ? * Mon,Wed,Fri"
         },
         "secrets_scanner_schedule": {
-            "type": "string", 
-            "description": "Secrets scanner job schedule (Quartz cron expression)",
-            "default": "0 0 8 ? * *"
+            "type": "string",
+            "description": "Secrets scanner job schedule (Quartz cron expression). Default is 10:00 UTC daily, offset 2 hours after the Driver job to avoid Delta write conflicts on shared control tables.",
+            "default": "0 0 10 ? * *"
         },
         "job_timezone": {
             "type": "string",
