@@ -157,4 +157,11 @@ GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata TO `
 3. Update the secret scope name in 6 locations (`CMD 4` and `CMD 5`) of `Workspace -> Applications -> SAT-TF/notebooks/Utils/initialize`.
 4. Re-run failed jobs
 
+* If `terraform apply` fails with `An app with the same name already exists` for `sat-permissions-exp` (typically because BrickHound was previously deployed via the DABS installer or a prior Terraform state was lost), import the existing app into Terraform state and re-apply:
+
+```bash
+terraform import module.common.databricks_app.brickhound sat-permissions-exp
+terraform apply
+```
+
 Congratulations!!! [Please review the setup documentation for the instructions on usage, FAQs and general understanding of SAT setup](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup.md)

@@ -10,6 +10,10 @@ cp -r ../configs ../notebooks ../dashboards ../app ../lib ./dabs_template/templa
 databricks bundle init ./dabs_template -p $profile --config-file $config_file
 rm -rf $config_file
 cd $project
+# Auto-adopt a pre-existing BrickHound app so re-deploys don't fail with
+# "app already exists". Bind fails silently on first-time installs (app
+# not yet created) or when BrickHound is disabled (resource key absent).
+databricks bundle deployment bind sat_permissions_analysis sat-permissions-exp -p $profile --auto-approve 2>/dev/null || true
 databricks bundle deploy -p $profile --force-lock
 cd ../
 rm -rf $project
