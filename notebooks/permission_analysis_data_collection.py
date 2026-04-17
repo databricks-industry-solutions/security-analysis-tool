@@ -3022,12 +3022,12 @@ vertex_ids = spark.sql(f"SELECT id FROM {VERTICES_TABLE} WHERE run_id = '{RUN_ID
 vertex_ids.createOrReplaceTempView("_sat_bh_vertex_ids")
 
 dangling_df = spark.sql(f"""
-    SELECT e.src, e.dst, e.edge_type, COUNT(*) as count
+    SELECT e.src, e.dst, e.relationship, COUNT(*) as count
     FROM {EDGES_TABLE} e
     WHERE e.run_id = '{RUN_ID}'
       AND NOT EXISTS (SELECT 1 FROM _sat_bh_vertex_ids v WHERE v.id = e.src)
       AND NOT EXISTS (SELECT 1 FROM _sat_bh_vertex_ids v WHERE v.id = e.dst)
-    GROUP BY e.src, e.dst, e.edge_type
+    GROUP BY e.src, e.dst, e.relationship
     ORDER BY count DESC
     LIMIT 20
 """)
