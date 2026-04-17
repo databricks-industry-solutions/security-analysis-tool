@@ -847,11 +847,13 @@ def get_workspace_client(workspace):
     if not MULTI_WORKSPACE_MODE:
         return w  # Return current workspace client
 
-    # Build the workspace URL and detect cloud type
+    # Build the workspace URL and detect cloud type.
+    # The SDK sets `gcp_managed_network_config` to None on AWS/Azure workspaces,
+    # so hasattr() alone is insufficient — must also check the value is truthy.
     if workspace.azure_workspace_info:
         ws_host = f"https://{workspace.deployment_name}.azuredatabricks.net"
         ws_cloud_type = 'azure'
-    elif hasattr(workspace, 'gcp_managed_network_config'):
+    elif hasattr(workspace, 'gcp_managed_network_config') and workspace.gcp_managed_network_config:
         ws_host = f"https://{workspace.workspace_id}.gcp.databricks.com"
         ws_cloud_type = 'gcp'
     else:
