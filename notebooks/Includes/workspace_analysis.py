@@ -1304,16 +1304,18 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def context_based_ingress_check(df):
     """
     Check that the workspace network policy has Context-Based Ingress (CBI)
-    configured with RESTRICTED_ACCESS ingress mode.
+    adopted via RESTRICTED_ACCESS ingress mode.
 
-    Pass:    ingress.restriction_mode == 'RESTRICTED_ACCESS'
-    Fail:    no policy assigned, no ingress config, or mode != RESTRICTED_ACCESS
+    Pass:    ingress.public_access.restriction_mode == 'RESTRICTED_ACCESS'
+             (dry-run enforcement is accepted as adoption; flip to enforced when ready)
+    Fail:    no policy data, no policy assigned, or mode == FULL_ACCESS
     """
     if df is None or isEmpty(df):
         violation = {
             workspace_id: [
-                'NO_POLICY_ASSIGNED',
-                'Workspace does not have a network policy assigned'
+                'NO_POLICY_DATA',
+                'Workspace network configuration not available '
+                '(bootstrap may have failed or workspace is not in the analyzed fleet)'
             ]
         }
         return (check_id, 1, violation)
@@ -1327,13 +1329,19 @@ def context_based_ingress_check(df):
             violation = {
                 workspace_id: [
                     'NO_POLICY_ASSIGNED',
-                    'Workspace does not have a network policy assigned'
+                    'Workspace does not have a network policy assigned; '
+                    'assign a policy with RESTRICTED_ACCESS ingress to adopt CBI'
                 ]
             }
             return (check_id, 1, violation)
 
         if ingress_mode and ingress_mode.upper() == 'RESTRICTED_ACCESS':
-            return (check_id, 0, {})
+            return (check_id, 0, {
+                workspace_id: [
+                    'CBI_ADOPTED',
+                    f"Policy '{policy_id}' has RESTRICTED_ACCESS ingress"
+                ]
+            })
 
         violation = {
             workspace_id: [
