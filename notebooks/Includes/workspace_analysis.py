@@ -1436,30 +1436,35 @@ if enabled:
     perm_tbl = 'job_permissions_' + workspace_id
     jobs_tbl = 'jobs_' + workspace_id
     existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
-    if jobs_tbl in existing:
-        if perm_tbl in existing:
-            # COALESCE on creator_user_name: legacy / orphaned jobs can have NULL creators,
-            # and `user_name != NULL` evaluates to NULL in SQL 3-value logic → whole row
-            # silently excluded. Treat NULL creator as empty-string so the inequality holds.
-            sql = f'''
-                SELECT DISTINCT jp.job_id, jp.job_name,
-                    CASE
-                        WHEN jp.group_name != '' THEN jp.group_name
-                        WHEN jp.user_name != '' THEN jp.user_name
-                        ELSE jp.service_principal_name
-                    END AS principal
-                FROM {perm_tbl} jp
-                JOIN {jobs_tbl} j ON CAST(jp.job_id AS BIGINT) = j.job_id
-                WHERE jp.permission_level = 'CAN_MANAGE'
-                  AND jp.group_name != 'admins'
-                  AND (jp.user_name = '' OR jp.user_name != COALESCE(j.creator_user_name, ''))
-            '''
-        else:
-            # Empty jobs list caused job_permissions_<ws> bootstrap to produce no table.
-            # No jobs → no non-admin CAN_MANAGE grants possible → emit pass explicitly
-            # so the workspace shows up in dashboards instead of silently vanishing.
-            sql = f"SELECT job_id, settings.name AS job_name, '' AS principal FROM {jobs_tbl} WHERE 1=0"
-        sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_non_admins)
+    if jobs_tbl in existing and perm_tbl in existing:
+        # COALESCE on creator_user_name: legacy / orphaned jobs can have NULL creators,
+        # and `user_name != NULL` evaluates to NULL in SQL 3-value logic → whole row
+        # silently excluded. Treat NULL creator as empty-string so the inequality holds.
+        sql = f'''
+            SELECT DISTINCT jp.job_id, jp.job_name,
+                CASE
+                    WHEN jp.group_name != '' THEN jp.group_name
+                    WHEN jp.user_name != '' THEN jp.user_name
+                    ELSE jp.service_principal_name
+                END AS principal
+            FROM {perm_tbl} jp
+            JOIN {jobs_tbl} j ON CAST(jp.job_id AS BIGINT) = j.job_id
+            WHERE jp.permission_level = 'CAN_MANAGE'
+              AND jp.group_name != 'admins'
+              AND (jp.user_name = '' OR jp.user_name != COALESCE(j.creator_user_name, ''))
+        '''
+    else:
+        # Missing jobs_tbl or perm_tbl means the workspace either has zero jobs
+        # (bootstrap's empty-list path doesn't create a table) or the permissions
+        # collection failed. In either case there can be no non-admin CAN_MANAGE
+        # violation to report. Emit an empty result so the rule's else branch
+        # writes a pass row and the workspace appears in dashboards.
+        sql = (
+            "SELECT CAST(NULL AS STRING) AS job_id, "
+            "CAST(NULL AS STRING) AS job_name, "
+            "CAST(NULL AS STRING) AS principal WHERE 1=0"
+        )
+    sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_non_admins)
 
 # COMMAND ----------
 

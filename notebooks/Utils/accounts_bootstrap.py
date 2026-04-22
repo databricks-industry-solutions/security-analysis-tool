@@ -248,9 +248,13 @@ network_policy_schema = StructType([
         ]), True)
     ]), True),
     StructField("ingress", StructType([
-        StructField("create_time", StringType(), True),
-        StructField("restriction_mode", StringType(), True),
-        StructField("update_time", StringType(), True)
+        # Actual API shape: ingress.public_access.restriction_mode
+        # (the prior flat {create_time, restriction_mode, update_time} schema
+        # did not match what /accounts/.../network-policies returns and caused
+        # NS-12 to read NULL for every policy.)
+        StructField("public_access", StructType([
+            StructField("restriction_mode", StringType(), True)
+        ]), True)
     ]), True)
 ])
 
