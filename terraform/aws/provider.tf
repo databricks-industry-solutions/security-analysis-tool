@@ -28,6 +28,7 @@ module "common" {
   job_compute_num_workers         = var.job_compute_num_workers
   sql_warehouse_enable_serverless = var.sql_warehouse_enable_serverless
   sql_warehouse_auto_stop_mins    = var.sql_warehouse_auto_stop_mins
+  job_schedule_timezone_id        = var.job_schedule_timezone_id
 }
 
 output "deploy_app" {
