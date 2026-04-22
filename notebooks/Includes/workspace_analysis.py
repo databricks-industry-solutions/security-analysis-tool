@@ -1358,12 +1358,17 @@ if enabled:
     tbl_network_policies = 'account_networkpolicies'
     tbl_workspaces = 'acctworkspaces'
 
+    # ingress.public_access.restriction_mode is the correct path for the CBI
+    # restriction. ingress.restriction_mode (one level up) does not exist in the
+    # network-policies API response — reading it always yields NULL and produces
+    # a false-positive violation (or a misleading "current: None" message) on any
+    # policy that is actually configured with RESTRICTED_ACCESS.
     sql = f"""
         SELECT
             w.workspace_id,
             w.workspace_name,
             wnc.satelements[0].network_policy_id as network_policy_id,
-            np.ingress.restriction_mode as ingress_restriction_mode
+            np.ingress.public_access.restriction_mode as ingress_restriction_mode
         FROM {tbl_workspaces} w
         LEFT JOIN {tbl_workspace_config} wnc ON 1=1
         LEFT JOIN {tbl_network_policies} np
@@ -1388,7 +1393,7 @@ def jobs_run_as_service_principal(df):
         violation_dict = {num: {'job_id': str(row.job_id), 'job_name': row.job_name, 'run_as_user_name': row.run_as_user_name} for num, row in enumerate(sample)}
         if total > SAMPLE_LIMIT:
             violation_dict['_summary'] = f'{total} jobs run as a user account — showing first {SAMPLE_LIMIT}'
-        return (check_id, total, violation_dict)
+        return (check_id, 1, violation_dict)
     else:
         return (check_id, 0, {})
 
@@ -1423,7 +1428,7 @@ def jobs_not_granting_can_manage_to_non_admins(df):
         }
         if total > GOV45_SAMPLE_LIMIT:
             violation_dict['_summary'] = f'{total} job-principal combinations grant CAN_MANAGE to non-admin principals — showing first {GOV45_SAMPLE_LIMIT}'
-        return (check_id, total, violation_dict)
+        return (check_id, 1, violation_dict)
     else:
         return (check_id, 0, {})
 
@@ -1431,20 +1436,29 @@ if enabled:
     perm_tbl = 'job_permissions_' + workspace_id
     jobs_tbl = 'jobs_' + workspace_id
     existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
-    if perm_tbl in existing and jobs_tbl in existing:
-        sql = f'''
-            SELECT DISTINCT jp.job_id, jp.job_name,
-                CASE
-                    WHEN jp.group_name != '' THEN jp.group_name
-                    WHEN jp.user_name != '' THEN jp.user_name
-                    ELSE jp.service_principal_name
-                END AS principal
-            FROM {perm_tbl} jp
-            JOIN {jobs_tbl} j ON CAST(jp.job_id AS BIGINT) = j.job_id
-            WHERE jp.permission_level = 'CAN_MANAGE'
-              AND jp.group_name != 'admins'
-              AND (jp.user_name = '' OR jp.user_name != j.creator_user_name)
-        '''
+    if jobs_tbl in existing:
+        if perm_tbl in existing:
+            # COALESCE on creator_user_name: legacy / orphaned jobs can have NULL creators,
+            # and `user_name != NULL` evaluates to NULL in SQL 3-value logic → whole row
+            # silently excluded. Treat NULL creator as empty-string so the inequality holds.
+            sql = f'''
+                SELECT DISTINCT jp.job_id, jp.job_name,
+                    CASE
+                        WHEN jp.group_name != '' THEN jp.group_name
+                        WHEN jp.user_name != '' THEN jp.user_name
+                        ELSE jp.service_principal_name
+                    END AS principal
+                FROM {perm_tbl} jp
+                JOIN {jobs_tbl} j ON CAST(jp.job_id AS BIGINT) = j.job_id
+                WHERE jp.permission_level = 'CAN_MANAGE'
+                  AND jp.group_name != 'admins'
+                  AND (jp.user_name = '' OR jp.user_name != COALESCE(j.creator_user_name, ''))
+            '''
+        else:
+            # Empty jobs list caused job_permissions_<ws> bootstrap to produce no table.
+            # No jobs → no non-admin CAN_MANAGE grants possible → emit pass explicitly
+            # so the workspace shows up in dashboards instead of silently vanishing.
+            sql = f"SELECT job_id, settings.name AS job_name, '' AS principal FROM {jobs_tbl} WHERE 1=0"
         sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_non_admins)
 
 # COMMAND ----------
@@ -1506,15 +1520,16 @@ def egress_control_check(df):
     if df is None or isEmpty(df):
         return (check_id, 1, {'message': 'Egress test results not available'})
     rows = df.collect()
-    blocked = [r.destination_name for r in rows if not r.reachable]
-    if len(blocked) > 0:
-        return (check_id, 0, {})
-    else:
-        reachable = [r.destination_name for r in rows if r.reachable]
+    reachable = [r.destination_name for r in rows if r.reachable]
+    # Any reachable public destination = compute has public internet access = violation.
+    # A strict egress control (air-gap / deny-all egress) would block every probe.
+    if len(reachable) > 0:
         return (check_id, 1, {
-            'message': f'All {len(reachable)} test destinations reachable — public internet is accessible from compute',
+            'message': f'{len(reachable)} of {len(rows)} test destinations reachable — public internet is accessible from compute',
             **{d: 'reachable' for d in reachable}
         })
+    else:
+        return (check_id, 0, {})
 
 if enabled and not is_serverless:
     tbl_name = f'egress_test_results_{workspace_id}'
