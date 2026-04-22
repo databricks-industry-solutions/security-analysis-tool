@@ -1304,11 +1304,14 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def context_based_ingress_check(df):
     """
     Check that the workspace network policy has Context-Based Ingress (CBI)
-    adopted via RESTRICTED_ACCESS ingress mode.
+    adopted via RESTRICTED_ACCESS ingress mode. CBI enforcement is represented
+    by two distinct top-level API fields: `ingress` (Enforced) or
+    `ingress_dry_run` (Dry run mode). Both count as adoption; DRY_RUN adds an
+    advisory note to the pass message so operators can flip to ENFORCED when
+    ready.
 
-    Pass:    ingress.public_access.restriction_mode == 'RESTRICTED_ACCESS'
-             (dry-run enforcement is accepted as adoption; flip to enforced when ready)
-    Fail:    no policy data, no policy assigned, or mode == FULL_ACCESS
+    Pass:    effective restriction_mode == 'RESTRICTED_ACCESS'
+    Fail:    no policy data, no policy assigned, or mode != RESTRICTED_ACCESS
     """
     if df is None or isEmpty(df):
         violation = {
@@ -1324,6 +1327,7 @@ def context_based_ingress_check(df):
         row = df.first()
         policy_id = row.network_policy_id if hasattr(row, 'network_policy_id') else None
         ingress_mode = row.ingress_restriction_mode if hasattr(row, 'ingress_restriction_mode') else None
+        ingress_enforcement = row.ingress_enforcement if hasattr(row, 'ingress_enforcement') else None
 
         if policy_id is None:
             violation = {
@@ -1336,10 +1340,13 @@ def context_based_ingress_check(df):
             return (check_id, 1, violation)
 
         if ingress_mode and ingress_mode.upper() == 'RESTRICTED_ACCESS':
+            enforcement_note = ''
+            if ingress_enforcement == 'DRY_RUN':
+                enforcement_note = ' (currently in DRY_RUN — flip to ENFORCED when ready)'
             return (check_id, 0, {
                 workspace_id: [
                     'CBI_ADOPTED',
-                    f"Policy '{policy_id}' has RESTRICTED_ACCESS ingress"
+                    f"Policy '{policy_id}' has RESTRICTED_ACCESS ingress{enforcement_note}"
                 ]
             })
 
@@ -1366,17 +1373,26 @@ if enabled:
     tbl_network_policies = 'account_networkpolicies'
     tbl_workspaces = 'acctworkspaces'
 
-    # ingress.public_access.restriction_mode is the correct path for the CBI
-    # restriction. ingress.restriction_mode (one level up) does not exist in the
-    # network-policies API response — reading it always yields NULL and produces
-    # a false-positive violation (or a misleading "current: None" message) on any
-    # policy that is actually configured with RESTRICTED_ACCESS.
+    # CBI status lives under two mutually-exclusive top-level keys:
+    #   ingress.public_access.restriction_mode           -> ENFORCED
+    #   ingress_dry_run.public_access.restriction_mode   -> DRY_RUN
+    # A policy with no CBI has neither populated. COALESCE picks whichever
+    # applies; a parallel CASE captures the enforcement mode so the rule can
+    # add a DRY_RUN advisory to the pass message.
     sql = f"""
         SELECT
             w.workspace_id,
             w.workspace_name,
             wnc.satelements[0].network_policy_id as network_policy_id,
-            np.ingress.public_access.restriction_mode as ingress_restriction_mode
+            COALESCE(
+                np.ingress.public_access.restriction_mode,
+                np.ingress_dry_run.public_access.restriction_mode
+            ) as ingress_restriction_mode,
+            CASE
+                WHEN np.ingress.public_access.restriction_mode IS NOT NULL THEN 'ENFORCED'
+                WHEN np.ingress_dry_run.public_access.restriction_mode IS NOT NULL THEN 'DRY_RUN'
+                ELSE NULL
+            END as ingress_enforcement
         FROM {tbl_workspaces} w
         LEFT JOIN {tbl_workspace_config} wnc ON 1=1
         LEFT JOIN {tbl_network_policies} np
