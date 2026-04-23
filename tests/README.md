@@ -79,45 +79,59 @@ pytest tests/automated/test_csv_health.py -m 'not online'  # skip URL reachabili
    settings (IP ACL, sql_results_download, etc.) to synthesize an
    inverse path is the last resort — it mutates live state.
 
-## Bug-pattern library
+## Common patterns to check during review
 
-Canonical classes of bug the triage methodology has found. If you're
-writing a new check or reviewing one, scan for these first.
+Scan for these before writing or reviewing a new check. Each describes a
+signature and what to look for; the static lint under
+`tests/automated/test_rule_hygiene.py` catches the first two
+automatically.
 
-### Silent SAT failure modes (checks emit no row at all)
+### Import and reference hygiene
 
-| Pattern | Signature | Example |
-|---|---|---|
-| Missing `F` import | Rule uses `F.col(...)`, `F.regexp_replace(...)`, etc.; top of file imports only `col, regexp_replace` (no `functions as F`) — every rule touching the F.* path raises `NameError`, sqlctrl swallows it silently | 7 rules broken back to run 1 (INFO-6, DP-2, IA-4, IA-6, token-3, UC-770, admin). `test_rule_files_import_functions_as_F` catches this |
-| Typo referencing non-existent column | Rule calls `col('foo')` where the SQL's SELECT didn't project `foo` | GOV-5 `col('config_name')` → should be `col('cluster_name')` |
-| UNION over a possibly-missing bootstrap table | `SELECT ... UNION SELECT ... FROM {tbl_name_2}` where `bootstrap()` skipped the second source (empty list → no table); AnalysisException substitutes an empty df and the rule falsely reports violation | INFO-38 across `_library_jars` + `_library_mavens`. `test_f_string_unions_over_intermediate_tables_are_guarded` catches this |
-| Workspaces with zero source rows silently skipped | `bootstrap()` doesn't create empty Delta tables; rule guards with `if tbl in existing` and never writes a pass row | GOV-45 on foghorn (0 jobs); DP-2 on foghorn (0 clusters) |
-| Rule crashes on runtime NULL | `col != NULL` returns NULL in SQL 3-value logic; row excluded | GOV-45 missed `derek.king@databricks.com` CAN_MANAGE on a job whose creator was NULL. Use `COALESCE` |
+- **Missing `functions as F` import** — if a rule references `F.col(...)`,
+  `F.regexp_replace(...)`, etc., the file must have
+  `from pyspark.sql import functions as F`. The static lint enforces this.
+- **Column reference matches SQL projection** — every `col('foo')` in a
+  rule should correspond to a column in the rule's SQL `SELECT`.
 
-### False positives (SAT over-flags)
+### Intermediate-table handling
 
-| Pattern | Signature | Example |
-|---|---|---|
-| Empty-df branch misinterpreted | `if df.columns == 0 → violation` when "no source table" actually means "workspace has none of this resource" | DP-2 on foghorn (0 clusters) falsely flagged as "all_interactive_clusters" violation |
-| Off-by-one threshold vs CSV intent | Rule uses `> N` where the CSV's "alert when none" intent means `>= 1` | INFO-29 `df.count() > 1` — a workspace with exactly 1 EXTERNAL_MODEL was flagged |
-| Wrong JSON path in SQL | Reading a path that never exists → NULL → else-branch fires | NS-12 `ingress.restriction_mode` (real path is `ingress.public_access.restriction_mode`) |
-| Bootstrap schema shape mismatch | Explicit StructType declared for `from_json` doesn't match actual API shape — all fields arrive as NULL | NS-12's flat `{create_time, restriction_mode, update_time}` schema vs nested `public_access.restriction_mode` in the API |
+- **UNION across bootstrap tables** — `bootstrap()` only writes a table
+  when the source list is non-empty. Any `UNION` over
+  `{prefix}_{workspace_id}` tables must be preceded by a
+  `spark.catalog.listTables(json_['intermediate_schema'])` check and
+  only include tables that exist. The static lint enforces this.
+- **Empty-df handling** — when `df is None` or `isEmpty(df)`, the rule
+  should return a pass if the semantic is "none present" (e.g., zero
+  clusters means zero unencrypted clusters).
+- **NULL in SQL comparisons** — `col != NULL` returns NULL in SQL
+  3-value logic and excludes rows. Use `COALESCE(col, '')` or an
+  explicit `IS NULL` branch.
 
-### Score semantics
+### Dashboard compatibility
 
-| Pattern | Signature | Example |
-|---|---|---|
-| Count-as-score | Rule returns `(check_id, total, ...)` — dashboards treat score as binary, so magnitude just pollutes aggregations | GOV-42 (score=48), GOV-45 |
-| List-value in MAP<STRING, STRING> | Dashboard shows an opaque stringified JSON instead of addressable keys — works but operator-unfriendly | INFO-6, DP-2, GOV-11 (pre-fix) |
+- **Binary score** — `security_checks.score` is read binarily: `0` is pass,
+  anything else is violation. Returning counts (e.g. `total`) doesn't
+  change dashboard behavior and obscures aggregations.
+- **`additional_details` shape** — typed `MAP<STRING, STRING>`. Dicts with
+  nested list values get coerced to stringified JSON (values work but
+  lose per-key addressability). Prefer one entry per item with a
+  `_summary` key for overflow.
 
-### HTTP / API quirks
+### API / endpoint drift
 
-| Pattern | Signature | Example |
-|---|---|---|
-| HEAD method + `status<400` heuristic | Some servers return 405 Method Not Allowed for HEAD while serving GET (ifconfig.me); misread as "blocked" | NS-14 — the old `HEAD` probe falsely passed on workspaces with open egress |
-| Alternative top-level keys for state | API uses distinct top-level key names instead of an enforcement-mode sub-field | NS-12 DRY_RUN lives under `ingress_dry_run` (not `ingress.policy_enforcement.enforcement_mode`) |
-| Pagination default is small | Endpoint defaults to 20 items/page when no limit is specified | `/jobs/list` default page size; need explicit `limit=100` + page loop |
-| Framework wrong endpoint | Validator hits a path that returns `ENDPOINT_NOT_FOUND` / `RESOURCE_DOES_NOT_EXIST` | NS-9 `/network-connectivity-config`, GOV-25 `/databricks/scripts` — framework failed silently, SAT was correct |
+- **JSON path** — always call the live API and inspect the real response
+  shape before writing the SQL / bootstrap schema. Paths have changed
+  (sometimes the API uses parallel top-level keys rather than
+  enforcement-mode sub-fields).
+- **HTTP method quirks** — some endpoints respond `405 Method Not
+  Allowed` to `HEAD` while serving `GET`. Prefer `GET` with
+  `stream=True` for simple reachability probes.
+- **Pagination defaults** — some APIs default to small page sizes
+  (e.g., 20). Specify an explicit limit and loop `next_page_token`.
+- **Endpoint existence** — if a framework validator returns
+  `RESOURCE_DOES_NOT_EXIST` or `ENDPOINT_NOT_FOUND`, the path is wrong
+  (or the API has moved).
 
 ## Adding a validator for a new check
 
