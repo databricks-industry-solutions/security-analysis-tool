@@ -287,7 +287,18 @@ class Check112_DisableLegacyFeaturesAccount(BaseValidator):
 
 @register("122")
 class Check122_ContextBasedIngress(BaseValidator):
-    """NS-12: Context-Based Ingress (CBI) policy configured."""
+    """NS-12: Context-Based Ingress (CBI) policy configured.
+
+    Mirrors the fix applied to notebooks/Includes/workspace_analysis.py during
+    0.8.0 verification:
+      - Workspace → policy mapping comes from `/accounts/.../workspaces/{id}/network`,
+        NOT `/network-connectivity-config` (that's the unrelated NCC API).
+      - CBI restriction lives at `ingress.public_access.restriction_mode`,
+        not `ingress.restriction_mode`.
+      - When the enforcement mode is "Dry run for all products" the API moves the
+        entire ingress block to a top-level `ingress_dry_run` key (same nested
+        shape). Check both paths. Dry-run counts as adopted.
+    """
 
     CHECK_ID = "NS-12"
     CHECK_NAME = "Context-Based Ingress policy"
@@ -299,32 +310,24 @@ class Check122_ContextBasedIngress(BaseValidator):
         ws_id = self.config.workspace_id
         acct_client = self.account_rest or self.rest
 
-        # Get network policies
         try:
             policies_resp = acct_client.get(
                 f"/accounts/{acct_id}/network-policies", token=token
             )
         except Exception:
             return 1, {"reason": "CANNOT_FETCH_POLICIES"}
-
         policies = policies_resp.get("items", policies_resp.get("network_policies", []))
 
-        # Find workspace's policy
         policy_id = None
         try:
             ws_config = acct_client.get(
-                f"/accounts/{acct_id}/workspaces/{ws_id}/network-connectivity-config",
+                f"/accounts/{acct_id}/workspaces/{ws_id}/network",
                 token=token,
             )
-            policy_id = ws_config.get("network_policy_id") if isinstance(ws_config, dict) else None
+            if isinstance(ws_config, dict):
+                policy_id = ws_config.get("network_policy_id")
         except Exception:
             pass
-
-        if not policy_id and policies:
-            for p in policies:
-                if p.get("account_default", False):
-                    policy_id = p.get("network_policy_id")
-                    break
 
         if not policy_id:
             return 1, {"reason": "NO_POLICY_ASSIGNED"}
@@ -336,16 +339,29 @@ class Check122_ContextBasedIngress(BaseValidator):
         if not policy:
             return 1, {"reason": "POLICY_NOT_FOUND", "policy_id": policy_id}
 
-        # Check ingress configuration
-        ingress = policy.get("ingress", {})
-        restriction_mode = ingress.get("restriction_mode", "")
+        enforced_mode = (
+            policy.get("ingress", {}).get("public_access", {}).get("restriction_mode")
+        )
+        dryrun_mode = (
+            policy.get("ingress_dry_run", {})
+            .get("public_access", {})
+            .get("restriction_mode")
+        )
+        restriction_mode = enforced_mode or dryrun_mode
+        enforcement = (
+            "ENFORCED" if enforced_mode else ("DRY_RUN" if dryrun_mode else None)
+        )
 
         if restriction_mode == "RESTRICTED_ACCESS":
-            return 0, {"policy_id": policy_id, "ingress_mode": restriction_mode}
+            return 0, {
+                "policy_id": policy_id,
+                "ingress_mode": restriction_mode,
+                "enforcement": enforcement,
+            }
         return 1, {
             "reason": "CBI_NOT_CONFIGURED",
             "policy_id": policy_id,
-            "ingress_mode": restriction_mode,
+            "ingress_mode": restriction_mode or "none",
         }
 
 
@@ -373,3 +389,67 @@ class Check124_AccountIPAllowList(BaseValidator):
         if allow_lists:
             return 0, {"enabled_allow_lists": len(allow_lists)}
         return 1, {"enabled_allow_lists": 0}
+
+
+@register("125")
+class Check125_EgressControl(BaseValidator):
+    """NS-14: Egress control from compute — live connectivity test.
+
+    Mirrors the SDK fix applied to clientpkgs/egress_test_client.py during 0.8.0:
+      - Probe with GET + stream=True (not HEAD). Some destinations — notably
+        ifconfig.me — return 405 to HEAD while serving GET, which would
+        misread as "blocked" under status<400 heuristics.
+      - Any HTTP response counts as reachable. Real egress block manifests as
+        requests.Timeout / ConnectionError in the except branches.
+      - Any reachable public destination ⇒ public internet is accessible from
+        this compute ⇒ violation. A truly air-gapped workspace fails every
+        probe and passes.
+
+    Caveat: this validator runs on whatever compute executes the test (the
+    test runner host). That matches SAT's current NS-14 semantics — it also
+    tests from the driver's cluster. Per-workspace egress introspection is a
+    post-0.8.0 redesign.
+    """
+
+    CHECK_ID = "NS-14"
+    CHECK_NAME = "Egress control from compute"
+    CLOUDS = ["aws", "azure", "gcp"]
+
+    DESTINATIONS = [
+        {"name": "google", "url": "https://www.google.com"},
+        {"name": "ifconfig", "url": "https://ifconfig.me"},
+        {"name": "cloudflare", "url": "https://www.cloudflare.com"},
+    ]
+
+    def evaluate_from_api(self) -> tuple[int, dict]:
+        import requests
+
+        results = []
+        reachable = []
+        for dest in self.DESTINATIONS:
+            entry = {"name": dest["name"], "url": dest["url"]}
+            try:
+                resp = requests.get(
+                    dest["url"], timeout=10, allow_redirects=True, stream=True
+                )
+                entry["status_code"] = resp.status_code
+                entry["reachable"] = True
+                resp.close()
+                reachable.append(dest["name"])
+            except requests.exceptions.Timeout:
+                entry["reachable"] = False
+                entry["error"] = "TIMEOUT"
+            except requests.exceptions.ConnectionError as e:
+                entry["reachable"] = False
+                entry["error"] = f"CONNECTION_ERROR: {str(e)[:200]}"
+            except Exception as e:
+                entry["reachable"] = False
+                entry["error"] = f"{type(e).__name__}: {str(e)[:200]}"
+            results.append(entry)
+
+        score = 1 if reachable else 0
+        return score, {
+            "reachable": reachable,
+            "total": len(self.DESTINATIONS),
+            "results": results,
+        }
