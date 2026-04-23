@@ -30,9 +30,20 @@ resource "databricks_job" "initializer" {
     }
   }
 
+  dynamic "environment" {
+    for_each = var.run_on_serverless ? [1] : []
+    content {
+      environment_key = "default"
+      spec {
+        client = "5"
+      }
+    }
+  }
+
   task {
     task_key        = "Initializer"
     job_cluster_key = var.run_on_serverless ? null : "job_cluster"
+    environment_key = var.run_on_serverless ? "default" : null
     dynamic "library" {
       for_each = var.run_on_serverless ? [] : [1]
       content {
@@ -80,10 +91,20 @@ resource "databricks_job" "driver" {
     }
   }
 
+  dynamic "environment" {
+    for_each = var.run_on_serverless ? [1] : []
+    content {
+      environment_key = "default"
+      spec {
+        client = "5"
+      }
+    }
+  }
 
   task {
     task_key        = "Driver"
     job_cluster_key = var.run_on_serverless ? null : "job_cluster"
+    environment_key = var.run_on_serverless ? "default" : null
     dynamic "library" {
       for_each = var.run_on_serverless ? [] : [1]
       content {
@@ -138,9 +159,20 @@ resource "databricks_job" "secrets_scanner" {
     }
   }
 
+  dynamic "environment" {
+    for_each = var.run_on_serverless ? [1] : []
+    content {
+      environment_key = "default"
+      spec {
+        client = "5"
+      }
+    }
+  }
+
   task {
     task_key        = "secrets_scanner"
     job_cluster_key = var.run_on_serverless ? null : "job_cluster"
+    environment_key = var.run_on_serverless ? "default" : null
     dynamic "library" {
       for_each = var.run_on_serverless ? [] : [1]
       content {
