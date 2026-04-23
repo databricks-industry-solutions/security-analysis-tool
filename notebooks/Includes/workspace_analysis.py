@@ -1523,9 +1523,10 @@ def sp_secret_stale_rule(df):
     if df is not None and not isEmpty(df) and len(df.collect()) >= 1:
         stale = df.collect()
         stale_dict = {i.id: [i.sp_display_name, i.sp_app_id, str(i.age_days)] for i in stale}
+        stale_dict['_summary'] = f'{len(stale)} SP secret(s) older than {sp_secret_age_evaluation_value} days — rotate to pass'
         return (check_id, 1, stale_dict)
     else:
-        return (check_id, 0, {})
+        return (check_id, 0, {'message': f'All ACTIVE SP secrets within {sp_secret_age_evaluation_value} days'})
 
 if enabled:
     tbl_name = 'acctserviceprincipalssecrets'
