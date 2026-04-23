@@ -1100,17 +1100,24 @@ def third_party_library_control(df):
         return (check_id, 0, {'third_party_library_control':'Artifact allowlist configured'})
     else:
         return (check_id, 1, {'third_party_library_control':'No artifact allowlist configured'})   
-if enabled:    
+if enabled:
+    # Each artifact_type is bootstrapped independently; when the API response
+    # has no artifact_matchers (e.g. LIBRARY_MAVEN on a workspace that only
+    # configured LIBRARY_JAR) bootstrap() skips table creation entirely. A
+    # UNION across both references the missing table, fails the SQL, and
+    # silently reports violation for every workspace. Guard per-table.
+    existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
     tbl_name_1 = 'artifacts_allowlists_library_jars' + '_' + workspace_id
     tbl_name_2 = 'artifacts_allowlists_library_mavens' + '_' + workspace_id
-    sql=f'''
-        SELECT *
-        FROM {tbl_name_1} 
-        UNION
-        SELECT *
-        FROM {tbl_name_2} 
-        
-    '''
+    parts = []
+    if tbl_name_1 in existing:
+        parts.append(f'SELECT * FROM {tbl_name_1}')
+    if tbl_name_2 in existing:
+        parts.append(f'SELECT * FROM {tbl_name_2}')
+    if parts:
+        sql = '\nUNION ALL\n'.join(parts)
+    else:
+        sql = 'SELECT CAST(NULL AS STRING) AS x WHERE 1=0'
     sqlctrl(workspace_id, sql, third_party_library_control)
 
 # COMMAND ----------
