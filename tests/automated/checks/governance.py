@@ -126,7 +126,13 @@ class Check26_GlobalInitScripts(BaseValidator):
 
 @register("64")
 class Check64_InitScriptsOnDBFS(BaseValidator):
-    """GOV-25: Init scripts stored in DBFS."""
+    """GOV-25: Init scripts stored in DBFS.
+
+    SAT's SDK lists /databricks/init/ (see clusters_client.get_cluster_init_scripts).
+    The framework previously hit /databricks/scripts which always returns
+    RESOURCE_DOES_NOT_EXIST, producing false pass on any workspace with legacy
+    init scripts.
+    """
 
     CHECK_ID = "GOV-25"
     CHECK_NAME = "Init scripts in DBFS"
@@ -138,7 +144,7 @@ class Check64_InitScriptsOnDBFS(BaseValidator):
             resp = self.rest.get(
                 "/dbfs/list",
                 token=token,
-                params={"path": "/databricks/scripts"},
+                params={"path": "/databricks/init"},
                 version="2.0",
             )
             files = resp.get("files", [])
@@ -151,7 +157,7 @@ class Check64_InitScriptsOnDBFS(BaseValidator):
                 }
             return 0, {"count": 0}
         except Exception:
-            return 0, {"note": "DBFS scripts path not accessible"}
+            return 0, {"note": "DBFS init scripts path not accessible"}
 
 
 @register("8")
