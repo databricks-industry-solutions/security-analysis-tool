@@ -575,15 +575,19 @@ if enabled:
 check_id='16' #Mounts
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 dbfs_fuse_mnt_evaluation_value = sbp_rec['evaluation_value']
+GOV11_SAMPLE_LIMIT = 50
 def dbfs_mnt_check(df):
-  
-    if df is not None and not isEmpty(df) and len(df.collect())>=dbfs_fuse_mnt_evaluation_value:
+    if df is not None and not isEmpty(df) and len(df.collect()) >= dbfs_fuse_mnt_evaluation_value:
         mounts = df.collect()
-        mounts_dict = {'mnts' : [i.path for i in mounts]}
-        print(mounts_dict)
+        # additional_details is MAP<STRING,STRING>; a list value silently fails
+        # from_json and drops the row. Encode each mount path as its own entry.
+        sample = mounts[:GOV11_SAMPLE_LIMIT]
+        mounts_dict = {str(i): row.path for i, row in enumerate(sample)}
+        if len(mounts) > GOV11_SAMPLE_LIMIT:
+            mounts_dict['_summary'] = f'{len(mounts)} DBFS mounts — showing first {GOV11_SAMPLE_LIMIT}'
         return (check_id, 1, mounts_dict)
     else:
-        return (check_id, 0, {})   
+        return (check_id, 0, {})
 
     
 if enabled:     
