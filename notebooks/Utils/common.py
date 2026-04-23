@@ -157,7 +157,6 @@ def insertIntoControlTable(workspace_id, id, score, additional_details):
             VALUES ('{}', '{}', cast({} as int),  from_json('{}', 'MAP<STRING,STRING>'), {}, cast({} as timestamp))""".format(
         json_["analysis_schema_name"], workspace_id, id, score, jsonstr, run_id, ts
     )
-    ###print(sql)
     spark.sql(sql)
 
 

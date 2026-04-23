@@ -70,6 +70,7 @@ workspaceId = workspace_id
 # COMMAND ----------
 
 from pyspark.sql.functions import regexp_replace,col
+from pyspark.sql import functions as F
 spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
@@ -397,13 +398,18 @@ if enabled and any(table.name =='workspacesettings' + '_' + workspace_id for tab
 check_id='27' #Admin Count
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 admin_count_evaluation_value = sbp_rec['evaluation_value']
-def admin_rule(df):  
-    if df is not None and not isEmpty(df) and  len(df.collect()) > admin_count_evaluation_value:
-        df = df.select(F.regexp_replace(F.col('Admins'), '[\"\'\\\\]', '_').alias('Admins'))     
-        adminlist = df.collect()
-        adminlist_1 = [i.Admins for i in adminlist]
-        adminlist_dict = {"admins" : adminlist_1}
-    
+INFO6_SAMPLE_LIMIT = 50
+def admin_rule(df):
+    if df is not None and not isEmpty(df) and len(df.collect()) > admin_count_evaluation_value:
+        df = df.select(F.regexp_replace(F.col('Admins'), '[\"\'\\\\]', '_').alias('Admins'))
+        adminlist_1 = [i.Admins for i in df.collect()]
+        # additional_details is typed map<string, string> — a list value would
+        # silently fail from_json and drop the whole row. Encode admins as
+        # STRING → STRING, matching the GOV-42/GOV-45 sample-dict pattern.
+        sample = adminlist_1[:INFO6_SAMPLE_LIMIT]
+        adminlist_dict = {str(i): name for i, name in enumerate(sample)}
+        if len(adminlist_1) > INFO6_SAMPLE_LIMIT:
+            adminlist_dict['_summary'] = f'{len(adminlist_1)} admins — showing first {INFO6_SAMPLE_LIMIT}'
         return (check_id, 1, adminlist_dict)
     else:
         return (check_id, 0, {})
@@ -456,20 +462,25 @@ if enabled:
 check_id='2' #Cluster Encryption
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
+DP2_SAMPLE_LIMIT = 50
 def local_disk_encryption(df):
-    if df is not None and len(df.columns) == 0:
-        cluster_dict = {'clusters' : 'all_interactive_clusters'}
-        print(cluster_dict)
-        return (check_id, 1, cluster_dict) 
-    elif df is not None and not isEmpty(df):
-        df = df.select(F.col('cluster_id'), F.regexp_replace(F.col('cluster_name'), '[\"\'\\\\]', '_').alias('cluster_name'))  
-        clusters = df.collect()
-        clusterslst = [[i.cluster_id, i.cluster_name] for i in clusters]
-        clusters_dict = {"clusters" : clusterslst}
-        print(clusters_dict)
-        return (check_id, 1, clusters_dict)
-    else:
-        return (check_id, 0, {})   
+    # Empty df covers both "clusters_<ws> table not written (workspace has
+    # 0 clusters)" and "no clusters matched the filter (all encrypted)".
+    # Both legitimately mean zero unencrypted interactive clusters → pass.
+    # The prior `df.columns == 0 → violation` branch produced a false
+    # violation on every empty-clusters workspace.
+    if df is None or isEmpty(df):
+        return (check_id, 0, {})
+    df = df.select(F.col('cluster_id'),
+                   F.regexp_replace(F.col('cluster_name'), '[\"\'\\\\]', '_').alias('cluster_name'))
+    clusters = df.collect()
+    # additional_details is MAP<STRING, STRING>; encode cluster_id → cluster_name.
+    # A list-of-lists value would fail from_json and silently drop the row.
+    sample = clusters[:DP2_SAMPLE_LIMIT]
+    clusters_dict = {c.cluster_id: c.cluster_name for c in sample}
+    if len(clusters) > DP2_SAMPLE_LIMIT:
+        clusters_dict['_summary'] = f'{len(clusters)} unencrypted clusters — showing first {DP2_SAMPLE_LIMIT}'
+    return (check_id, 1, clusters_dict)
   
 if enabled:
     tbl_name = 'clusters' + '_' + workspace_id
@@ -565,15 +576,19 @@ if enabled:
 check_id='16' #Mounts
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 dbfs_fuse_mnt_evaluation_value = sbp_rec['evaluation_value']
+GOV11_SAMPLE_LIMIT = 50
 def dbfs_mnt_check(df):
-  
-    if df is not None and not isEmpty(df) and len(df.collect())>=dbfs_fuse_mnt_evaluation_value:
+    if df is not None and not isEmpty(df) and len(df.collect()) >= dbfs_fuse_mnt_evaluation_value:
         mounts = df.collect()
-        mounts_dict = {'mnts' : [i.path for i in mounts]}
-        print(mounts_dict)
+        # additional_details is MAP<STRING,STRING>; a list value silently fails
+        # from_json and drops the row. Encode each mount path as its own entry.
+        sample = mounts[:GOV11_SAMPLE_LIMIT]
+        mounts_dict = {str(i): row.path for i, row in enumerate(sample)}
+        if len(mounts) > GOV11_SAMPLE_LIMIT:
+            mounts_dict['_summary'] = f'{len(mounts)} DBFS mounts — showing first {GOV11_SAMPLE_LIMIT}'
         return (check_id, 1, mounts_dict)
     else:
-        return (check_id, 0, {})   
+        return (check_id, 0, {})
 
     
 if enabled:     
@@ -719,14 +734,22 @@ check_id='10' #Deprecated runtime versions
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def versions_check(df):
-    if df is not None and not isEmpty(df) and len(df.collect())>=1:
-        df = df.withColumn('cluster_name', regexp_replace(col('config_name'), '[\"\'\\\\]', '_')).select('cluster_id', 'spark_version','cluster_name')
-        
+    if df is not None and not isEmpty(df) and len(df.collect()) >= 1:
+        # Prior code referenced col('config_name') which doesn't exist in the
+        # SQL's SELECT — when the SQL returned rows (i.e., a deprecated cluster
+        # was found), the withColumn raised AnalysisException, sqlctrl swallowed
+        # it, and no row was written (SAT_MISSING). The source column is
+        # cluster_name.
+        df = df.withColumn('cluster_name',
+                           regexp_replace(col('cluster_name'), '[\"\'\\\\]', '_')) \
+               .select('cluster_id', 'spark_version', 'cluster_name')
         verlst = df.collect()
-        verlst_dict = {irow.cluster_id: "cluster_name:"+irow.cluster_name+" version:"+irow.spark_version for irow in verlst} 
-        print(verlst_dict)
+        verlst_dict = {
+            irow.cluster_id: f"cluster_name:{irow.cluster_name} version:{irow.spark_version}"
+            for irow in verlst
+        }
         return (check_id, 1, verlst_dict)
-    return (check_id, 0, {})   
+    return (check_id, 0, {})
 
 if enabled:    
     tbl_name = 'clusters' + '_' + workspace_id
@@ -1068,14 +1091,22 @@ if enabled:
 check_id='90' #INFO-29 Streamline the usage and management of various large language model (LLM) providers
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
+INFO29_SAMPLE_LIMIT = 50
 def model_serving_endpoints_external_model(df):
-    if df is not None and not isEmpty(df) and df.count()>1:
-        model_serving_endpoints_list = df.collect()
-        model_serving_endpoints_dict = {i.name : [i.endpoint_type,i.config] for i in model_serving_endpoints_list}
-        
-        return (check_id, 0, model_serving_endpoints_dict)
-    else:
-        return (check_id, 1, {'model_serving_endpoints_external_model':'No model serving endpoints with endpoint type EXTERNAL_MODEL found'})   
+    # Intent per security_best_practices.csv: alert when NO external-model
+    # endpoints are configured. Any count >= 1 is a pass. Previous code
+    # used `df.count() > 1`, falsely flagging workspaces with exactly one
+    # EXTERNAL_MODEL endpoint as violations.
+    if df is None or isEmpty(df):
+        return (check_id, 1, {'message': 'No model serving endpoints with endpoint type EXTERNAL_MODEL found'})
+    endpoints = df.collect()
+    # additional_details is MAP<STRING, STRING>; `config` is a struct and
+    # would silently fail from_json. Encode name → endpoint_type only.
+    sample = endpoints[:INFO29_SAMPLE_LIMIT]
+    endpoints_dict = {e.name: e.endpoint_type for e in sample}
+    if len(endpoints) > INFO29_SAMPLE_LIMIT:
+        endpoints_dict['_summary'] = f'{len(endpoints)} external-model endpoints — showing first {INFO29_SAMPLE_LIMIT}'
+    return (check_id, 0, endpoints_dict)
 if enabled:    
     tbl_name = 'model_serving_endpoints' + '_' + workspace_id
     sql=f'''
@@ -1095,17 +1126,24 @@ def third_party_library_control(df):
         return (check_id, 0, {'third_party_library_control':'Artifact allowlist configured'})
     else:
         return (check_id, 1, {'third_party_library_control':'No artifact allowlist configured'})   
-if enabled:    
+if enabled:
+    # Each artifact_type is bootstrapped independently; when the API response
+    # has no artifact_matchers (e.g. LIBRARY_MAVEN on a workspace that only
+    # configured LIBRARY_JAR) bootstrap() skips table creation entirely. A
+    # UNION across both references the missing table, fails the SQL, and
+    # silently reports violation for every workspace. Guard per-table.
+    existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
     tbl_name_1 = 'artifacts_allowlists_library_jars' + '_' + workspace_id
     tbl_name_2 = 'artifacts_allowlists_library_mavens' + '_' + workspace_id
-    sql=f'''
-        SELECT *
-        FROM {tbl_name_1} 
-        UNION
-        SELECT *
-        FROM {tbl_name_2} 
-        
-    '''
+    parts = []
+    if tbl_name_1 in existing:
+        parts.append(f'SELECT * FROM {tbl_name_1}')
+    if tbl_name_2 in existing:
+        parts.append(f'SELECT * FROM {tbl_name_2}')
+    if parts:
+        sql = '\nUNION ALL\n'.join(parts)
+    else:
+        sql = 'SELECT CAST(NULL AS STRING) AS x WHERE 1=0'
     sqlctrl(workspace_id, sql, third_party_library_control)
 
 # COMMAND ----------

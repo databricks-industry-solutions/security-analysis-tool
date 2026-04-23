@@ -206,28 +206,19 @@ class Check111_NetworkPolicy(BaseValidator):
 
         policies = policies_resp.get("items", policies_resp.get("network_policies", []))
 
-        # Get workspace network config
+        # Workspace → policy lookup. /network (NOT /network-connectivity-config,
+        # which is the unrelated NCC API that returns ENDPOINT_NOT_FOUND here).
         try:
             ws_config = acct_client.get(
-                f"/accounts/{acct_id}/workspaces/{ws_id}/network-connectivity-config",
+                f"/accounts/{acct_id}/workspaces/{ws_id}/network",
                 token=token,
             )
         except Exception:
             ws_config = {}
 
-        # Try to find the policy assigned to this workspace
         policy_id = None
-        # Check workspace config for policy reference
         if isinstance(ws_config, dict):
             policy_id = ws_config.get("network_policy_id")
-
-        # If no direct policy_id, check if there's a default policy
-        if not policy_id and policies:
-            # Look for default/account-level policy
-            for p in policies:
-                if p.get("account_default", False):
-                    policy_id = p.get("network_policy_id")
-                    break
 
         if not policy_id:
             return 1, {"reason": "NO_POLICY_ASSIGNED"}
