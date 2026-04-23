@@ -1082,14 +1082,22 @@ if enabled:
 check_id='90' #INFO-29 Streamline the usage and management of various large language model (LLM) providers
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
+INFO29_SAMPLE_LIMIT = 50
 def model_serving_endpoints_external_model(df):
-    if df is not None and not isEmpty(df) and df.count()>1:
-        model_serving_endpoints_list = df.collect()
-        model_serving_endpoints_dict = {i.name : [i.endpoint_type,i.config] for i in model_serving_endpoints_list}
-        
-        return (check_id, 0, model_serving_endpoints_dict)
-    else:
-        return (check_id, 1, {'model_serving_endpoints_external_model':'No model serving endpoints with endpoint type EXTERNAL_MODEL found'})   
+    # Intent per security_best_practices.csv: alert when NO external-model
+    # endpoints are configured. Any count >= 1 is a pass. Previous code
+    # used `df.count() > 1`, falsely flagging workspaces with exactly one
+    # EXTERNAL_MODEL endpoint as violations.
+    if df is None or isEmpty(df):
+        return (check_id, 1, {'message': 'No model serving endpoints with endpoint type EXTERNAL_MODEL found'})
+    endpoints = df.collect()
+    # additional_details is MAP<STRING, STRING>; `config` is a struct and
+    # would silently fail from_json. Encode name → endpoint_type only.
+    sample = endpoints[:INFO29_SAMPLE_LIMIT]
+    endpoints_dict = {e.name: e.endpoint_type for e in sample}
+    if len(endpoints) > INFO29_SAMPLE_LIMIT:
+        endpoints_dict['_summary'] = f'{len(endpoints)} external-model endpoints — showing first {INFO29_SAMPLE_LIMIT}'
+    return (check_id, 0, endpoints_dict)
 if enabled:    
     tbl_name = 'model_serving_endpoints' + '_' + workspace_id
     sql=f'''
