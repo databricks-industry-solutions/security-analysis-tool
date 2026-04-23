@@ -23,6 +23,16 @@ variable "secret_scope_name" {
   default     = "sat_scope"
 }
 
+variable "cloud_type" {
+  description = "Cloud where SAT is being deployed: \"aws\", \"azure\", or \"gcp\". Set by each cloud-specific wrapper module. Gates cloud-specific cluster attributes (e.g., AWS driver-on-demand protection)."
+  type        = string
+  default     = ""
+  validation {
+    condition     = contains(["", "aws", "azure", "gcp"], var.cloud_type)
+    error_message = "cloud_type must be one of: aws, azure, gcp (or empty)."
+  }
+}
+
 variable "sat_authorized_principals" {
   description = "Additional principals (user email, service principal applicationId, or group display name) granted READ access on the SAT secret scope. The Terraform-apply identity always receives MANAGE. Keep this list tight — members can read the SAT service principal credentials, which typically hold account-admin privileges."
   type        = list(string)
@@ -80,8 +90,8 @@ variable "job_schedule_timezone_id" {
 
 variable "secrets_scanner_cron_expression" {
   type        = string
-  description = "Quartz cron expression for the secrets scanner job schedule"
-  default     = "0 0 8 ? * *"
+  description = "Quartz cron expression for the secrets scanner job schedule. Default is 10:00 UTC daily, offset 2 hours after the Driver job to avoid Delta write conflicts on shared control tables (security_checks, account_info, run_number_table)."
+  default     = "0 0 10 ? * *"
 }
 
 variable "driver_cron_expression" {

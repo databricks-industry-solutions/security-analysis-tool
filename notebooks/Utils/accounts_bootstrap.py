@@ -247,10 +247,21 @@ network_policy_schema = StructType([
             ])), True)
         ]), True)
     ]), True),
+    # Ingress enforcement is represented structurally, not via an
+    # enforcement_mode sub-field: the API puts the ingress block under
+    # `ingress` when the policy is set to "Enforced for all products", and
+    # under `ingress_dry_run` (same nested shape) when set to "Dry run mode
+    # for all products". A policy with no CBI configured has neither key
+    # populated. Capture both so NS-12 can read whichever one applies.
     StructField("ingress", StructType([
-        StructField("create_time", StringType(), True),
-        StructField("restriction_mode", StringType(), True),
-        StructField("update_time", StringType(), True)
+        StructField("public_access", StructType([
+            StructField("restriction_mode", StringType(), True)
+        ]), True)
+    ]), True),
+    StructField("ingress_dry_run", StructType([
+        StructField("public_access", StructType([
+            StructField("restriction_mode", StringType(), True)
+        ]), True)
     ]), True)
 ])
 

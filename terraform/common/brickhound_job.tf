@@ -20,6 +20,14 @@ resource "databricks_job" "brickhound_data_collection" {
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
 
+        dynamic "aws_attributes" {
+          for_each = var.cloud_type == "aws" ? [1] : []
+          content {
+            availability    = "SPOT_WITH_FALLBACK"
+            first_on_demand = 1
+          }
+        }
+
         # GCP service account impersonation (if configured)
         dynamic "gcp_attributes" {
           for_each = var.gcp_impersonate_service_account == "" ? [] : [var.gcp_impersonate_service_account]
@@ -39,7 +47,7 @@ resource "databricks_job" "brickhound_data_collection" {
       notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/permission_analysis_data_collection"
     }
 
-    timeout_seconds = 14400  # 4 hours max (permissions collection can take time for large accounts)
+    timeout_seconds = 14400 # 4 hours max (permissions collection can take time for large accounts)
   }
 
   # Schedule: Run daily (2 AM ET)

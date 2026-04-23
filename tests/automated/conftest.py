@@ -39,6 +39,13 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "online: test requires network egress (e.g., CSV doc URL reachability).",
+    )
+
+
 @pytest.fixture(scope="session")
 def cloud(request) -> str:
     return request.config.getoption("--cloud")

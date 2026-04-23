@@ -165,12 +165,16 @@ def cloud_specific_questions(client: WorkspaceClient):
 def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
 
     scope_name = "sat_scope"
-    for scope in client.secrets.list_scopes():
-        if scope.name == scope_name:
-            client.secrets.delete_scope(scope_name)
-            break
-
-    client.secrets.create_scope(scope_name)
+    # Only create the scope if it doesn't already exist. Previous versions
+    # deleted and recreated the scope on every install, which wiped ACLs —
+    # including the READ ACL that Databricks Apps auto-creates when a
+    # `secret` resource is bound to an app. That left re-installs with the
+    # BrickHound app unable to resolve its `valueFrom` env vars and crashing
+    # at startup. Overwriting individual keys with `put_secret` below
+    # preserves existing ACLs.
+    existing = {scope.name for scope in client.secrets.list_scopes()}
+    if scope_name not in existing:
+        client.secrets.create_scope(scope_name)
 
     client.secrets.put_secret(
         scope=scope_name,

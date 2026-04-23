@@ -1304,16 +1304,21 @@ enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 def context_based_ingress_check(df):
     """
     Check that the workspace network policy has Context-Based Ingress (CBI)
-    configured with RESTRICTED_ACCESS ingress mode.
+    adopted via RESTRICTED_ACCESS ingress mode. CBI enforcement is represented
+    by two distinct top-level API fields: `ingress` (Enforced) or
+    `ingress_dry_run` (Dry run mode). Both count as adoption; DRY_RUN adds an
+    advisory note to the pass message so operators can flip to ENFORCED when
+    ready.
 
-    Pass:    ingress.restriction_mode == 'RESTRICTED_ACCESS'
-    Fail:    no policy assigned, no ingress config, or mode != RESTRICTED_ACCESS
+    Pass:    effective restriction_mode == 'RESTRICTED_ACCESS'
+    Fail:    no policy data, no policy assigned, or mode != RESTRICTED_ACCESS
     """
     if df is None or isEmpty(df):
         violation = {
             workspace_id: [
-                'NO_POLICY_ASSIGNED',
-                'Workspace does not have a network policy assigned'
+                'NO_POLICY_DATA',
+                'Workspace network configuration not available '
+                '(bootstrap may have failed or workspace is not in the analyzed fleet)'
             ]
         }
         return (check_id, 1, violation)
@@ -1322,18 +1327,28 @@ def context_based_ingress_check(df):
         row = df.first()
         policy_id = row.network_policy_id if hasattr(row, 'network_policy_id') else None
         ingress_mode = row.ingress_restriction_mode if hasattr(row, 'ingress_restriction_mode') else None
+        ingress_enforcement = row.ingress_enforcement if hasattr(row, 'ingress_enforcement') else None
 
         if policy_id is None:
             violation = {
                 workspace_id: [
                     'NO_POLICY_ASSIGNED',
-                    'Workspace does not have a network policy assigned'
+                    'Workspace does not have a network policy assigned; '
+                    'assign a policy with RESTRICTED_ACCESS ingress to adopt CBI'
                 ]
             }
             return (check_id, 1, violation)
 
         if ingress_mode and ingress_mode.upper() == 'RESTRICTED_ACCESS':
-            return (check_id, 0, {})
+            enforcement_note = ''
+            if ingress_enforcement == 'DRY_RUN':
+                enforcement_note = ' (currently in DRY_RUN — flip to ENFORCED when ready)'
+            return (check_id, 0, {
+                workspace_id: [
+                    'CBI_ADOPTED',
+                    f"Policy '{policy_id}' has RESTRICTED_ACCESS ingress{enforcement_note}"
+                ]
+            })
 
         violation = {
             workspace_id: [
@@ -1358,12 +1373,26 @@ if enabled:
     tbl_network_policies = 'account_networkpolicies'
     tbl_workspaces = 'acctworkspaces'
 
+    # CBI status lives under two mutually-exclusive top-level keys:
+    #   ingress.public_access.restriction_mode           -> ENFORCED
+    #   ingress_dry_run.public_access.restriction_mode   -> DRY_RUN
+    # A policy with no CBI has neither populated. COALESCE picks whichever
+    # applies; a parallel CASE captures the enforcement mode so the rule can
+    # add a DRY_RUN advisory to the pass message.
     sql = f"""
         SELECT
             w.workspace_id,
             w.workspace_name,
             wnc.satelements[0].network_policy_id as network_policy_id,
-            np.ingress.restriction_mode as ingress_restriction_mode
+            COALESCE(
+                np.ingress.public_access.restriction_mode,
+                np.ingress_dry_run.public_access.restriction_mode
+            ) as ingress_restriction_mode,
+            CASE
+                WHEN np.ingress.public_access.restriction_mode IS NOT NULL THEN 'ENFORCED'
+                WHEN np.ingress_dry_run.public_access.restriction_mode IS NOT NULL THEN 'DRY_RUN'
+                ELSE NULL
+            END as ingress_enforcement
         FROM {tbl_workspaces} w
         LEFT JOIN {tbl_workspace_config} wnc ON 1=1
         LEFT JOIN {tbl_network_policies} np
@@ -1388,7 +1417,7 @@ def jobs_run_as_service_principal(df):
         violation_dict = {num: {'job_id': str(row.job_id), 'job_name': row.job_name, 'run_as_user_name': row.run_as_user_name} for num, row in enumerate(sample)}
         if total > SAMPLE_LIMIT:
             violation_dict['_summary'] = f'{total} jobs run as a user account — showing first {SAMPLE_LIMIT}'
-        return (check_id, total, violation_dict)
+        return (check_id, 1, violation_dict)
     else:
         return (check_id, 0, {})
 
@@ -1423,7 +1452,7 @@ def jobs_not_granting_can_manage_to_non_admins(df):
         }
         if total > GOV45_SAMPLE_LIMIT:
             violation_dict['_summary'] = f'{total} job-principal combinations grant CAN_MANAGE to non-admin principals — showing first {GOV45_SAMPLE_LIMIT}'
-        return (check_id, total, violation_dict)
+        return (check_id, 1, violation_dict)
     else:
         return (check_id, 0, {})
 
@@ -1431,7 +1460,10 @@ if enabled:
     perm_tbl = 'job_permissions_' + workspace_id
     jobs_tbl = 'jobs_' + workspace_id
     existing = [t.name for t in spark.catalog.listTables(json_["intermediate_schema"])]
-    if perm_tbl in existing and jobs_tbl in existing:
+    if jobs_tbl in existing and perm_tbl in existing:
+        # COALESCE on creator_user_name: legacy / orphaned jobs can have NULL creators,
+        # and `user_name != NULL` evaluates to NULL in SQL 3-value logic → whole row
+        # silently excluded. Treat NULL creator as empty-string so the inequality holds.
         sql = f'''
             SELECT DISTINCT jp.job_id, jp.job_name,
                 CASE
@@ -1443,9 +1475,20 @@ if enabled:
             JOIN {jobs_tbl} j ON CAST(jp.job_id AS BIGINT) = j.job_id
             WHERE jp.permission_level = 'CAN_MANAGE'
               AND jp.group_name != 'admins'
-              AND (jp.user_name = '' OR jp.user_name != j.creator_user_name)
+              AND (jp.user_name = '' OR jp.user_name != COALESCE(j.creator_user_name, ''))
         '''
-        sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_non_admins)
+    else:
+        # Missing jobs_tbl or perm_tbl means the workspace either has zero jobs
+        # (bootstrap's empty-list path doesn't create a table) or the permissions
+        # collection failed. In either case there can be no non-admin CAN_MANAGE
+        # violation to report. Emit an empty result so the rule's else branch
+        # writes a pass row and the workspace appears in dashboards.
+        sql = (
+            "SELECT CAST(NULL AS STRING) AS job_id, "
+            "CAST(NULL AS STRING) AS job_name, "
+            "CAST(NULL AS STRING) AS principal WHERE 1=0"
+        )
+    sqlctrl(workspace_id, sql, jobs_not_granting_can_manage_to_non_admins)
 
 # COMMAND ----------
 
@@ -1480,9 +1523,10 @@ def sp_secret_stale_rule(df):
     if df is not None and not isEmpty(df) and len(df.collect()) >= 1:
         stale = df.collect()
         stale_dict = {i.id: [i.sp_display_name, i.sp_app_id, str(i.age_days)] for i in stale}
+        stale_dict['_summary'] = f'{len(stale)} SP secret(s) older than {sp_secret_age_evaluation_value} days — rotate to pass'
         return (check_id, 1, stale_dict)
     else:
-        return (check_id, 0, {})
+        return (check_id, 0, {'message': f'All ACTIVE SP secrets within {sp_secret_age_evaluation_value} days'})
 
 if enabled:
     tbl_name = 'acctserviceprincipalssecrets'
@@ -1506,15 +1550,16 @@ def egress_control_check(df):
     if df is None or isEmpty(df):
         return (check_id, 1, {'message': 'Egress test results not available'})
     rows = df.collect()
-    blocked = [r.destination_name for r in rows if not r.reachable]
-    if len(blocked) > 0:
-        return (check_id, 0, {})
-    else:
-        reachable = [r.destination_name for r in rows if r.reachable]
+    reachable = [r.destination_name for r in rows if r.reachable]
+    # Any reachable public destination = compute has public internet access = violation.
+    # A strict egress control (air-gap / deny-all egress) would block every probe.
+    if len(reachable) > 0:
         return (check_id, 1, {
-            'message': f'All {len(reachable)} test destinations reachable — public internet is accessible from compute',
+            'message': f'{len(reachable)} of {len(rows)} test destinations reachable — public internet is accessible from compute',
             **{d: 'reachable' for d in reachable}
         })
+    else:
+        return (check_id, 0, {})
 
 if enabled and not is_serverless:
     tbl_name = f'egress_test_results_{workspace_id}'

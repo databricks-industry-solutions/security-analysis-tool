@@ -8,6 +8,7 @@ LOGGR = LoggingUtils.get_logger()
 EGRESS_TEST_DESTINATIONS = [
     {"name": "google", "url": "https://www.google.com"},
     {"name": "ifconfig", "url": "https://ifconfig.me"},
+    {"name": "cloudflare", "url": "https://www.cloudflare.com"},
 ]
 
 class EgressTestClient(SatDBClient):
@@ -24,14 +25,23 @@ class EgressTestClient(SatDBClient):
                 "error": None,
             }
             try:
-                response = requests.head(
+                # GET with stream=True: opens the connection, reads response headers,
+                # does not download the body. Any HTTP response proves the destination
+                # was reached — TCP connect, TLS handshake, and HTTP exchange all
+                # completed. True egress blocking surfaces as Timeout / ConnectionError
+                # in the except branches below, not as an application-level status code.
+                # HEAD is avoided because some sites (e.g. ifconfig.me) return 405 to
+                # HEAD while happily serving GET, which would misread as "blocked".
+                response = requests.get(
                     dest["url"],
                     timeout=10,
                     proxies=self._proxies,
                     allow_redirects=True,
+                    stream=True,
                 )
                 result["status_code"] = response.status_code
-                result["reachable"] = response.status_code < 400
+                result["reachable"] = True
+                response.close()
             except requests.exceptions.Timeout:
                 result["error"] = "TIMEOUT"
             except requests.exceptions.ConnectionError as e:

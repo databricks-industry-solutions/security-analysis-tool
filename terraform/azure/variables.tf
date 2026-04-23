@@ -71,8 +71,8 @@ variable "run_on_serverless" {
 
 variable "secrets_scanner_cron_expression" {
   type        = string
-  description = "Quartz cron expression for the secrets scanner job schedule"
-  default     = "0 0 8 ? * *"
+  description = "Quartz cron expression for the secrets scanner job schedule. Default is 10:00 UTC daily, offset 2 hours after the Driver job to avoid Delta write conflicts on shared control tables (security_checks, account_info, run_number_table)."
+  default     = "0 0 10 ? * *"
 }
 
 variable "driver_cron_expression" {

@@ -847,11 +847,13 @@ def get_workspace_client(workspace):
     if not MULTI_WORKSPACE_MODE:
         return w  # Return current workspace client
 
-    # Build the workspace URL and detect cloud type
+    # Build the workspace URL and detect cloud type.
+    # The SDK sets `gcp_managed_network_config` to None on AWS/Azure workspaces,
+    # so hasattr() alone is insufficient — must also check the value is truthy.
     if workspace.azure_workspace_info:
         ws_host = f"https://{workspace.deployment_name}.azuredatabricks.net"
         ws_cloud_type = 'azure'
-    elif hasattr(workspace, 'gcp_managed_network_config'):
+    elif hasattr(workspace, 'gcp_managed_network_config') and workspace.gcp_managed_network_config:
         ws_host = f"https://{workspace.workspace_id}.gcp.databricks.com"
         ws_cloud_type = 'gcp'
     else:
@@ -3022,12 +3024,12 @@ vertex_ids = spark.sql(f"SELECT id FROM {VERTICES_TABLE} WHERE run_id = '{RUN_ID
 vertex_ids.createOrReplaceTempView("_sat_bh_vertex_ids")
 
 dangling_df = spark.sql(f"""
-    SELECT e.src, e.dst, e.edge_type, COUNT(*) as count
+    SELECT e.src, e.dst, e.relationship, COUNT(*) as count
     FROM {EDGES_TABLE} e
     WHERE e.run_id = '{RUN_ID}'
       AND NOT EXISTS (SELECT 1 FROM _sat_bh_vertex_ids v WHERE v.id = e.src)
       AND NOT EXISTS (SELECT 1 FROM _sat_bh_vertex_ids v WHERE v.id = e.dst)
-    GROUP BY e.src, e.dst, e.edge_type
+    GROUP BY e.src, e.dst, e.relationship
     ORDER BY count DESC
     LIMIT 20
 """)

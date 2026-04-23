@@ -13,6 +13,13 @@ resource "databricks_job" "initializer" {
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
+        dynamic "aws_attributes" {
+          for_each = var.cloud_type == "aws" ? [1] : []
+          content {
+            availability    = "SPOT_WITH_FALLBACK"
+            first_on_demand = 1
+          }
+        }
         dynamic "gcp_attributes" {
           for_each = var.gcp_impersonate_service_account == "" ? [] : [var.gcp_impersonate_service_account]
           content {
@@ -56,6 +63,13 @@ resource "databricks_job" "driver" {
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
+        dynamic "aws_attributes" {
+          for_each = var.cloud_type == "aws" ? [1] : []
+          content {
+            availability    = "SPOT_WITH_FALLBACK"
+            first_on_demand = 1
+          }
+        }
         dynamic "gcp_attributes" {
           for_each = var.gcp_impersonate_service_account == "" ? [] : [var.gcp_impersonate_service_account]
           content {
@@ -107,6 +121,13 @@ resource "databricks_job" "secrets_scanner" {
         spark_version      = data.databricks_spark_version.latest_lts.id
         node_type_id       = data.databricks_node_type.smallest.id
         runtime_engine     = "PHOTON"
+        dynamic "aws_attributes" {
+          for_each = var.cloud_type == "aws" ? [1] : []
+          content {
+            availability    = "SPOT_WITH_FALLBACK"
+            first_on_demand = 1
+          }
+        }
         dynamic "gcp_attributes" {
           for_each = var.gcp_impersonate_service_account == "" ? [] : [var.gcp_impersonate_service_account]
           content {

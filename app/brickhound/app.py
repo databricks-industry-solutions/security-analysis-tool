@@ -44,9 +44,15 @@ logger.info(f"  WAREHOUSE_ID = {os.getenv('WAREHOUSE_ID')}")
 # Validate required environment variables
 BRICKHOUND_SCHEMA = os.getenv("BRICKHOUND_SCHEMA")
 
-# Parse catalog.schema from environment variable
+# Parse catalog.schema from environment variable.
+# The secret written by dabs/sat/config.py wraps the catalog in backticks
+# (`catalog`.schema) for SQL identifier quoting — necessary for catalog
+# names containing dashes. Strip the backticks here because the Statement
+# Execution API's `catalog`/`schema` bind params expect bare identifiers;
+# the SQL statements below re-quote explicitly.
 if BRICKHOUND_SCHEMA:
-    parts = BRICKHOUND_SCHEMA.split(".")
+    _clean = BRICKHOUND_SCHEMA.replace("`", "").strip()
+    parts = _clean.split(".")
     if len(parts) == 2:
         CATALOG, SCHEMA = parts
     else:
@@ -68,10 +74,12 @@ if not BRICKHOUND_SCHEMA or not CATALOG or not SCHEMA:
 
 logger.info(f"[CONFIG] BRICKHOUND_SCHEMA={BRICKHOUND_SCHEMA} -> CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 
-# Define table names
-VERTICES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_vertices"
-EDGES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_edges"
-METADATA_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_collection_metadata"
+# Define table names. Backtick-quote each identifier so catalog/schema
+# names containing special characters (dashes, reserved words) are safe
+# to interpolate into SQL.
+VERTICES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_vertices"
+EDGES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges"
+METADATA_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata"
 
 logger.info(f"[CONFIG FINAL] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")

@@ -16,7 +16,7 @@ client_secret = "" //Databricks Service Principal ID Secret
 job_compute_num_workers = 3
 job_schedule_timezone_id = "America/New_York"
 driver_cron_expression = "0 0 8 ? * Mon,Wed,Fri" # Every Monday, Wednesday, and Friday at 8:00 AM
-secrets_scanner_cron_expression = "0 0 8 ? * *" # Every day at 8:00 AM
+secrets_scanner_cron_expression = "0 0 10 ? * *" # Every day at 10:00 AM (offset 2h after the driver to avoid Delta write conflicts)
 
 # If you are behind a proxy, you can specify the proxy server here, if not leave this with the default value
 # Example:
