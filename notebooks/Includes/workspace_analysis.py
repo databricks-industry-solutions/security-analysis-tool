@@ -733,14 +733,22 @@ check_id='10' #Deprecated runtime versions
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
 def versions_check(df):
-    if df is not None and not isEmpty(df) and len(df.collect())>=1:
-        df = df.withColumn('cluster_name', regexp_replace(col('config_name'), '[\"\'\\\\]', '_')).select('cluster_id', 'spark_version','cluster_name')
-        
+    if df is not None and not isEmpty(df) and len(df.collect()) >= 1:
+        # Prior code referenced col('config_name') which doesn't exist in the
+        # SQL's SELECT — when the SQL returned rows (i.e., a deprecated cluster
+        # was found), the withColumn raised AnalysisException, sqlctrl swallowed
+        # it, and no row was written (SAT_MISSING). The source column is
+        # cluster_name.
+        df = df.withColumn('cluster_name',
+                           regexp_replace(col('cluster_name'), '[\"\'\\\\]', '_')) \
+               .select('cluster_id', 'spark_version', 'cluster_name')
         verlst = df.collect()
-        verlst_dict = {irow.cluster_id: "cluster_name:"+irow.cluster_name+" version:"+irow.spark_version for irow in verlst} 
-        print(verlst_dict)
+        verlst_dict = {
+            irow.cluster_id: f"cluster_name:{irow.cluster_name} version:{irow.spark_version}"
+            for irow in verlst
+        }
         return (check_id, 1, verlst_dict)
-    return (check_id, 0, {})   
+    return (check_id, 0, {})
 
 if enabled:    
     tbl_name = 'clusters' + '_' + workspace_id
