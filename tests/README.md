@@ -79,59 +79,19 @@ pytest tests/automated/test_csv_health.py -m 'not online'  # skip URL reachabili
    settings (IP ACL, sql_results_download, etc.) to synthesize an
    inverse path is the last resort — it mutates live state.
 
-## Common patterns to check during review
+## Bugs this methodology caught in 0.8.0
 
-Scan for these before writing or reviewing a new check. Each describes a
-signature and what to look for; the static lint under
-`tests/automated/test_rule_hygiene.py` catches the first two
-automatically.
-
-### Import and reference hygiene
-
-- **Missing `functions as F` import** — if a rule references `F.col(...)`,
-  `F.regexp_replace(...)`, etc., the file must have
-  `from pyspark.sql import functions as F`. The static lint enforces this.
-- **Column reference matches SQL projection** — every `col('foo')` in a
-  rule should correspond to a column in the rule's SQL `SELECT`.
-
-### Intermediate-table handling
-
-- **UNION across bootstrap tables** — `bootstrap()` only writes a table
-  when the source list is non-empty. Any `UNION` over
-  `{prefix}_{workspace_id}` tables must be preceded by a
-  `spark.catalog.listTables(json_['intermediate_schema'])` check and
-  only include tables that exist. The static lint enforces this.
-- **Empty-df handling** — when `df is None` or `isEmpty(df)`, the rule
-  should return a pass if the semantic is "none present" (e.g., zero
-  clusters means zero unencrypted clusters).
-- **NULL in SQL comparisons** — `col != NULL` returns NULL in SQL
-  3-value logic and excludes rows. Use `COALESCE(col, '')` or an
-  explicit `IS NULL` branch.
-
-### Dashboard compatibility
-
-- **Binary score** — `security_checks.score` is read binarily: `0` is pass,
-  anything else is violation. Returning counts (e.g. `total`) doesn't
-  change dashboard behavior and obscures aggregations.
-- **`additional_details` shape** — typed `MAP<STRING, STRING>`. Dicts with
-  nested list values get coerced to stringified JSON (values work but
-  lose per-key addressability). Prefer one entry per item with a
-  `_summary` key for overflow.
-
-### API / endpoint drift
-
-- **JSON path** — always call the live API and inspect the real response
-  shape before writing the SQL / bootstrap schema. Paths have changed
-  (sometimes the API uses parallel top-level keys rather than
-  enforcement-mode sub-fields).
-- **HTTP method quirks** — some endpoints respond `405 Method Not
-  Allowed` to `HEAD` while serving `GET`. Prefer `GET` with
-  `stream=True` for simple reachability probes.
-- **Pagination defaults** — some APIs default to small page sizes
-  (e.g., 20). Specify an explicit limit and loop `next_page_token`.
-- **Endpoint existence** — if a framework validator returns
-  `RESOURCE_DOES_NOT_EXIST` or `ENDPOINT_NOT_FOUND`, the path is wrong
-  (or the API has moved).
+| Check | Class of bug | How it showed up |
+|---|---|---|
+| GOV-42 | Score was `total`, dashboard expects binary 0/1 | SAT reported `score=48` on sfe; same semantics as GOV-45 |
+| GOV-45 | Same as GOV-42 | Binary now |
+| GOV-45 | `user_name != NULL` → NULL → row dropped | `derek.king@databricks.com` CAN_MANAGE missed for a job whose creator is NULL |
+| GOV-45 | Workspaces with 0 jobs silently skipped | `bootstrap()` doesn't write empty tables → guard fell through |
+| NS-12 | Wrong JSON path (`ingress.restriction_mode` vs `ingress.public_access.restriction_mode`) | All policies silently reported as `current: None` |
+| NS-12 | Bootstrap schema mismatch (flat vs nested ingress) | `from_json` populated NULL even after SQL fix |
+| NS-12 | DRY_RUN enforcement uses a different top-level key (`ingress_dry_run`) | Customers in dry-run rollout falsely flagged as `CBI_NOT_CONFIGURED` |
+| NS-14 | HEAD + `status<400` misread `405 Method Not Allowed` as "blocked" | All-egress-open workspaces silently passed the egress check |
+| NS-14 | Rule logic inverted | "any blocked = pass" reframed to "any reachable = violation" |
 
 ## Adding a validator for a new check
 
