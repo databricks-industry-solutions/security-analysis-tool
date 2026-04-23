@@ -289,9 +289,16 @@ except Exception:
 
 # Collect workspace network configurations
 # This links workspaces to their assigned network policies
+# Scope to SAT-enabled workspaces only (account_workspaces.analysis_enabled=true),
+# matching the driver's own workspace iteration at
+# security_analysis_driver.py:68 and avoiding N API calls for unused workspaces.
 try:
-    workspaces = spark.table('acctworkspaces').collect()
-    loggr.info(f"Collecting network configurations for {len(workspaces)} workspaces")
+    schema = json_['analysis_schema_name']
+    workspaces = spark.sql(
+        f"SELECT workspace_id FROM {schema}.account_workspaces "
+        f"WHERE analysis_enabled = true"
+    ).collect()
+    loggr.info(f"Collecting network configurations for {len(workspaces)} SAT-enabled workspaces")
     for ws in workspaces:
         workspace_id = str(ws.workspace_id)
         try:
