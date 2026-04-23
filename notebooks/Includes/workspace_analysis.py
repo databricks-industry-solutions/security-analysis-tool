@@ -397,13 +397,18 @@ if enabled and any(table.name =='workspacesettings' + '_' + workspace_id for tab
 check_id='27' #Admin Count
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 admin_count_evaluation_value = sbp_rec['evaluation_value']
-def admin_rule(df):  
-    if df is not None and not isEmpty(df) and  len(df.collect()) > admin_count_evaluation_value:
-        df = df.select(F.regexp_replace(F.col('Admins'), '[\"\'\\\\]', '_').alias('Admins'))     
-        adminlist = df.collect()
-        adminlist_1 = [i.Admins for i in adminlist]
-        adminlist_dict = {"admins" : adminlist_1}
-    
+INFO6_SAMPLE_LIMIT = 50
+def admin_rule(df):
+    if df is not None and not isEmpty(df) and len(df.collect()) > admin_count_evaluation_value:
+        df = df.select(F.regexp_replace(F.col('Admins'), '[\"\'\\\\]', '_').alias('Admins'))
+        adminlist_1 = [i.Admins for i in df.collect()]
+        # additional_details is typed map<string, string> — a list value would
+        # silently fail from_json and drop the whole row. Encode admins as
+        # STRING → STRING, matching the GOV-42/GOV-45 sample-dict pattern.
+        sample = adminlist_1[:INFO6_SAMPLE_LIMIT]
+        adminlist_dict = {str(i): name for i, name in enumerate(sample)}
+        if len(adminlist_1) > INFO6_SAMPLE_LIMIT:
+            adminlist_dict['_summary'] = f'{len(adminlist_1)} admins — showing first {INFO6_SAMPLE_LIMIT}'
         return (check_id, 1, adminlist_dict)
     else:
         return (check_id, 0, {})

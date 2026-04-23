@@ -29,12 +29,11 @@ class Check27_AdminCount(BaseValidator):
 
         members = groups[0].get("members", [])
         admin_count = len(members)
-        # evaluation_value from CSV is the threshold (default -1 means any count)
-        # SAT logic: fail if count > evaluation_value (which is -1 → always true if members exist)
-        # The real logic checks len(df.collect()) > admin_count_evaluation_value
-        # With evaluation_value = -1, any member list > -1 means fail → so 0 members = pass
-        # Actually, the check just reports admin count. With eval_value=-1, always fails if >-1
-        score = 1 if admin_count > 0 else 0
+        # SAT's rule compares len(df.collect()) > admin_count_evaluation_value.
+        # evaluation_value for INFO-6 in security_best_practices.csv = 2, so the
+        # threshold is "> 2 admins is a violation".
+        INFO6_THRESHOLD = 2
+        score = 1 if admin_count > INFO6_THRESHOLD else 0
         return score, {
             "admin_count": admin_count,
             "admins": [m.get("display") for m in members[:20]],
