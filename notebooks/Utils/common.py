@@ -157,17 +157,7 @@ def insertIntoControlTable(workspace_id, id, score, additional_details):
             VALUES ('{}', '{}', cast({} as int),  from_json('{}', 'MAP<STRING,STRING>'), {}, cast({} as timestamp))""".format(
         json_["analysis_schema_name"], workspace_id, id, score, jsonstr, run_id, ts
     )
-    try:
-        spark.sql(sql)
-    except Exception as e:
-        # Explicit debug: sqlctrl's outer try/except swallows exceptions
-        # silently, which hides INSERT failures (observed for INFO-6 / DP-2
-        # violations that never land a row in security_checks). Print the
-        # raw SQL plus the exception so the cause is visible in the
-        # notebook's stdout.
-        print(f"[insertIntoControlTable] INSERT FAILED for id={id} score={score}: {type(e).__name__}: {e}")
-        print(f"[insertIntoControlTable] SQL: {sql[:1500]}")
-        raise
+    spark.sql(sql)
 
 
 # COMMAND ----------

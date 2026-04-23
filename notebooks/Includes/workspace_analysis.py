@@ -70,6 +70,7 @@ workspaceId = workspace_id
 # COMMAND ----------
 
 from pyspark.sql.functions import regexp_replace,col
+from pyspark.sql import functions as F
 spark.sql(f"USE {json_['intermediate_schema']}")
 
 # COMMAND ----------
