@@ -461,20 +461,25 @@ if enabled:
 check_id='2' #Cluster Encryption
 enabled, sbp_rec = getSecurityBestPracticeRecord(check_id, cloud_type)
 
+DP2_SAMPLE_LIMIT = 50
 def local_disk_encryption(df):
-    if df is not None and len(df.columns) == 0:
-        cluster_dict = {'clusters' : 'all_interactive_clusters'}
-        print(cluster_dict)
-        return (check_id, 1, cluster_dict) 
-    elif df is not None and not isEmpty(df):
-        df = df.select(F.col('cluster_id'), F.regexp_replace(F.col('cluster_name'), '[\"\'\\\\]', '_').alias('cluster_name'))  
-        clusters = df.collect()
-        clusterslst = [[i.cluster_id, i.cluster_name] for i in clusters]
-        clusters_dict = {"clusters" : clusterslst}
-        print(clusters_dict)
-        return (check_id, 1, clusters_dict)
-    else:
-        return (check_id, 0, {})   
+    # Empty df covers both "clusters_<ws> table not written (workspace has
+    # 0 clusters)" and "no clusters matched the filter (all encrypted)".
+    # Both legitimately mean zero unencrypted interactive clusters → pass.
+    # The prior `df.columns == 0 → violation` branch produced a false
+    # violation on every empty-clusters workspace.
+    if df is None or isEmpty(df):
+        return (check_id, 0, {})
+    df = df.select(F.col('cluster_id'),
+                   F.regexp_replace(F.col('cluster_name'), '[\"\'\\\\]', '_').alias('cluster_name'))
+    clusters = df.collect()
+    # additional_details is MAP<STRING, STRING>; encode cluster_id → cluster_name.
+    # A list-of-lists value would fail from_json and silently drop the row.
+    sample = clusters[:DP2_SAMPLE_LIMIT]
+    clusters_dict = {c.cluster_id: c.cluster_name for c in sample}
+    if len(clusters) > DP2_SAMPLE_LIMIT:
+        clusters_dict['_summary'] = f'{len(clusters)} unencrypted clusters — showing first {DP2_SAMPLE_LIMIT}'
+    return (check_id, 1, clusters_dict)
   
 if enabled:
     tbl_name = 'clusters' + '_' + workspace_id
