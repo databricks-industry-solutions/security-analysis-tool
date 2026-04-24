@@ -14,6 +14,8 @@ resources:
           libraries:
             - pypi:
                 package: dbl-sat-sdk
+          {{- else }}
+          environment_key: "default"
           {{- end }}
           notebook_task:
             notebook_path: "/Workspace/Applications/SAT/files/notebooks/security_analysis_driver"
@@ -32,4 +34,9 @@ resources:
               availability: SPOT_WITH_FALLBACK
               first_on_demand: 1
             {{- end }}
+      {{- else }}
+      environments:
+        - environment_key: "default"
+          spec:
+            client: "5"
       {{- end }}

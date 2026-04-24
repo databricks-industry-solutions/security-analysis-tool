@@ -39,9 +39,20 @@ resource "databricks_job" "brickhound_data_collection" {
     }
   }
 
+  dynamic "environment" {
+    for_each = var.run_on_serverless ? [1] : []
+    content {
+      environment_key = "default"
+      spec {
+        client = "5"
+      }
+    }
+  }
+
   task {
     task_key        = "BrickHoundDataCollection"
     job_cluster_key = var.run_on_serverless ? null : "brickhound_cluster"
+    environment_key = var.run_on_serverless ? "default" : null
 
     notebook_task {
       notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/permission_analysis_data_collection"
