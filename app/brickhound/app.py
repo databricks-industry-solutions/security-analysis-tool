@@ -648,6 +648,36 @@ def _audit_log_request():
         )
 
 
+@app.after_request
+def _security_headers(resp):
+    """Apply baseline security headers on every response.
+
+    The inline `<script>` and `<style>` blocks in get_main_html() require
+    `'unsafe-inline'` on script-src/style-src. Pulling that JS/CSS out into
+    served static files is a separate refactor; until then this header
+    set still adds meaningful defense-in-depth against MIME sniffing,
+    referrer leaks, and outbound resource loads.
+
+    `X-Frame-Options` is intentionally not set — the app is rendered in
+    the Databricks Apps UI inside an iframe, and a stricter value would
+    break that integration. Frame ancestry is left to the Databricks
+    platform's reverse proxy.
+    """
+    resp.headers.setdefault("Content-Security-Policy", (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ))
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
+
+
 @app.errorhandler(NoAccessError)
 def _no_access_handler(exc):
     """Translate a NoAccessError raised from exec_query[_df] into a friendly
