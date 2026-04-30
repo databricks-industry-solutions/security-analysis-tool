@@ -5107,23 +5107,23 @@ def api_browse_resources_by_type():
         
         if not run_id:
             return jsonify({'success': False, 'message': 'No data collection runs available'})
-        
-        # Sanitize inputs
-        resource_type = sanitize(resource_type)
-        run_id = sanitize(run_id)
-        
-        # Query all resources of the specified type
+
+        # Query all resources of the specified type — bound parameters only,
+        # no string interpolation of user input.
         sql = f"""
             SELECT id, name, owner
             FROM {VERTICES_TABLE}
-            WHERE run_id = '{run_id}'
-            AND node_type = '{resource_type}'
+            WHERE run_id = :run_id
+            AND node_type = :resource_type
             ORDER BY name
         """
-        
-        results = exec_query_df(sql)
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "resource_type": resource_type,
+        })
         resources = []
-        
+
         for row in results:
             resource = {
                 'id': row.get('id', ''),
@@ -5131,7 +5131,7 @@ def api_browse_resources_by_type():
                 'owner': row.get('owner', '')
             }
             resources.append(resource)
-        
+
         return jsonify({
             'success': True,
             'resources': resources,
@@ -5162,13 +5162,8 @@ def api_browse_principals_by_type():
         
         if not run_id:
             return jsonify({'success': False, 'message': 'No data collection runs available'})
-        
-        # Sanitize inputs
-        principal_type = sanitize(principal_type)
-        run_id = sanitize(run_id)
-        
+
         # Map to include both Account and non-Account types
-        type_filter = []
         if principal_type == 'User':
             type_filter = ['User', 'AccountUser']
         elif principal_type == 'Group':
@@ -5177,18 +5172,23 @@ def api_browse_principals_by_type():
             type_filter = ['ServicePrincipal', 'AccountServicePrincipal']
         else:
             type_filter = [principal_type]
-        
-        # Query all principals of the specified type
-        type_list = "', '".join(type_filter)
+
+        # Build a bound IN list — one named param per element, no string
+        # interpolation of user input.
+        placeholders = ", ".join(f":t{i}" for i in range(len(type_filter)))
+        sql_params = {"run_id": run_id}
+        for i, t in enumerate(type_filter):
+            sql_params[f"t{i}"] = t
+
         sql = f"""
             SELECT id, name, display_name, email
             FROM {VERTICES_TABLE}
-            WHERE run_id = '{run_id}'
-            AND node_type IN ('{type_list}')
+            WHERE run_id = :run_id
+            AND node_type IN ({placeholders})
             ORDER BY COALESCE(display_name, name, email, id)
         """
-        
-        results = exec_query_df(sql)
+
+        results = exec_query_df(sql, params=sql_params)
         principals = []
         
         for row in results:
@@ -5671,7 +5671,10 @@ def api_what_can_access():
     logger.debug(f"Principal found: id={p_id}, email={p_email}, name={p_name}")
     logger.debug(f"ID variants to search: {p_id_variants}")
 
-    type_filter = f"AND v.node_type = '{sanitize(resource_type)}'" if resource_type and resource_type != 'All' else ""
+    # Bind resource_type as a named SQL parameter rather than interpolating
+    # the user-supplied value — eliminates the only direct-POST-input
+    # site in this handler that would otherwise hit a sanitize-only path.
+    type_filter = "AND v.node_type = :resource_type" if resource_type and resource_type != 'All' else ""
 
     # Build SQL condition for all principal ID variants
     id_conditions = ' OR '.join([f"e.src = '{sanitize(vid)}'" for vid in p_id_variants])
@@ -5851,7 +5854,10 @@ def api_what_can_access():
     """
 
     logger.debug(f"Executing main query...")
-    results = exec_query_df(query)
+    main_query_params = {}
+    if resource_type and resource_type != 'All':
+        main_query_params["resource_type"] = resource_type
+    results = exec_query_df(query, params=main_query_params or None)
     logger.debug(f"Main query returned {len(results)} results")
 
     # Debug: Print first few results if any
