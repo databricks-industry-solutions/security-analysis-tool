@@ -102,6 +102,42 @@ The web UI provides:
   <img src={useBaseUrl('/img/principal_analysis_home.png')} alt="Permissions Analysis Web UI Home" />
 </div>
 
+#### Configure User Authorization (recommended)
+
+The app is intended for workspace and account admins. To make sure the
+app cannot act as a privileged proxy for users beyond their own Unity
+Catalog grants, configure user authorization so the app forwards each
+caller's identity to Unity Catalog:
+
+1. Open the app in the Databricks UI
+   (**Compute → Apps → sat-permissions-exp**).
+2. Click **Edit** → **User authorization**.
+3. Click **+ Add scope** and select `sql` (used by the Statement
+   Execution API to read the BrickHound tables).
+4. Save and redeploy the app.
+
+When user authorization is configured, the app constructs a per-request
+`WorkspaceClient` bound to the caller's forwarded OAuth token and Unity
+Catalog enforces the caller's grants on the BrickHound tables.
+
+**Required Unity Catalog grants (admin-only).** Grant the users or
+group who will run permissions analyses `SELECT` on the three BrickHound
+tables in the SAT analysis schema, e.g.:
+
+```sql
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_vertices             TO `<admin_group>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_edges                TO `<admin_group>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata  TO `<admin_group>`;
+```
+
+Without these grants, opening the app shows a friendly banner naming
+the missing tables instead of a generic error.
+
+> **Behavior during the migration.** If user authorization is not yet
+> configured, the app falls back to its service principal identity and
+> a one-time warning is logged. Functionality is unchanged. Configure
+> user authorization at your convenience to enable per-user enforcement.
+
 ## Key Capabilities
 
 ### Query Access Patterns

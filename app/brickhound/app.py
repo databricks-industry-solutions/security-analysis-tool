@@ -91,41 +91,121 @@ logger.info(f"[CONFIG FINAL] METADATA_TABLE={METADATA_TABLE}")
 _cached_run_id = None
 
 
-def get_connection():
-    """Get SQL connection using Databricks SDK"""
+class NoAccessError(Exception):
+    """Raised when the calling user lacks UC SELECT on the BrickHound tables.
+
+    Caught by the Flask errorhandler below and rendered as a friendly banner
+    rather than a 500 / SQL stack trace.
+    """
+
+
+def _looks_like_no_access(exc):
+    """Heuristic detection of UC permission / missing-grant errors.
+
+    The Databricks SDK does not expose a typed permission exception for the
+    Statement Execution API, so we inspect the message. Tightening this once
+    the SDK exposes a typed exception is a follow-up.
+    """
+    msg = str(exc).lower()
+    keywords = (
+        "permission denied",
+        "access denied",
+        "not authorized",
+        "unauthorized",
+        "insufficient_permissions",
+        "does not exist",       # UC returns "table or view ... does not exist" when the user can't see it
+        "table_not_found",
+        "schema_not_found",
+        "catalog_not_found",
+    )
+    return any(k in msg for k in keywords)
+
+
+def _no_access_message():
+    return (
+        f"You don't have permission to read the SAT permissions analysis schema. "
+        f"Ask your admin to grant SELECT on `{CATALOG}`.`{SCHEMA}`.brickhound_vertices, "
+        f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges, and "
+        f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata to your user or group."
+    )
+
+
+def get_user_email():
+    """Return the calling user's email from Databricks Apps headers.
+
+    `X-Forwarded-Email` is set by the Apps platform on every request reaching
+    the app process. Falls back to 'unknown' for local-dev / non-Apps contexts.
+    """
     try:
-        from databricks.sdk import WorkspaceClient
-        workspace_client = WorkspaceClient()
-        
-        # Debug: Show connection info (only first time)
-        if not hasattr(get_connection, '_logged'):
-            logger.info(f"Connected to: {workspace_client.config.host}")
-            logger.info(f"Auth type: {workspace_client.config.auth_type}")
-            get_connection._logged = True
-        
-        # Get warehouse ID from environment variable (set in app.yaml)
-        warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
+        return request.headers.get("X-Forwarded-Email", "unknown")
+    except RuntimeError:
+        # Outside a request context (e.g. module import) — return unknown.
+        return "unknown"
 
-        if not warehouse_id:
-            error_msg = (
-                "FATAL: WAREHOUSE_ID environment variable is not set in app.yaml.\n"
-                "Please configure WAREHOUSE_ID with a valid SQL warehouse ID before deploying."
+
+def get_connection():
+    """Get a Databricks SDK client, preferring the calling user's identity (OBO).
+
+    When the Apps platform forwards the user's OAuth token via the
+    `x-forwarded-access-token` header, we build a per-request WorkspaceClient
+    bound to that token. This makes every Statement Execution run as the
+    user, so UC enforces the user's grants on the brickhound tables.
+
+    If the header is absent (user authorization not configured for this app
+    in the Databricks UI, or local dev), we fall back to the app SP. This
+    keeps the app working during the OBO migration and surfaces a one-time
+    warning so an admin can finish the configuration.
+    """
+    user_token = None
+    try:
+        user_token = request.headers.get("x-forwarded-access-token")
+    except RuntimeError:
+        # Outside a request context — keep user_token None and use SP.
+        pass
+
+    if user_token:
+        workspace_client = WorkspaceClient(token=user_token)
+        if not hasattr(get_connection, "_obo_logged"):
+            logger.info(
+                "OBO mode: forwarding user access token (host=%s, user=%s)",
+                workspace_client.config.host, get_user_email(),
             )
-            logger.error(f"{error_msg}")
-            raise ValueError(error_msg)
+            get_connection._obo_logged = True
+    else:
+        workspace_client = WorkspaceClient()
+        if not hasattr(get_connection, "_sp_logged"):
+            logger.warning(
+                "App SP mode: no x-forwarded-access-token on request. Configure user "
+                "authorization for this app in the Databricks UI to enable OBO."
+            )
+            logger.info(
+                "Connected as app SP: host=%s auth_type=%s",
+                workspace_client.config.host, workspace_client.config.auth_type,
+            )
+            get_connection._sp_logged = True
 
-        if not hasattr(get_connection, '_warehouse_logged'):
-            logger.info(f"Using SQL Warehouse: {warehouse_id}")
-            get_connection._warehouse_logged = True
+    warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
+    if not warehouse_id:
+        error_msg = (
+            "FATAL: WAREHOUSE_ID environment variable is not set in app.yaml.\n"
+            "Please configure WAREHOUSE_ID with a valid SQL warehouse ID before deploying."
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
-        return workspace_client, warehouse_id
-    except Exception as e:
-        logger.exception("get_connection() failed")
-        raise
+    if not hasattr(get_connection, "_warehouse_logged"):
+        logger.info("Using SQL Warehouse: %s", warehouse_id)
+        get_connection._warehouse_logged = True
+
+    return workspace_client, warehouse_id
 
 
 def exec_query(sql_query):
-    """Execute query and return first column of first row"""
+    """Execute query and return first column of first row.
+
+    UC permission errors are translated to NoAccessError so the Flask
+    errorhandler can render a friendly banner instead of a 500.
+    """
     try:
         workspace_client, warehouse_id = get_connection()
         result = workspace_client.statement_execution.execute_statement(
@@ -140,13 +220,21 @@ def exec_query(sql_query):
                 value = result.result.data_array[0][0]
                 return int(value) if value else 0
         return 0
+    except NoAccessError:
+        raise
     except Exception as e:
+        if _looks_like_no_access(e):
+            raise NoAccessError(_no_access_message()) from e
         logger.exception("executing query")
         return 0
 
 
 def exec_query_df(sql_query):
-    """Execute query and return results as list of dicts"""
+    """Execute query and return results as list of dicts.
+
+    UC permission errors are translated to NoAccessError so the Flask
+    errorhandler can render a friendly banner instead of a 500.
+    """
     try:
         workspace_client, warehouse_id = get_connection()
         result = workspace_client.statement_execution.execute_statement(
@@ -177,7 +265,11 @@ def exec_query_df(sql_query):
                         rows.append({f"col{i}": val for i, val in enumerate(row)})
                 return rows
         return []
+    except NoAccessError:
+        raise
     except Exception as e:
+        if _looks_like_no_access(e):
+            raise NoAccessError(_no_access_message()) from e
         logger.exception("executing query")
         return []
 
@@ -472,6 +564,44 @@ def find_resource(identifier, run_id):
     """
     results = exec_query_df(query)
     return results[0] if results else None
+
+
+# ============================================================================
+# Request lifecycle: audit log + friendly no-access handler
+# ============================================================================
+
+
+@app.before_request
+def _audit_log_request():
+    """Emit one info-level log line per API request capturing the calling
+    user's identity (from Databricks Apps `X-Forwarded-Email`), the path,
+    and the upstream client IP. Provides per-user attribution without
+    requiring OBO to be configured.
+    """
+    if request.path.startswith("/api/") or request.path == "/":
+        logger.info(
+            "request: path=%s user=%s ip=%s req_id=%s",
+            request.path,
+            get_user_email(),
+            request.headers.get("X-Real-Ip", "-"),
+            request.headers.get("X-Request-Id", "-"),
+        )
+
+
+@app.errorhandler(NoAccessError)
+def _no_access_handler(exc):
+    """Translate a NoAccessError raised from exec_query[_df] into a friendly
+    JSON banner the UI can render. The full stack trace is left in app
+    logs (logger.exception) for admins to triage.
+    """
+    logger.warning(
+        "no_access: user=%s path=%s message=%s",
+        get_user_email(), request.path, str(exc),
+    )
+    return jsonify({
+        "error": "no_access",
+        "message": str(exc),
+    }), 403
 
 
 # ============================================================================
@@ -7562,4 +7692,8 @@ if __name__ == '__main__':
     # Debug mode should be explicitly enabled via environment variable
     # Never enable debug=True in production - it exposes sensitive information
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
-    app.run(host='0.0.0.0', port=8000, debug=debug_mode)
+    # Binding to 0.0.0.0 is required by the Databricks Apps runtime — the
+    # platform's reverse proxy terminates SSO/OAuth and forwards traffic
+    # to the container on this address. The app is not directly reachable
+    # from the public internet.
+    app.run(host='0.0.0.0', port=8000, debug=debug_mode)  # nosemgrep: python.flask.security.audit.app-run-param-config.avoid_app_run_with_bad_host
