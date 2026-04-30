@@ -4837,6 +4837,9 @@ def api_runs():
             'runs': runs,
             'current_run_id': latest_run
         })
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception:
         req_id = uuid.uuid4().hex[:8]
         logger.exception("%s failed (req=%s)", request.path, req_id)
@@ -4902,6 +4905,9 @@ def api_search_principals():
         
         return jsonify({'principals': principals})
         
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception:
         req_id = uuid.uuid4().hex[:8]
         logger.exception("%s failed (req=%s)", request.path, req_id)
@@ -4961,6 +4967,9 @@ def api_search_resources():
         
         return jsonify({'resources': resources})
         
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception:
         req_id = uuid.uuid4().hex[:8]
         logger.exception("%s failed (req=%s)", request.path, req_id)
@@ -5012,6 +5021,9 @@ def api_browse_resources_by_type():
             'count': len(resources)
         })
         
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception:
         req_id = uuid.uuid4().hex[:8]
         logger.exception("%s failed (req=%s)", request.path, req_id)
@@ -5077,6 +5089,9 @@ def api_browse_principals_by_type():
             'count': len(principals)
         })
         
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception:
         req_id = uuid.uuid4().hex[:8]
         logger.exception("%s failed (req=%s)", request.path, req_id)
@@ -5156,6 +5171,9 @@ def api_stats():
             'workspaces_collected': workspaces_collected,
             'workspaces_failed': workspaces_failed
         })
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception:
         req_id = uuid.uuid4().hex[:8]
         logger.exception("%s failed (req=%s)", request.path, req_id)
@@ -5179,6 +5197,9 @@ def api_collection_coverage():
             'run_id': run_id,
             **coverage
         })
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception:
         req_id = uuid.uuid4().hex[:8]
         logger.exception("%s failed (req=%s)", request.path, req_id)
@@ -6867,6 +6888,9 @@ def api_impersonation_paths():
         })
 
     except NoAccessError:
+        raise
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
         raise
     except Exception:
         req_id = uuid.uuid4().hex[:8]

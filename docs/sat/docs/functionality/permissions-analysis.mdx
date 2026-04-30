@@ -102,19 +102,14 @@ The web UI provides:
   <img src={useBaseUrl('/img/principal_analysis_home.png')} alt="Permissions Analysis Web UI Home" />
 </div>
 
-#### Configure User Authorization (recommended)
+#### User Authorization
 
-The app is intended for workspace and account admins. To make sure the
-app cannot act as a privileged proxy for users beyond their own Unity
-Catalog grants, configure user authorization so the app forwards each
-caller's identity to Unity Catalog:
-
-1. Open the app in the Databricks UI
-   (**Compute → Apps → sat-permissions-exp**).
-2. Click **Edit** → **User authorization**.
-3. Click **+ Add scope** and select `sql` (used by the Statement
-   Execution API to read the BrickHound tables).
-4. Save and redeploy the app.
+The app is intended for workspace and account admins. So that the app
+cannot act as a privileged proxy beyond each caller's Unity Catalog
+grants, the SAT install configures user authorization on the app
+declaratively (via DABS or Terraform) — the `sql` scope required by
+the Statement Execution API is set automatically. No manual UI step
+is required.
 
 When user authorization is configured, the app constructs a per-request
 `WorkspaceClient` bound to the caller's forwarded OAuth token and Unity
@@ -133,10 +128,16 @@ GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata  TO 
 Without these grants, opening the app shows a friendly banner naming
 the missing tables instead of a generic error.
 
-> **Behavior during the migration.** If user authorization is not yet
-> configured, the app falls back to its service principal identity and
-> a one-time warning is logged. Functionality is unchanged. Configure
-> user authorization at your convenience to enable per-user enforcement.
+> **Manual override.** If you need to add or remove scopes manually,
+> open the app in the Databricks UI (**Compute → Apps →
+> sat-permissions-exp** → **Edit** → **User authorization**) and edit
+> the scope list. The IaC default of `["sql"]` is sufficient for
+> normal use.
+>
+> **SP fallback.** If user authorization ever gets cleared (no scopes
+> configured), the app automatically falls back to its service
+> principal identity and a one-time warning is logged. Functionality
+> is unchanged. Re-add the `sql` scope to restore per-user enforcement.
 
 ## Key Capabilities
 
