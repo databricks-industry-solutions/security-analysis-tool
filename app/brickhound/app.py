@@ -100,19 +100,38 @@ class NoAccessError(Exception):
 
 
 def _looks_like_no_access(exc):
-    """Heuristic detection of UC permission / missing-grant errors.
+    """Detect UC permission, missing-grant, or missing-OBO-scope errors.
 
-    The Databricks SDK does not expose a typed permission exception for the
-    Statement Execution API, so we inspect the message. Tightening this once
-    the SDK exposes a typed exception is a follow-up.
+    Matches three classes of failure that should render as a friendly
+    no-access banner rather than a generic 500 / silent empty result:
+      1. Typed `PermissionDenied` / `Unauthenticated` from the Databricks
+         SDK (preferred — the SDK does expose these for `execute_statement`).
+      2. `403 Forbidden` with `Invalid scope, required scopes: sql` —
+         user authorization is configured but the `sql` scope isn't in
+         the scope list.
+      3. Message-based fallback covering UC permission errors and
+         "table/schema/catalog does not exist" (UC hides resources the
+         caller can't see).
     """
+    try:
+        from databricks.sdk.errors.platform import (
+            PermissionDenied, Unauthenticated,
+        )
+        if isinstance(exc, (PermissionDenied, Unauthenticated)):
+            return True
+    except ImportError:
+        pass
     msg = str(exc).lower()
     keywords = (
+        "invalid scope",
+        "required scopes",
         "permission denied",
+        "permissiondenied",
         "access denied",
         "not authorized",
         "unauthorized",
         "insufficient_permissions",
+        "403 forbidden",
         "does not exist",       # UC returns "table or view ... does not exist" when the user can't see it
         "table_not_found",
         "schema_not_found",
@@ -123,8 +142,11 @@ def _looks_like_no_access(exc):
 
 def _no_access_message():
     return (
-        f"You don't have permission to read the SAT permissions analysis schema. "
-        f"Ask your admin to grant SELECT on `{CATALOG}`.`{SCHEMA}`.brickhound_vertices, "
+        "You don't have permission to read the SAT permissions analysis schema. "
+        "Ask your admin to (1) configure user authorization on this app with "
+        "the `sql` scope (Compute → Apps → sat-permissions-exp → Edit → User "
+        "authorization), and (2) grant SELECT on "
+        f"`{CATALOG}`.`{SCHEMA}`.brickhound_vertices, "
         f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges, and "
         f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata to your user or group."
     )
