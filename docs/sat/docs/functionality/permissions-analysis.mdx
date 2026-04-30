@@ -139,6 +139,26 @@ the missing tables instead of a generic error.
 > principal identity and a one-time warning is logged. Functionality
 > is unchanged. Re-add the `sql` scope to restore per-user enforcement.
 
+#### Upgrading from SAT 0.7.x
+
+If you are upgrading an existing SAT install (where the BrickHound app
+ran without user authorization), each user who had previously opened
+the app needs to re-consent once. They will see the friendly "missing
+the `sql` scope" banner until they do. Three workarounds, easiest first:
+
+1. **Open the app URL in a private/incognito window** — fresh session,
+   no cached consent, the platform prompts for consent immediately.
+2. **Clear cookies for the workspace domain** in the regular browser
+   (Chrome → site cookies for `<workspace>.cloud.databricks.com` →
+   delete), then reopen the app.
+3. **Revoke the prior authorization** from the user's profile settings
+   if your workspace exposes a connected-apps list, then reopen the
+   app.
+
+New installs do not hit this — fresh installs declare
+`user_api_scopes: ["sql"]` from the start, so the first user open
+prompts for the right scope set automatically.
+
 ## Key Capabilities
 
 ### Query Access Patterns
