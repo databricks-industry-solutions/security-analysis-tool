@@ -250,21 +250,50 @@ def get_connection():
     return workspace_client, warehouse_id
 
 
-def exec_query(sql_query):
+def _build_sdk_parameters(params):
+    """Map a {name: value} dict to the SDK's parameter list shape.
+
+    Each value is sent as STRING — Databricks SQL coerces from there into
+    the column type at execution time. Lazy import so older SDKs that
+    don't expose StatementParameterListItem at this path don't break the
+    no-params codepath.
+    """
+    if not params:
+        return None
+    from databricks.sdk.service.sql import StatementParameterListItem
+    return [
+        StatementParameterListItem(
+            name=name,
+            value=None if value is None else str(value),
+            type="STRING",
+        )
+        for name, value in params.items()
+    ]
+
+
+def exec_query(sql_query, params=None):
     """Execute query and return first column of first row.
+
+    `params` is a {name: value} dict bound to `:name` placeholders in
+    the SQL. Always prefer bind params over string interpolation for
+    user-controlled values.
 
     UC permission errors are translated to NoAccessError so the Flask
     errorhandler can render a friendly banner instead of a 500.
     """
     try:
         workspace_client, warehouse_id = get_connection()
-        result = workspace_client.statement_execution.execute_statement(
-            warehouse_id=warehouse_id,
-            catalog=CATALOG,
-            schema=SCHEMA,
-            statement=sql_query,
-            wait_timeout="30s"
-        )
+        kwargs = {
+            "warehouse_id": warehouse_id,
+            "catalog": CATALOG,
+            "schema": SCHEMA,
+            "statement": sql_query,
+            "wait_timeout": "30s",
+        }
+        sdk_params = _build_sdk_parameters(params)
+        if sdk_params:
+            kwargs["parameters"] = sdk_params
+        result = workspace_client.statement_execution.execute_statement(**kwargs)
         if hasattr(result, 'result') and result.result:
             if hasattr(result.result, 'data_array') and result.result.data_array:
                 value = result.result.data_array[0][0]
@@ -279,21 +308,29 @@ def exec_query(sql_query):
         return 0
 
 
-def exec_query_df(sql_query):
+def exec_query_df(sql_query, params=None):
     """Execute query and return results as list of dicts.
+
+    `params` is a {name: value} dict bound to `:name` placeholders in
+    the SQL. Always prefer bind params over string interpolation for
+    user-controlled values.
 
     UC permission errors are translated to NoAccessError so the Flask
     errorhandler can render a friendly banner instead of a 500.
     """
     try:
         workspace_client, warehouse_id = get_connection()
-        result = workspace_client.statement_execution.execute_statement(
-            warehouse_id=warehouse_id,
-            catalog=CATALOG,
-            schema=SCHEMA,
-            statement=sql_query,
-            wait_timeout="50s"
-        )
+        kwargs = {
+            "warehouse_id": warehouse_id,
+            "catalog": CATALOG,
+            "schema": SCHEMA,
+            "statement": sql_query,
+            "wait_timeout": "50s",
+        }
+        sdk_params = _build_sdk_parameters(params)
+        if sdk_params:
+            kwargs["parameters"] = sdk_params
+        result = workspace_client.statement_execution.execute_statement(**kwargs)
         if hasattr(result, 'result') and result.result:
             if hasattr(result.result, 'data_array') and result.result.data_array:
                 columns = []
@@ -431,14 +468,17 @@ def get_collection_coverage(run_id=None):
         return None
 
     try:
-        result = exec_query_df(f"""
+        result = exec_query_df(
+            f"""
             SELECT workspaces_collected, workspaces_failed, collection_mode,
                    CAST(collection_timestamp AS STRING) as collection_timestamp,
                    collected_by, vertices_count, edges_count
             FROM {METADATA_TABLE}
-            WHERE run_id = '{sanitize(run_id)}'
+            WHERE run_id = :run_id
             LIMIT 1
-        """)
+            """,
+            params={"run_id": run_id},
+        )
         if result and len(result) > 0:
             row = result[0]
             coverage = {
@@ -480,10 +520,26 @@ def get_collection_coverage(run_id=None):
 
 
 def sanitize(value):
-    """Sanitize string for SQL"""
+    """Escape a string for safe use as a SQL string literal.
+
+    DEPRECATED — prefer bind parameters via `exec_query_df(..., params=...)`
+    over interpolating sanitized values. This helper is kept for sites
+    that build dynamic SQL fragments (e.g. IN-list construction over
+    runtime-determined principal-ID variants); those will be migrated to
+    parameterized queries in a follow-up pass.
+
+    Escapes both single quotes and backslashes — Spark SQL's default
+    string parser doesn't honor backslash escapes, but defense-in-depth
+    against future parser changes (or operators that read these values
+    via Spark configurations that DO honor escapes) is cheap.
+    """
     if not value:
         return ""
-    return str(value).replace("'", "''")
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("'", "''")
+    )
 
 
 def get_recursive_group_cte(principal_id, principal_email, principal_name, run_id):
@@ -560,17 +616,16 @@ def find_principal(identifier, run_id):
     """
     if not identifier:
         return None
-    safe_id = sanitize(identifier)
     # Order by node_type to prefer AccountUser/AccountGroup/AccountServicePrincipal
     # These have account-level group memberships with WorkspaceAccess edges
     query = f"""
     SELECT id, name, display_name, email, node_type, owner
     FROM {VERTICES_TABLE}
-    WHERE run_id = '{run_id}'
-      AND (id = '{safe_id}'
-       OR LOWER(email) = LOWER('{safe_id}')
-       OR LOWER(name) = LOWER('{safe_id}')
-       OR LOWER(display_name) = LOWER('{safe_id}'))
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(email) = LOWER(:ident)
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
     AND node_type IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
     ORDER BY CASE
         WHEN node_type = 'AccountUser' THEN 1
@@ -580,7 +635,7 @@ def find_principal(identifier, run_id):
     END
     LIMIT 1
     """
-    results = exec_query_df(query)
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
     return results[0] if results else None
 
 
@@ -591,19 +646,18 @@ def find_account_principal(identifier, run_id):
     """
     if not identifier:
         return None
-    safe_id = sanitize(identifier)
     query = f"""
     SELECT id, name, display_name, email, node_type, owner
     FROM {VERTICES_TABLE}
-    WHERE run_id = '{run_id}'
-      AND (id = '{safe_id}'
-       OR LOWER(email) = LOWER('{safe_id}')
-       OR LOWER(name) = LOWER('{safe_id}')
-       OR LOWER(display_name) = LOWER('{safe_id}'))
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(email) = LOWER(:ident)
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
     AND node_type IN ('AccountUser', 'AccountGroup', 'AccountServicePrincipal')
     LIMIT 1
     """
-    results = exec_query_df(query)
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
     return results[0] if results else None
 
 
@@ -611,18 +665,17 @@ def find_resource(identifier, run_id):
     """Find a resource by ID, name, or display_name"""
     if not identifier:
         return None
-    safe_id = sanitize(identifier)
     query = f"""
     SELECT id, name, display_name, email, node_type, owner
     FROM {VERTICES_TABLE}
-    WHERE run_id = '{run_id}'
-      AND (id = '{safe_id}'
-       OR LOWER(name) = LOWER('{safe_id}')
-       OR LOWER(display_name) = LOWER('{safe_id}'))
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
     AND node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
     LIMIT 1
     """
-    results = exec_query_df(query)
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
     return results[0] if results else None
 
 
@@ -4909,35 +4962,40 @@ def api_search_principals():
         if not run_id:
             return jsonify({'principals': [], 'error': 'No data collection runs available'})
         
-        # Escape single quotes in the query for SQL
-        query_escaped = query.replace("'", "''")
-        search_pattern = f"%{query_escaped}%"
-        starts_with_pattern = f"{query_escaped}%"
-        
+        # Build LIKE patterns from user input. `query` is bound via params
+        # below — string interpolation only happens server-side, against
+        # the bound value, so the user can't inject SQL.
+        search_pattern = f"%{query}%"
+        starts_with_pattern = f"{query}%"
+
         # Search - filter to only principals and current run_id
         # Prioritize results that START with the query
         sql = f"""
             SELECT DISTINCT id, name, node_type, display_name, email
             FROM {VERTICES_TABLE}
-            WHERE run_id = '{run_id}'
+            WHERE run_id = :run_id
             AND node_type IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
             AND (
-                LOWER(COALESCE(name, '')) LIKE LOWER('{search_pattern}')
-                OR LOWER(COALESCE(display_name, '')) LIKE LOWER('{search_pattern}')
-                OR LOWER(COALESCE(email, '')) LIKE LOWER('{search_pattern}')
+                LOWER(COALESCE(name, '')) LIKE LOWER(:search_pattern)
+                OR LOWER(COALESCE(display_name, '')) LIKE LOWER(:search_pattern)
+                OR LOWER(COALESCE(email, '')) LIKE LOWER(:search_pattern)
             )
             ORDER BY
                 CASE
-                    WHEN LOWER(name) LIKE LOWER('{starts_with_pattern}') THEN 1
-                    WHEN LOWER(display_name) LIKE LOWER('{starts_with_pattern}') THEN 2
-                    WHEN LOWER(email) LIKE LOWER('{starts_with_pattern}') THEN 3
+                    WHEN LOWER(name) LIKE LOWER(:starts_with_pattern) THEN 1
+                    WHEN LOWER(display_name) LIKE LOWER(:starts_with_pattern) THEN 2
+                    WHEN LOWER(email) LIKE LOWER(:starts_with_pattern) THEN 3
                     ELSE 4
                 END,
                 name
             LIMIT {limit}
         """
-        
-        results = exec_query_df(sql)
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "search_pattern": search_pattern,
+            "starts_with_pattern": starts_with_pattern,
+        })
         principals = []
         
         for row in results:
@@ -4976,32 +5034,34 @@ def api_search_resources():
         if not run_id:
             return jsonify({'resources': [], 'error': 'No data collection runs available'})
         
-        # Escape single quotes in the query for SQL
-        query_escaped = query.replace("'", "''")
-        search_pattern = f"%{query_escaped}%"
-        starts_with_pattern = f"{query_escaped}%"
-        
+        search_pattern = f"%{query}%"
+        starts_with_pattern = f"{query}%"
+
         # Search - filter to only resources and current run_id
         # Prioritize results that START with the query
         sql = f"""
             SELECT DISTINCT id, name, node_type
             FROM {VERTICES_TABLE}
-            WHERE run_id = '{run_id}'
-            AND node_type IN ('Catalog', 'Schema', 'Table', 'View', 'Volume', 'Function', 
-                              'Cluster', 'ClusterPolicy', 'Job', 'Warehouse', 'ServingEndpoint', 
+            WHERE run_id = :run_id
+            AND node_type IN ('Catalog', 'Schema', 'Table', 'View', 'Volume', 'Function',
+                              'Cluster', 'ClusterPolicy', 'Job', 'Warehouse', 'ServingEndpoint',
                               'SecretScope', 'Metastore')
-            AND LOWER(COALESCE(name, '')) LIKE LOWER('{search_pattern}')
+            AND LOWER(COALESCE(name, '')) LIKE LOWER(:search_pattern)
             ORDER BY
                 CASE
-                    WHEN LOWER(name) LIKE LOWER('{starts_with_pattern}') THEN 1
+                    WHEN LOWER(name) LIKE LOWER(:starts_with_pattern) THEN 1
                     ELSE 2
                 END,
                 node_type,
                 name
             LIMIT {limit}
         """
-        
-        results = exec_query_df(sql)
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "search_pattern": search_pattern,
+            "starts_with_pattern": starts_with_pattern,
+        })
         resources = []
         
         for row in results:
