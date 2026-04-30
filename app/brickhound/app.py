@@ -140,12 +140,29 @@ def _looks_like_no_access(exc):
     return any(k in msg for k in keywords)
 
 
-def _no_access_message():
+def _no_access_message(exc=None):
+    """Pick the most accurate banner text based on the underlying error.
+
+    Two distinct failure modes:
+      * Missing OAuth scope on the app — the platform forwards a token but
+        it doesn't carry `sql`, so the warehouse rejects with
+        "Invalid scope, required scopes: sql". Fix is on the app config.
+      * Missing UC grant — the user lacks SELECT on the brickhound_*
+        tables. Fix is on the schema grants.
+    """
+    msg = str(exc).lower() if exc is not None else ""
+    if "invalid scope" in msg or "required scopes" in msg:
+        return (
+            "This app's user authorization is missing the `sql` scope, "
+            "which the Statement Execution API requires to read the "
+            "BrickHound tables. Ask your admin to add it: redeploy SAT "
+            "(`./install.sh` or `terraform apply`), or set it manually "
+            "via Compute → Apps → sat-permissions-exp → Edit → User "
+            "authorization → + Add scope → `sql`."
+        )
     return (
-        "You don't have permission to read the SAT permissions analysis schema. "
-        "Ask your admin to (1) configure user authorization on this app with "
-        "the `sql` scope (Compute → Apps → sat-permissions-exp → Edit → User "
-        "authorization), and (2) grant SELECT on "
+        "You don't have Unity Catalog SELECT on the SAT permissions "
+        "analysis tables. Ask your admin to grant SELECT on "
         f"`{CATALOG}`.`{SCHEMA}`.brickhound_vertices, "
         f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges, and "
         f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata to your user or group."
@@ -257,7 +274,7 @@ def exec_query(sql_query):
         raise
     except Exception as e:
         if _looks_like_no_access(e):
-            raise NoAccessError(_no_access_message()) from e
+            raise NoAccessError(_no_access_message(e)) from e
         logger.exception("executing query")
         return 0
 
@@ -302,7 +319,7 @@ def exec_query_df(sql_query):
         raise
     except Exception as e:
         if _looks_like_no_access(e):
-            raise NoAccessError(_no_access_message()) from e
+            raise NoAccessError(_no_access_message(e)) from e
         logger.exception("executing query")
         return []
 
