@@ -164,7 +164,18 @@ def get_connection():
         pass
 
     if user_token:
-        workspace_client = WorkspaceClient(token=user_token)
+        # `auth_type="pat"` is required: without it the SDK's auth resolver
+        # sees the user's bearer token AND the app SP env vars
+        # (DATABRICKS_CLIENT_ID/SECRET injected by Databricks Apps) and
+        # raises `more than one authorization method configured: oauth and
+        # pat`. Pinning auth_type forces the SDK to use only the user token.
+        # `host` must also be explicit so the env-driven OAuth path is fully
+        # bypassed.
+        workspace_client = WorkspaceClient(
+            host=os.getenv("DATABRICKS_HOST"),
+            token=user_token,
+            auth_type="pat",
+        )
         if not hasattr(get_connection, "_obo_logged"):
             logger.info(
                 "OBO mode: forwarding user access token (host=%s, user=%s)",
