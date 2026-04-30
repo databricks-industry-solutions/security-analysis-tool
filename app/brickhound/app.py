@@ -318,6 +318,9 @@ def get_latest_run_id():
             value = result[0].get('run_id') or result[0].get('col0')
             return _validate_run_id(value)
         return None
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception as e:
         logger.exception("getting latest run_id")
         return None
@@ -373,6 +376,9 @@ def get_available_runs(limit=10):
         result = exec_query_df(query)
         logger.debug(f"Query returned {len(result) if result else 0} rows")
         return result
+    except NoAccessError:
+        # Don't fall back — the user lacks access; surface the friendly banner.
+        raise
     except Exception as e:
         logger.exception("Error getting available runs with new columns")
         # Fall back to basic columns (for backwards compatibility)
@@ -391,6 +397,8 @@ def get_available_runs(limit=10):
             result = exec_query_df(query2)
             logger.debug(f"Fallback query returned {len(result) if result else 0} rows")
             return result
+        except NoAccessError:
+            raise
         except Exception as e2:
             logger.exception("Error getting available runs (fallback)")
             return []
@@ -438,6 +446,8 @@ def get_collection_coverage(run_id=None):
                     pass
             return coverage
         return None
+    except NoAccessError:
+        raise
     except Exception as e:
         logger.exception("getting collection coverage with new columns")
         # Return empty coverage for backwards compatibility
@@ -5110,6 +5120,8 @@ def api_stats():
                 # Try different possible key names (SDK might return col0, col1 if column names fail)
                 collection_timestamp = row.get('ts') or row.get('col0')
                 collected_by = row.get('cb') or row.get('col1')
+        except NoAccessError:
+            raise
         except Exception as e:
             logger.exception("loading collection metadata")
             pass  # Table may not exist yet
@@ -6207,6 +6219,8 @@ def find_indirect_escalation_paths(principal, node_info, edge_info, run_id):
 
     try:
         results = exec_query_df(indirect_query)
+    except NoAccessError:
+        raise
     except Exception as e:
         logger.debug(f"  Warning: Error finding indirect paths: {e}")
         return []
@@ -6852,14 +6866,17 @@ def api_impersonation_paths():
             'paths': formatted_paths
         })
 
-    except Exception as e:
-        error_msg = str(e)
-        logger.debug(f"ERROR in impersonation-paths: {error_msg}")
+    except NoAccessError:
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
         return jsonify({
             'success': False,
-            'message': f"Server error: {error_msg}",
+            'message': 'internal error',
+            'request_id': req_id,
             'paths': []
-        })
+        }), 500
 
 
 @app.route('/api/principals-list')
@@ -7648,6 +7665,8 @@ def report_secret_scopes_filters():
     query_error = None
     try:
         scopes_results = exec_query_df(scopes_query)
+    except NoAccessError:
+        raise
     except Exception as e:
         scopes_results = []
         query_error = str(e)
