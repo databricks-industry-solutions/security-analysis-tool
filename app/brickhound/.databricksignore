@@ -1,0 +1,13 @@
+# Exclude Python bytecode caches from Databricks Apps deploys.
+# Stale __pycache__/*.pyc would otherwise be uploaded alongside app.py
+# and Python may load the (older) bytecode instead of the source — code
+# changes appear not to take effect until the cache is purged.
+__pycache__/
+*.pyc
+*.pyo
+
+# Local editor / OS noise that has no place in the deployed app.
+.DS_Store
+*.swp
+.vscode/
+.idea/
