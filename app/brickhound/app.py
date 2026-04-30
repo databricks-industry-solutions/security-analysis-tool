@@ -2382,16 +2382,29 @@ def get_main_html():
             return 'low';  // Neutral styling for all permissions
         }
 
-        // Format principal name with identifier for uniqueness
-        // Shows "Display Name (email)" or "Display Name (name)" to distinguish principals with same display name
+        // HTML-escape any string before interpolating into an innerHTML
+        // template. Defined early so every renderer below can use it.
+        // Uses textContent assignment which is the canonical browser-safe
+        // escape (handles <, >, &, ", ', NUL, etc. consistently).
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+
+        // Format principal name with identifier for uniqueness.
+        // Shows "Display Name (email)" or "Display Name (name)" to
+        // distinguish principals with same display name. Returns
+        // HTML-escaped text safe to drop into an `${...}` interpolation
+        // inside an innerHTML template.
         function formatPrincipalName(displayName, email, name, id) {
             const display = displayName || name || email || id || 'Unknown';
             const identifier = email || name || id;
-            // If display name is different from identifier, show both
-            if (identifier && display.toLowerCase() !== identifier.toLowerCase()) {
-                return `${display} (${identifier})`;
+            if (identifier && String(display).toLowerCase() !== String(identifier).toLowerCase()) {
+                return `${escapeHtml(display)} (${escapeHtml(identifier)})`;
             }
-            return display;
+            return escapeHtml(display);
         }
 
         function showLoading(containerId) {
@@ -4312,7 +4325,9 @@ def get_main_html():
                     let html = '<option value="">-- Select from list --</option>';
                     result.data.forEach(p => {
                         const displayName = formatPrincipalName(p.display_name, p.email, p.name, p.id);
-                        html += `<option value="${p.email || p.name || p.id}">${displayName}</option>`;
+                        // displayName is already HTML-escaped via formatPrincipalName.
+                        // Escape the option value separately to prevent attribute injection.
+                        html += `<option value="${escapeHtml(p.email || p.name || p.id)}">${displayName}</option>`;
                     });
                     select.innerHTML = html;
 
@@ -4827,11 +4842,7 @@ def get_main_html():
             analyzeResource();
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        // escapeHtml is defined earlier — see top of inline <script>.
 
         // Enter key handlers
         ['principal', 'resource', 'paths', 'risk'].forEach(id => {
