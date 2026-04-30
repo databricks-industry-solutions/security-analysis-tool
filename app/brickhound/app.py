@@ -9,6 +9,7 @@ Inspired by BloodHound for Active Directory analysis.
 from flask import Flask, request, jsonify
 import os
 import re
+import uuid
 import logging
 from databricks.sdk import WorkspaceClient
 
@@ -32,7 +33,7 @@ def _validate_run_id(value):
 app = Flask(__name__)
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger(__name__)
 
 # Configuration - Read from environment variables (set in app.yaml)
@@ -98,8 +99,8 @@ def get_connection():
         
         # Debug: Show connection info (only first time)
         if not hasattr(get_connection, '_logged'):
-            print(f"[AUTH] Connected to: {workspace_client.config.host}")
-            print(f"[AUTH] Auth type: {workspace_client.config.auth_type}")
+            logger.info(f"Connected to: {workspace_client.config.host}")
+            logger.info(f"Auth type: {workspace_client.config.auth_type}")
             get_connection._logged = True
         
         # Get warehouse ID from environment variable (set in app.yaml)
@@ -110,16 +111,16 @@ def get_connection():
                 "FATAL: WAREHOUSE_ID environment variable is not set in app.yaml.\n"
                 "Please configure WAREHOUSE_ID with a valid SQL warehouse ID before deploying."
             )
-            print(f"[AUTH] ERROR: {error_msg}")
+            logger.error(f"{error_msg}")
             raise ValueError(error_msg)
 
         if not hasattr(get_connection, '_warehouse_logged'):
-            print(f"[AUTH] Using SQL Warehouse: {warehouse_id}")
+            logger.info(f"Using SQL Warehouse: {warehouse_id}")
             get_connection._warehouse_logged = True
 
         return workspace_client, warehouse_id
     except Exception as e:
-        print(f"ERROR in get_connection(): {e}")
+        logger.exception("get_connection() failed")
         raise
 
 
@@ -140,7 +141,7 @@ def exec_query(sql_query):
                 return int(value) if value else 0
         return 0
     except Exception as e:
-        print(f"Error executing query: {e}")
+        logger.exception("executing query")
         return 0
 
 
@@ -177,9 +178,7 @@ def exec_query_df(sql_query):
                 return rows
         return []
     except Exception as e:
-        print(f"Error executing query: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("executing query")
         return []
 
 
@@ -195,7 +194,7 @@ def get_latest_run_id():
             return _validate_run_id(value)
         return None
     except Exception as e:
-        print(f"Error getting latest run_id: {e}")
+        logger.exception("getting latest run_id")
         return None
 
 
@@ -229,7 +228,7 @@ def get_current_run_id():
 
 def get_available_runs(limit=10):
     """Get list of available collection runs"""
-    print(f"[DEBUG] get_available_runs called, METADATA_TABLE={METADATA_TABLE}")
+    logger.debug(f"get_available_runs called, METADATA_TABLE={METADATA_TABLE}")
     try:
         # Try query with new columns first
         query = f"""
@@ -245,14 +244,12 @@ def get_available_runs(limit=10):
             ORDER BY collection_timestamp DESC
             LIMIT {limit}
         """
-        print(f"[DEBUG] Executing query: {query[:100]}...")
+        logger.debug(f"Executing query: {query[:100]}...")
         result = exec_query_df(query)
-        print(f"[DEBUG] Query returned {len(result) if result else 0} rows")
+        logger.debug(f"Query returned {len(result) if result else 0} rows")
         return result
     except Exception as e:
-        print(f"[ERROR] Error getting available runs with new columns: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("Error getting available runs with new columns")
         # Fall back to basic columns (for backwards compatibility)
         try:
             query2 = f"""
@@ -265,14 +262,12 @@ def get_available_runs(limit=10):
                 ORDER BY collection_timestamp DESC
                 LIMIT {limit}
             """
-            print(f"[DEBUG] Executing fallback query: {query2[:100]}...")
+            logger.debug(f"Executing fallback query: {query2[:100]}...")
             result = exec_query_df(query2)
-            print(f"[DEBUG] Fallback query returned {len(result) if result else 0} rows")
+            logger.debug(f"Fallback query returned {len(result) if result else 0} rows")
             return result
         except Exception as e2:
-            print(f"[ERROR] Error getting available runs (fallback): {e2}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Error getting available runs (fallback)")
             return []
 
 
@@ -319,7 +314,7 @@ def get_collection_coverage(run_id=None):
             return coverage
         return None
     except Exception as e:
-        print(f"Error getting collection coverage with new columns: {e}")
+        logger.exception("getting collection coverage with new columns")
         # Return empty coverage for backwards compatibility
         return {
             'collection_mode': 'unknown',
@@ -4654,26 +4649,26 @@ def api_config():
 def api_runs():
     """Get available collection runs for the run selector dropdown"""
     try:
-        print(f"[DEBUG] /api/runs called")
-        print(f"[DEBUG] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
-        print(f"[DEBUG] METADATA_TABLE={METADATA_TABLE}")
+        logger.debug(f"/api/runs called")
+        logger.debug(f"CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+        logger.debug(f"METADATA_TABLE={METADATA_TABLE}")
 
         runs = get_available_runs(limit=10)
-        print(f"[DEBUG] get_available_runs returned {len(runs) if runs else 0} runs")
+        logger.debug(f"get_available_runs returned {len(runs) if runs else 0} runs")
 
         latest_run = get_latest_run_id()
-        print(f"[DEBUG] latest_run_id={latest_run}")
+        logger.debug(f"latest_run_id={latest_run}")
 
         return jsonify({
             'success': True,
             'runs': runs,
             'current_run_id': latest_run
         })
-    except Exception as e:
-        print(f"[ERROR] /api/runs exception: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e), 'runs': []}), 500
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'error': 'internal error',
+                        'request_id': req_id, 'runs': []}), 500
 
 
 @app.route('/api/search-principals')
@@ -4734,8 +4729,10 @@ def api_search_principals():
         
         return jsonify({'principals': principals})
         
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
 
 
 @app.route('/api/search-resources')
@@ -4791,8 +4788,10 @@ def api_search_resources():
         
         return jsonify({'resources': resources})
         
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
 
 
 @app.route('/api/browse-resources-by-type', methods=['POST'])
@@ -4840,8 +4839,11 @@ def api_browse_resources_by_type():
             'count': len(resources)
         })
         
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'message': 'internal error',
+                        'request_id': req_id}), 500
 
 
 @app.route('/api/browse-principals-by-type', methods=['POST'])
@@ -4902,8 +4904,11 @@ def api_browse_principals_by_type():
             'count': len(principals)
         })
         
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'message': 'internal error',
+                        'request_id': req_id}), 500
 
 
 @app.route('/api/stats')
@@ -4943,7 +4948,7 @@ def api_stats():
                 collection_timestamp = row.get('ts') or row.get('col0')
                 collected_by = row.get('cb') or row.get('col1')
         except Exception as e:
-            print(f"Error loading collection metadata: {e}")
+            logger.exception("loading collection metadata")
             pass  # Table may not exist yet
 
         # Get workspace coverage
@@ -4976,8 +4981,10 @@ def api_stats():
             'workspaces_collected': workspaces_collected,
             'workspaces_failed': workspaces_failed
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
 
 
 @app.route('/api/collection-coverage')
@@ -4997,8 +5004,11 @@ def api_collection_coverage():
             'run_id': run_id,
             **coverage
         })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'error': 'internal error',
+                        'request_id': req_id}), 500
 
 
 @app.route('/api/who-can-access', methods=['POST'])
@@ -5344,8 +5354,8 @@ def api_what_can_access():
         p_id_variants.append(f"account_group:{p_id}")
         p_id_variants.append(f"account_sp:{p_id}")
 
-    print(f"[DEBUG] Principal found: id={p_id}, email={p_email}, name={p_name}")
-    print(f"[DEBUG] ID variants to search: {p_id_variants}")
+    logger.debug(f"Principal found: id={p_id}, email={p_email}, name={p_name}")
+    logger.debug(f"ID variants to search: {p_id_variants}")
 
     type_filter = f"AND v.node_type = '{sanitize(resource_type)}'" if resource_type and resource_type != 'All' else ""
 
@@ -5356,7 +5366,7 @@ def api_what_can_access():
     if p_name:
         id_conditions += f" OR e.src = '{sanitize(p_name)}'"
 
-    print(f"[DEBUG] ID conditions for groups query: {id_conditions}")
+    logger.debug(f"ID conditions for groups query: {id_conditions}")
 
     # Build owner condition for owned_resources (uses v.owner instead of e.src)
     owner_conditions = ' OR '.join([f"v.owner = '{sanitize(vid)}'" for vid in p_id_variants])
@@ -5408,8 +5418,8 @@ def api_what_can_access():
     group_paths = {g['group_id']: g['inheritance_path'] for g in groups_result}
     group_name_paths = {g['group_name']: g['inheritance_path'] for g in groups_result}
 
-    print(f"[DEBUG] Found {len(group_ids)} groups for principal {p_id}: {group_names}")
-    print(f"[DEBUG] Groups query returned {len(groups_result)} rows")
+    logger.debug(f"Found {len(group_ids)} groups for principal {p_id}: {group_names}")
+    logger.debug(f"Groups query returned {len(groups_result)} rows")
 
     # Build SQL-safe lists for IN clauses
     group_ids_sql = ','.join([f"'{sanitize(gid)}'" for gid in group_ids]) if group_ids else "'__none__'"
@@ -5428,7 +5438,7 @@ def api_what_can_access():
     else:
         inheritance_path_expr = "e.src"
 
-    print(f"[DEBUG] path_cases_list has {len(path_cases_list)} entries")
+    logger.debug(f"path_cases_list has {len(path_cases_list)} entries")
 
     query = f"""
     WITH direct_access AS (
@@ -5526,15 +5536,15 @@ def api_what_can_access():
     ORDER BY resource_type, resource_name
     """
 
-    print(f"[DEBUG] Executing main query...")
+    logger.debug(f"Executing main query...")
     results = exec_query_df(query)
-    print(f"[DEBUG] Main query returned {len(results)} results")
+    logger.debug(f"Main query returned {len(results)} results")
 
     # Debug: Print first few results if any
     if results:
-        print(f"[DEBUG] First result: {results[0]}")
+        logger.debug(f"First result: {results[0]}")
     else:
-        print(f"[DEBUG] No results! Trying simplified direct_access query...")
+        logger.debug(f"No results! Trying simplified direct_access query...")
         # Try a simple query to test
         test_query = f"""
         SELECT COUNT(*) as cnt FROM {EDGES_TABLE} e
@@ -5542,7 +5552,7 @@ def api_what_can_access():
           AND e.permission_level IS NOT NULL
         """
         test_result = exec_query_df(test_query)
-        print(f"[DEBUG] Test query (edges with permission): {test_result}")
+        logger.debug(f"Test query (edges with permission): {test_result}")
 
     # Calculate summary statistics
     total = len(results)
@@ -6035,7 +6045,7 @@ def find_indirect_escalation_paths(principal, node_info, edge_info, run_id):
     try:
         results = exec_query_df(indirect_query)
     except Exception as e:
-        print(f"  Warning: Error finding indirect paths: {e}")
+        logger.debug(f"  Warning: Error finding indirect paths: {e}")
         return []
 
     indirect_paths = []
@@ -6095,7 +6105,7 @@ def find_indirect_escalation_paths(principal, node_info, edge_info, run_id):
             'hops': hops
         })
 
-    print(f"  Found {len(indirect_paths)} indirect escalation paths")
+    logger.debug(f"  Found {len(indirect_paths)} indirect escalation paths")
     return indirect_paths
 
 
@@ -6121,15 +6131,15 @@ def api_escalation_paths():
     p_name = principal.get('display_name') or principal.get('name') or principal.get('email') or p_id
     p_type = principal.get('node_type', 'Unknown')
 
-    print(f"="*60)
-    print(f"Finding escalation paths for: {p_name}")
-    print(f"Principal ID: {p_id}")
-    print(f"Principal email: {principal.get('email')}")
+    logger.debug("=" * 60)
+    logger.debug(f"Finding escalation paths for: {p_name}")
+    logger.debug(f"Principal ID: {p_id}")
+    logger.debug(f"Principal email: {principal.get('email')}")
 
     # Build graph
     graph, node_info, edge_info = build_graph_from_db(run_id)
     total_edges = sum(len(v) for v in graph.values())
-    print(f"Built graph with {len(graph)} nodes and {total_edges} edges")
+    logger.debug(f"Built graph with {len(graph)} nodes and {total_edges} edges")
 
     # Find ALL node IDs that match this principal (by email or name)
     # This handles account-level vs workspace-level user ID differences
@@ -6144,7 +6154,7 @@ def api_escalation_paths():
         # Match by email (case-insensitive)
         if p_email and ndata.get('email') and ndata.get('email').lower() == p_email.lower():
             all_principal_ids.append(nid)
-            print(f"Found additional node with same email: {nid} ({ndata.get('node_type')})")
+            logger.debug(f"Found additional node with same email: {nid} ({ndata.get('node_type')})")
             continue
         # Match by name/display_name (for users with same identity)
         node_name = ndata.get('name', '').lower()
@@ -6154,24 +6164,24 @@ def api_escalation_paths():
             email_prefix = p_email.split('@')[0].lower() if '@' in p_email else ''
             if email_prefix and (email_prefix in node_name or email_prefix in node_display):
                 all_principal_ids.append(nid)
-                print(f"Found additional node with matching name: {nid} ({ndata.get('node_type')}) - name: {ndata.get('name')}")
+                logger.debug(f"Found additional node with matching name: {nid} ({ndata.get('node_type')}) - name: {ndata.get('name')}")
 
-    print(f"All principal IDs to search from: {all_principal_ids}")
+    logger.debug(f"All principal IDs to search from: {all_principal_ids}")
 
     # Check neighbors for all principal IDs
     total_neighbors = []
     for pid in all_principal_ids:
         if pid in graph:
             neighbors = graph[pid]
-            print(f"Principal {pid} has {len(neighbors)} direct neighbors")
+            logger.debug(f"Principal {pid} has {len(neighbors)} direct neighbors")
             for n in neighbors[:3]:
                 n_info = node_info.get(n, {})
                 e_info = edge_info.get((pid, n), {})
-                print(f"  -> {n}: {n_info.get('name')} ({n_info.get('node_type')}) via {e_info.get('relationship')}")
+                logger.debug(f"  -> {n}: {n_info.get('name')} ({n_info.get('node_type')}) via {e_info.get('relationship')}")
             total_neighbors.extend(neighbors)
 
     # Debug: Show some MemberOf edges
-    print(f"Sample MemberOf edges:")
+    logger.debug(f"Sample MemberOf edges:")
     memberof_count = 0
     for (src, dst), edata in edge_info.items():
         if edata.get('relationship') == 'MemberOf':
@@ -6179,12 +6189,12 @@ def api_escalation_paths():
             if memberof_count <= 3:
                 src_info = node_info.get(src, {})
                 dst_info = node_info.get(dst, {})
-                print(f"  {src} ({src_info.get('node_type')}) -> {dst} ({dst_info.get('node_type')})")
-    print(f"Total MemberOf edges: {memberof_count}")
+                logger.debug(f"  {src} ({src_info.get('node_type')}) -> {dst} ({dst_info.get('node_type')})")
+    logger.debug(f"Total MemberOf edges: {memberof_count}")
 
     # Get privileged targets (admin groups, catalogs, schemas, metastores)
     privileged_df = identify_privileged_targets_query(run_id)
-    print(f"Found {len(privileged_df)} privileged target rows")
+    logger.debug(f"Found {len(privileged_df)} privileged target rows")
 
     # Build map of target_id -> role info
     privileged_map = {}
@@ -6200,24 +6210,24 @@ def api_escalation_paths():
             })
 
     privileged_ids = set(privileged_map.keys())
-    print(f"Unique privileged target IDs: {len(privileged_ids)}")
+    logger.debug(f"Unique privileged target IDs: {len(privileged_ids)}")
 
     # Check if any targets are in graph
     targets_in_graph = [t for t in privileged_ids if t in graph]
-    print(f"Targets that exist in graph: {len(targets_in_graph)}")
+    logger.debug(f"Targets that exist in graph: {len(targets_in_graph)}")
 
     # Show admin groups specifically
-    print(f"Admin group targets:")
+    logger.debug(f"Admin group targets:")
     for tid, roles in privileged_map.items():
         if any('Admin' in r.get('role', '') for r in roles):
             t_info = node_info.get(tid, {})
             in_graph = "YES" if tid in graph else "NO"
-            print(f"  {tid}: {t_info.get('name')} - in graph: {in_graph}")
+            logger.debug(f"  {tid}: {t_info.get('name')} - in graph: {in_graph}")
             if tid in graph:
                 # Check if reachable from principal
-                print(f"    Neighbors of this target: {len(graph.get(tid, []))}")
+                logger.debug(f"    Neighbors of this target: {len(graph.get(tid, []))}")
 
-    print(f"="*60)
+    logger.debug("=" * 60)
 
     if not privileged_ids:
         return jsonify({
@@ -6234,7 +6244,7 @@ def api_escalation_paths():
         for (src, dst), edata in edge_info.items():
             if src == pid and edata.get('relationship') == 'AccountAdmin':
                 dst_info = node_info.get(dst, {})
-                print(f"Found direct AccountAdmin edge: {pid} -> {dst}")
+                logger.debug(f"Found direct AccountAdmin edge: {pid} -> {dst}")
                 direct_admin_paths.append({
                     'start_id': pid,
                     'target_id': dst,
@@ -6268,14 +6278,14 @@ def api_escalation_paths():
                     ]
                 })
 
-    print(f"Found {len(direct_admin_paths)} direct Account Admin paths")
+    logger.debug(f"Found {len(direct_admin_paths)} direct Account Admin paths")
 
     # Find all GROUP MEMBERSHIP paths from ALL principal IDs
     raw_paths = []
     for pid in all_principal_ids:
-        print(f"Searching group membership paths from: {pid}")
+        logger.debug(f"Searching group membership paths from: {pid}")
         paths_from_pid = find_all_paths_bfs(graph, node_info, edge_info, pid, privileged_ids, max_depth, membership_only=True)
-        print(f"  Found {len(paths_from_pid)} paths from {pid}")
+        logger.debug(f"  Found {len(paths_from_pid)} paths from {pid}")
         raw_paths.extend(paths_from_pid)
 
     # Enrich group membership paths with role info and add privileged role as final node
@@ -6305,7 +6315,7 @@ def api_escalation_paths():
     attack_paths.extend(direct_admin_paths)
 
     # Find INDIRECT escalation paths (jobs/notebooks owned by admins)
-    print("Searching for indirect escalation paths...")
+    logger.debug("Searching for indirect escalation paths...")
     indirect_paths = find_indirect_escalation_paths(principal, node_info, edge_info, run_id)
     attack_paths.extend(indirect_paths)
 
@@ -6571,10 +6581,10 @@ def api_impersonation_paths():
         source_name = source_principal.get('display_name') or source_principal.get('name') or source_principal.get('email') or source_id
         target_name = target_principal.get('display_name') or target_principal.get('name') or target_principal.get('email') or target_id
 
-        print(f"="*60)
-        print(f"Finding impersonation paths")
-        print(f"Source: {source_name} ({source_principal.get('node_type')})")
-        print(f"Target: {target_name} ({target_principal.get('node_type')})")
+        logger.debug("=" * 60)
+        logger.debug(f"Finding impersonation paths")
+        logger.debug(f"Source: {source_name} ({source_principal.get('node_type')})")
+        logger.debug(f"Target: {target_name} ({target_principal.get('node_type')})")
 
         # Build graph
         graph, node_info, edge_info = build_graph_from_db(run_id)
@@ -6593,8 +6603,8 @@ def api_impersonation_paths():
             if target_email and node_email == target_email:
                 target_ids.add(nid)
 
-        print(f"Source IDs: {source_ids}")
-        print(f"Target IDs: {target_ids}")
+        logger.debug(f"Source IDs: {source_ids}")
+        logger.debug(f"Target IDs: {target_ids}")
 
         # BFS to find paths from source to target
         all_paths = []
@@ -6632,7 +6642,7 @@ def api_impersonation_paths():
                         new_path_edges = path_edges + [edge]
                         queue.append((neighbor, new_path_nodes, new_path_edges))
 
-        print(f"Found {len(all_paths)} paths")
+        logger.debug(f"Found {len(all_paths)} paths")
 
         # Format paths for response
         formatted_paths = []
@@ -6680,10 +6690,8 @@ def api_impersonation_paths():
         })
 
     except Exception as e:
-        import traceback
         error_msg = str(e)
-        print(f"ERROR in impersonation-paths: {error_msg}")
-        print(traceback.format_exc())
+        logger.debug(f"ERROR in impersonation-paths: {error_msg}")
         return jsonify({
             'success': False,
             'message': f"Server error: {error_msg}",
