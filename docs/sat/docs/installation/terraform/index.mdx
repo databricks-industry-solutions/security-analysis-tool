@@ -28,13 +28,13 @@ SAT can be set up on any of the cloud platforms where Databricks is hosted using
 
 ## Permissions Analysis Setup
 
-After installing SAT, you will need to manually complete the Permissions Analysis app deployment and configuration by following these steps:
+After installing SAT, complete the Permissions Analysis app setup as follows:
 
 ### 1. Deploy the app using the Databricks CLI
 
-Deploy the app using the appropriate command based on your installation method:
+Deploy the app source code to the running app:
 
-**For DABs installations:**
+**For DABS installations:**
 ```bash
 databricks apps deploy sat-permissions-exp --source-code-path /Workspace/Applications/SAT/files/app/brickhound
 ```
@@ -42,44 +42,33 @@ databricks apps deploy sat-permissions-exp --source-code-path /Workspace/Applica
 **For Terraform installations:**
 ```bash
 databricks apps deploy sat-permissions-exp --source-code-path /Workspace/Repos/Applications/SAT_TF/app/brickhound
-databricks app deploy
 ```
 
 <Admonition type="note" title="Note">
 The app compute may take a few minutes to start. Please make sure that **Compute > Apps > sat-permissions-exp** is "running" in your workspace before proceeding to the next step.
 </Admonition>
 
-### 2. Configure app resources
+### 2. App resources and user authorization
 
-Edit the app configuration in the Databricks UI and assign the following resources:
+The SQL warehouse, secrets, and the `sql` user-authorization scope required by the app are declared automatically by the SAT install (Terraform's `databricks_app` resource and the equivalent DABS apps resource). **No manual UI configuration is required** for new installs.
 
-| Resource Type | Resource Key | Secret Scope | Secret Key | Value |
-|--------------|--------------|--------------|------------|-------|
-| SQL warehouse | `sql-warehouse` | — | — | — |
-| Secret | — | `sat_scope` | `sql-warehouse-id` | `sql-warehouse-id` |
-| Secret | — | `sat_scope` | `analysis_schema_name` | `analysis_schema_name` |
+To verify the configuration applied correctly, open **Compute → Apps → sat-permissions-exp → Edit** and confirm:
+
+| Section | Expected entries |
+|---|---|
+| App resources | `warehouse` (SQL warehouse, Can use), `analysis_schema_name` (secret, Can read), `sql-warehouse-id` (secret, Can read) |
+| User authorization | `sql` scope present |
 
 ### 3. Grant Unity Catalog permissions
 
-After running the jobs and before the first use of the app, you need to grant Unity Catalog permissions to the app's service principal.
-
-1. Copy the [App authorization service principal](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth#app-authorization) (not the name, the actual service principal ID)
-2. Run the following SQL commands to grant the necessary permissions:
+The app uses on-behalf-of-user authentication, so each caller's queries run as that user — Unity Catalog enforces the caller's grants on the Permissions Analysis tables. Grant `SELECT` on those tables to the user(s) or group who will run permissions analyses:
 
 ```sql
--- Grant USE CATALOG permission
-GRANT USE CATALOG ON CATALOG <your SAT UC catalog>
-TO `<app authorization service principal>`;
-
--- Grant USE SCHEMA permission
-GRANT USE SCHEMA ON SCHEMA <your SAT UC catalog>.<SAT Schema>
-TO `<app authorization service principal>`;
-
--- Grant SELECT on all tables in the schema
-GRANT SELECT ON SCHEMA <your SAT UC catalog>.<SAT Schema>
-TO `<app authorization service principal>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_vertices             TO `<admin_group>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_edges                TO `<admin_group>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata  TO `<admin_group>`;
 ```
 
 <Admonition type="tip" title="Tip">
-Replace `<your SAT UC catalog>`, `<SAT Schema>`, and `<app authorization service principal>` with your actual values.
+Replace `<catalog>`, `<schema>`, and `<admin_group>` with the values used during your SAT install. The full setup, including the user-authorization scope and how the friendly no-access banner behaves, is documented on the [Permissions Analysis page](../../functionality/permissions-analysis.mdx#user-authorization).
 </Admonition>
