@@ -60,13 +60,15 @@ SAT is typically run daily as an automated workflow within your environment:
 
 ## Security Categories
 
-SAT evaluates over **60 security best practices** across five key categories:
+SAT evaluates **65+ security best practices** across five key categories:
 
-* **Network Security** - Network policies, VPC configurations, and network isolation
+* **Network Security** - Network policies, VPC configurations, and network isolation (includes live egress testing from compute as of 0.8.0)
 * **Identity & Access** - User management, group memberships, and access controls
 * **Data Protection** - Encryption, data classification, and data governance
 * **Governance** - Compliance, audit logging, and policy enforcement
 * **Informational** - Observations and recommendations for continuous improvement
+
+Cloud applicability for each check is recorded in `configs/security_best_practices.csv` — a small number of checks are AWS-only or AWS+GCP-only where the underlying API is not available on every cloud.
 
 **Severity Levels:**
 * **High** - Critical issues requiring immediate attention
