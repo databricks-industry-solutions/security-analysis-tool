@@ -9,6 +9,7 @@ Inspired by BloodHound for Active Directory analysis.
 from flask import Flask, request, jsonify
 import os
 import re
+import uuid
 import logging
 from databricks.sdk import WorkspaceClient
 
@@ -32,7 +33,7 @@ def _validate_run_id(value):
 app = Flask(__name__)
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger(__name__)
 
 # Configuration - Read from environment variables (set in app.yaml)
@@ -90,71 +91,246 @@ logger.info(f"[CONFIG FINAL] METADATA_TABLE={METADATA_TABLE}")
 _cached_run_id = None
 
 
-def get_connection():
-    """Get SQL connection using Databricks SDK"""
+class NoAccessError(Exception):
+    """Raised when the calling user lacks UC SELECT on the BrickHound tables.
+
+    Caught by the Flask errorhandler below and rendered as a friendly banner
+    rather than a 500 / SQL stack trace.
+    """
+
+
+def _looks_like_no_access(exc):
+    """Detect UC permission, missing-grant, or missing-OBO-scope errors.
+
+    Matches three classes of failure that should render as a friendly
+    no-access banner rather than a generic 500 / silent empty result:
+      1. Typed `PermissionDenied` / `Unauthenticated` from the Databricks
+         SDK (preferred — the SDK does expose these for `execute_statement`).
+      2. `403 Forbidden` with `Invalid scope, required scopes: sql` —
+         user authorization is configured but the `sql` scope isn't in
+         the scope list.
+      3. Message-based fallback covering UC permission errors and
+         "table/schema/catalog does not exist" (UC hides resources the
+         caller can't see).
+    """
     try:
-        from databricks.sdk import WorkspaceClient
-        workspace_client = WorkspaceClient()
-        
-        # Debug: Show connection info (only first time)
-        if not hasattr(get_connection, '_logged'):
-            print(f"[AUTH] Connected to: {workspace_client.config.host}")
-            print(f"[AUTH] Auth type: {workspace_client.config.auth_type}")
-            get_connection._logged = True
-        
-        # Get warehouse ID from environment variable (set in app.yaml)
-        warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
+        from databricks.sdk.errors.platform import (
+            PermissionDenied, Unauthenticated,
+        )
+        if isinstance(exc, (PermissionDenied, Unauthenticated)):
+            return True
+    except ImportError:
+        pass
+    msg = str(exc).lower()
+    keywords = (
+        "invalid scope",
+        "required scopes",
+        "permission denied",
+        "permissiondenied",
+        "access denied",
+        "not authorized",
+        "unauthorized",
+        "insufficient_permissions",
+        "403 forbidden",
+        "does not exist",       # UC returns "table or view ... does not exist" when the user can't see it
+        "table_not_found",
+        "schema_not_found",
+        "catalog_not_found",
+    )
+    return any(k in msg for k in keywords)
 
-        if not warehouse_id:
-            error_msg = (
-                "FATAL: WAREHOUSE_ID environment variable is not set in app.yaml.\n"
-                "Please configure WAREHOUSE_ID with a valid SQL warehouse ID before deploying."
+
+def _no_access_message(exc=None):
+    """Pick the most accurate banner text based on the underlying error.
+
+    Two distinct failure modes:
+      * Missing OAuth scope on the app — the platform forwards a token but
+        it doesn't carry `sql`, so the warehouse rejects with
+        "Invalid scope, required scopes: sql". Fix is on the app config.
+      * Missing UC grant — the user lacks SELECT on the brickhound_*
+        tables. Fix is on the schema grants.
+    """
+    msg = str(exc).lower() if exc is not None else ""
+    if "invalid scope" in msg or "required scopes" in msg:
+        return (
+            "This app's user authorization is missing the `sql` scope, "
+            "which the Statement Execution API requires to read the "
+            "BrickHound tables. Ask your admin to add it: redeploy SAT "
+            "(`./install.sh` or `terraform apply`), or set it manually "
+            "via Compute → Apps → sat-permissions-exp → Edit → User "
+            "authorization → + Add scope → `sql`."
+        )
+    return (
+        "You don't have Unity Catalog SELECT on the SAT permissions "
+        "analysis tables. Ask your admin to grant SELECT on "
+        f"`{CATALOG}`.`{SCHEMA}`.brickhound_vertices, "
+        f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges, and "
+        f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata to your user or group."
+    )
+
+
+def get_user_email():
+    """Return the calling user's email from Databricks Apps headers.
+
+    `X-Forwarded-Email` is set by the Apps platform on every request reaching
+    the app process. Falls back to 'unknown' for local-dev / non-Apps contexts.
+    """
+    try:
+        return request.headers.get("X-Forwarded-Email", "unknown")
+    except RuntimeError:
+        # Outside a request context (e.g. module import) — return unknown.
+        return "unknown"
+
+
+def get_connection():
+    """Get a Databricks SDK client, preferring the calling user's identity (OBO).
+
+    When the Apps platform forwards the user's OAuth token via the
+    `x-forwarded-access-token` header, we build a per-request WorkspaceClient
+    bound to that token. This makes every Statement Execution run as the
+    user, so UC enforces the user's grants on the brickhound tables.
+
+    If the header is absent (user authorization not configured for this app
+    in the Databricks UI, or local dev), we fall back to the app SP. This
+    keeps the app working during the OBO migration and surfaces a one-time
+    warning so an admin can finish the configuration.
+    """
+    user_token = None
+    try:
+        user_token = request.headers.get("x-forwarded-access-token")
+    except RuntimeError:
+        # Outside a request context — keep user_token None and use SP.
+        pass
+
+    if user_token:
+        # `auth_type="pat"` is required: without it the SDK's auth resolver
+        # sees the user's bearer token AND the app SP env vars
+        # (DATABRICKS_CLIENT_ID/SECRET injected by Databricks Apps) and
+        # raises `more than one authorization method configured: oauth and
+        # pat`. Pinning auth_type forces the SDK to use only the user token.
+        # `host` must also be explicit so the env-driven OAuth path is fully
+        # bypassed.
+        workspace_client = WorkspaceClient(
+            host=os.getenv("DATABRICKS_HOST"),
+            token=user_token,
+            auth_type="pat",
+        )
+        if not hasattr(get_connection, "_obo_logged"):
+            logger.info(
+                "OBO mode: forwarding user access token (host=%s, user=%s)",
+                workspace_client.config.host, get_user_email(),
             )
-            print(f"[AUTH] ERROR: {error_msg}")
-            raise ValueError(error_msg)
+            get_connection._obo_logged = True
+    else:
+        workspace_client = WorkspaceClient()
+        if not hasattr(get_connection, "_sp_logged"):
+            logger.warning(
+                "App SP mode: no x-forwarded-access-token on request. Configure user "
+                "authorization for this app in the Databricks UI to enable OBO."
+            )
+            logger.info(
+                "Connected as app SP: host=%s auth_type=%s",
+                workspace_client.config.host, workspace_client.config.auth_type,
+            )
+            get_connection._sp_logged = True
 
-        if not hasattr(get_connection, '_warehouse_logged'):
-            print(f"[AUTH] Using SQL Warehouse: {warehouse_id}")
-            get_connection._warehouse_logged = True
+    warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
+    if not warehouse_id:
+        error_msg = (
+            "FATAL: WAREHOUSE_ID environment variable is not set in app.yaml.\n"
+            "Please configure WAREHOUSE_ID with a valid SQL warehouse ID before deploying."
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
-        return workspace_client, warehouse_id
-    except Exception as e:
-        print(f"ERROR in get_connection(): {e}")
-        raise
+    if not hasattr(get_connection, "_warehouse_logged"):
+        logger.info("Using SQL Warehouse: %s", warehouse_id)
+        get_connection._warehouse_logged = True
+
+    return workspace_client, warehouse_id
 
 
-def exec_query(sql_query):
-    """Execute query and return first column of first row"""
+def _build_sdk_parameters(params):
+    """Map a {name: value} dict to the SDK's parameter list shape.
+
+    Each value is sent as STRING — Databricks SQL coerces from there into
+    the column type at execution time. Lazy import so older SDKs that
+    don't expose StatementParameterListItem at this path don't break the
+    no-params codepath.
+    """
+    if not params:
+        return None
+    from databricks.sdk.service.sql import StatementParameterListItem
+    return [
+        StatementParameterListItem(
+            name=name,
+            value=None if value is None else str(value),
+            type="STRING",
+        )
+        for name, value in params.items()
+    ]
+
+
+def exec_query(sql_query, params=None):
+    """Execute query and return first column of first row.
+
+    `params` is a {name: value} dict bound to `:name` placeholders in
+    the SQL. Always prefer bind params over string interpolation for
+    user-controlled values.
+
+    UC permission errors are translated to NoAccessError so the Flask
+    errorhandler can render a friendly banner instead of a 500.
+    """
     try:
         workspace_client, warehouse_id = get_connection()
-        result = workspace_client.statement_execution.execute_statement(
-            warehouse_id=warehouse_id,
-            catalog=CATALOG,
-            schema=SCHEMA,
-            statement=sql_query,
-            wait_timeout="30s"
-        )
+        kwargs = {
+            "warehouse_id": warehouse_id,
+            "catalog": CATALOG,
+            "schema": SCHEMA,
+            "statement": sql_query,
+            "wait_timeout": "30s",
+        }
+        sdk_params = _build_sdk_parameters(params)
+        if sdk_params:
+            kwargs["parameters"] = sdk_params
+        result = workspace_client.statement_execution.execute_statement(**kwargs)
         if hasattr(result, 'result') and result.result:
             if hasattr(result.result, 'data_array') and result.result.data_array:
                 value = result.result.data_array[0][0]
                 return int(value) if value else 0
         return 0
+    except NoAccessError:
+        raise
     except Exception as e:
-        print(f"Error executing query: {e}")
+        if _looks_like_no_access(e):
+            raise NoAccessError(_no_access_message(e)) from e
+        logger.exception("executing query")
         return 0
 
 
-def exec_query_df(sql_query):
-    """Execute query and return results as list of dicts"""
+def exec_query_df(sql_query, params=None):
+    """Execute query and return results as list of dicts.
+
+    `params` is a {name: value} dict bound to `:name` placeholders in
+    the SQL. Always prefer bind params over string interpolation for
+    user-controlled values.
+
+    UC permission errors are translated to NoAccessError so the Flask
+    errorhandler can render a friendly banner instead of a 500.
+    """
     try:
         workspace_client, warehouse_id = get_connection()
-        result = workspace_client.statement_execution.execute_statement(
-            warehouse_id=warehouse_id,
-            catalog=CATALOG,
-            schema=SCHEMA,
-            statement=sql_query,
-            wait_timeout="50s"
-        )
+        kwargs = {
+            "warehouse_id": warehouse_id,
+            "catalog": CATALOG,
+            "schema": SCHEMA,
+            "statement": sql_query,
+            "wait_timeout": "50s",
+        }
+        sdk_params = _build_sdk_parameters(params)
+        if sdk_params:
+            kwargs["parameters"] = sdk_params
+        result = workspace_client.statement_execution.execute_statement(**kwargs)
         if hasattr(result, 'result') and result.result:
             if hasattr(result.result, 'data_array') and result.result.data_array:
                 columns = []
@@ -176,10 +352,12 @@ def exec_query_df(sql_query):
                         rows.append({f"col{i}": val for i, val in enumerate(row)})
                 return rows
         return []
+    except NoAccessError:
+        raise
     except Exception as e:
-        print(f"Error executing query: {e}")
-        import traceback
-        traceback.print_exc()
+        if _looks_like_no_access(e):
+            raise NoAccessError(_no_access_message(e)) from e
+        logger.exception("executing query")
         return []
 
 
@@ -194,8 +372,11 @@ def get_latest_run_id():
             value = result[0].get('run_id') or result[0].get('col0')
             return _validate_run_id(value)
         return None
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
     except Exception as e:
-        print(f"Error getting latest run_id: {e}")
+        logger.exception("getting latest run_id")
         return None
 
 
@@ -229,7 +410,7 @@ def get_current_run_id():
 
 def get_available_runs(limit=10):
     """Get list of available collection runs"""
-    print(f"[DEBUG] get_available_runs called, METADATA_TABLE={METADATA_TABLE}")
+    logger.debug(f"get_available_runs called, METADATA_TABLE={METADATA_TABLE}")
     try:
         # Try query with new columns first
         query = f"""
@@ -245,14 +426,15 @@ def get_available_runs(limit=10):
             ORDER BY collection_timestamp DESC
             LIMIT {limit}
         """
-        print(f"[DEBUG] Executing query: {query[:100]}...")
+        logger.debug(f"Executing query: {query[:100]}...")
         result = exec_query_df(query)
-        print(f"[DEBUG] Query returned {len(result) if result else 0} rows")
+        logger.debug(f"Query returned {len(result) if result else 0} rows")
         return result
+    except NoAccessError:
+        # Don't fall back — the user lacks access; surface the friendly banner.
+        raise
     except Exception as e:
-        print(f"[ERROR] Error getting available runs with new columns: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("Error getting available runs with new columns")
         # Fall back to basic columns (for backwards compatibility)
         try:
             query2 = f"""
@@ -265,14 +447,14 @@ def get_available_runs(limit=10):
                 ORDER BY collection_timestamp DESC
                 LIMIT {limit}
             """
-            print(f"[DEBUG] Executing fallback query: {query2[:100]}...")
+            logger.debug(f"Executing fallback query: {query2[:100]}...")
             result = exec_query_df(query2)
-            print(f"[DEBUG] Fallback query returned {len(result) if result else 0} rows")
+            logger.debug(f"Fallback query returned {len(result) if result else 0} rows")
             return result
+        except NoAccessError:
+            raise
         except Exception as e2:
-            print(f"[ERROR] Error getting available runs (fallback): {e2}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Error getting available runs (fallback)")
             return []
 
 
@@ -286,14 +468,17 @@ def get_collection_coverage(run_id=None):
         return None
 
     try:
-        result = exec_query_df(f"""
+        result = exec_query_df(
+            f"""
             SELECT workspaces_collected, workspaces_failed, collection_mode,
                    CAST(collection_timestamp AS STRING) as collection_timestamp,
                    collected_by, vertices_count, edges_count
             FROM {METADATA_TABLE}
-            WHERE run_id = '{sanitize(run_id)}'
+            WHERE run_id = :run_id
             LIMIT 1
-        """)
+            """,
+            params={"run_id": run_id},
+        )
         if result and len(result) > 0:
             row = result[0]
             coverage = {
@@ -318,8 +503,10 @@ def get_collection_coverage(run_id=None):
                     pass
             return coverage
         return None
+    except NoAccessError:
+        raise
     except Exception as e:
-        print(f"Error getting collection coverage with new columns: {e}")
+        logger.exception("getting collection coverage with new columns")
         # Return empty coverage for backwards compatibility
         return {
             'collection_mode': 'unknown',
@@ -333,10 +520,26 @@ def get_collection_coverage(run_id=None):
 
 
 def sanitize(value):
-    """Sanitize string for SQL"""
+    """Escape a string for safe use as a SQL string literal.
+
+    DEPRECATED — prefer bind parameters via `exec_query_df(..., params=...)`
+    over interpolating sanitized values. This helper is kept for sites
+    that build dynamic SQL fragments (e.g. IN-list construction over
+    runtime-determined principal-ID variants); those will be migrated to
+    parameterized queries in a follow-up pass.
+
+    Escapes both single quotes and backslashes — Spark SQL's default
+    string parser doesn't honor backslash escapes, but defense-in-depth
+    against future parser changes (or operators that read these values
+    via Spark configurations that DO honor escapes) is cheap.
+    """
     if not value:
         return ""
-    return str(value).replace("'", "''")
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("'", "''")
+    )
 
 
 def get_recursive_group_cte(principal_id, principal_email, principal_name, run_id):
@@ -413,17 +616,16 @@ def find_principal(identifier, run_id):
     """
     if not identifier:
         return None
-    safe_id = sanitize(identifier)
     # Order by node_type to prefer AccountUser/AccountGroup/AccountServicePrincipal
     # These have account-level group memberships with WorkspaceAccess edges
     query = f"""
     SELECT id, name, display_name, email, node_type, owner
     FROM {VERTICES_TABLE}
-    WHERE run_id = '{run_id}'
-      AND (id = '{safe_id}'
-       OR LOWER(email) = LOWER('{safe_id}')
-       OR LOWER(name) = LOWER('{safe_id}')
-       OR LOWER(display_name) = LOWER('{safe_id}'))
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(email) = LOWER(:ident)
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
     AND node_type IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
     ORDER BY CASE
         WHEN node_type = 'AccountUser' THEN 1
@@ -433,7 +635,7 @@ def find_principal(identifier, run_id):
     END
     LIMIT 1
     """
-    results = exec_query_df(query)
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
     return results[0] if results else None
 
 
@@ -444,19 +646,18 @@ def find_account_principal(identifier, run_id):
     """
     if not identifier:
         return None
-    safe_id = sanitize(identifier)
     query = f"""
     SELECT id, name, display_name, email, node_type, owner
     FROM {VERTICES_TABLE}
-    WHERE run_id = '{run_id}'
-      AND (id = '{safe_id}'
-       OR LOWER(email) = LOWER('{safe_id}')
-       OR LOWER(name) = LOWER('{safe_id}')
-       OR LOWER(display_name) = LOWER('{safe_id}'))
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(email) = LOWER(:ident)
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
     AND node_type IN ('AccountUser', 'AccountGroup', 'AccountServicePrincipal')
     LIMIT 1
     """
-    results = exec_query_df(query)
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
     return results[0] if results else None
 
 
@@ -464,19 +665,86 @@ def find_resource(identifier, run_id):
     """Find a resource by ID, name, or display_name"""
     if not identifier:
         return None
-    safe_id = sanitize(identifier)
     query = f"""
     SELECT id, name, display_name, email, node_type, owner
     FROM {VERTICES_TABLE}
-    WHERE run_id = '{run_id}'
-      AND (id = '{safe_id}'
-       OR LOWER(name) = LOWER('{safe_id}')
-       OR LOWER(display_name) = LOWER('{safe_id}'))
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
     AND node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
     LIMIT 1
     """
-    results = exec_query_df(query)
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
     return results[0] if results else None
+
+
+# ============================================================================
+# Request lifecycle: audit log + friendly no-access handler
+# ============================================================================
+
+
+@app.before_request
+def _audit_log_request():
+    """Emit one info-level log line per API request capturing the calling
+    user's identity (from Databricks Apps `X-Forwarded-Email`), the path,
+    and the upstream client IP. Provides per-user attribution without
+    requiring OBO to be configured.
+    """
+    if request.path.startswith("/api/") or request.path == "/":
+        logger.info(
+            "request: path=%s user=%s ip=%s req_id=%s",
+            request.path,
+            get_user_email(),
+            request.headers.get("X-Real-Ip", "-"),
+            request.headers.get("X-Request-Id", "-"),
+        )
+
+
+@app.after_request
+def _security_headers(resp):
+    """Apply baseline security headers on every response.
+
+    The inline `<script>` and `<style>` blocks in get_main_html() require
+    `'unsafe-inline'` on script-src/style-src. Pulling that JS/CSS out into
+    served static files is a separate refactor; until then this header
+    set still adds meaningful defense-in-depth against MIME sniffing,
+    referrer leaks, and outbound resource loads.
+
+    `X-Frame-Options` is intentionally not set — the app is rendered in
+    the Databricks Apps UI inside an iframe, and a stricter value would
+    break that integration. Frame ancestry is left to the Databricks
+    platform's reverse proxy.
+    """
+    resp.headers.setdefault("Content-Security-Policy", (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ))
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
+
+
+@app.errorhandler(NoAccessError)
+def _no_access_handler(exc):
+    """Translate a NoAccessError raised from exec_query[_df] into a friendly
+    JSON banner the UI can render. The full stack trace is left in app
+    logs (logger.exception) for admins to triage.
+    """
+    logger.warning(
+        "no_access: user=%s path=%s message=%s",
+        get_user_email(), request.path, str(exc),
+    )
+    return jsonify({
+        "error": "no_access",
+        "message": str(exc),
+    }), 403
 
 
 # ============================================================================
@@ -2114,16 +2382,29 @@ def get_main_html():
             return 'low';  // Neutral styling for all permissions
         }
 
-        // Format principal name with identifier for uniqueness
-        // Shows "Display Name (email)" or "Display Name (name)" to distinguish principals with same display name
+        // HTML-escape any string before interpolating into an innerHTML
+        // template. Defined early so every renderer below can use it.
+        // Uses textContent assignment which is the canonical browser-safe
+        // escape (handles <, >, &, ", ', NUL, etc. consistently).
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+
+        // Format principal name with identifier for uniqueness.
+        // Shows "Display Name (email)" or "Display Name (name)" to
+        // distinguish principals with same display name. Returns
+        // HTML-escaped text safe to drop into an `${...}` interpolation
+        // inside an innerHTML template.
         function formatPrincipalName(displayName, email, name, id) {
             const display = displayName || name || email || id || 'Unknown';
             const identifier = email || name || id;
-            // If display name is different from identifier, show both
-            if (identifier && display.toLowerCase() !== identifier.toLowerCase()) {
-                return `${display} (${identifier})`;
+            if (identifier && String(display).toLowerCase() !== String(identifier).toLowerCase()) {
+                return `${escapeHtml(display)} (${escapeHtml(identifier)})`;
             }
-            return display;
+            return escapeHtml(display);
         }
 
         function showLoading(containerId) {
@@ -4044,7 +4325,9 @@ def get_main_html():
                     let html = '<option value="">-- Select from list --</option>';
                     result.data.forEach(p => {
                         const displayName = formatPrincipalName(p.display_name, p.email, p.name, p.id);
-                        html += `<option value="${p.email || p.name || p.id}">${displayName}</option>`;
+                        // displayName is already HTML-escaped via formatPrincipalName.
+                        // Escape the option value separately to prevent attribute injection.
+                        html += `<option value="${escapeHtml(p.email || p.name || p.id)}">${displayName}</option>`;
                     });
                     select.innerHTML = html;
 
@@ -4559,11 +4842,7 @@ def get_main_html():
             analyzeResource();
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        // escapeHtml is defined earlier — see top of inline <script>.
 
         // Enter key handlers
         ['principal', 'resource', 'paths', 'risk'].forEach(id => {
@@ -4654,26 +4933,29 @@ def api_config():
 def api_runs():
     """Get available collection runs for the run selector dropdown"""
     try:
-        print(f"[DEBUG] /api/runs called")
-        print(f"[DEBUG] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
-        print(f"[DEBUG] METADATA_TABLE={METADATA_TABLE}")
+        logger.debug(f"/api/runs called")
+        logger.debug(f"CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+        logger.debug(f"METADATA_TABLE={METADATA_TABLE}")
 
         runs = get_available_runs(limit=10)
-        print(f"[DEBUG] get_available_runs returned {len(runs) if runs else 0} runs")
+        logger.debug(f"get_available_runs returned {len(runs) if runs else 0} runs")
 
         latest_run = get_latest_run_id()
-        print(f"[DEBUG] latest_run_id={latest_run}")
+        logger.debug(f"latest_run_id={latest_run}")
 
         return jsonify({
             'success': True,
             'runs': runs,
             'current_run_id': latest_run
         })
-    except Exception as e:
-        print(f"[ERROR] /api/runs exception: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e), 'runs': []}), 500
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'error': 'internal error',
+                        'request_id': req_id, 'runs': []}), 500
 
 
 @app.route('/api/search-principals')
@@ -4691,35 +4973,40 @@ def api_search_principals():
         if not run_id:
             return jsonify({'principals': [], 'error': 'No data collection runs available'})
         
-        # Escape single quotes in the query for SQL
-        query_escaped = query.replace("'", "''")
-        search_pattern = f"%{query_escaped}%"
-        starts_with_pattern = f"{query_escaped}%"
-        
+        # Build LIKE patterns from user input. `query` is bound via params
+        # below — string interpolation only happens server-side, against
+        # the bound value, so the user can't inject SQL.
+        search_pattern = f"%{query}%"
+        starts_with_pattern = f"{query}%"
+
         # Search - filter to only principals and current run_id
         # Prioritize results that START with the query
         sql = f"""
             SELECT DISTINCT id, name, node_type, display_name, email
             FROM {VERTICES_TABLE}
-            WHERE run_id = '{run_id}'
+            WHERE run_id = :run_id
             AND node_type IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
             AND (
-                LOWER(COALESCE(name, '')) LIKE LOWER('{search_pattern}')
-                OR LOWER(COALESCE(display_name, '')) LIKE LOWER('{search_pattern}')
-                OR LOWER(COALESCE(email, '')) LIKE LOWER('{search_pattern}')
+                LOWER(COALESCE(name, '')) LIKE LOWER(:search_pattern)
+                OR LOWER(COALESCE(display_name, '')) LIKE LOWER(:search_pattern)
+                OR LOWER(COALESCE(email, '')) LIKE LOWER(:search_pattern)
             )
             ORDER BY
                 CASE
-                    WHEN LOWER(name) LIKE LOWER('{starts_with_pattern}') THEN 1
-                    WHEN LOWER(display_name) LIKE LOWER('{starts_with_pattern}') THEN 2
-                    WHEN LOWER(email) LIKE LOWER('{starts_with_pattern}') THEN 3
+                    WHEN LOWER(name) LIKE LOWER(:starts_with_pattern) THEN 1
+                    WHEN LOWER(display_name) LIKE LOWER(:starts_with_pattern) THEN 2
+                    WHEN LOWER(email) LIKE LOWER(:starts_with_pattern) THEN 3
                     ELSE 4
                 END,
                 name
             LIMIT {limit}
         """
-        
-        results = exec_query_df(sql)
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "search_pattern": search_pattern,
+            "starts_with_pattern": starts_with_pattern,
+        })
         principals = []
         
         for row in results:
@@ -4734,8 +5021,13 @@ def api_search_principals():
         
         return jsonify({'principals': principals})
         
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
 
 
 @app.route('/api/search-resources')
@@ -4753,32 +5045,34 @@ def api_search_resources():
         if not run_id:
             return jsonify({'resources': [], 'error': 'No data collection runs available'})
         
-        # Escape single quotes in the query for SQL
-        query_escaped = query.replace("'", "''")
-        search_pattern = f"%{query_escaped}%"
-        starts_with_pattern = f"{query_escaped}%"
-        
+        search_pattern = f"%{query}%"
+        starts_with_pattern = f"{query}%"
+
         # Search - filter to only resources and current run_id
         # Prioritize results that START with the query
         sql = f"""
             SELECT DISTINCT id, name, node_type
             FROM {VERTICES_TABLE}
-            WHERE run_id = '{run_id}'
-            AND node_type IN ('Catalog', 'Schema', 'Table', 'View', 'Volume', 'Function', 
-                              'Cluster', 'ClusterPolicy', 'Job', 'Warehouse', 'ServingEndpoint', 
+            WHERE run_id = :run_id
+            AND node_type IN ('Catalog', 'Schema', 'Table', 'View', 'Volume', 'Function',
+                              'Cluster', 'ClusterPolicy', 'Job', 'Warehouse', 'ServingEndpoint',
                               'SecretScope', 'Metastore')
-            AND LOWER(COALESCE(name, '')) LIKE LOWER('{search_pattern}')
+            AND LOWER(COALESCE(name, '')) LIKE LOWER(:search_pattern)
             ORDER BY
                 CASE
-                    WHEN LOWER(name) LIKE LOWER('{starts_with_pattern}') THEN 1
+                    WHEN LOWER(name) LIKE LOWER(:starts_with_pattern) THEN 1
                     ELSE 2
                 END,
                 node_type,
                 name
             LIMIT {limit}
         """
-        
-        results = exec_query_df(sql)
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "search_pattern": search_pattern,
+            "starts_with_pattern": starts_with_pattern,
+        })
         resources = []
         
         for row in results:
@@ -4791,8 +5085,13 @@ def api_search_resources():
         
         return jsonify({'resources': resources})
         
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
 
 
 @app.route('/api/browse-resources-by-type', methods=['POST'])
@@ -4808,23 +5107,23 @@ def api_browse_resources_by_type():
         
         if not run_id:
             return jsonify({'success': False, 'message': 'No data collection runs available'})
-        
-        # Sanitize inputs
-        resource_type = sanitize(resource_type)
-        run_id = sanitize(run_id)
-        
-        # Query all resources of the specified type
+
+        # Query all resources of the specified type — bound parameters only,
+        # no string interpolation of user input.
         sql = f"""
             SELECT id, name, owner
             FROM {VERTICES_TABLE}
-            WHERE run_id = '{run_id}'
-            AND node_type = '{resource_type}'
+            WHERE run_id = :run_id
+            AND node_type = :resource_type
             ORDER BY name
         """
-        
-        results = exec_query_df(sql)
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "resource_type": resource_type,
+        })
         resources = []
-        
+
         for row in results:
             resource = {
                 'id': row.get('id', ''),
@@ -4832,7 +5131,7 @@ def api_browse_resources_by_type():
                 'owner': row.get('owner', '')
             }
             resources.append(resource)
-        
+
         return jsonify({
             'success': True,
             'resources': resources,
@@ -4840,8 +5139,14 @@ def api_browse_resources_by_type():
             'count': len(resources)
         })
         
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'message': 'internal error',
+                        'request_id': req_id}), 500
 
 
 @app.route('/api/browse-principals-by-type', methods=['POST'])
@@ -4857,13 +5162,8 @@ def api_browse_principals_by_type():
         
         if not run_id:
             return jsonify({'success': False, 'message': 'No data collection runs available'})
-        
-        # Sanitize inputs
-        principal_type = sanitize(principal_type)
-        run_id = sanitize(run_id)
-        
+
         # Map to include both Account and non-Account types
-        type_filter = []
         if principal_type == 'User':
             type_filter = ['User', 'AccountUser']
         elif principal_type == 'Group':
@@ -4872,18 +5172,23 @@ def api_browse_principals_by_type():
             type_filter = ['ServicePrincipal', 'AccountServicePrincipal']
         else:
             type_filter = [principal_type]
-        
-        # Query all principals of the specified type
-        type_list = "', '".join(type_filter)
+
+        # Build a bound IN list — one named param per element, no string
+        # interpolation of user input.
+        placeholders = ", ".join(f":t{i}" for i in range(len(type_filter)))
+        sql_params = {"run_id": run_id}
+        for i, t in enumerate(type_filter):
+            sql_params[f"t{i}"] = t
+
         sql = f"""
             SELECT id, name, display_name, email
             FROM {VERTICES_TABLE}
-            WHERE run_id = '{run_id}'
-            AND node_type IN ('{type_list}')
+            WHERE run_id = :run_id
+            AND node_type IN ({placeholders})
             ORDER BY COALESCE(display_name, name, email, id)
         """
-        
-        results = exec_query_df(sql)
+
+        results = exec_query_df(sql, params=sql_params)
         principals = []
         
         for row in results:
@@ -4902,8 +5207,14 @@ def api_browse_principals_by_type():
             'count': len(principals)
         })
         
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'message': 'internal error',
+                        'request_id': req_id}), 500
 
 
 @app.route('/api/stats')
@@ -4942,8 +5253,10 @@ def api_stats():
                 # Try different possible key names (SDK might return col0, col1 if column names fail)
                 collection_timestamp = row.get('ts') or row.get('col0')
                 collected_by = row.get('cb') or row.get('col1')
+        except NoAccessError:
+            raise
         except Exception as e:
-            print(f"Error loading collection metadata: {e}")
+            logger.exception("loading collection metadata")
             pass  # Table may not exist yet
 
         # Get workspace coverage
@@ -4976,8 +5289,13 @@ def api_stats():
             'workspaces_collected': workspaces_collected,
             'workspaces_failed': workspaces_failed
         })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
 
 
 @app.route('/api/collection-coverage')
@@ -4997,8 +5315,14 @@ def api_collection_coverage():
             'run_id': run_id,
             **coverage
         })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'error': 'internal error',
+                        'request_id': req_id}), 500
 
 
 @app.route('/api/who-can-access', methods=['POST'])
@@ -5344,10 +5668,13 @@ def api_what_can_access():
         p_id_variants.append(f"account_group:{p_id}")
         p_id_variants.append(f"account_sp:{p_id}")
 
-    print(f"[DEBUG] Principal found: id={p_id}, email={p_email}, name={p_name}")
-    print(f"[DEBUG] ID variants to search: {p_id_variants}")
+    logger.debug(f"Principal found: id={p_id}, email={p_email}, name={p_name}")
+    logger.debug(f"ID variants to search: {p_id_variants}")
 
-    type_filter = f"AND v.node_type = '{sanitize(resource_type)}'" if resource_type and resource_type != 'All' else ""
+    # Bind resource_type as a named SQL parameter rather than interpolating
+    # the user-supplied value — eliminates the only direct-POST-input
+    # site in this handler that would otherwise hit a sanitize-only path.
+    type_filter = "AND v.node_type = :resource_type" if resource_type and resource_type != 'All' else ""
 
     # Build SQL condition for all principal ID variants
     id_conditions = ' OR '.join([f"e.src = '{sanitize(vid)}'" for vid in p_id_variants])
@@ -5356,7 +5683,7 @@ def api_what_can_access():
     if p_name:
         id_conditions += f" OR e.src = '{sanitize(p_name)}'"
 
-    print(f"[DEBUG] ID conditions for groups query: {id_conditions}")
+    logger.debug(f"ID conditions for groups query: {id_conditions}")
 
     # Build owner condition for owned_resources (uses v.owner instead of e.src)
     owner_conditions = ' OR '.join([f"v.owner = '{sanitize(vid)}'" for vid in p_id_variants])
@@ -5408,8 +5735,8 @@ def api_what_can_access():
     group_paths = {g['group_id']: g['inheritance_path'] for g in groups_result}
     group_name_paths = {g['group_name']: g['inheritance_path'] for g in groups_result}
 
-    print(f"[DEBUG] Found {len(group_ids)} groups for principal {p_id}: {group_names}")
-    print(f"[DEBUG] Groups query returned {len(groups_result)} rows")
+    logger.debug(f"Found {len(group_ids)} groups for principal {p_id}: {group_names}")
+    logger.debug(f"Groups query returned {len(groups_result)} rows")
 
     # Build SQL-safe lists for IN clauses
     group_ids_sql = ','.join([f"'{sanitize(gid)}'" for gid in group_ids]) if group_ids else "'__none__'"
@@ -5428,7 +5755,7 @@ def api_what_can_access():
     else:
         inheritance_path_expr = "e.src"
 
-    print(f"[DEBUG] path_cases_list has {len(path_cases_list)} entries")
+    logger.debug(f"path_cases_list has {len(path_cases_list)} entries")
 
     query = f"""
     WITH direct_access AS (
@@ -5526,15 +5853,18 @@ def api_what_can_access():
     ORDER BY resource_type, resource_name
     """
 
-    print(f"[DEBUG] Executing main query...")
-    results = exec_query_df(query)
-    print(f"[DEBUG] Main query returned {len(results)} results")
+    logger.debug(f"Executing main query...")
+    main_query_params = {}
+    if resource_type and resource_type != 'All':
+        main_query_params["resource_type"] = resource_type
+    results = exec_query_df(query, params=main_query_params or None)
+    logger.debug(f"Main query returned {len(results)} results")
 
     # Debug: Print first few results if any
     if results:
-        print(f"[DEBUG] First result: {results[0]}")
+        logger.debug(f"First result: {results[0]}")
     else:
-        print(f"[DEBUG] No results! Trying simplified direct_access query...")
+        logger.debug(f"No results! Trying simplified direct_access query...")
         # Try a simple query to test
         test_query = f"""
         SELECT COUNT(*) as cnt FROM {EDGES_TABLE} e
@@ -5542,7 +5872,7 @@ def api_what_can_access():
           AND e.permission_level IS NOT NULL
         """
         test_result = exec_query_df(test_query)
-        print(f"[DEBUG] Test query (edges with permission): {test_result}")
+        logger.debug(f"Test query (edges with permission): {test_result}")
 
     # Calculate summary statistics
     total = len(results)
@@ -6034,8 +6364,10 @@ def find_indirect_escalation_paths(principal, node_info, edge_info, run_id):
 
     try:
         results = exec_query_df(indirect_query)
+    except NoAccessError:
+        raise
     except Exception as e:
-        print(f"  Warning: Error finding indirect paths: {e}")
+        logger.debug(f"  Warning: Error finding indirect paths: {e}")
         return []
 
     indirect_paths = []
@@ -6095,7 +6427,7 @@ def find_indirect_escalation_paths(principal, node_info, edge_info, run_id):
             'hops': hops
         })
 
-    print(f"  Found {len(indirect_paths)} indirect escalation paths")
+    logger.debug(f"  Found {len(indirect_paths)} indirect escalation paths")
     return indirect_paths
 
 
@@ -6121,15 +6453,15 @@ def api_escalation_paths():
     p_name = principal.get('display_name') or principal.get('name') or principal.get('email') or p_id
     p_type = principal.get('node_type', 'Unknown')
 
-    print(f"="*60)
-    print(f"Finding escalation paths for: {p_name}")
-    print(f"Principal ID: {p_id}")
-    print(f"Principal email: {principal.get('email')}")
+    logger.debug("=" * 60)
+    logger.debug(f"Finding escalation paths for: {p_name}")
+    logger.debug(f"Principal ID: {p_id}")
+    logger.debug(f"Principal email: {principal.get('email')}")
 
     # Build graph
     graph, node_info, edge_info = build_graph_from_db(run_id)
     total_edges = sum(len(v) for v in graph.values())
-    print(f"Built graph with {len(graph)} nodes and {total_edges} edges")
+    logger.debug(f"Built graph with {len(graph)} nodes and {total_edges} edges")
 
     # Find ALL node IDs that match this principal (by email or name)
     # This handles account-level vs workspace-level user ID differences
@@ -6144,7 +6476,7 @@ def api_escalation_paths():
         # Match by email (case-insensitive)
         if p_email and ndata.get('email') and ndata.get('email').lower() == p_email.lower():
             all_principal_ids.append(nid)
-            print(f"Found additional node with same email: {nid} ({ndata.get('node_type')})")
+            logger.debug(f"Found additional node with same email: {nid} ({ndata.get('node_type')})")
             continue
         # Match by name/display_name (for users with same identity)
         node_name = ndata.get('name', '').lower()
@@ -6154,24 +6486,24 @@ def api_escalation_paths():
             email_prefix = p_email.split('@')[0].lower() if '@' in p_email else ''
             if email_prefix and (email_prefix in node_name or email_prefix in node_display):
                 all_principal_ids.append(nid)
-                print(f"Found additional node with matching name: {nid} ({ndata.get('node_type')}) - name: {ndata.get('name')}")
+                logger.debug(f"Found additional node with matching name: {nid} ({ndata.get('node_type')}) - name: {ndata.get('name')}")
 
-    print(f"All principal IDs to search from: {all_principal_ids}")
+    logger.debug(f"All principal IDs to search from: {all_principal_ids}")
 
     # Check neighbors for all principal IDs
     total_neighbors = []
     for pid in all_principal_ids:
         if pid in graph:
             neighbors = graph[pid]
-            print(f"Principal {pid} has {len(neighbors)} direct neighbors")
+            logger.debug(f"Principal {pid} has {len(neighbors)} direct neighbors")
             for n in neighbors[:3]:
                 n_info = node_info.get(n, {})
                 e_info = edge_info.get((pid, n), {})
-                print(f"  -> {n}: {n_info.get('name')} ({n_info.get('node_type')}) via {e_info.get('relationship')}")
+                logger.debug(f"  -> {n}: {n_info.get('name')} ({n_info.get('node_type')}) via {e_info.get('relationship')}")
             total_neighbors.extend(neighbors)
 
     # Debug: Show some MemberOf edges
-    print(f"Sample MemberOf edges:")
+    logger.debug(f"Sample MemberOf edges:")
     memberof_count = 0
     for (src, dst), edata in edge_info.items():
         if edata.get('relationship') == 'MemberOf':
@@ -6179,12 +6511,12 @@ def api_escalation_paths():
             if memberof_count <= 3:
                 src_info = node_info.get(src, {})
                 dst_info = node_info.get(dst, {})
-                print(f"  {src} ({src_info.get('node_type')}) -> {dst} ({dst_info.get('node_type')})")
-    print(f"Total MemberOf edges: {memberof_count}")
+                logger.debug(f"  {src} ({src_info.get('node_type')}) -> {dst} ({dst_info.get('node_type')})")
+    logger.debug(f"Total MemberOf edges: {memberof_count}")
 
     # Get privileged targets (admin groups, catalogs, schemas, metastores)
     privileged_df = identify_privileged_targets_query(run_id)
-    print(f"Found {len(privileged_df)} privileged target rows")
+    logger.debug(f"Found {len(privileged_df)} privileged target rows")
 
     # Build map of target_id -> role info
     privileged_map = {}
@@ -6200,24 +6532,24 @@ def api_escalation_paths():
             })
 
     privileged_ids = set(privileged_map.keys())
-    print(f"Unique privileged target IDs: {len(privileged_ids)}")
+    logger.debug(f"Unique privileged target IDs: {len(privileged_ids)}")
 
     # Check if any targets are in graph
     targets_in_graph = [t for t in privileged_ids if t in graph]
-    print(f"Targets that exist in graph: {len(targets_in_graph)}")
+    logger.debug(f"Targets that exist in graph: {len(targets_in_graph)}")
 
     # Show admin groups specifically
-    print(f"Admin group targets:")
+    logger.debug(f"Admin group targets:")
     for tid, roles in privileged_map.items():
         if any('Admin' in r.get('role', '') for r in roles):
             t_info = node_info.get(tid, {})
             in_graph = "YES" if tid in graph else "NO"
-            print(f"  {tid}: {t_info.get('name')} - in graph: {in_graph}")
+            logger.debug(f"  {tid}: {t_info.get('name')} - in graph: {in_graph}")
             if tid in graph:
                 # Check if reachable from principal
-                print(f"    Neighbors of this target: {len(graph.get(tid, []))}")
+                logger.debug(f"    Neighbors of this target: {len(graph.get(tid, []))}")
 
-    print(f"="*60)
+    logger.debug("=" * 60)
 
     if not privileged_ids:
         return jsonify({
@@ -6234,7 +6566,7 @@ def api_escalation_paths():
         for (src, dst), edata in edge_info.items():
             if src == pid and edata.get('relationship') == 'AccountAdmin':
                 dst_info = node_info.get(dst, {})
-                print(f"Found direct AccountAdmin edge: {pid} -> {dst}")
+                logger.debug(f"Found direct AccountAdmin edge: {pid} -> {dst}")
                 direct_admin_paths.append({
                     'start_id': pid,
                     'target_id': dst,
@@ -6268,14 +6600,14 @@ def api_escalation_paths():
                     ]
                 })
 
-    print(f"Found {len(direct_admin_paths)} direct Account Admin paths")
+    logger.debug(f"Found {len(direct_admin_paths)} direct Account Admin paths")
 
     # Find all GROUP MEMBERSHIP paths from ALL principal IDs
     raw_paths = []
     for pid in all_principal_ids:
-        print(f"Searching group membership paths from: {pid}")
+        logger.debug(f"Searching group membership paths from: {pid}")
         paths_from_pid = find_all_paths_bfs(graph, node_info, edge_info, pid, privileged_ids, max_depth, membership_only=True)
-        print(f"  Found {len(paths_from_pid)} paths from {pid}")
+        logger.debug(f"  Found {len(paths_from_pid)} paths from {pid}")
         raw_paths.extend(paths_from_pid)
 
     # Enrich group membership paths with role info and add privileged role as final node
@@ -6305,7 +6637,7 @@ def api_escalation_paths():
     attack_paths.extend(direct_admin_paths)
 
     # Find INDIRECT escalation paths (jobs/notebooks owned by admins)
-    print("Searching for indirect escalation paths...")
+    logger.debug("Searching for indirect escalation paths...")
     indirect_paths = find_indirect_escalation_paths(principal, node_info, edge_info, run_id)
     attack_paths.extend(indirect_paths)
 
@@ -6571,10 +6903,10 @@ def api_impersonation_paths():
         source_name = source_principal.get('display_name') or source_principal.get('name') or source_principal.get('email') or source_id
         target_name = target_principal.get('display_name') or target_principal.get('name') or target_principal.get('email') or target_id
 
-        print(f"="*60)
-        print(f"Finding impersonation paths")
-        print(f"Source: {source_name} ({source_principal.get('node_type')})")
-        print(f"Target: {target_name} ({target_principal.get('node_type')})")
+        logger.debug("=" * 60)
+        logger.debug(f"Finding impersonation paths")
+        logger.debug(f"Source: {source_name} ({source_principal.get('node_type')})")
+        logger.debug(f"Target: {target_name} ({target_principal.get('node_type')})")
 
         # Build graph
         graph, node_info, edge_info = build_graph_from_db(run_id)
@@ -6593,8 +6925,8 @@ def api_impersonation_paths():
             if target_email and node_email == target_email:
                 target_ids.add(nid)
 
-        print(f"Source IDs: {source_ids}")
-        print(f"Target IDs: {target_ids}")
+        logger.debug(f"Source IDs: {source_ids}")
+        logger.debug(f"Target IDs: {target_ids}")
 
         # BFS to find paths from source to target
         all_paths = []
@@ -6632,7 +6964,7 @@ def api_impersonation_paths():
                         new_path_edges = path_edges + [edge]
                         queue.append((neighbor, new_path_nodes, new_path_edges))
 
-        print(f"Found {len(all_paths)} paths")
+        logger.debug(f"Found {len(all_paths)} paths")
 
         # Format paths for response
         formatted_paths = []
@@ -6679,16 +7011,20 @@ def api_impersonation_paths():
             'paths': formatted_paths
         })
 
-    except Exception as e:
-        import traceback
-        error_msg = str(e)
-        print(f"ERROR in impersonation-paths: {error_msg}")
-        print(traceback.format_exc())
+    except NoAccessError:
+        raise
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
         return jsonify({
             'success': False,
-            'message': f"Server error: {error_msg}",
+            'message': 'internal error',
+            'request_id': req_id,
             'paths': []
-        })
+        }), 500
 
 
 @app.route('/api/principals-list')
@@ -7477,6 +7813,8 @@ def report_secret_scopes_filters():
     query_error = None
     try:
         scopes_results = exec_query_df(scopes_query)
+    except NoAccessError:
+        raise
     except Exception as e:
         scopes_results = []
         query_error = str(e)
@@ -7554,4 +7892,8 @@ if __name__ == '__main__':
     # Debug mode should be explicitly enabled via environment variable
     # Never enable debug=True in production - it exposes sensitive information
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
-    app.run(host='0.0.0.0', port=8000, debug=debug_mode)
+    # Binding to 0.0.0.0 is required by the Databricks Apps runtime — the
+    # platform's reverse proxy terminates SSO/OAuth and forwards traffic
+    # to the container on this address. The app is not directly reachable
+    # from the public internet.
+    app.run(host='0.0.0.0', port=8000, debug=debug_mode)  # nosemgrep: python.flask.security.audit.app-run-param-config.avoid_app_run_with_bad_host

@@ -102,6 +102,63 @@ The web UI provides:
   <img src={useBaseUrl('/img/principal_analysis_home.png')} alt="Permissions Analysis Web UI Home" />
 </div>
 
+#### User Authorization
+
+The app is intended for workspace and account admins. So that the app
+cannot act as a privileged proxy beyond each caller's Unity Catalog
+grants, the SAT install configures user authorization on the app
+declaratively (via DABS or Terraform) — the `sql` scope required by
+the Statement Execution API is set automatically. No manual UI step
+is required.
+
+When user authorization is configured, the app constructs a per-request
+`WorkspaceClient` bound to the caller's forwarded OAuth token and Unity
+Catalog enforces the caller's grants on the BrickHound tables.
+
+**Required Unity Catalog grants (admin-only).** Grant the users or
+group who will run permissions analyses `SELECT` on the three BrickHound
+tables in the SAT analysis schema, e.g.:
+
+```sql
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_vertices             TO `<admin_group>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_edges                TO `<admin_group>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata  TO `<admin_group>`;
+```
+
+Without these grants, opening the app shows a friendly banner naming
+the missing tables instead of a generic error.
+
+> **Manual override.** If you need to add or remove scopes manually,
+> open the app in the Databricks UI (**Compute → Apps →
+> sat-permissions-exp** → **Edit** → **User authorization**) and edit
+> the scope list. The IaC default of `["sql"]` is sufficient for
+> normal use.
+>
+> **SP fallback.** If user authorization ever gets cleared (no scopes
+> configured), the app automatically falls back to its service
+> principal identity and a one-time warning is logged. Functionality
+> is unchanged. Re-add the `sql` scope to restore per-user enforcement.
+
+#### Upgrading from SAT 0.7.x
+
+If you are upgrading an existing SAT install (where the BrickHound app
+ran without user authorization), each user who had previously opened
+the app needs to re-consent once. They will see the friendly "missing
+the `sql` scope" banner until they do. Three workarounds, easiest first:
+
+1. **Open the app URL in a private/incognito window** — fresh session,
+   no cached consent, the platform prompts for consent immediately.
+2. **Clear cookies for the workspace domain** in the regular browser
+   (Chrome → site cookies for `<workspace>.cloud.databricks.com` →
+   delete), then reopen the app.
+3. **Revoke the prior authorization** from the user's profile settings
+   if your workspace exposes a connected-apps list, then reopen the
+   app.
+
+New installs do not hit this — fresh installs declare
+`user_api_scopes: ["sql"]` from the start, so the first user open
+prompts for the right scope set automatically.
+
 ## Key Capabilities
 
 ### Query Access Patterns
