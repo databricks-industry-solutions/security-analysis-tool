@@ -91,6 +91,42 @@ If you don't see a JSON with a clean listing of workspaces, you are likely havin
 
 </AccordionItem>
 
+<AccordionItem question="Permissions Analysis app shows 'missing sql scope' banner after upgrading to 0.8.0">
+
+The Permissions Analysis app uses on-behalf-of-user (OBO) authentication in 0.8.0. The required `sql` scope is declared in the SAT install templates, but each user must consent to the scope on first open after the upgrade. If you opened the app before upgrading, your browser session has a cached consent grant without `sql` and you'll see the banner.
+
+**Resolution (try in order):**
+
+1. Open the app URL in a private/incognito window — this triggers a fresh consent prompt.
+2. Or clear cookies for the workspace domain in your regular browser, then reopen the app.
+3. Or revoke the prior authorization from your account profile (if your workspace exposes a "Linked apps" list), then reopen.
+
+The full background and permanent setup is on the [Permissions Analysis page](./functionality/permissions-analysis.mdx#user-authorization).
+
+</AccordionItem>
+
+<AccordionItem question="Permissions Analysis app shows 'You don't have permission to read the SAT permissions analysis schema'">
+
+In 0.8.0 the app runs Statement Execution as the calling user, so Unity Catalog enforces the user's grants on the Permissions Analysis tables. If the user does not have `SELECT` on those tables, the app renders a friendly banner instead of a SQL error.
+
+**Resolution:** an admin grants `SELECT` on the three tables to the user or group that needs to use the app. Replace `<catalog>` and `<schema>` with the values used during your SAT install:
+
+```sql
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_vertices             TO `<admin_group>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_edges                TO `<admin_group>`;
+GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata  TO `<admin_group>`;
+```
+
+</AccordionItem>
+
+<AccordionItem question="NS-14 (egress control) reports 'egress blocked' on workspaces with restricted egress">
+
+NS-14 is a live behavior check — it runs from the SAT driver compute and probes a small list of public destinations to confirm whether outbound traffic is reachable. On a properly egress-restricted network the probes are *expected* to fail, and **that's the pass state for the check**: egress controls are doing their job.
+
+If you see NS-14 reporting "egress blocked" on a workspace where you've configured network policies or firewall rules to restrict outbound traffic, no action is required.
+
+</AccordionItem>
+
 <AccordionItem question="Offline Library Install - No PyPI Access">
 
 If your workspace does not have access to PyPI, follow these steps to install the required libraries manually:

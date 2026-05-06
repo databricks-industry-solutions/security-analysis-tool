@@ -10,6 +10,16 @@ import FeatureCards from '@site/src/components/FeatureCards';
 
 The **Security Analysis Tool (SAT)** is an observability utility designed to improve the security posture of Databricks deployments. It helps you identify deviations from established security best practices and monitor the security health of your Databricks workspaces.
 
+<Admonition type="tip" title="What's new in 0.8.0">
+
+- **11 new checks** across Data Protection, Governance, Identity & Access, Network Security, and Informational.
+- **Live egress testing (NS-14)** — first SAT check that probes real network behavior from compute, not just configuration.
+- **Per-user identity in Permissions Analysis** — the app now runs queries as the calling user; Unity Catalog enforces grants directly.
+- **Expanded secret scanning** — cluster init scripts referenced via FUSE mounts are now scanned alongside `spark_env_vars`.
+- See the [Upgrade Guide](../upgrade) for behavior changes when upgrading from 0.7.x.
+
+</Admonition>
+
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
  <img src={useBaseUrl('/img/sat_functionality.png')} alt="SAT Functionality Overview" />
 </div>
@@ -60,18 +70,29 @@ SAT is typically run daily as an automated workflow within your environment:
 
 ## Security Categories
 
-SAT evaluates over **60 security best practices** across five key categories:
+SAT evaluates **65+ security best practices** across five key categories:
 
-* **Network Security** - Network policies, VPC configurations, and network isolation
+* **Network Security** - Network policies, VPC configurations, and network isolation (includes live egress testing from compute as of 0.8.0)
 * **Identity & Access** - User management, group memberships, and access controls
 * **Data Protection** - Encryption, data classification, and data governance
 * **Governance** - Compliance, audit logging, and policy enforcement
 * **Informational** - Observations and recommendations for continuous improvement
 
+Cloud applicability for each check is recorded in `configs/security_best_practices.csv` — a small number of checks are AWS-only or AWS+GCP-only where the underlying API is not available on every cloud.
+
 **Severity Levels:**
 * **High** - Critical issues requiring immediate attention
 * **Medium** - Important issues to address soon
 * **Low** - Minor issues for continuous improvement
+
+### Live behavior tests (new in 0.8.0)
+
+Most SAT checks inspect configuration and report deviations. **NS-14** is the first SAT check that exercises real behavior — it runs from the SAT driver compute and probes a small set of public destinations to verify that egress controls actually block outbound traffic.
+
+* On a workspace with restrictive egress controls, the probes are *expected* to fail. NS-14 reports "egress blocked" — that's the **pass** state.
+* On a workspace with no egress restriction, the probes succeed and NS-14 reports the destinations as reachable.
+
+This makes NS-14 useful as a real-world spot check for egress configuration: it tells you whether your network controls are doing their job, not just whether they exist on paper.
 
 ---
 

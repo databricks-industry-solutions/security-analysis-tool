@@ -113,10 +113,10 @@ is required.
 
 When user authorization is configured, the app constructs a per-request
 `WorkspaceClient` bound to the caller's forwarded OAuth token and Unity
-Catalog enforces the caller's grants on the BrickHound tables.
+Catalog enforces the caller's grants on the Permissions Analysis tables.
 
 **Required Unity Catalog grants (admin-only).** Grant the users or
-group who will run permissions analyses `SELECT` on the three BrickHound
+group who will run permissions analyses `SELECT` on the three Permissions Analysis
 tables in the SAT analysis schema, e.g.:
 
 ```sql
@@ -141,7 +141,7 @@ the missing tables instead of a generic error.
 
 #### Upgrading from SAT 0.7.x
 
-If you are upgrading an existing SAT install (where the BrickHound app
+If you are upgrading an existing SAT install (where the Permissions Analysis app
 ran without user authorization), each user who had previously opened
 the app needs to re-consent once. They will see the friendly "missing
 the `sql` scope" banner until they do. Three workarounds, easiest first:

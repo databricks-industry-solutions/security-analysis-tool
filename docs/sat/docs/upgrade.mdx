@@ -1,0 +1,52 @@
+---
+sidebar_position: 4
+---
+import Admonition from '@theme/Admonition';
+
+# Upgrading SAT
+
+This page covers behavior changes you should expect when upgrading an existing SAT install to a newer version. SAT does not auto-upgrade — see the [FAQ](./faq.mdx#sat-deployment-and-support) for the rationale.
+
+## Upgrading from 0.7.x to 0.8.0
+
+### What to do
+
+Re-deploy via your usual install path to pick up the 0.8.0 templates, new checks, and SDK update:
+
+- **Standard install:** rerun `./install.sh` from a fresh clone of the `release/0.8.0` tag.
+- **Terraform install:** `terraform apply` against the updated module.
+- **DABS bundle (advanced):** `databricks bundle deploy` from the repo root.
+
+### What you'll notice after the upgrade
+
+<Admonition type="info" title="One-time consent re-prompt for the Permissions Analysis app">
+The Permissions Analysis app now uses on-behalf-of-user (OBO) authentication so Unity Catalog enforces each caller's grants on the Permissions Analysis tables. The required `sql` scope is set automatically by the SAT install. **Existing users who opened the app before the upgrade will see a friendly "missing sql scope" banner once** — until they trigger a fresh OAuth consent prompt by opening the app in a private/incognito window or clearing cookies for the workspace domain. New users hit no prompt because consent fires automatically on first open.
+
+Full setup on the [Permissions Analysis page](./functionality/permissions-analysis.mdx); workaround details in [Troubleshooting](./troubleshooting.mdx).
+</Admonition>
+
+<Admonition type="info" title="Dashboard check count goes up">
+0.8.0 adds new security checks across Data Protection, Governance, Identity & Access, Network Security, and Informational categories. Your dashboard rows will increase the first time the driver runs after the upgrade. Review the new findings against your security baseline — some may surface deviations that were previously not measured. You can disable any check via the `7. update_sat_check_configuration` notebook (see [Usage → Modifying Security Best Practices](./usage.mdx#modifying-security-best-practices)).
+</Admonition>
+
+<Admonition type="info" title="IA-9 no longer evaluated on Azure">
+**IA-9** ("Service principal client secrets not stale") is now evaluated on AWS and GCP only. Azure service principals are typically managed in Microsoft Entra ID and their OAuth credentials live there, not in Databricks — so the Databricks API does not return a representative view of secret rotation posture for Azure deployments. To avoid misleading "pass" results, the check is disabled at the configuration level for Azure. AWS and GCP behavior is unchanged.
+
+If you see fewer Identity & Access rows on Azure dashboards than before, this is the reason.
+</Admonition>
+
+<Admonition type="info" title="NS-14 reads 'egress blocked' as the pass state">
+**NS-14** is a new live behavior check. It runs from the SAT driver compute and probes a small set of public destinations to confirm whether outbound traffic actually escapes. On a network with restrictive egress controls, the probes are *expected* to fail — and that's the pass state. If your workspace is properly locked down and you see NS-14 reporting "egress blocked," no action is required.
+</Admonition>
+
+### Other upgrade notes
+
+- **SDK version**: SAT 0.8.0 ships `dbl_sat_sdk-0.1.51`. Re-deploy picks it up automatically; manual installs should reference the wheel under `lib/`.
+- **Serverless compute**: SAT jobs and the Permissions Analysis app pin to **Environment v5** for predictable behavior across DABS and Terraform installs.
+- **Secret scanner coverage**: cluster init scripts referenced via FUSE mount paths are now scanned alongside `spark_env_vars`. See [Cluster Secrets Scanning](./functionality/cluster-secrets-scanning.mdx).
+
+### If something looks wrong
+
+- Run the diagnosis notebook for your cloud (`notebooks/diagnosis/sat_diagnosis_<cloud>.py`) — see [Troubleshooting](./troubleshooting.mdx).
+- Check the [Troubleshooting](./troubleshooting.mdx) page for entries on the Permissions Analysis consent banner, missing UC SELECT, and NS-14 expected behavior.
+- Open a [GitHub Issue](https://github.com/databricks-industry-solutions/security-analysis-tool/issues) if you hit something not covered.

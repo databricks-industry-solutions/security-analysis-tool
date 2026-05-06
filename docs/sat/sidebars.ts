@@ -62,6 +62,7 @@ const sidebars = {
         },
       ],
     },
+    'upgrade',
     'usage',
     'faq',
     'troubleshooting',
