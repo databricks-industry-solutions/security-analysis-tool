@@ -177,7 +177,7 @@ import shutil
 import yaml
 from datetime import timedelta, datetime
 from urllib.parse import quote
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 # Configure logging for better debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -351,45 +351,41 @@ def generate_sha256_hash(secret: str) -> str:
     sha.update(secret_bytes)
     return sha.hexdigest()
 
-def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
     """
     Make API request to Databricks with proper error handling.
-    
-    Args:
-        url (str): API endpoint URL
-        headers (Dict[str, str]): Request headers
-        data (Optional[Dict[str, Any]]): Request payload
-        
-    Returns:
-        Optional[Dict[str, Any]]: JSON response or None if error
+
+    Returns a (json_or_none, status_or_none) tuple so callers can branch
+    on HTTP status. Status is None when the request never reached the
+    server (timeout / connection error).
     """
     try:
         response = requests.get(url, headers=headers, json=data, timeout=30)
-        
+
         if response.status_code == 200:
-            return response.json()
+            return response.json(), 200
         elif response.status_code == 429:
             logger.warning(f"Rate limit hit for URL: {url}. Waiting before retry...")
             time.sleep(Config.API_SLEEP_SECONDS * 2)  # Wait longer for rate limits
-            return None
+            return None, 429
         else:
             logger.warning(f"API request failed. URL: {url}, Status: {response.status_code}")
-            return None
-            
+            return None, response.status_code
+
     except requests.exceptions.Timeout:
         logger.error(f"Request timeout for URL: {url}")
-        return None
+        return None, None
     except requests.exceptions.RequestException as e:
         logger.error(f"Request error for URL: {url}. Error: {str(e)}")
-        return None
+        return None, None
 
 def check_notebook_status(notebook_path: str) -> int:
     """
     Check if a notebook exists and is accessible.
-    
+
     Args:
         notebook_path (str): Path to the notebook
-        
+
     Returns:
         int: HTTP status code (200=accessible, 403=no permission, 404=not found)
     """
@@ -402,6 +398,88 @@ def check_notebook_status(notebook_path: str) -> int:
     except requests.exceptions.RequestException as e:
         logger.error(f"Error checking notebook status for {notebook_path}: {str(e)}")
         return 500  # Internal server error
+
+
+def _get_object_metadata(path: str) -> Optional[Dict[str, Any]]:
+    """Return the full /workspace/get-status response body for `path`.
+
+    Used by the workspace/list-based discovery fallback to read
+    `modified_at` for time-window filtering.
+    """
+    url = f"{base_url}/api/2.0/workspace/get-status?path={quote(path)}"
+    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"workspace/get-status failed for {path}: {str(e)}")
+        return None
+
+
+def _list_workspace_recursive(path: str,
+                              results: List[Dict[str, Any]],
+                              cutoff_ms: Optional[int] = None) -> None:
+    """Recursively enumerate NOTEBOOK / FILE objects under `path`.
+
+    Appends entries to `results` in the shape `_process_notebook_batch`
+    expects: {id, name, workspace_path}. If `cutoff_ms` is provided,
+    only objects with `modified_at >= cutoff_ms` are included (one
+    extra /workspace/get-status call per leaf).
+    """
+    url = f"{base_url}/api/2.0/workspace/list?path={quote(path)}"
+    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code != 200:
+            # 404 is normal for tree roots that don't exist on every
+            # workspace (e.g. /Repos on workspaces without Git integration).
+            if r.status_code != 404:
+                logger.warning(f"workspace/list returned {r.status_code} for {path}")
+            return
+        objs = r.json().get("objects", [])
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"workspace/list failed for {path}: {str(e)}")
+        return
+
+    for obj in objs:
+        obj_type = obj.get("object_type")
+        obj_path = obj.get("path", "")
+        if not obj_path:
+            continue
+
+        if obj_type in ("DIRECTORY", "REPO"):
+            _list_workspace_recursive(obj_path, results, cutoff_ms)
+        elif obj_type in ("NOTEBOOK", "FILE"):
+            if cutoff_ms is not None:
+                meta = _get_object_metadata(obj_path)
+                if not meta:
+                    continue
+                modified_at = meta.get("modified_at", 0)
+                if modified_at < cutoff_ms:
+                    continue
+            results.append({
+                "id": str(obj.get("object_id", "")),
+                "name": obj_path.rsplit("/", 1)[-1],
+                "workspace_path": obj_path.rsplit("/", 1)[0],
+            })
+
+
+def discover_notebooks_via_workspace_list(time_filter_enabled: bool,
+                                          last_edited_after: Optional[int]) -> List[Dict[str, Any]]:
+    """Fallback notebook discovery using /workspace/list + /get-status.
+
+    Used when /search-midtier/unified-search rejects token-based auth
+    (returns 403). See GitHub issue #330 for context. The standard
+    discoverable trees — /Users, /Shared, /Repos — cover the common
+    cases; missing roots are tolerated silently (404).
+    """
+    cutoff_ms = last_edited_after if time_filter_enabled else None
+    results: List[Dict[str, Any]] = []
+    for root in ("/Users", "/Shared", "/Repos"):
+        _list_workspace_recursive(root, results, cutoff_ms)
+    return results
 
 def get_fuse_path(workspace_path: str) -> Optional[str]:
     """Find the actual file on the FUSE mount by trying common extensions."""
@@ -822,48 +900,39 @@ def scan_notebook_for_secrets(notebook_path: str, object_id: str) -> Optional[Li
         logger.error(f"Error scanning notebook {notebook_path}: {str(e)}")
         return None
 
-def process_search_response(response: Dict[str, Any], results_list: List[Dict[str, Any]], 
-                          output_filename: Optional[str] = None, run_id: Optional[int] = None, 
-                          workspace_id: Optional[str] = None) -> Optional[str]:
+def _process_notebook_batch(batch: List[Dict[str, Any]],
+                            results_list: List[Dict[str, Any]],
+                            output_filename: Optional[str] = None,
+                            run_id: Optional[int] = None,
+                            workspace_id: Optional[str] = None) -> None:
+    """Scan each notebook in `batch` for secrets and record results.
+
+    `batch` is a list of {id, name, workspace_path} dicts — the shape
+    unified-search returns natively. The workspace/list fallback
+    synthesizes the same shape so both discovery paths share this
+    downstream processor (TruffleHog scan, DB insert, log file write).
     """
-    Process search API response and scan notebooks for secrets.
-    
-    Args:
-        response (Dict[str, Any]): API response from unified search
-        results_list (List[Dict[str, Any]]): List to store notebook metadata
-        output_filename (Optional[str]): File to log notebook metadata
-        run_id (Optional[int]): SAT run ID for database tracking
-        workspace_id (Optional[str]): Workspace ID for database storage
-        
-    Returns:
-        Optional[str]: Next page token for pagination or None if no more pages
-    """
-    if not response:
-        logger.warning("Empty response received")
-        return None
-        
-    results = response.get("results", [])
-    logger.info(f"Processing {len(results)} notebooks from search response")
-    
-    for notebook in results:
+    logger.info(f"Processing {len(batch)} notebooks from discovery batch")
+
+    for notebook in batch:
         notebook_id = notebook.get("id", "")
         notebook_name = notebook.get("name", "")
         parent_path = notebook.get("workspace_path", "")
-        
+
         if not notebook_id or not notebook_name:
             logger.warning("Skipping notebook with missing ID or name")
             continue
-            
+
         # Construct full notebook path
         temp_path = f"{parent_path}/{notebook_name}"
         path = quote(temp_path)
-        
+
         logger.info(f"Processing notebook: {notebook_id} - {temp_path}")
-        
+
         # Store notebook metadata
         notebook_metadata = {"object_id": notebook_id, "path": path, "name": notebook_name}
         results_list.append(notebook_metadata)
-        
+
         # Log to file if specified
         if output_filename:
             try:
@@ -872,29 +941,43 @@ def process_search_response(response: Dict[str, Any], results_list: List[Dict[st
                     output_file.write("\n")
             except IOError as e:
                 logger.error(f"Failed to write to output file {output_filename}: {str(e)}")
-        
+
         # Scan notebook for secrets
         secret_results = scan_notebook_for_secrets(path, notebook_id)
-        
+
         if secret_results:
             # Store results with notebook metadata
             notebook_metadata["secrets_found"] = len(secret_results)
             notebook_metadata["secret_details"] = secret_results
-            
+
             # Log summary - only show when secrets are found
             print(f"🚨 SECRETS DETECTED in {temp_path}:")
             print(json.dumps(secret_results, indent=2))
         else:
             notebook_metadata["secrets_found"] = 0
             # Don't print "No secrets found" to avoid overwhelming output with thousands of notebooks
-        
+
         # Store results in database if run_id and workspace_id are provided
         logger.info(f"Inserting secret scan results for workspace_id: {workspace_id} and run_id: {run_id}")
         logger.info(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
         if run_id is not None and workspace_id is not None:
             insert_secret_scan_results(workspace_id, notebook_metadata, run_id)
-    
-    # Return next page token for pagination
+
+
+def process_search_response(response: Dict[str, Any], results_list: List[Dict[str, Any]],
+                          output_filename: Optional[str] = None, run_id: Optional[int] = None,
+                          workspace_id: Optional[str] = None) -> Optional[str]:
+    """
+    Process unified-search API response and scan returned notebooks for secrets.
+
+    Returns the next-page token (or None if there are no more pages).
+    """
+    if not response:
+        logger.warning("Empty response received")
+        return None
+
+    _process_notebook_batch(response.get("results", []), results_list,
+                            output_filename, run_id, workspace_id)
     return response.get("next_page_token")
 
 print("✅ Main scanning functions defined successfully!")
@@ -992,16 +1075,46 @@ def main_scanning_workflow():
     try:
         while next_page_token is not None:
             print(f"📖 Processing page {page_number}...")
-            
+
             # Add pagination token to request
             if next_page_token:
                 data["page_token"] = next_page_token
             elif "page_token" in data:
                 del data["page_token"]  # Remove token for first request
-            
+
             # Make API request
-            response = make_api_request(url, headers, data)
-            
+            response, status_code = make_api_request(url, headers, data)
+
+            # /search-midtier/unified-search rejects token-based auth on
+            # workspaces where the endpoint is browser-only. See GitHub
+            # issue #330. Fall back to /workspace/list-based discovery
+            # so the scanner still produces a useful result. Only fall
+            # back on the very first page — a mid-pagination 403 would
+            # indicate a different problem and shouldn't silently switch
+            # discovery strategies.
+            if status_code == 403 and page_number == 1:
+                logger.warning(
+                    "unified-search rejected token auth (HTTP 403). "
+                    "Falling back to workspace/list-based discovery. "
+                    "Slower but works on workspaces where unified-search "
+                    "is restricted to browser sessions."
+                )
+                print("⚠️  unified-search returned 403; using workspace/list fallback.")
+                fallback_cutoff = last_edited_after if time_filter_enabled else None
+                batch = discover_notebooks_via_workspace_list(time_filter_enabled, fallback_cutoff)
+                logger.info(f"workspace/list discovered {len(batch)} notebooks/files")
+                print(f"📂 workspace/list found {len(batch)} notebooks/files to scan")
+                _process_notebook_batch(batch, results_list, Config.RESULTS_LOG_FILE,
+                                        current_run_id, workspace_id)
+                total_notebooks_processed = len(batch)
+                notebooks_with_secrets = sum(
+                    1 for n in results_list if n.get("secrets_found", 0) > 0
+                )
+                total_secrets_found = sum(
+                    n.get("secrets_found", 0) for n in results_list
+                )
+                break  # fallback is single-pass; leave the pagination loop
+
             if response is None:
                 logger.warning(f"Failed to get response for page {page_number}")
                 break
