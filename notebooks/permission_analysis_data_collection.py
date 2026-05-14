@@ -232,6 +232,11 @@ COLLECTION_CONFIG = {
     'max_schemas_per_catalog': None,
     'max_tables_per_schema': None,
 
+    # Parallelization (#348). Set parallelize_collection=False to fall back
+    # to serial fetches if hitting downstream API rate limits.
+    'parallelize_collection': True,
+    'collection_concurrency': 20,
+
     # Data retention settings
     # -1 = keep forever, 0 or 1 = keep only latest run, N = delete runs older than N days
     'retention_days': 30,
@@ -246,6 +251,7 @@ print(f"  Account Level: {'automatic in multi-workspace mode' if MULTI_WORKSPACE
 print(f"  Workspace Level: {'' if COLLECTION_CONFIG['collect_workspace_level'] else ''}")
 print(f"  Unity Catalog: {'' if COLLECTION_CONFIG['collect_unity_catalog'] else ''}")
 print(f"  Permissions: {'' if COLLECTION_CONFIG['collect_permissions'] else ''}")
+print(f"  Parallel:      {'on' if COLLECTION_CONFIG['parallelize_collection'] else 'off'} (concurrency={COLLECTION_CONFIG['collection_concurrency']})")
 
 print(f"\n Output:")
 print(f"  {COLLECTION_CONFIG['output_catalog']}.{COLLECTION_CONFIG['output_schema']}.vertices")
@@ -781,6 +787,7 @@ try:
     from brickhound.collector.core import DatabricksCollector
     from brickhound.utils.config import DatabricksConfig, CollectorConfig
     from brickhound.graph.schema import NodeType, EdgeType, GraphSchema
+    from brickhound.utils.parallel import collect_permission_edges
     print("Using installed Permissions Analysis Tool package")
 except ImportError:
     print("Permissions Analysis Tool package not installed, using notebook implementation")
