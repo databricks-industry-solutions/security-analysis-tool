@@ -1447,6 +1447,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting Clusters for {ws_name}...")
                 try:
                     clusters = list(ws_client.clusters.list())
+                    cluster_specs = []
                     for cluster in tqdm(clusters, desc="Clusters"):
                         cluster_id = safe_get(cluster, 'cluster_id')
                         all_vertices.append({
@@ -1463,34 +1464,18 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': safe_json({'spark_version': safe_get(cluster, 'spark_version')}),
                             'metadata': safe_json({'state': safe_get(cluster, 'state')})
                         })
+                        cluster_specs.append((cluster_id, cluster_id))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("clusters", cluster_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = None
-                                        if acl.user_name:
-                                            principal = acl.user_name
-                                        elif acl.group_name:
-                                            principal = acl.group_name
-                                        elif acl.service_principal_name:
-                                            principal = acl.service_principal_name
+                    if COLLECTION_CONFIG['collect_permissions'] and cluster_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="clusters",
+                            object_specs=cluster_specs,
+                            max_workers=workers,
+                            edge_properties=None,
+                        ))
 
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': cluster_id,
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': None,
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
                     print(f"    Collected {len(clusters)} clusters")
                 except Exception as e:
                     print(f"    Error collecting clusters: {e}")
@@ -1500,6 +1485,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting Instance Pools for {ws_name}...")
                 try:
                     pools = list(ws_client.instance_pools.list())
+                    pool_specs = []
                     for pool in tqdm(pools, desc="Instance Pools"):
                         pool_id = safe_get(pool, 'instance_pool_id')
                         all_vertices.append({
@@ -1516,27 +1502,18 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': safe_json({'node_type_id': safe_get(pool, 'node_type_id')}),
                             'metadata': None
                         })
+                        pool_specs.append((pool_id, pool_id))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("instance-pools", pool_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': pool_id,
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': None,
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and pool_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="instance-pools",
+                            object_specs=pool_specs,
+                            max_workers=workers,
+                            edge_properties=None,
+                        ))
+
                     print(f"    Collected {len(pools)} instance pools")
                 except Exception as e:
                     print(f"    Error collecting instance pools: {e}")
@@ -1546,6 +1523,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting Cluster Policies for {ws_name}...")
                 try:
                     policies = list(ws_client.cluster_policies.list())
+                    policy_specs = []
                     for policy in tqdm(policies, desc="Cluster Policies"):
                         policy_id = safe_get(policy, 'policy_id')
                         all_vertices.append({
@@ -1562,27 +1540,18 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': None,
                             'metadata': None
                         })
+                        policy_specs.append((policy_id, policy_id))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("cluster-policies", policy_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': policy_id,
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': None,
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and policy_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="cluster-policies",
+                            object_specs=policy_specs,
+                            max_workers=workers,
+                            edge_properties=None,
+                        ))
+
                     print(f"    Collected {len(policies)} cluster policies")
                 except Exception as e:
                     print(f"    Error collecting cluster policies: {e}")
@@ -1596,6 +1565,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting Serving Endpoints for {ws_name}...")
                 try:
                     endpoints = list(ws_client.serving_endpoints.list())
+                    endpoint_specs = []
                     for ep in tqdm(endpoints, desc="Serving Endpoints"):
                         ep_name = safe_get(ep, 'name')
                         all_vertices.append({
@@ -1612,27 +1582,18 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': None,
                             'metadata': None
                         })
+                        endpoint_specs.append((ep_name, f"serving_endpoint:{ep_name}"))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("serving-endpoints", ep_name)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': f"serving_endpoint:{ep_name}",
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': None,
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and endpoint_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="serving-endpoints",
+                            object_specs=endpoint_specs,
+                            max_workers=workers,
+                            edge_properties=None,
+                        ))
+
                     print(f"    Collected {len(endpoints)} serving endpoints")
                 except Exception as e:
                     print(f"    Error collecting serving endpoints: {e}")
@@ -1667,6 +1628,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting MLflow Experiments for {ws_name}...")
                 try:
                     experiments = list(ws_client.experiments.list_experiments())
+                    experiment_specs = []
                     for exp in tqdm(experiments, desc="Experiments"):
                         exp_id = safe_get(exp, 'experiment_id')
                         all_vertices.append({
@@ -1683,27 +1645,18 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': None,
                             'metadata': None
                         })
+                        experiment_specs.append((exp_id, f"experiment:{exp_id}"))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("experiments", exp_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': f"experiment:{exp_id}",
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': None,
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and experiment_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="experiments",
+                            object_specs=experiment_specs,
+                            max_workers=workers,
+                            edge_properties=None,
+                        ))
+
                     print(f"    Collected {len(experiments)} experiments")
                 except Exception as e:
                     print(f"    Error collecting experiments: {e}")
@@ -1796,6 +1749,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting Jobs for {ws_name}...")
                 try:
                     jobs = list(ws_client.jobs.list())
+                    job_specs = []
                     for job in tqdm(jobs, desc="Jobs"):
                         job_id = str(safe_get(job, 'job_id'))
                         job_name = safe_get(job.settings, 'name') if job.settings else f"Job {job_id}"
@@ -1813,27 +1767,18 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': None,
                             'metadata': None
                         })
+                        job_specs.append((job_id, job_id))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("jobs", job_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': job_id,
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': None,
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and job_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="jobs",
+                            object_specs=job_specs,
+                            max_workers=workers,
+                            edge_properties=None,
+                        ))
+
                     print(f"    Collected {len(jobs)} jobs")
                 except Exception as e:
                     print(f"    Error collecting jobs: {e}")
@@ -1843,6 +1788,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting Pipelines (DLT) for {ws_name}...")
                 try:
                     pipelines = list(ws_client.pipelines.list_pipelines())
+                    pipeline_specs = []
                     for pipeline in tqdm(pipelines, desc="Pipelines"):
                         pipeline_id = safe_get(pipeline, 'pipeline_id')
                         all_vertices.append({
@@ -1859,27 +1805,18 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': None,
                             'metadata': None
                         })
+                        pipeline_specs.append((pipeline_id, f"pipeline:{pipeline_id}"))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("pipelines", pipeline_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': f"pipeline:{pipeline_id}",
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': None,
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and pipeline_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="pipelines",
+                            object_specs=pipeline_specs,
+                            max_workers=workers,
+                            edge_properties=None,
+                        ))
+
                     print(f"    Collected {len(pipelines)} pipelines")
                 except Exception as e:
                     print(f"    Error collecting pipelines: {e}")
@@ -1892,6 +1829,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting SQL Warehouses for {ws_name}...")
                 try:
                     warehouses = list(ws_client.warehouses.list())
+                    warehouse_specs = []
                     for wh in tqdm(warehouses, desc="Warehouses"):
                         wh_id = safe_get(wh, 'id')
                         all_vertices.append({
@@ -1911,27 +1849,18 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             }),
                             'metadata': None
                         })
+                        warehouse_specs.append((wh_id, wh_id))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("sql/warehouses", wh_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': wh_id,
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': None,
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and warehouse_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="sql/warehouses",
+                            object_specs=warehouse_specs,
+                            max_workers=workers,
+                            edge_properties=None,
+                        ))
+
                     print(f"    Collected {len(warehouses)} warehouses")
                 except Exception as e:
                     print(f"    Error collecting warehouses: {e}")
@@ -2286,6 +2215,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
             print(f"    Collecting Jobs...")
             try:
                 ws_jobs = list(ws_client.jobs.list())
+                job_specs = []
                 for job in ws_jobs:
                     job_id = f"ws_{ws_id}_job:{job.job_id}"
                     job_settings = job.settings if hasattr(job, 'settings') else None
@@ -2306,27 +2236,17 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         'properties': safe_json({'workspace_id': str(ws_id), 'workspace_name': ws_name}),
                         'metadata': None
                     })
+                    job_specs.append((str(job.job_id), job_id))
 
-                    # Collect permissions
-                    if COLLECTION_CONFIG['collect_permissions']:
-                        try:
-                            perms = ws_client.permissions.get("jobs", str(job.job_id))
-                            if perms and perms.access_control_list:
-                                for acl in perms.access_control_list:
-                                    principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                    if principal and acl.all_permissions:
-                                        for perm in acl.all_permissions:
-                                            all_edges.append({
-                                                'src': principal,
-                                                'dst': job_id,
-                                                'relationship': safe_get(perm, 'permission_level'),
-                                                'permission_level': safe_get(perm, 'permission_level'),
-                                                'inherited': safe_get(perm, 'inherited', False),
-                                                'properties': safe_json({'workspace_id': str(ws_id)}),
-                                                'created_at': datetime.now()
-                                            })
-                        except:
-                            pass
+                if COLLECTION_CONFIG['collect_permissions'] and job_specs:
+                    workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                    all_edges.extend(collect_permission_edges(
+                        workspace_client=ws_client,
+                        request_object_type="jobs",
+                        object_specs=job_specs,
+                        max_workers=workers,
+                        edge_properties=safe_json({'workspace_id': str(ws_id)}),
+                    ))
 
                 print(f"    ✓ {len(ws_jobs)} jobs")
             except Exception as e:
@@ -2418,6 +2338,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"    Collecting Clusters...")
                 try:
                     ws_clusters = list(ws_client.clusters.list())
+                    cluster_specs = []
                     for cluster in ws_clusters:
                         cluster_id = safe_get(cluster, 'cluster_id')
                         all_vertices.append({
@@ -2434,27 +2355,17 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': safe_json({'spark_version': safe_get(cluster, 'spark_version'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
                             'metadata': safe_json({'state': safe_get(cluster, 'state')})
                         })
+                        cluster_specs.append((cluster_id, f"ws_{ws_id}_cluster:{cluster_id}"))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("clusters", cluster_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': f"ws_{ws_id}_cluster:{cluster_id}",
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': safe_json({'workspace_id': str(ws_id)}),
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and cluster_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="clusters",
+                            object_specs=cluster_specs,
+                            max_workers=workers,
+                            edge_properties=safe_json({'workspace_id': str(ws_id)}),
+                        ))
 
                     print(f"    ✓ {len(ws_clusters)} clusters")
                 except Exception as e:
@@ -2465,6 +2376,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"    Collecting SQL Warehouses...")
                 try:
                     ws_warehouses = list(ws_client.warehouses.list())
+                    warehouse_specs = []
                     for wh in ws_warehouses:
                         wh_id = safe_get(wh, 'id')
                         all_vertices.append({
@@ -2481,27 +2393,17 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': safe_json({'warehouse_type': safe_get(wh, 'warehouse_type'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
                             'metadata': safe_json({'state': safe_get(wh, 'state')})
                         })
+                        warehouse_specs.append((wh_id, f"ws_{ws_id}_warehouse:{wh_id}"))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("sql/warehouses", wh_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': f"ws_{ws_id}_warehouse:{wh_id}",
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': safe_json({'workspace_id': str(ws_id)}),
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and warehouse_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="sql/warehouses",
+                            object_specs=warehouse_specs,
+                            max_workers=workers,
+                            edge_properties=safe_json({'workspace_id': str(ws_id)}),
+                        ))
 
                     print(f"    ✓ {len(ws_warehouses)} warehouses")
                 except Exception as e:
@@ -2512,6 +2414,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"    Collecting Instance Pools...")
                 try:
                     ws_pools = list(ws_client.instance_pools.list())
+                    pool_specs = []
                     for pool in ws_pools:
                         pool_id = safe_get(pool, 'instance_pool_id')
                         all_vertices.append({
@@ -2528,27 +2431,17 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': safe_json({'node_type_id': safe_get(pool, 'node_type_id'), 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
                             'metadata': None
                         })
+                        pool_specs.append((pool_id, f"ws_{ws_id}_instance_pool:{pool_id}"))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("instance-pools", pool_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': f"ws_{ws_id}_instance_pool:{pool_id}",
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': safe_json({'workspace_id': str(ws_id)}),
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and pool_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="instance-pools",
+                            object_specs=pool_specs,
+                            max_workers=workers,
+                            edge_properties=safe_json({'workspace_id': str(ws_id)}),
+                        ))
 
                     print(f"    ✓ {len(ws_pools)} instance pools")
                 except Exception as e:
@@ -2559,6 +2452,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"    Collecting MLflow Experiments...")
                 try:
                     ws_experiments = list(ws_client.experiments.list_experiments())
+                    experiment_specs = []
                     for exp in ws_experiments:
                         exp_id = safe_get(exp, 'experiment_id')
                         lifecycle = safe_get(exp, 'lifecycle_stage')
@@ -2576,27 +2470,17 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                             'properties': safe_json({'lifecycle_stage': lifecycle, 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
                             'metadata': None
                         })
+                        experiment_specs.append((exp_id, f"ws_{ws_id}_experiment:{exp_id}"))
 
-                        # Collect permissions
-                        if COLLECTION_CONFIG['collect_permissions']:
-                            try:
-                                perms = ws_client.permissions.get("experiments", exp_id)
-                                if perms and perms.access_control_list:
-                                    for acl in perms.access_control_list:
-                                        principal = acl.user_name or acl.group_name or acl.service_principal_name
-                                        if principal and acl.all_permissions:
-                                            for perm in acl.all_permissions:
-                                                all_edges.append({
-                                                    'src': principal,
-                                                    'dst': f"ws_{ws_id}_experiment:{exp_id}",
-                                                    'relationship': safe_get(perm, 'permission_level'),
-                                                    'permission_level': safe_get(perm, 'permission_level'),
-                                                    'inherited': safe_get(perm, 'inherited', False),
-                                                    'properties': safe_json({'workspace_id': str(ws_id)}),
-                                                    'created_at': datetime.now()
-                                                })
-                            except:
-                                pass
+                    if COLLECTION_CONFIG['collect_permissions'] and experiment_specs:
+                        workers = COLLECTION_CONFIG['collection_concurrency'] if COLLECTION_CONFIG['parallelize_collection'] else 1
+                        all_edges.extend(collect_permission_edges(
+                            workspace_client=ws_client,
+                            request_object_type="experiments",
+                            object_specs=experiment_specs,
+                            max_workers=workers,
+                            edge_properties=safe_json({'workspace_id': str(ws_id)}),
+                        ))
 
                     print(f"    ✓ {len(ws_experiments)} experiments")
                 except Exception as e:
