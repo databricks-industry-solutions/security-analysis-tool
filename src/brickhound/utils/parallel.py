@@ -12,6 +12,18 @@ from typing import Any, Iterable, Optional
 logger = logging.getLogger(__name__)
 
 
+def _unwrap_enum(value):
+    """Return value.value if value has a .value attribute (SDK enum), else value as-is.
+
+    Mirrors the notebook's safe_get() behavior so edges produced by this helper
+    match the strings the original code wrote to Delta (e.g. "CAN_MANAGE" rather
+    than the PermissionLevel enum object).
+    """
+    if value is not None and hasattr(value, "value"):
+        return value.value
+    return value
+
+
 def collect_permission_edges(
     workspace_client: Any,
     request_object_type: str,
@@ -67,8 +79,8 @@ def collect_permission_edges(
             if not principal or not acl.all_permissions:
                 continue
             for perm in acl.all_permissions:
-                level = getattr(perm, "permission_level", None)
-                inherited = getattr(perm, "inherited", False)
+                level = _unwrap_enum(getattr(perm, "permission_level", None))
+                inherited = _unwrap_enum(getattr(perm, "inherited", False))
                 result.append({
                     "src": principal,
                     "dst": dst,

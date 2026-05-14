@@ -207,3 +207,34 @@ def test_calls_actually_run_in_parallel():
     )
 
     assert len(edges) == 5
+
+
+def test_permission_level_enum_is_unwrapped_to_string():
+    """SDK returns permission_level as an enum (e.g. PermissionLevel.CAN_MANAGE);
+    the edge dict must store the unwrapped string value (".value"), matching the
+    notebook's safe_get() behavior."""
+    mock_client = MagicMock()
+
+    # Build a permission object whose permission_level looks like an SDK enum
+    # (has both a name and a .value).
+    enum_like_perm = MagicMock()
+    enum_like_perm.permission_level = MagicMock(value="CAN_MANAGE")
+    enum_like_perm.inherited = False
+
+    acl = MagicMock()
+    acl.user_name = "alice@example.com"
+    acl.group_name = None
+    acl.service_principal_name = None
+    acl.all_permissions = [enum_like_perm]
+
+    mock_client.permissions.get.return_value = _make_permissions_response([acl])
+
+    edges = collect_permission_edges(
+        workspace_client=mock_client,
+        request_object_type="clusters",
+        object_specs=[("cluster-1", "cluster-1")],
+    )
+
+    assert len(edges) == 1
+    assert edges[0]["relationship"] == "CAN_MANAGE"
+    assert edges[0]["permission_level"] == "CAN_MANAGE"
