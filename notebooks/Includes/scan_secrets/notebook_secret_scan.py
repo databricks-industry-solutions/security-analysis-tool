@@ -175,6 +175,7 @@ import hashlib
 import logging
 import shutil
 import yaml
+import tempfile
 import concurrent.futures
 from datetime import timedelta, datetime
 from urllib.parse import quote
@@ -1003,57 +1004,64 @@ def _scan_and_record_chunk(chunk: List[Dict[str, Any]],
                            run_id: Optional[int],
                            workspace_id: Optional[str]) -> None:
     """Materialize a chunk of notebooks in parallel, scan the whole chunk with
-    a single TruffleHog pass, then attribute findings back to each notebook."""
-    scan_dir = Config.SCAN_BATCH_DIR
-    shutil.rmtree(scan_dir, ignore_errors=True)
-    os.makedirs(scan_dir, exist_ok=True)
+    a single TruffleHog pass, then attribute findings back to each notebook.
 
-    # Phase 1: materialize notebook contents in parallel (I/O-bound).
-    basename_to_meta: Dict[str, Dict[str, Any]] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        for res in pool.map(lambda nb: _materialize_notebook(nb, scan_dir), chunk):
-            if res is None:
-                continue
-            scan_file, metadata = res
-            basename_to_meta[os.path.basename(scan_file)] = metadata
+    Uses a fresh, unique temp directory per chunk (tempfile.mkdtemp). This is
+    required for correctness: when multiple workspaces are scanned concurrently,
+    every child notebook shares the same driver-local filesystem, so a fixed
+    shared directory would let one scan's files clobber another's.
+    """
+    os.makedirs(Config.SCAN_BATCH_DIR, exist_ok=True)
+    scan_dir = tempfile.mkdtemp(dir=Config.SCAN_BATCH_DIR)
+    try:
+        # Phase 1: materialize notebook contents in parallel (I/O-bound).
+        basename_to_meta: Dict[str, Dict[str, Any]] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
+            for res in pool.map(lambda nb: _materialize_notebook(nb, scan_dir), chunk):
+                if res is None:
+                    continue
+                scan_file, metadata = res
+                basename_to_meta[os.path.basename(scan_file)] = metadata
 
-    # Record metadata + log line for every materialized notebook.
-    for metadata in basename_to_meta.values():
-        results_list.append(metadata)
-        if output_filename:
-            try:
-                with open(output_filename, mode="a", encoding="utf-8") as output_file:
-                    json.dump(metadata, output_file)
-                    output_file.write("\n")
-            except IOError as e:
-                logger.error(f"Failed to write to output file {output_filename}: {str(e)}")
+        # Record metadata + log line for every materialized notebook.
+        for metadata in basename_to_meta.values():
+            results_list.append(metadata)
+            if output_filename:
+                try:
+                    with open(output_filename, mode="a", encoding="utf-8") as output_file:
+                        json.dump(metadata, output_file)
+                        output_file.write("\n")
+                except IOError as e:
+                    logger.error(f"Failed to write to output file {output_filename}: {str(e)}")
 
-    if not basename_to_meta:
-        return
+        if not basename_to_meta:
+            return
 
-    # Phase 2: a single TruffleHog pass over the whole chunk directory
-    # (built-in + custom detectors), instead of two subprocesses per file.
-    trufflehog_output = scan_for_secrets(scan_dir)
-    findings = process_trufflehog_output(trufflehog_output) if trufflehog_output else []
+        # Phase 2: a single TruffleHog pass over the whole chunk directory
+        # (built-in + custom detectors), instead of two subprocesses per file.
+        trufflehog_output = scan_for_secrets(scan_dir)
+        findings = process_trufflehog_output(trufflehog_output) if trufflehog_output else []
 
-    # Phase 3: attribute findings back to notebooks by source-file basename.
-    findings_by_notebook: Dict[str, List[Dict[str, str]]] = {}
-    for finding in findings:
-        key = os.path.basename(finding.get("SourceFile", ""))
-        findings_by_notebook.setdefault(key, []).append(finding)
+        # Phase 3: attribute findings back to notebooks by source-file basename.
+        findings_by_notebook: Dict[str, List[Dict[str, str]]] = {}
+        for finding in findings:
+            key = os.path.basename(finding.get("SourceFile", ""))
+            findings_by_notebook.setdefault(key, []).append(finding)
 
-    # Phase 4: set counts, surface alerts, persist.
-    for key, metadata in basename_to_meta.items():
-        secret_results = findings_by_notebook.get(key, [])
-        if secret_results:
-            metadata["secrets_found"] = len(secret_results)
-            metadata["secret_details"] = secret_results
-            print(f"🚨 SECRETS DETECTED in {metadata['path']}:")
-            print(json.dumps(secret_results, indent=2))
-        else:
-            metadata["secrets_found"] = 0
-        if run_id is not None and workspace_id is not None:
-            insert_secret_scan_results(workspace_id, metadata, run_id)
+        # Phase 4: set counts, surface alerts, persist.
+        for key, metadata in basename_to_meta.items():
+            secret_results = findings_by_notebook.get(key, [])
+            if secret_results:
+                metadata["secrets_found"] = len(secret_results)
+                metadata["secret_details"] = secret_results
+                print(f"🚨 SECRETS DETECTED in {metadata['path']}:")
+                print(json.dumps(secret_results, indent=2))
+            else:
+                metadata["secrets_found"] = 0
+            if run_id is not None and workspace_id is not None:
+                insert_secret_scan_results(workspace_id, metadata, run_id)
+    finally:
+        shutil.rmtree(scan_dir, ignore_errors=True)
 
 
 def _process_notebook_batch(batch: List[Dict[str, Any]],
