@@ -40,13 +40,20 @@ settings:
     json_output: true
     
   rate_limiting:
-    api_sleep_seconds: 10  # Sleep between API calls to prevent rate limiting
-    
+    api_sleep_seconds: 10  # Backoff base (seconds) used only when the API returns
+                           # HTTP 429. There is no unconditional inter-call sleep.
+
+  performance:
+    max_workers: 16  # Threads for I/O-bound work (workspace/list, get-status,
+                     # notebook export/FUSE copy). I/O-bound, so > core count is fine.
+
   file_paths:
     temp_config: "/tmp/trufflehog_config.yaml"
     temp_notebooks: "/tmp/notebooks"
     results_log: "/tmp/trufflehog_scan_results.json"
-    
+    scan_batch_dir: "/tmp/notebook_scan_batch"  # Dir where a chunk of notebooks is
+                                                # materialized for a single TruffleHog pass
+
   search_settings:
     page_size: 50
     days_back: 1  # Number of days back to search for modified notebooks
