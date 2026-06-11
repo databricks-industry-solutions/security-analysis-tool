@@ -29,7 +29,10 @@ hostname = (
     .getOrElse(None)
 )
 cloud_type = getCloudType(hostname)
-clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+try:
+    clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+except Exception:
+    clusterid = "serverless"  # Not available on serverless compute
 json_.update(
     {
         "url": hostname,
@@ -114,7 +117,10 @@ def processWorkspace(wsrow):
     hostname = "https://" + wsrow.deployment_url
     cloud_type = getCloudType(hostname)
     workspace_id = wsrow.workspace_id
-    clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+    try:
+        clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+    except Exception:
+        clusterid = "serverless"
     ws_json = dict(json_)
     ws_json.update(
         {

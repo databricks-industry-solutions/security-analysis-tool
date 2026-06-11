@@ -52,8 +52,25 @@ if ENABLE_ACCOUNT_CHECKS:
     for notebook, timeout in notebooks:
         status = run_notebook(f"{basePath()}/notebooks/Setup/{notebook}", timeout)
 else:
-    loggr.info("[SAT POC] Setup notebooks SKIPPED — account checks disabled. "
-               "Workspace-only initialization complete via initialize + common.")
+    # Single-workspace bootstrap: populate account_workspaces with current workspace
+    # so the dashboard has data without needing the account-level API.
+    from dbruntime.databricks_repl_context import get_context
+    _ctx = get_context()
+    _ws_id = str(_ctx.workspaceId)
+    _deploy_url = spark.conf.get("spark.databricks.workspaceUrl")
+    _schema = json_["analysis_schema_name"]
+
+    # Insert current workspace if not already registered
+    spark.sql(f"""
+        MERGE INTO {_schema}.account_workspaces AS target
+        USING (SELECT '{_ws_id}' AS workspace_id, '{_deploy_url}' AS deployment_url,
+                      '{_deploy_url}' AS workspace_name, 'RUNNING' AS workspace_status,
+                      true AS analysis_enabled) AS source
+        ON target.workspace_id = source.workspace_id
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+    loggr.info(f"[SAT POC] Single-workspace bootstrap: registered workspace {_ws_id} in {_schema}.account_workspaces")
+    loggr.info("[SAT POC] Setup notebooks SKIPPED — account checks disabled.")
 
 # COMMAND ----------
 

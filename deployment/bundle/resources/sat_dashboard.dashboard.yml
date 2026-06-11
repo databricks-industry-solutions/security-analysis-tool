@@ -1,0 +1,8 @@
+resources:
+  dashboards:
+    sat_dashboard:
+      display_name: "Security Analysis Tool [SAT]"
+      file_path: ../../../dashboards/SAT_Dashboard_definition.json
+      warehouse_id: ${resources.sql_warehouses.sat_warehouse.id}
+      dataset_catalog: ${var.analysis_catalog}
+      dataset_schema: ${var.analysis_schema}

@@ -82,6 +82,32 @@ if (json_.get('use_mastercreds')) is False:
 
 db_client = SatDBClient(json_)
 
+# POC: When client_id is empty (no SP credentials), the SDK's _update_token()
+# would call MSAL with empty creds and fail. Monkey-patch it to use the native
+# token from the run-as SP identity instead.
+if not json_.get('client_id', '').strip():
+    _native_token = json_.get('token', '')
+    if _native_token:
+        def _patched_update_token(self_client, endpoint=None):
+            self_client._url = self_client._raw_url
+            self_client._token = {
+                "Authorization": f"Bearer {_native_token}",
+                "User-Agent": "databricks-sat/0.1.0"
+            }
+        def _patched_update_token_master(self_client, endpoint=None):
+            # Account-level calls not supported in POC mode
+            loggr.warning("[SAT POC] Account-level token requested but no SP credentials. Using workspace token.")
+            self_client._url = self_client._raw_url
+            self_client._token = {
+                "Authorization": f"Bearer {_native_token}",
+                "User-Agent": "databricks-sat/0.1.0"
+            }
+        # Patch at the CLASS level so all client instances (ClustersClient, JobsClient, etc.)
+        # also use the native token without needing per-instance patches.
+        SatDBClient._update_token = _patched_update_token
+        SatDBClient._update_token_master = _patched_update_token_master
+        loggr.info("[SAT POC] Monkey-patched SatDBClient class to use native SP token (no MSAL).")
+
 # COMMAND ----------
 
 is_successful_ws=False
