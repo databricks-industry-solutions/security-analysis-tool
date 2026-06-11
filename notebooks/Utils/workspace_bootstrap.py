@@ -57,32 +57,28 @@ workspace_id = json_['workspace_id']
 
 # COMMAND ----------
 
+# DBTITLE 1,Auth setup (Azure POC: fallback to native SP token)
 from core.dbclient import SatDBClient
 
 token = ''
-if cloud_type =='azure': #client secret always needed
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':token, 'client_secret': client_secret})
-elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
-    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-    json_.update({'token':token, 'client_secret': client_secret})
-    mastername = ' '
-    masterpwd = ' ' # we still need to send empty user/pwd.
-    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-else: #lets populate master key for accounts api
-    client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-    json_.update({'token':token, 'client_secret': client_secret})
-    mastername = ' '
-    masterpwd = ' '
-    #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-    #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-    json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-    
-if (json_['use_mastercreds']) is False:
-    tokenscope = json_['workspace_pat_scope']
-    tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
-    token = dbutils.secrets.get(tokenscope, tokenkey)
-    json_.update({'token':token})
+if cloud_type =='azure':
+  # POC: try secret scope first; fall back to run-as SP native token
+  try:
+      client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
+      json_.update({'token': token, 'client_secret': client_secret})
+  except Exception:
+      # No secret scope available — use the run-as SP identity token
+      token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().getOrElse(None)
+      json_.update({'token': token, 'client_secret': ''})
+      loggr.info("[SAT POC] Using run-as SP native token (no secret scope).")
+else:
+    # AWS/GCP paths — not applicable for Azure-only POC
+    raise ValueError(f"[SAT POC] Unsupported cloud_type '{cloud_type}' for this Azure-only deployment.")
+
+# POC: use_mastercreds is always True (set in initialize.py).
+# The per-workspace PAT fallback is removed — no secret scope available.
+if (json_.get('use_mastercreds')) is False:
+    loggr.warning("[SAT POC] use_mastercreds=False is not supported without a secret scope. Using SP identity.")
 
 db_client = SatDBClient(json_)
 

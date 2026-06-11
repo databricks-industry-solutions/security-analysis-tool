@@ -17,7 +17,13 @@
 
 # COMMAND ----------
 
-secret_scopes = dbutils.secrets.listScopes()
+# DBTITLE 1,Check secret scopes (skipped when account checks disabled)
+# POC guard: skip secret scope validation when using widget-based config
+if not ENABLE_ACCOUNT_CHECKS:
+    print("[SAT POC] Secret scope validation SKIPPED — using widget-based config.")
+    secret_scopes = []
+else:
+    secret_scopes = dbutils.secrets.listScopes()
 
 
 # COMMAND ----------
@@ -27,15 +33,18 @@ secret_scopes = dbutils.secrets.listScopes()
 
 # COMMAND ----------
 
+# DBTITLE 1,Check SAT scope exists (guarded)
 found = False
-for secret_scope in secret_scopes:
-   
-   if secret_scope.name == json_['master_name_scope']:
-      print('Your SAT configuration has the required scope name')
-      found=True
-      break
-if not found:
-   dbutils.notebook.exit(f'Your SAT configuration is missing required scope {json_["master_name_scope"]}, please review setup instructions')
+if not ENABLE_ACCOUNT_CHECKS:
+    found = True  # skip scope check for POC
+else:
+    for secret_scope in secret_scopes:
+        if secret_scope.name == json_['master_name_scope']:
+            print('Your SAT configuration has the required scope name')
+            found = True
+            break
+    if not found:
+        dbutils.notebook.exit(f'Your SAT configuration is missing required scope {json_["master_name_scope"]}, please review setup instructions')
 
       
 
@@ -73,7 +82,8 @@ if cloud_type == "aws":
 
 # COMMAND ----------
 
-if cloud_type == "azure":
+# DBTITLE 1,Azure secret key validation (guarded)
+if cloud_type == "azure" and ENABLE_ACCOUNT_CHECKS:
    try:
       dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
@@ -84,7 +94,9 @@ if cloud_type == "azure":
       dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
       print("Your SAT configuration has required secret names")
    except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
+      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')
+elif cloud_type == "azure":
+   print("[SAT POC] Azure secret validation SKIPPED — account checks disabled.")  
 
 # COMMAND ----------
 

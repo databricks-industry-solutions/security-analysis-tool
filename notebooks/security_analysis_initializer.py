@@ -40,15 +40,20 @@ def run_notebook(notebook_path, timeout):
 
 # COMMAND ----------
 
-notebooks = [
-    ("1. list_account_workspaces_to_conf_file", 3000),
-    ("3. test_connections", 12000),
-    ("4. enable_workspaces_for_sat", 3000),
-    ("5. import_dashboard_template_lakeview", 3000),
-]
+# DBTITLE 1,Run Setup notebooks (guarded by ENABLE_ACCOUNT_CHECKS)
+if ENABLE_ACCOUNT_CHECKS:
+    notebooks = [
+        ("1. list_account_workspaces_to_conf_file", 3000),
+        ("3. test_connections", 12000),
+        ("4. enable_workspaces_for_sat", 3000),
+        ("5. import_dashboard_template_lakeview", 3000),
+    ]
 
-for notebook, timeout in notebooks:
-    status=run_notebook(f"{basePath()}/notebooks/Setup/{notebook}", timeout)
+    for notebook, timeout in notebooks:
+        status = run_notebook(f"{basePath()}/notebooks/Setup/{notebook}", timeout)
+else:
+    loggr.info("[SAT POC] Setup notebooks SKIPPED — account checks disabled. "
+               "Workspace-only initialization complete via initialize + common.")
 
 # COMMAND ----------
 

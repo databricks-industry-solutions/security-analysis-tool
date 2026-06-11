@@ -1,0 +1,15 @@
+resources:
+  jobs:
+    sat_initializer:
+      name: SAT Initializer POC
+      tasks:
+        - task_key: initialize
+          notebook_task:
+            notebook_path: ../../../notebooks/security_analysis_initializer.py
+            base_parameters:
+              warehouse_id: ${resources.sql_warehouses.sat_warehouse.id}
+              analysis_catalog: ${var.analysis_catalog}
+              analysis_schema: ${var.analysis_schema}
+              enable_account_checks: ${var.enable_account_checks}
+      queue:
+        enabled: true

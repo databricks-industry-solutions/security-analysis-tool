@@ -45,14 +45,18 @@ use_parallel_runs = json_.get("use_parallel_runs", False)
 
 # COMMAND ----------
 
+# DBTITLE 1,Accounts bootstrap (guarded by ENABLE_ACCOUNT_CHECKS)
 import json
 
-out = dbutils.notebook.run(
-    f"{basePath()}/notebooks/Utils/accounts_bootstrap",
-    3000,
-    {"json_": json.dumps(json_), "origin": "driver"},
-)
-loggr.info(out)
+if ENABLE_ACCOUNT_CHECKS:
+    out = dbutils.notebook.run(
+        f"{basePath()}/notebooks/Utils/accounts_bootstrap",
+        3000,
+        {"json_": json.dumps(json_), "origin": "driver"},
+    )
+    loggr.info(out)
+else:
+    loggr.info("[SAT POC] Account-level checks DISABLED — skipping accounts_bootstrap.")
 
 # COMMAND ----------
 

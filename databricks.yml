@@ -1,0 +1,22 @@
+bundle:
+  name: sat-poc
+
+variables:
+  analysis_catalog:
+    default: ""
+  analysis_schema:
+    default: ""
+  enable_account_checks:
+    default: "false"
+  # sat_repo_root is implicitly the bundle root (this repo).
+  # Notebooks are referenced via relative paths in job definitions
+  # so that `bundle deploy` handles deployment automatically.
+
+include:
+  - deployment/bundle/resources/*.yml
+
+targets:
+  poc:
+    mode: development
+    workspace:
+      host: "https://adb-7405608270137042.2.azuredatabricks.net"

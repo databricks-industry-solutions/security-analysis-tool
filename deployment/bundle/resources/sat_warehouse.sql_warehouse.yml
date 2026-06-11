@@ -1,0 +1,8 @@
+resources:
+  sql_warehouses:
+    sat_warehouse:
+      name: SAT POC Warehouse
+      cluster_size: "2X-Small"
+      auto_stop_mins: 1
+      warehouse_type: PRO
+      enable_serverless_compute: true

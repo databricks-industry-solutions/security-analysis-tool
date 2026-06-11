@@ -39,22 +39,70 @@ cloud_type = getCloudType(hostname)
 
 # COMMAND ----------
 
+# DBTITLE 1,Widget-based configuration (replaces secret scope)
+# ---------- POC: Widget-based configuration (no secret scope) ----------
+# These values are passed in as job base_parameters from the DAB bundle.
+required_keys = [
+    "warehouse_id",
+    "analysis_catalog",
+    "analysis_schema",
+    "enable_account_checks",
+]
+
+for k in required_keys:
+    dbutils.widgets.text(k, "")
+
+def get_cfg(key, default=None, required=False):
+    """Read a widget value; raise if required and missing."""
+    v = dbutils.widgets.get(key)
+    if v is None or str(v).strip() == "":
+        v = default
+    if required and (v is None or str(v).strip() == ""):
+        raise ValueError(f"Missing required config: {key}")
+    return v
+
+WAREHOUSE_ID = get_cfg("warehouse_id", required=True)
+ANALYSIS_CATALOG = get_cfg("analysis_catalog", required=True)
+ANALYSIS_SCHEMA = get_cfg("analysis_schema", required=True)
+ENABLE_ACCOUNT_CHECKS = get_cfg("enable_account_checks", default="false").lower() == "true"
+
+# Build the analysis_schema_name in catalog.schema format expected downstream
+ANALYSIS_SCHEMA_NAME = f"{ANALYSIS_CATALOG}.{ANALYSIS_SCHEMA}"
+
+# Legacy reference kept for any downstream code that still reads it
 SECRETS_SCOPE = "sat_scope"
 
 # COMMAND ----------
 
+# DBTITLE 1,Build json_ config from widgets (no secrets)
 import json
 
+# ---------- POC: Build config from widget params, not secret scope ----------
+# account_id is only needed for account-level checks; empty when disabled.
+_account_id = ""
+if ENABLE_ACCOUNT_CHECKS:
+    try:
+        _account_id = dbutils.secrets.get(scope=SECRETS_SCOPE, key="account-console-id")
+    except Exception:
+        raise ValueError(
+            "enable_account_checks is true but 'account-console-id' secret is missing. "
+            "Either set enable_account_checks=false or create the secret."
+        )
+
+# Proxies: try reading from secret scope; default to empty dict if unavailable.
+try:
+    _proxies = json.loads(dbutils.secrets.get(scope=SECRETS_SCOPE, key="proxies"))
+except Exception:
+    _proxies = {}
+
 json_ = {
-    "account_id": dbutils.secrets.get(scope=SECRETS_SCOPE, key="account-console-id"),
-    "sql_warehouse_id": dbutils.secrets.get(scope=SECRETS_SCOPE, key="sql-warehouse-id"),
-    "analysis_schema_name": dbutils.secrets.get(
-        scope=SECRETS_SCOPE, key="analysis_schema_name"
-    ),
+    "account_id": _account_id,
+    "sql_warehouse_id": WAREHOUSE_ID,
+    "analysis_schema_name": ANALYSIS_SCHEMA_NAME,
     "verbosity": "info",
-    "maxpages":10,
-    "timebetweencalls":1,
-    "proxies": json.loads(dbutils.secrets.get(scope=SECRETS_SCOPE, key="proxies")),
+    "maxpages": 10,
+    "timebetweencalls": 1,
+    "proxies": _proxies,
 }
 
 # COMMAND ----------
@@ -65,17 +113,10 @@ json_ = {
 
 # COMMAND ----------
 
-intermediate_schema_name = (
-    f"{json_['analysis_schema_name'].split('.')[0]}.intermediate_schema"
-    if '.' in json_['analysis_schema_name']
-    else "hive_metastore.intermediate_schema"
-)
-json_.update(
-    {
-        "intermediate_schema" : intermediate_schema_name
-    }
-
-)
+# DBTITLE 1,Intermediate schema from widget-derived catalog
+# Intermediate schema lives in the same catalog as analysis tables
+intermediate_schema_name = f"{ANALYSIS_CATALOG}.intermediate_schema"
+json_.update({"intermediate_schema": intermediate_schema_name})
 
 # COMMAND ----------
 
@@ -104,70 +145,57 @@ json_.update(
 
 # COMMAND ----------
 
-# DBTITLE 1,GCP configurations
+# DBTITLE 1,GCP configurations (skipped for Azure POC)
+# GCP configurations — not applicable for Azure-only POC
 if cloud_type == "gcp":
-    sp_auth = {
-        "use_sp_auth": "False",
-        "client_id": "",
-        "client_secret_key": "client-secret",
-    }
-    try:
-        use_sp_auth = (
-            dbutils.secrets.get(scope=SECRETS_SCOPE, key="use-sp-auth").lower() == "true"
-        )
-        if use_sp_auth:
-            sp_auth["use_sp_auth"] = "True"
-            sp_auth["client_id"] = dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="client-id"
-            )
-    except:
-        pass
-    json_.update(sp_auth)
+    pass
 
 # COMMAND ----------
 
-# DBTITLE 1,Azure configurations
+# DBTITLE 1,Azure configurations (guarded by ENABLE_ACCOUNT_CHECKS)
 if cloud_type == "azure":
-    json_.update(
-        {
-            "subscription_id": dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="subscription-id"
-            ),  # Azure subscriptionId
-            "tenant_id": dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="tenant-id"
-            ),  # The Directory (tenant) ID for the application registered in Azure AD.
-            "client_id": dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="client-id"
-            ),  # The Application (client) ID for the application registered in Azure AD.
-            "client_secret_key": "client-secret",  # The secret generated by AAD during your confidential app registration
-            "use_mastercreds": True,
-        }
-    )
+    if ENABLE_ACCOUNT_CHECKS:
+        # Full Azure SP credentials needed only for account-level API calls
+        json_.update(
+            {
+                "subscription_id": dbutils.secrets.get(
+                    scope=SECRETS_SCOPE, key="subscription-id"
+                ),
+                "tenant_id": dbutils.secrets.get(
+                    scope=SECRETS_SCOPE, key="tenant-id"
+                ),
+                "client_id": dbutils.secrets.get(
+                    scope=SECRETS_SCOPE, key="client-id"
+                ),
+                "client_secret_key": "client-secret",
+                "use_mastercreds": True,
+            }
+        )
+    else:
+        # Workspace-only POC: use run-as SP identity; no secrets needed
+        loggr = None  # logger not yet initialized; print instead
+        print("[SAT POC] Azure account-level checks DISABLED — skipping SP credential load.")
+        json_.update(
+            {
+                "subscription_id": "",
+                "tenant_id": "",
+                "client_id": "",
+                "client_secret_key": "",
+                "use_mastercreds": True,
+            }
+        )
 
 
 # COMMAND ----------
 
 # DBTITLE 1,AWS configurations
+# AWS configurations — not applicable for Azure-only POC
 if cloud_type == "aws":
-    sp_auth = {
-        "use_sp_auth": "False",
-        "client_id": "",
-        "client_secret_key": "client-secret",
-    }
-    try:
-        use_sp_auth = (
-            dbutils.secrets.get(scope=SECRETS_SCOPE, key="use-sp-auth").lower() == "true"
-        )
-        if use_sp_auth:
-            sp_auth["use_sp_auth"] = "True"
-            sp_auth["client_id"] = dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="client-id"
-            )
-    except:
-        pass
-    json_.update(sp_auth)
+    pass
 
 # COMMAND ----------
+
+
 
 # COMMAND ----------
 
