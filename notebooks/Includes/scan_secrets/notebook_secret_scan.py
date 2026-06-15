@@ -183,37 +183,95 @@ from typing import Dict, List, Optional, Any, Tuple
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def load_config_from_file():
-    """Load configuration from the external YAML file in the configs directory."""
+def _default_config() -> Dict[str, Any]:
+    """Built-in fallback used only when the shipped config can't be loaded."""
+    return {
+        "detectors": [
+            {"name": "DkeaToken", "keywords": ["dkea"], "regex": {"id": "(?i)\\b(dkea[a-h0-9]{32})"}},
+            {"name": "DapiToken", "keywords": ["dapi"], "regex": {"id": "(?i)\\b(dapi[a-h0-9]{32})"}},
+            {"name": "DoseToken", "keywords": ["dose"], "regex": {"id": "(?i)\\b(dose[a-h0-9]{32})"}}
+        ],
+        "settings": {
+            "excluded_detectors": ["DatabricksToken"],
+            "rate_limiting": {"api_sleep_seconds": 10},
+            "search_settings": {"page_size": 50, "days_back": 1}
+        }
+    }
+
+
+def _merge_custom_detectors(config_data: Dict[str, Any], config_folder: str) -> Dict[str, Any]:
+    """Merge an optional customer-supplied detector file into `config_data`.
+
+    Looks for `custom_trufflehog_detectors.yaml` in the same configs/ folder.
+    Its `detectors:` are merged into the shipped list (custom wins on a name
+    clash) and any `settings.excluded_detectors` are appended. The file is
+    optional; if it's missing or invalid we keep the shipped config and carry
+    on (logging the reason) rather than failing the scan. Lets customers add
+    their own detectors without editing the file that ships with SAT.
+    """
+    custom_path = f"{config_folder}/custom_trufflehog_detectors.yaml"
+    if not os.path.exists(custom_path):
+        return config_data
+
     try:
-        # Get the current notebook's directory and construct path to config file
-        notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-        config_folder = getConfigPath()
-        config_path = f"{config_folder}/trufflehog_detectors.yaml"
-        
-        logger.info(f"Loading configuration from: {config_path}")
-        
-        # Read the configuration file
+        with open(custom_path, 'r') as file:
+            custom = yaml.safe_load(file)
+    except Exception as e:
+        logger.error(f"Custom detector file {custom_path} failed to parse — ignoring it: {str(e)}")
+        return config_data
+
+    if not isinstance(custom, dict):
+        logger.warning(f"Custom detector file {custom_path} is not a YAML mapping — ignoring it")
+        return config_data
+
+    custom_detectors = custom.get("detectors") or []
+    if custom_detectors:
+        by_name = {d.get("name"): d for d in config_data.get("detectors", []) if isinstance(d, dict)}
+        for d in custom_detectors:
+            if isinstance(d, dict) and d.get("name"):
+                by_name[d["name"]] = d  # custom overrides built-in of the same name
+        config_data["detectors"] = list(by_name.values())
+        logger.info(f"Merged {len(custom_detectors)} custom detector(s) from {custom_path}")
+
+    custom_excluded = (custom.get("settings") or {}).get("excluded_detectors") or []
+    if custom_excluded:
+        existing = config_data.setdefault("settings", {}).setdefault("excluded_detectors", [])
+        for x in custom_excluded:
+            if x not in existing:
+                existing.append(x)
+
+    return config_data
+
+
+def load_config_from_file():
+    """Load detector/scan configuration from the YAML files in the configs directory.
+
+    Loads the shipped `trufflehog_detectors.yaml`, then merges an optional
+    customer-supplied `custom_trufflehog_detectors.yaml` if present. Falls back
+    to a minimal built-in config only if the shipped file can't be loaded —
+    and logs that loudly, since a silent fallback previously masked a broken
+    config and left scans running with just the built-in detectors.
+    """
+    config_folder = getConfigPath()
+    config_path = f"{config_folder}/trufflehog_detectors.yaml"
+
+    logger.info(f"Loading configuration from: {config_path}")
+    try:
         with open(config_path, 'r') as file:
             config_data = yaml.safe_load(file)
-        
-        return config_data
+        if not isinstance(config_data, dict) or "detectors" not in config_data:
+            raise ValueError(
+                "config must be a YAML mapping with a top-level 'detectors:' key"
+            )
     except Exception as e:
-        logger.warning(f"Could not load external config file: {str(e)}")
-        logger.info("Using default configuration")
-        # Fallback to default configuration
-        return {
-            "detectors": [
-                {"name": "DkeaToken", "keywords": ["dkea"], "regex": {"id": "(?i)\\b(dkea[a-h0-9]{32})"}},
-                {"name": "DapiToken", "keywords": ["dapi"], "regex": {"id": "(?i)\\b(dapi[a-h0-9]{32})"}},
-                {"name": "DoseToken", "keywords": ["dose"], "regex": {"id": "(?i)\\b(dose[a-h0-9]{32})"}}
-            ],
-            "settings": {
-                "excluded_detectors": ["DatabricksToken"],
-                "rate_limiting": {"api_sleep_seconds": 10},
-                "search_settings": {"page_size": 50, "days_back": 1}
-            }
-        }
+        logger.error(
+            f"Could not load {config_path}: {str(e)}. "
+            f"FALLING BACK to built-in detectors only — custom detectors will NOT be applied. "
+            f"Fix the YAML and re-run to scan with the full detector set."
+        )
+        return _default_config()
+
+    return _merge_custom_detectors(config_data, config_folder)
 
 def create_trufflehog_config(config_data: Dict[str, Any]) -> str:
     """Create TruffleHog configuration file from loaded config data."""

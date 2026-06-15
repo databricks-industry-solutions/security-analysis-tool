@@ -1,0 +1,30 @@
+# Custom TruffleHog Detectors (customer-supplied) — TEMPLATE
+#
+# Copy this file to `custom_trufflehog_detectors.yaml` in this same configs/
+# directory and add your own detectors. SAT loads it automatically and merges
+# its `detectors:` into the shipped trufflehog_detectors.yaml at scan time:
+#   - detectors here are ADDED to the shipped set
+#   - a detector whose `name` matches a shipped one OVERRIDES it
+#   - any settings.excluded_detectors here are appended to the shipped list
+#
+# The real custom_trufflehog_detectors.yaml is git-ignored, so it survives
+# SAT upgrades and is never overwritten.
+#
+# Formatting rules (the shipped file had a bug here once — keep these):
+#   - everything lives under the top-level `detectors:` key
+#   - each item's keys (name, description, keywords, regex) align at the
+#     same indentation
+#   - single-quote regex values so backslashes (e.g. \b) stay literal
+
+detectors:
+  - name: AcmeApiKey
+    description: "Example: Acme Corp API key"
+    keywords:
+      - acme
+    regex:
+      id: '(?i)\b(acme_[a-z0-9]{32})\b'
+
+# Optionally exclude additional built-in TruffleHog detectors:
+# settings:
+#   excluded_detectors:
+#     - SomeNoisyDetector
