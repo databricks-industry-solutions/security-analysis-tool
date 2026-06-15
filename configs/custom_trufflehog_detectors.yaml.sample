@@ -10,7 +10,7 @@
 # The real custom_trufflehog_detectors.yaml is git-ignored, so it survives
 # SAT upgrades and is never overwritten.
 #
-# Formatting rules (the shipped file had a bug here once — keep these):
+# Formatting rules:
 #   - everything lives under the top-level `detectors:` key
 #   - each item's keys (name, description, keywords, regex) align at the
 #     same indentation

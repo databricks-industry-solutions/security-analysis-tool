@@ -248,9 +248,7 @@ def load_config_from_file():
 
     Loads the shipped `trufflehog_detectors.yaml`, then merges an optional
     customer-supplied `custom_trufflehog_detectors.yaml` if present. Falls back
-    to a minimal built-in config only if the shipped file can't be loaded —
-    and logs that loudly, since a silent fallback previously masked a broken
-    config and left scans running with just the built-in detectors.
+    to a minimal built-in config if the shipped file cannot be loaded.
     """
     config_folder = getConfigPath()
     config_path = f"{config_folder}/trufflehog_detectors.yaml"
@@ -266,8 +264,7 @@ def load_config_from_file():
     except Exception as e:
         logger.error(
             f"Could not load {config_path}: {str(e)}. "
-            f"FALLING BACK to built-in detectors only — custom detectors will NOT be applied. "
-            f"Fix the YAML and re-run to scan with the full detector set."
+            f"Using built-in detectors only; fix the file to load the full detector set."
         )
         return _default_config()
 
