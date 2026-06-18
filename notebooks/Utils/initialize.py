@@ -39,66 +39,86 @@ cloud_type = getCloudType(hostname)
 
 # COMMAND ----------
 
-# DBTITLE 1,Widget-based configuration (replaces secret scope)
-# ---------- POC: Widget-based configuration (no secret scope) ----------
-# These values are passed in as job base_parameters from the DAB bundle.
-required_keys = [
-    "warehouse_id",
-    "analysis_catalog",
-    "analysis_schema",
-    "enable_account_checks",
-]
+# DBTITLE 1,Configuration: secret scope first, widget fallback
+SECRETS_SCOPE = "sat_scope"
 
-for k in required_keys:
+# Widget parameters as optional overrides (passed via DAB bundle job parameters)
+for k in ["warehouse_id", "analysis_catalog", "analysis_schema", "enable_account_checks"]:
     dbutils.widgets.text(k, "")
 
-def get_cfg(key, default=None, required=False):
-    """Read a widget value; raise if required and missing."""
-    v = dbutils.widgets.get(key)
-    if v is None or str(v).strip() == "":
-        v = default
-    if required and (v is None or str(v).strip() == ""):
-        raise ValueError(f"Missing required config: {key}")
-    return v
 
-WAREHOUSE_ID = get_cfg("warehouse_id", required=True)
-ANALYSIS_CATALOG = get_cfg("analysis_catalog", required=True)
-ANALYSIS_SCHEMA = get_cfg("analysis_schema", required=True)
-ENABLE_ACCOUNT_CHECKS = get_cfg("enable_account_checks", default="false").lower() == "true"
+def _try_secret(scope, key):
+    """Try to read a secret; return None if scope/key doesn't exist."""
+    try:
+        val = dbutils.secrets.get(scope=scope, key=key)
+        if val and str(val).strip():
+            return str(val).strip()
+    except Exception:
+        pass
+    return None
 
-# Build the analysis_schema_name in catalog.schema format expected downstream
-ANALYSIS_SCHEMA_NAME = f"{ANALYSIS_CATALOG}.{ANALYSIS_SCHEMA}"
 
-# Legacy reference kept for any downstream code that still reads it
-SECRETS_SCOPE = "sat_scope"
+def _get_widget(key):
+    """Get a non-empty widget value, or None."""
+    try:
+        val = dbutils.widgets.get(key)
+        if val and str(val).strip():
+            return str(val).strip()
+    except Exception:
+        pass
+    return None
+
+
+# --- Resolve configuration: secret scope takes priority, widgets are fallback ---
+_secret_account_id = _try_secret(SECRETS_SCOPE, "account-console-id")
+_secret_warehouse_id = _try_secret(SECRETS_SCOPE, "sql-warehouse-id")
+_secret_schema_name = _try_secret(SECRETS_SCOPE, "analysis_schema_name")
+
+# Final values: secret scope wins, widget is fallback
+_warehouse_id = _secret_warehouse_id or _get_widget("warehouse_id")
+_schema_name = _secret_schema_name  # may be "catalog.schema" from secrets
+if not _schema_name:
+    _catalog = _get_widget("analysis_catalog")
+    _schema = _get_widget("analysis_schema")
+    if _catalog and _schema:
+        _schema_name = f"{_catalog}.{_schema}"
+
+if not _warehouse_id:
+    raise ValueError(
+        "Missing warehouse_id: set it in secret scope (key='sql-warehouse-id') "
+        "or pass as widget parameter 'warehouse_id'."
+    )
+if not _schema_name:
+    raise ValueError(
+        "Missing analysis schema: set it in secret scope (key='analysis_schema_name') "
+        "or pass widget parameters 'analysis_catalog' and 'analysis_schema'."
+    )
+
+# Auto-detect ENABLE_ACCOUNT_CHECKS:
+#   - If account-console-id exists in secret scope -> account admin (original behavior)
+#   - Otherwise check the widget override; default to False (workspace-only mode)
+if _secret_account_id:
+    ENABLE_ACCOUNT_CHECKS = True
+else:
+    _widget_flag = _get_widget("enable_account_checks") or "false"
+    ENABLE_ACCOUNT_CHECKS = _widget_flag.lower() == "true"
+
+# Derive catalog name from the resolved schema (for intermediate schema, etc.)
+ANALYSIS_CATALOG = _schema_name.split(".")[0] if "." in _schema_name else "hive_metastore"
 
 # COMMAND ----------
 
-# DBTITLE 1,Build json_ config from widgets (no secrets)
+# DBTITLE 1,Build json_ config (secrets-first, widget-fallback)
 import json
 
-# ---------- POC: Build config from widget params, not secret scope ----------
-# account_id is only needed for account-level checks; empty when disabled.
-_account_id = ""
-if ENABLE_ACCOUNT_CHECKS:
-    try:
-        _account_id = dbutils.secrets.get(scope=SECRETS_SCOPE, key="account-console-id")
-    except Exception:
-        raise ValueError(
-            "enable_account_checks is true but 'account-console-id' secret is missing. "
-            "Either set enable_account_checks=false or create the secret."
-        )
-
 # Proxies: try reading from secret scope; default to empty dict if unavailable.
-try:
-    _proxies = json.loads(dbutils.secrets.get(scope=SECRETS_SCOPE, key="proxies"))
-except Exception:
-    _proxies = {}
+_proxies_raw = _try_secret(SECRETS_SCOPE, "proxies")
+_proxies = json.loads(_proxies_raw) if _proxies_raw else {}
 
 json_ = {
-    "account_id": _account_id,
-    "sql_warehouse_id": WAREHOUSE_ID,
-    "analysis_schema_name": ANALYSIS_SCHEMA_NAME,
+    "account_id": _secret_account_id or "",
+    "sql_warehouse_id": _warehouse_id,
+    "analysis_schema_name": _schema_name,
     "verbosity": "info",
     "maxpages": 10,
     "timebetweencalls": 1,
@@ -113,9 +133,11 @@ json_ = {
 
 # COMMAND ----------
 
-# DBTITLE 1,Intermediate schema from widget-derived catalog
-# Intermediate schema lives in the same catalog as analysis tables
-intermediate_schema_name = f"{ANALYSIS_CATALOG}.intermediate_schema"
+intermediate_schema_name = (
+    f"{json_['analysis_schema_name'].split('.')[0]}.intermediate_schema"
+    if '.' in json_['analysis_schema_name']
+    else "hive_metastore.intermediate_schema"
+)
 json_.update({"intermediate_schema": intermediate_schema_name})
 
 # COMMAND ----------
@@ -145,17 +167,30 @@ json_.update(
 
 # COMMAND ----------
 
-# DBTITLE 1,GCP configurations (skipped for Azure POC)
-# GCP configurations — not applicable for Azure-only POC
+# DBTITLE 1,GCP configurations
 if cloud_type == "gcp":
-    pass
+    sp_auth = {
+        "use_sp_auth": "False",
+        "client_id": "",
+        "client_secret_key": "client-secret",
+    }
+    try:
+        use_sp_auth = (
+            _try_secret(SECRETS_SCOPE, "use-sp-auth") or "false"
+        ).lower() == "true"
+        if use_sp_auth:
+            sp_auth["use_sp_auth"] = "True"
+            sp_auth["client_id"] = _try_secret(SECRETS_SCOPE, "client-id") or ""
+    except:
+        pass
+    json_.update(sp_auth)
 
 # COMMAND ----------
 
-# DBTITLE 1,Azure configurations (guarded by ENABLE_ACCOUNT_CHECKS)
+# DBTITLE 1,Azure configurations
 if cloud_type == "azure":
     if ENABLE_ACCOUNT_CHECKS:
-        # Full Azure SP credentials needed only for account-level API calls
+        # Full Azure SP credentials from secret scope (account admin path)
         json_.update(
             {
                 "subscription_id": dbutils.secrets.get(
@@ -172,9 +207,8 @@ if cloud_type == "azure":
             }
         )
     else:
-        # Workspace-only POC: use run-as SP identity; no secrets needed
-        loggr = None  # logger not yet initialized; print instead
-        print("[SAT POC] Azure account-level checks DISABLED — skipping SP credential load.")
+        # Workspace-only mode: no SP credentials needed; use run-as identity
+        print("[SAT] Azure account-level checks DISABLED — skipping SP credential load.")
         json_.update(
             {
                 "subscription_id": "",
@@ -189,13 +223,24 @@ if cloud_type == "azure":
 # COMMAND ----------
 
 # DBTITLE 1,AWS configurations
-# AWS configurations — not applicable for Azure-only POC
 if cloud_type == "aws":
-    pass
+    sp_auth = {
+        "use_sp_auth": "False",
+        "client_id": "",
+        "client_secret_key": "client-secret",
+    }
+    try:
+        use_sp_auth = (
+            _try_secret(SECRETS_SCOPE, "use-sp-auth") or "false"
+        ).lower() == "true"
+        if use_sp_auth:
+            sp_auth["use_sp_auth"] = "True"
+            sp_auth["client_id"] = _try_secret(SECRETS_SCOPE, "client-id") or ""
+    except:
+        pass
+    json_.update(sp_auth)
 
 # COMMAND ----------
-
-
 
 # COMMAND ----------
 
@@ -228,4 +273,3 @@ readBestPracticesConfigsFile()
 
 # Initialize sat dasf mapping
 load_sat_dasf_mapping()
-

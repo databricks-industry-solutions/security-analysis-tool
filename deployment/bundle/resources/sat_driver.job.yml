@@ -1,7 +1,7 @@
 resources:
   jobs:
     sat_driver:
-      name: SAT Driver POC
+      name: SAT Driver
       tasks:
         - task_key: run_driver
           notebook_task:

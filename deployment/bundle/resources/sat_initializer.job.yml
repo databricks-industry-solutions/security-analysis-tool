@@ -1,7 +1,7 @@
 resources:
   jobs:
     sat_initializer:
-      name: SAT Initializer POC
+      name: SAT Initializer
       tasks:
         - task_key: initialize
           notebook_task:

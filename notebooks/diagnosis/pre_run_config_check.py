@@ -18,9 +18,9 @@
 # COMMAND ----------
 
 # DBTITLE 1,Check secret scopes (skipped when account checks disabled)
-# POC guard: skip secret scope validation when using widget-based config
+# Skip secret scope validation when using widget-based config (workspace-admin mode)
 if not ENABLE_ACCOUNT_CHECKS:
-    print("[SAT POC] Secret scope validation SKIPPED — using widget-based config.")
+    print("[SAT] Secret scope validation SKIPPED — using widget/auto-detected config.")
     secret_scopes = []
 else:
     secret_scopes = dbutils.secrets.listScopes()
@@ -36,7 +36,7 @@ else:
 # DBTITLE 1,Check SAT scope exists (guarded)
 found = False
 if not ENABLE_ACCOUNT_CHECKS:
-    found = True  # skip scope check for POC
+    found = True  # skip scope check in workspace-admin mode
 else:
     for secret_scope in secret_scopes:
         if secret_scope.name == json_['master_name_scope']:
@@ -68,7 +68,7 @@ cloud_type = getCloudType(hostname)
 # COMMAND ----------
 
 
-if cloud_type == "aws":
+if cloud_type == "aws" and ENABLE_ACCOUNT_CHECKS:
    try:
       dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
@@ -76,9 +76,11 @@ if cloud_type == "aws":
       dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
       dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration is has required secret names")
+      print("Your SAT configuration has required secret names")
    except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
+      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')
+elif cloud_type == "aws":
+   print("[SAT] AWS secret validation SKIPPED — account checks disabled.")  
 
 # COMMAND ----------
 
@@ -96,11 +98,11 @@ if cloud_type == "azure" and ENABLE_ACCOUNT_CHECKS:
    except Exception as e:
       dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')
 elif cloud_type == "azure":
-   print("[SAT POC] Azure secret validation SKIPPED — account checks disabled.")  
+   print("[SAT] Azure secret validation SKIPPED — account checks disabled.")  
 
 # COMMAND ----------
 
-if cloud_type == "gcp":
+if cloud_type == "gcp" and ENABLE_ACCOUNT_CHECKS:
    try:
       dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
@@ -108,9 +110,11 @@ if cloud_type == "gcp":
       dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
       dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration is has required secret names")
+      print("Your SAT configuration has required secret names")
    except Exception as e:
       dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')
+elif cloud_type == "gcp":
+   print("[SAT] GCP secret validation SKIPPED — account checks disabled.")
 
 # COMMAND ----------
 

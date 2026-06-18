@@ -59,7 +59,7 @@ if ENABLE_ACCOUNT_CHECKS:
     )
     loggr.info(out)
 else:
-    loggr.info("[SAT POC] Account-level checks DISABLED — skipping accounts_bootstrap.")
+    loggr.info("[SAT] Account-level checks DISABLED — skipping accounts_bootstrap.")
 
 # COMMAND ----------
 

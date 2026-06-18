@@ -69,8 +69,8 @@ else:
         ON target.workspace_id = source.workspace_id
         WHEN NOT MATCHED THEN INSERT *
     """)
-    loggr.info(f"[SAT POC] Single-workspace bootstrap: registered workspace {_ws_id} in {_schema}.account_workspaces")
-    loggr.info("[SAT POC] Setup notebooks SKIPPED — account checks disabled.")
+    loggr.info(f"[SAT] Single-workspace bootstrap: registered workspace {_ws_id} in {_schema}.account_workspaces")
+    loggr.info("[SAT] Setup notebooks SKIPPED — account checks disabled.")
 
 # COMMAND ----------
 

@@ -1,7 +1,7 @@
 resources:
   sql_warehouses:
     sat_warehouse:
-      name: SAT POC Warehouse
+      name: SAT Warehouse
       cluster_size: "2X-Small"
       auto_stop_mins: 1
       warehouse_type: PRO
