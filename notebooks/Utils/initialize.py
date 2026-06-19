@@ -40,10 +40,8 @@ cloud_type = getCloudType(hostname)
 # COMMAND ----------
 
 # DBTITLE 1,Configuration: secret scope first, widget fallback
-SECRETS_SCOPE = "sat_scope"
-
 # Widget parameters as optional overrides (passed via DAB bundle job parameters)
-for k in ["warehouse_id", "analysis_catalog", "analysis_schema", "enable_account_checks"]:
+for k in ["warehouse_id", "analysis_catalog", "analysis_schema", "enable_account_checks", "secrets_scope"]:
     dbutils.widgets.text(k, "")
 
 
@@ -68,6 +66,9 @@ def _get_widget(key):
         pass
     return None
 
+
+# Resolve SECRETS_SCOPE: widget override or default
+SECRETS_SCOPE = _get_widget("secrets_scope") or "sat_scope"
 
 # --- Resolve configuration: secret scope takes priority, widgets are fallback ---
 _secret_account_id = _try_secret(SECRETS_SCOPE, "account-console-id")
@@ -241,6 +242,8 @@ if cloud_type == "aws":
     json_.update(sp_auth)
 
 # COMMAND ----------
+
+
 
 # COMMAND ----------
 
