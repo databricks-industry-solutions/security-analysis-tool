@@ -44,6 +44,10 @@ def pytest_configure(config):
         "markers",
         "online: test requires network egress (e.g., CSV doc URL reachability).",
     )
+    config.addinivalue_line(
+        "markers",
+        "requires_run: test requires a SAT run_id (--run-id) and live credentials.",
+    )
 
 
 @pytest.fixture(scope="session")

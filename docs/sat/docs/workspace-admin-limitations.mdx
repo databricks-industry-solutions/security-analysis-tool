@@ -1,0 +1,74 @@
+---
+sidebar_position: 7
+---
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
+
+# Workspace Admin Limitations (Azure)
+
+SAT can run in **workspace-admin mode** — a reduced-privilege mode that skips checks requiring Account Admin or Metastore Admin access. This page documents which checks are not available when running without account-level credentials.
+
+<Admonition type="info" title="How Workspace-Admin Mode Works">
+
+When SAT runs without account-level credentials configured in the secret scope, it automatically enters workspace-admin mode via the `ENABLE_ACCOUNT_CHECKS` flag. No manual configuration is needed — SAT detects the privilege level and adjusts accordingly.
+
+For full account-level analysis, see the [Installation Guide](./installation/) to configure account-admin credentials.
+
+</Admonition>
+
+---
+
+## Account Admin Checks (12)
+
+These checks require access to the Databricks **Account Console API**. When called by a non-account-admin, they return `PERMISSION_DENIED` and are automatically skipped.
+
+| Check ID | Category | Check | Severity |
+| --- | --- | --- | --- |
+| GOV-3 | Governance | Log delivery configurations | High |
+| GOV-20 | Governance | Existence of Unity Catalog metastores | Low |
+| GOV-21 | Governance | Delegation of the Unity Catalog metastore admin to a group | High |
+| GOV-34 | Governance | Monitor audit logs with system tables | High |
+| GOV-37 | Governance | Disable legacy features for new workspaces | High |
+| NS-3 | Network Security | Front-end private connectivity | Medium |
+| NS-4 | Network Security | Workspace uses customer-managed VPC / VNet injection (Azure) | Medium |
+| NS-6 | Network Security | Secure cluster connectivity (NoPublicIp) | Medium |
+| NS-8 | Network Security | IP access lists for account console access | High |
+| NS-9 | Network Security | Workspaces have proper network policy configuration | High |
+| NS-12 | Network Security | Context-Based Ingress (CBI) policy configured | High |
+| NS-13 | Network Security | Account console IP access list enforcement enabled | High |
+
+---
+
+## Metastore Admin Checks (1)
+
+This check uses a workspace URL but requires elevated Unity Catalog privileges that a standard workspace admin does not possess.
+
+| Check ID | Category | Check | Severity | Permission Required |
+| --- | --- | --- | --- | --- |
+| INFO-38 | Informational | Third-party library control | Low | MANAGE ALLOWLIST on Metastore |
+
+---
+
+## Summary
+
+- 🔢 **Total non-workspace checks (Azure):** 13
+- 👤 **Account Admin required:** 12
+- 🗄️ **Metastore Admin required:** 1
+- 📂 **Categories affected:** Governance (5), Network Security (7), Informational (1)
+
+---
+
+## Verified Workspace-Level Checks
+
+<Admonition type="tip" title="Confirmed via SAT Service Principal Testing">
+
+The following checks use workspace URLs and **continue to work** in workspace-admin mode (HTTP 200 confirmed):
+
+- ✅ GOV-15, GOV-17, GOV-35
+- ✅ INFO-29, INFO-39, INFO-40, INFO-42, INFO-6
+
+**Observations on skipped checks:**
+- ⚠️ GOV-20, GOV-21, GOV-34 use workspace URLs but return `PERMISSION_DENIED` for non-account-admins
+- ⚠️ INFO-38 uses workspace URL but requires `MANAGE ALLOWLIST on Metastore` (metastore admin)
+
+</Admonition>

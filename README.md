@@ -4,6 +4,17 @@ The **Security Analysis Tool (SAT)** analyzes your Databricks account and worksp
 
 **Latest version:** [v0.8.0](https://github.com/databricks-industry-solutions/security-analysis-tool/releases) — live egress testing, per-user identity in Permissions Analysis, expanded secret scanning, and 11 new checks. See the [Upgrade Guide](https://databricks-industry-solutions.github.io/security-analysis-tool/docs/upgrade) for behavior changes when upgrading from 0.7.x.
 
+## Deployment Modes
+
+SAT supports two deployment modes:
+
+| Mode | Privileges Required | Scope |
+| --- | --- | --- |
+| **Account Admin** (default) | Account Admin + secret scope configured | Full analysis across all workspaces — all 65+ checks |
+| **Workspace Admin** (Azure) | Workspace Admin only | Single-workspace analysis — 52+ checks (13 account-level checks skipped) |
+
+**Workspace-admin mode** is enabled automatically when account-level secrets are not configured. No manual flags needed — SAT detects the privilege level and adjusts accordingly. See [Workspace Admin Limitations](https://databricks-industry-solutions.github.io/security-analysis-tool/docs/workspace-admin-limitations) for the full list of skipped checks.
+
 ## Documentation
 
 Refer to the [SAT documentation](https://databricks-industry-solutions.github.io/security-analysis-tool/) for detailed information on how to use SAT, its features, and configuration options.

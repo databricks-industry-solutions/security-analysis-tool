@@ -64,6 +64,7 @@ const sidebars = {
     },
     'upgrade',
     'usage',
+    'workspace-admin-limitations',
     'faq',
     'troubleshooting',
   ],
