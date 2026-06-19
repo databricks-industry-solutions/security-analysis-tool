@@ -6,11 +6,11 @@ import Admonition from '@theme/Admonition';
 
 # Workspace Admin Limitations (Azure)
 
-SAT can run in **workspace-admin mode** — a reduced-privilege mode that skips checks requiring Account Admin or Metastore Admin access. This page documents which checks are not available when running without account-level credentials.
+SAT can run in **workspace-admin mode** — a reduced-privilege mode where account-level data collection is disabled. This page documents which checks are not applicable when running without account-level credentials, and how to configure SAT to avoid false-positive violations.
 
 <Admonition type="info" title="How Workspace-Admin Mode Works">
 
-When SAT runs without account-level credentials configured in the secret scope, it automatically enters workspace-admin mode via the `ENABLE_ACCOUNT_CHECKS` flag. No manual configuration is needed — SAT detects the privilege level and adjusts accordingly.
+When SAT runs without account-level credentials configured in the secret scope, it automatically enters workspace-admin mode via the `ENABLE_ACCOUNT_CHECKS` flag. The `accounts_bootstrap` notebook (which collects account-level API data) is skipped entirely.
 
 For full account-level analysis, see the [Installation Guide](./installation/) to configure account-admin credentials.
 
@@ -18,9 +18,33 @@ For full account-level analysis, see the [Installation Guide](./installation/) t
 
 ---
 
+## Required Configuration
+
+<Admonition type="warning" title="Disable Account-Level Checks to Avoid False Positives">
+
+When running in workspace-admin mode, the 13 checks listed below will still attempt to evaluate against missing data and **report false violations**. To prevent this, you must disable them in the configuration file:
+
+1. Navigate to **Workspace → Applications → SAT → files → configs → `security_best_practices.csv`**
+2. Set `enable` to `0` for each of the 13 check IDs listed below
+3. Alternatively, after the first run, update the `security_best_practices` table directly:
+
+```sql
+UPDATE <catalog>.<schema>.security_best_practices
+SET enable = 0
+WHERE check_id IN (
+  'GOV-3', 'GOV-20', 'GOV-21', 'GOV-34', 'GOV-37',
+  'NS-3', 'NS-4', 'NS-6', 'NS-8', 'NS-9', 'NS-12', 'NS-13',
+  'INFO-38'
+);
+```
+
+</Admonition>
+
+---
+
 ## Account Admin Checks (12)
 
-These checks require access to the Databricks **Account Console API**. When called by a non-account-admin, they return `PERMISSION_DENIED` and are automatically skipped.
+These checks require access to the Databricks **Account Console API**. Without `accounts_bootstrap` running, the intermediate tables these checks query will not exist, causing them to report false violations if left enabled.
 
 | Check ID | Category | Check | Severity |
 | --- | --- | --- | --- |
@@ -67,7 +91,7 @@ The following checks use workspace URLs and **continue to work** in workspace-ad
 - ✅ GOV-15, GOV-17, GOV-35
 - ✅ INFO-29, INFO-39, INFO-40, INFO-42, INFO-6
 
-**Observations on skipped checks:**
+**Observations on non-workspace checks:**
 - ⚠️ GOV-20, GOV-21, GOV-34 use workspace URLs but return `PERMISSION_DENIED` for non-account-admins
 - ⚠️ INFO-38 uses workspace URL but requires `MANAGE ALLOWLIST on Metastore` (metastore admin)
 
