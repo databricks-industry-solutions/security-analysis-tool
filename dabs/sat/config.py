@@ -105,7 +105,16 @@ def form():
         ),
     ]
 
-    questions = questions + cloud_specific_questions(client) + proxies + scheduling + brickhound
+    # Genie Space Configuration
+    genie = [
+        Confirm(
+            name="enable_genie_space",
+            message="Create a SAT Genie space for natural-language queries over findings?",
+            default=True,
+        ),
+    ]
+
+    questions = questions + cloud_specific_questions(client) + proxies + scheduling + brickhound + genie
     return client, prompt(questions), profile
 
 
@@ -209,6 +218,12 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
             key="proxies",
             string_value="{}",
         )
+
+    client.secrets.put_secret(
+        scope=scope_name,
+        key="enable-genie-space",
+        string_value="true" if answers.get("enable_genie_space", False) else "false",
+    )
 
     if cloud_type == "aws" or cloud_type == "gcp":
         client.secrets.put_secret(

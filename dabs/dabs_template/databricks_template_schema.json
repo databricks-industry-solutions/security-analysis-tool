@@ -46,6 +46,11 @@
             "description": "Permissions Analysis collection schedule (Quartz cron expression)",
             "default": "0 0 2 ? * *"
         },
+        "enable_genie_space": {
+            "type": "boolean",
+            "description": "Create a SAT Genie space for natural-language queries over findings",
+            "default": true
+        },
         "warehouse_id": {
             "type": "string",
             "description": "The ID of the SQL warehouse to use for SAT Permissions Analysis"

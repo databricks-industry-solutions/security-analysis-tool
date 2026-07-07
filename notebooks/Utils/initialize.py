@@ -57,6 +57,14 @@ json_ = {
     "proxies": json.loads(dbutils.secrets.get(scope=SECRETS_SCOPE, key="proxies")),
 }
 
+try:
+    json_["enable_genie_space"] = (
+        dbutils.secrets.get(scope=SECRETS_SCOPE, key="enable-genie-space").lower() == "true"
+    )
+except Exception:
+    # Secret not present on deployments that pre-date the Genie feature
+    json_["enable_genie_space"] = False
+
 # COMMAND ----------
 
 # MAGIC %md

@@ -1,0 +1,132 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      { "id": "01f0a1b2c3d4e5f6a1b2c3d4e5f6a101", "question": ["How many security violations did we find in the latest SAT run?"] },
+      { "id": "01f0a1b2c3d4e5f6a1b2c3d4e5f6a102", "question": ["Which workspaces have the highest number of High-severity violations in the latest run?"] },
+      { "id": "01f0a1b2c3d4e5f6a1b2c3d4e5f6a103", "question": ["Break down current violations by category (Data Protection, Governance, Identity & Access, Network Security, Informational)."] },
+      { "id": "01f0a1b2c3d4e5f6a1b2c3d4e5f6a104", "question": ["Show me all failed checks for the latest run with the check name, severity, and recommendation."] },
+      { "id": "01f0a1b2c3d4e5f6a1b2c3d4e5f6a105", "question": ["Which Identity & Access checks are currently failing across all workspaces?"] },
+      { "id": "01f0a1b2c3d4e5f6a1b2c3d4e5f6a106", "question": ["How has the total number of violations trended over the last 10 SAT runs?"] },
+      { "id": "01f0a1b2c3d4e5f6a1b2c3d4e5f6a107", "question": ["List every hardcoded secret the scanner has flagged in notebooks, grouped by workspace."] },
+      { "id": "01f0a1b2c3d4e5f6a1b2c3d4e5f6a108", "question": ["Which checks regressed (passed in the previous run, failed in the latest run)?"] }
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "identifier": "{UC_SCHEMA}.account_info",
+        "column_configs": [
+          { "column_name": "workspaceid", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "name", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "category", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "run_id", "enable_format_assistance": true },
+          { "column_name": "check_time", "enable_format_assistance": true }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.account_workspaces",
+        "column_configs": [
+          { "column_name": "workspace_id", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "workspace_name", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "deployment_url", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "workspace_status", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "analysis_enabled", "enable_format_assistance": true }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.clusters_secret_scan_results",
+        "column_configs": [
+          { "column_name": "workspace_id", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "cluster_id", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "cluster_name", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "config_field", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "detector_name", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "verified", "enable_format_assistance": true },
+          { "column_name": "secrets_found", "enable_format_assistance": true },
+          { "column_name": "run_id", "enable_format_assistance": true },
+          { "column_name": "scan_time", "enable_format_assistance": true }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.notebooks_secret_scan_results",
+        "column_configs": [
+          { "column_name": "workspace_id", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "notebook_path", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "notebook_name", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "detector_name", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "verified", "enable_format_assistance": true },
+          { "column_name": "secrets_found", "enable_format_assistance": true },
+          { "column_name": "run_id", "enable_format_assistance": true },
+          { "column_name": "scan_time", "enable_format_assistance": true }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.run_number_table",
+        "column_configs": [
+          { "column_name": "runID", "enable_format_assistance": true },
+          { "column_name": "check_time", "enable_format_assistance": true }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.security_best_practices",
+        "column_configs": [
+          { "column_name": "id", "enable_format_assistance": true },
+          { "column_name": "check_id", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "category", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "check", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "severity", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "recommendation", "enable_format_assistance": true },
+          { "column_name": "aws", "enable_format_assistance": true },
+          { "column_name": "azure", "enable_format_assistance": true },
+          { "column_name": "gcp", "enable_format_assistance": true },
+          { "column_name": "enable", "enable_format_assistance": true }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.security_checks",
+        "column_configs": [
+          { "column_name": "workspaceid", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "id", "enable_format_assistance": true },
+          { "column_name": "score", "enable_format_assistance": true },
+          { "column_name": "run_id", "enable_format_assistance": true },
+          { "column_name": "check_time", "enable_format_assistance": true },
+          { "column_name": "chk_date", "enable_format_assistance": true }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.workspace_run_complete",
+        "column_configs": [
+          { "column_name": "workspace_id", "enable_format_assistance": true, "enable_entity_matching": true },
+          { "column_name": "run_id", "enable_format_assistance": true },
+          { "column_name": "completed", "enable_format_assistance": true },
+          { "column_name": "check_time", "enable_format_assistance": true }
+        ]
+      }
+    ]
+  },
+  "instructions": {
+    "text_instructions": [
+      {
+        "id": "01f0b2c3d4e5f6a1b2c3d4e5f6a1b201",
+        "content": [
+          "This Genie space answers questions about Databricks Security Analysis Tool (SAT) findings. SAT evaluates workspace and account configurations against 116+ security best practices on a recurring schedule and records every evaluation in `security_checks`.",
+          "Core table relationships — always apply these when building queries:",
+          "- `security_checks` is the fact table of evaluations, keyed by (workspaceid, id, run_id). Join `security_checks.id` to `security_best_practices.id` to get the human-readable check name, category, severity, recommendation, and doc URLs. Join `security_checks.run_id` to `run_number_table.runID` to get the run timestamp (`check_time`).",
+          "- A `score` of 0 on a `security_checks` row means the check PASSED. Any positive score indicates a VIOLATION, and the numeric value is the count of offending resources detected (e.g. score=3 means three non-compliant clusters).",
+          "- To find the LATEST run, use `SELECT MAX(runID) FROM run_number_table` and filter other tables on that run_id.",
+          "- `account_workspaces` maps `workspace_id` → human-readable `workspace_name` and `deployment_url`. Always join on this when reporting results per workspace so users see names, not raw IDs.",
+          "- `workspace_run_complete` tells you which workspaces finished cleanly per run. If a workspace is missing from this table for a run_id, its data is incomplete.",
+          "- `account_info` stores per-workspace configuration snapshots (one row per config item per run). Useful for questions like 'does workspace X have SSO enabled?'.",
+          "- `security_best_practices` is the static reference catalog of all checks. Column `severity` has values: Critical, High, Medium, Low. Column `category` has: Data Protection, Governance, Identity & Access, Network Security, Informational. Columns `aws`, `azure`, `gcp` are 0/1 flags for which clouds the check applies to. Column `enable` is 0/1 for whether the check is currently active.",
+          "- `notebooks_secret_scan_results` and `clusters_secret_scan_results` are from the TruffleHog secret scanner (separate scheduled job). A row with `secrets_found=0` and NULL detector fields means the workspace was scanned cleanly. A row with a non-null `detector_name` is a real potential secret finding; `verified=true` means TruffleHog validated it against the live service.",
+          "Reporting conventions — apply unless the user explicitly asks otherwise:",
+          "- Default to the latest SAT run (latest runID in `run_number_table`).",
+          "- When counting violations, count rows with `score > 0`, not rows with `score >= 0`.",
+          "- When showing violations, include `security_best_practices.check` (name), `severity`, and `recommendation` so the result is actionable.",
+          "- For trend questions, order by `run_number_table.check_time` and label each run with its date."
+        ]
+      }
+    ]
+  }
+}
