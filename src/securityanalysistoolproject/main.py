@@ -89,7 +89,7 @@ def main():
         return
         # workspaceClient = WorkspaceClient(client_config)
         # notebookList = workspaceClient.get_all_notebooks()
-        #notebookList = workspaceClient.get_list_notebooks('/Repos/ramdas.murali+tzar@databricks.com/CSE/gold/workspace_analysis/dev')
+        #notebookList = workspaceClient.get_list_notebooks('/Repos/<user>@example.com/CSE/gold/workspace_analysis/dev')
         # print(notebookList)
         # libClient = LibrariesClient(client_config)
         # libList = libClient.get_libraries_status_list()
