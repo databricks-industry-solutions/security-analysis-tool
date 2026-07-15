@@ -26,13 +26,16 @@ not a cleanup.
 
 | Path | What lives here |
 |------|-----------------|
-| `src/securityanalysistoolproject/` | The SAT Python SDK — `core/` (REST client, auth, parsing) and `clientpkgs/` (one client class per Databricks API) |
+| `src/securityanalysistoolproject/` | The SAT Python SDK — `core/` (REST client, auth, parsing), `clientpkgs/` (one client class per Databricks API), and its own `tests/` (SDK pytest suite) |
 | `src/brickhound/` | BrickHound permissions-analysis SDK (kept separate to avoid dependency conflicts) |
 | `notebooks/` | Databricks notebooks: `Setup/`, `Includes/` (shared logic + `scan_secrets/`), `Utils/` (bootstrap/common), driver notebooks, `brickhound/` |
 | `configs/` | `security_best_practices.csv` (master check list), check toggles, TruffleHog + DASF configs |
 | `dabs/` | Interactive DABS installer (`main.py`, `sat/`) and bundle templates |
 | `terraform/` | Cloud-specific (`aws/`, `azure/`, `gcp/`) and `common/` deployment modules |
-| `dashboards/`, `docs/`, `tests/` | Lakeview dashboards, docs site source, SDK pytest suite |
+| `app/` | BrickHound Gradio web app (`app/brickhound/`) deployed via Databricks Apps |
+| `tests/` | Automated check-validation framework (`tests/automated/`) — independently re-derives each check from the live API and compares against SAT's output. See `tests/README.md`. Distinct from the SDK pytest suite above. |
+| `dashboards/`, `docs/` | Lakeview dashboards and the Docusaurus documentation site source |
+| `.claude/`, `skills/` | Agent tooling: `.claude/commands/` (project slash commands, e.g. `add-sat-check`) and `skills/` (customer-facing Agent Skills such as `dependency-audit`) |
 
 ## Common commands
 
@@ -44,6 +47,11 @@ cp dist/dbl_sat_sdk-<version>-py3-none-any.whl ../../lib/
 # Run SDK tests
 cd src/securityanalysistoolproject && pytest tests/
 pytest tests/test_clusters.py -v          # single test file
+
+# Validate checks against a real workspace (automated framework; see tests/README.md)
+python -m tests.automated.run_validation --cloud aws --list-runs
+python -m tests.automated.run_validation --cloud aws --run-id <id> --check-id NS-12
+pytest tests/automated/test_csv_health.py -m 'not online'   # offline CSV lint
 
 # Deploy SAT (interactive installer)
 ./install.sh
@@ -128,6 +136,7 @@ skipped, say so.
 
 - [`CLAUDE.md`](CLAUDE.md) — detailed conventions, check-authoring checklist, and mandatory workflows
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution process, project structure, and PR expectations
+- [`tests/README.md`](tests/README.md) — check-validation framework methodology and the triage loop for debugging a check
 - [`VERSIONING.md`](VERSIONING.md) — semantic versioning and branching strategy
 - [`SECURITY.md`](SECURITY.md) — reporting security issues
 - [SAT documentation site](https://databricks-industry-solutions.github.io/security-analysis-tool/)
