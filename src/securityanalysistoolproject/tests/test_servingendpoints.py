@@ -22,7 +22,7 @@ def test_getendpoint_byname(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     dbservendobj = ServingEndpoints(jsonstr)
-    endpointlst = dbservendobj.get_endpoint_byname('yuki_shiga_workshop202404_machine_learning')
+    endpointlst = dbservendobj.get_endpoint_byname('example_serving_endpoint')
     print(endpointlst)
 
 def test_getpermissions(get_db_client):

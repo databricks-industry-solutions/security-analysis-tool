@@ -38,7 +38,7 @@ def test_get_sharing_recipient(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     deltasharingobj = DeltaSharingClient(jsonstr)
-    artifactsList = deltasharingobj.get_sharing_recipient('aaron_binns_metronome_contigname_1')
+    artifactsList = deltasharingobj.get_sharing_recipient('example_recipient')
     print(artifactsList)  
 
 def test_get_sharing_recipient_permissions(get_db_client):
@@ -46,7 +46,7 @@ def test_get_sharing_recipient_permissions(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     deltasharingobj = DeltaSharingClient(jsonstr)
-    artifactsList = deltasharingobj.get_sharing_recipient_permissions('aaron_binns_metronome_contigname_1')
+    artifactsList = deltasharingobj.get_sharing_recipient_permissions('example_recipient')
     print(artifactsList)  
 
 def test_get_list_shares(get_db_client):

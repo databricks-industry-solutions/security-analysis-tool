@@ -30,7 +30,7 @@ from clientpkgs.azure_accounts_client import get_msal_token
 
 def main():
     configParser = configparser.ConfigParser()   
-    configFilePath = '/Users/ramdas.murali/_dev_stuff/config.txt'
+    configFilePath = '/path/to/config.txt'
     configParser.read(configFilePath)
     jsonstr = configParser['MEISTERSTUFF']['json']
     workspace_id = json.loads(jsonstr)['workspace_id']
