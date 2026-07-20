@@ -2937,6 +2937,24 @@ for v in all_vertices:
 for e in all_edges:
     e['run_id'] = RUN_ID
 
+# Deduplicate vertices by id before writing. A vertex id is unique per
+# entity within a run, so two rows sharing an id are the same entity and
+# keeping the first occurrence is lossless.
+_seen_vertex_ids = set()
+_deduped_vertices = []
+_dropped_dupes = 0
+for v in all_vertices:
+    vid = v['id']
+    if vid in _seen_vertex_ids:
+        _dropped_dupes += 1
+        continue
+    _seen_vertex_ids.add(vid)
+    _deduped_vertices.append(v)
+if _dropped_dupes:
+    print(f"   Deduplicated vertices: dropped {_dropped_dupes} duplicate id(s) "
+          f"({len(_deduped_vertices)} unique of {len(all_vertices)} collected)")
+all_vertices = _deduped_vertices
+
 # Create DataFrames
 print("\n Creating DataFrames...")
 vertices_df = spark.createDataFrame(all_vertices, schema=vertices_schema)

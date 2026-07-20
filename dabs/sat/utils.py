@@ -48,10 +48,10 @@ def cloud_type(client: WorkspaceClient):
         return "aws"
 
 
-def databricks_command(commmand: str):
+def databricks_command(command: str):
     return json.loads(
         subprocess.run(
-            commmand.split(" "),
+            command.split(" "),
             capture_output=True,
             text=True,
         ).stdout.strip()
