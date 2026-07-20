@@ -175,6 +175,8 @@ import hashlib
 import logging
 import shutil
 import yaml
+import tempfile
+import concurrent.futures
 from datetime import timedelta, datetime
 from urllib.parse import quote
 from typing import Dict, List, Optional, Any, Tuple
@@ -307,7 +309,15 @@ class Config:
     
     # TruffleHog settings from config
     EXCLUDED_DETECTORS = config_data.get("settings", {}).get("excluded_detectors", ["DatabricksToken"])
-    
+
+    # Concurrency: number of threads for I/O-bound work (workspace/list,
+    # get-status, notebook export/FUSE copy). I/O-bound, so a pool well above
+    # the core count is fine.
+    MAX_WORKERS = config_data.get("settings", {}).get("performance", {}).get("max_workers", 16)
+    # Directory where a batch of notebooks is materialized so TruffleHog can
+    # scan them all in a single invocation instead of once per file.
+    SCAN_BATCH_DIR = config_data.get("settings", {}).get("file_paths", {}).get("scan_batch_dir", "/tmp/notebook_scan_batch")
+
 # Extract Databricks authentication context
 # These are automatically available in Databricks notebooks
 try:
@@ -413,26 +423,38 @@ def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str,
     Returns a (json_or_none, status_or_none) tuple so callers can branch
     on HTTP status. Status is None when the request never reached the
     server (timeout / connection error).
+
+    Rate limits (429) are retried internally with exponential backoff so a
+    transient throttle no longer aborts pagination. We only sleep when the
+    API actually throttles us — there is no unconditional inter-call sleep.
     """
-    try:
-        response = requests.get(url, headers=headers, json=data, timeout=30)
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        try:
+            response = requests.get(url, headers=headers, json=data, timeout=30)
 
-        if response.status_code == 200:
-            return response.json(), 200
-        elif response.status_code == 429:
-            logger.warning(f"Rate limit hit for URL: {url}. Waiting before retry...")
-            time.sleep(Config.API_SLEEP_SECONDS * 2)  # Wait longer for rate limits
-            return None, 429
-        else:
-            logger.warning(f"API request failed. URL: {url}, Status: {response.status_code}")
-            return None, response.status_code
+            if response.status_code == 200:
+                return response.json(), 200
+            elif response.status_code == 429:
+                if attempt == max_attempts - 1:
+                    logger.warning(f"Rate limit persisted after {max_attempts} attempts for URL: {url}")
+                    return None, 429
+                backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
+                logger.warning(f"Rate limit hit for URL: {url}. Backing off {backoff}s (attempt {attempt + 1}/{max_attempts})")
+                time.sleep(backoff)
+                continue
+            else:
+                logger.warning(f"API request failed. URL: {url}, Status: {response.status_code}")
+                return None, response.status_code
 
-    except requests.exceptions.Timeout:
-        logger.error(f"Request timeout for URL: {url}")
-        return None, None
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error for URL: {url}. Error: {str(e)}")
-        return None, None
+        except requests.exceptions.Timeout:
+            logger.error(f"Request timeout for URL: {url}")
+            return None, None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error for URL: {url}. Error: {str(e)}")
+            return None, None
+
+    return None, 429
 
 def check_notebook_status(notebook_path: str) -> int:
     """
@@ -473,68 +495,82 @@ def _get_object_metadata(path: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _list_workspace_recursive(path: str,
-                              results: List[Dict[str, Any]],
-                              cutoff_ms: Optional[int] = None) -> None:
-    """Recursively enumerate NOTEBOOK / FILE objects under `path`.
+def _list_dir(path: str) -> List[Dict[str, Any]]:
+    """Single /workspace/list call. Returns the raw objects list (empty on error/404).
 
-    Appends entries to `results` in the shape `_process_notebook_batch`
-    expects: {id, name, workspace_path}. If `cutoff_ms` is provided,
-    only objects with `modified_at >= cutoff_ms` are included (one
-    extra /workspace/get-status call per leaf).
+    404 is normal for tree roots that don't exist on every workspace
+    (e.g. /Repos on workspaces without Git integration).
     """
     url = f"{base_url}/api/2.0/workspace/list?path={quote(path)}"
     headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
     try:
         r = requests.get(url, headers=headers, timeout=30)
         if r.status_code != 200:
-            # 404 is normal for tree roots that don't exist on every
-            # workspace (e.g. /Repos on workspaces without Git integration).
             if r.status_code != 404:
                 logger.warning(f"workspace/list returned {r.status_code} for {path}")
-            return
-        objs = r.json().get("objects", [])
+            return []
+        return r.json().get("objects", [])
     except requests.exceptions.RequestException as e:
         logger.warning(f"workspace/list failed for {path}: {str(e)}")
-        return
-
-    for obj in objs:
-        obj_type = obj.get("object_type")
-        obj_path = obj.get("path", "")
-        if not obj_path:
-            continue
-
-        if obj_type in ("DIRECTORY", "REPO"):
-            _list_workspace_recursive(obj_path, results, cutoff_ms)
-        elif obj_type in ("NOTEBOOK", "FILE"):
-            if cutoff_ms is not None:
-                meta = _get_object_metadata(obj_path)
-                if not meta:
-                    continue
-                modified_at = meta.get("modified_at", 0)
-                if modified_at < cutoff_ms:
-                    continue
-            results.append({
-                "id": str(obj.get("object_id", "")),
-                "name": obj_path.rsplit("/", 1)[-1],
-                "workspace_path": obj_path.rsplit("/", 1)[0],
-            })
+        return []
 
 
 def discover_notebooks_via_workspace_list(time_filter_enabled: bool,
                                           last_edited_after: Optional[int]) -> List[Dict[str, Any]]:
-    """Fallback notebook discovery using /workspace/list + /get-status.
+    """Fallback notebook discovery using /workspace/list (+ /get-status only when needed).
 
     Used when /search-midtier/unified-search rejects token-based auth
     (returns 403). See GitHub issue #330 for context. The standard
-    discoverable trees — /Users, /Shared, /Repos — cover the common
-    cases; missing roots are tolerated silently (404).
+    discoverable trees — /Users, /Shared, /Repos — cover the common cases;
+    missing roots are tolerated silently (404).
+
+    Performance: directory traversal is fanned out across a thread pool one
+    level at a time instead of recursing serially, and the per-leaf
+    /workspace/get-status call is skipped entirely when the list response
+    already carries `modified_at`. get-status is only issued (and then in
+    parallel) for the leaves that lack it — eliminating the O(notebooks)
+    serial round-trips that made this path time out on large workspaces.
     """
     cutoff_ms = last_edited_after if time_filter_enabled else None
-    results: List[Dict[str, Any]] = []
-    for root in ("/Users", "/Shared", "/Repos"):
-        _list_workspace_recursive(root, results, cutoff_ms)
-    return results
+
+    # Phase 1: parallel breadth-first directory traversal.
+    leaves: List[Dict[str, Any]] = []
+    pending: List[str] = ["/Users", "/Shared", "/Repos"]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
+        while pending:
+            next_dirs: List[str] = []
+            for objs in pool.map(_list_dir, pending):
+                for obj in objs:
+                    obj_type = obj.get("object_type")
+                    if not obj.get("path"):
+                        continue
+                    if obj_type in ("DIRECTORY", "REPO"):
+                        next_dirs.append(obj["path"])
+                    elif obj_type in ("NOTEBOOK", "FILE"):
+                        leaves.append(obj)
+            pending = next_dirs
+
+    # Phase 2: time-window filter (only when enabled).
+    if cutoff_ms is None:
+        kept = leaves
+    else:
+        kept = [o for o in leaves if "modified_at" in o and o.get("modified_at", 0) >= cutoff_ms]
+        need_meta = [o for o in leaves if "modified_at" not in o]
+        if need_meta:
+            def _keep_if_recent(obj: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                meta = _get_object_metadata(obj.get("path", ""))
+                if meta and meta.get("modified_at", 0) >= cutoff_ms:
+                    return obj
+                return None
+            with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
+                kept.extend(o for o in pool.map(_keep_if_recent, need_meta) if o is not None)
+
+    # Normalize to the {id, name, workspace_path} shape the batch processor expects.
+    return [{
+        "id": str(obj.get("object_id", "")),
+        "name": obj.get("path", "").rsplit("/", 1)[-1],
+        "workspace_path": obj.get("path", "").rsplit("/", 1)[0],
+    } for obj in kept]
 
 def get_fuse_path(workspace_path: str) -> Optional[str]:
     """Find the actual file on the FUSE mount by trying common extensions."""
@@ -955,6 +991,134 @@ def scan_notebook_for_secrets(notebook_path: str, object_id: str) -> Optional[Li
         logger.error(f"Error scanning notebook {notebook_path}: {str(e)}")
         return None
 
+def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Optional[Tuple[str, Dict[str, Any]]]:
+    """Write one notebook's content into `scan_dir` so a whole batch can be
+    scanned by TruffleHog in a single invocation.
+
+    The on-disk filename is the notebook's object_id, which lets findings be
+    mapped back to the notebook by source-file basename after the scan.
+    Mirrors the original FUSE-first / API-export fallback. Returns
+    (scan_file_path, metadata) on success, or None if the notebook could not
+    be materialized (missing fields, no access, export failure).
+    """
+    notebook_id = notebook.get("id", "")
+    notebook_name = notebook.get("name", "")
+    parent_path = notebook.get("workspace_path", "")
+
+    if not notebook_id or not notebook_name:
+        logger.warning("Skipping notebook with missing ID or name")
+        return None
+    if os.sep in str(notebook_id):
+        logger.warning(f"Skipping notebook with unsafe id: {notebook_id}")
+        return None
+
+    temp_path = f"{parent_path}/{notebook_name}"
+    path = quote(temp_path)
+    metadata = {"object_id": notebook_id, "path": path, "name": notebook_name}
+    scan_file = os.path.join(scan_dir, str(notebook_id))
+
+    try:
+        # Try FUSE mount first (fast local copy), fall back to API export.
+        fuse_path = get_fuse_path(path)
+        if fuse_path:
+            try:
+                shutil.copy2(fuse_path, scan_file)
+                return scan_file, metadata
+            except Exception as e:
+                logger.warning(f"FUSE copy failed for {fuse_path}, falling back to API: {e}")
+
+        notebook_status = check_notebook_status(path)
+        if notebook_status == 200:
+            export_response = export_notebook_content(path)
+            if not export_response:
+                logger.warning(f"Failed to export notebook content: {temp_path}")
+                return None
+            content = export_response.get("content")
+            if not content:
+                logger.warning(f"No content found in notebook: {temp_path}")
+                return None
+            if not decode_and_write_content(content, scan_file):
+                logger.error(f"Failed to write notebook content to file: {scan_file}")
+                return None
+            return scan_file, metadata
+        elif notebook_status == 403:
+            logger.warning(f"Access denied for notebook: {temp_path}")
+        elif notebook_status == 404:
+            logger.warning(f"Notebook not found: {temp_path}")
+        else:
+            logger.warning(f"Unexpected status {notebook_status} for notebook: {temp_path}")
+        return None
+    except Exception as e:
+        logger.error(f"Error materializing notebook {temp_path}: {str(e)}")
+        return None
+
+
+def _scan_and_record_chunk(chunk: List[Dict[str, Any]],
+                           results_list: List[Dict[str, Any]],
+                           output_filename: Optional[str],
+                           run_id: Optional[int],
+                           workspace_id: Optional[str]) -> None:
+    """Materialize a chunk of notebooks in parallel, scan the whole chunk with
+    a single TruffleHog pass, then attribute findings back to each notebook.
+
+    Uses a fresh, unique temp directory per chunk (tempfile.mkdtemp). This is
+    required for correctness: when multiple workspaces are scanned concurrently,
+    every child notebook shares the same driver-local filesystem, so a fixed
+    shared directory would let one scan's files clobber another's.
+    """
+    os.makedirs(Config.SCAN_BATCH_DIR, exist_ok=True)
+    scan_dir = tempfile.mkdtemp(dir=Config.SCAN_BATCH_DIR)
+    try:
+        # Phase 1: materialize notebook contents in parallel (I/O-bound).
+        basename_to_meta: Dict[str, Dict[str, Any]] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
+            for res in pool.map(lambda nb: _materialize_notebook(nb, scan_dir), chunk):
+                if res is None:
+                    continue
+                scan_file, metadata = res
+                basename_to_meta[os.path.basename(scan_file)] = metadata
+
+        # Record metadata + log line for every materialized notebook.
+        for metadata in basename_to_meta.values():
+            results_list.append(metadata)
+            if output_filename:
+                try:
+                    with open(output_filename, mode="a", encoding="utf-8") as output_file:
+                        json.dump(metadata, output_file)
+                        output_file.write("\n")
+                except IOError as e:
+                    logger.error(f"Failed to write to output file {output_filename}: {str(e)}")
+
+        if not basename_to_meta:
+            return
+
+        # Phase 2: a single TruffleHog pass over the whole chunk directory
+        # (built-in + custom detectors), instead of two subprocesses per file.
+        trufflehog_output = scan_for_secrets(scan_dir)
+        findings = process_trufflehog_output(trufflehog_output) if trufflehog_output else []
+
+        # Phase 3: attribute findings back to notebooks by source-file basename.
+        findings_by_notebook: Dict[str, List[Dict[str, str]]] = {}
+        for finding in findings:
+            key = os.path.basename(finding.get("SourceFile", ""))
+            findings_by_notebook.setdefault(key, []).append(finding)
+
+        # Phase 4: set counts, surface alerts, persist.
+        for key, metadata in basename_to_meta.items():
+            secret_results = findings_by_notebook.get(key, [])
+            if secret_results:
+                metadata["secrets_found"] = len(secret_results)
+                metadata["secret_details"] = secret_results
+                print(f"🚨 SECRETS DETECTED in {metadata['path']}:")
+                print(json.dumps(secret_results, indent=2))
+            else:
+                metadata["secrets_found"] = 0
+            if run_id is not None and workspace_id is not None:
+                insert_secret_scan_results(workspace_id, metadata, run_id)
+    finally:
+        shutil.rmtree(scan_dir, ignore_errors=True)
+
+
 def _process_notebook_batch(batch: List[Dict[str, Any]],
                             results_list: List[Dict[str, Any]],
                             output_filename: Optional[str] = None,
@@ -966,57 +1130,18 @@ def _process_notebook_batch(batch: List[Dict[str, Any]],
     unified-search returns natively. The workspace/list fallback
     synthesizes the same shape so both discovery paths share this
     downstream processor (TruffleHog scan, DB insert, log file write).
+
+    Notebooks are processed in bounded chunks: each chunk is materialized in
+    parallel and scanned with a single TruffleHog invocation. This replaces
+    the previous per-notebook loop that spawned two subprocesses per file and
+    exported notebooks one at a time — the dominant cost on large workspaces.
     """
     logger.info(f"Processing {len(batch)} notebooks from discovery batch")
 
-    for notebook in batch:
-        notebook_id = notebook.get("id", "")
-        notebook_name = notebook.get("name", "")
-        parent_path = notebook.get("workspace_path", "")
-
-        if not notebook_id or not notebook_name:
-            logger.warning("Skipping notebook with missing ID or name")
-            continue
-
-        # Construct full notebook path
-        temp_path = f"{parent_path}/{notebook_name}"
-        path = quote(temp_path)
-
-        logger.info(f"Processing notebook: {notebook_id} - {temp_path}")
-
-        # Store notebook metadata
-        notebook_metadata = {"object_id": notebook_id, "path": path, "name": notebook_name}
-        results_list.append(notebook_metadata)
-
-        # Log to file if specified
-        if output_filename:
-            try:
-                with open(output_filename, mode="a", encoding="utf-8") as output_file:
-                    json.dump(notebook_metadata, output_file)
-                    output_file.write("\n")
-            except IOError as e:
-                logger.error(f"Failed to write to output file {output_filename}: {str(e)}")
-
-        # Scan notebook for secrets
-        secret_results = scan_notebook_for_secrets(path, notebook_id)
-
-        if secret_results:
-            # Store results with notebook metadata
-            notebook_metadata["secrets_found"] = len(secret_results)
-            notebook_metadata["secret_details"] = secret_results
-
-            # Log summary - only show when secrets are found
-            print(f"🚨 SECRETS DETECTED in {temp_path}:")
-            print(json.dumps(secret_results, indent=2))
-        else:
-            notebook_metadata["secrets_found"] = 0
-            # Don't print "No secrets found" to avoid overwhelming output with thousands of notebooks
-
-        # Store results in database if run_id and workspace_id are provided
-        logger.info(f"Inserting secret scan results for workspace_id: {workspace_id} and run_id: {run_id}")
-        logger.info(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
-        if run_id is not None and workspace_id is not None:
-            insert_secret_scan_results(workspace_id, notebook_metadata, run_id)
+    chunk_size = max(1, Config.MAX_WORKERS * 8)
+    for start in range(0, len(batch), chunk_size):
+        _scan_and_record_chunk(batch[start:start + chunk_size],
+                               results_list, output_filename, run_id, workspace_id)
 
 
 def process_search_response(response: Dict[str, Any], results_list: List[Dict[str, Any]],
@@ -1199,12 +1324,11 @@ def main_scanning_workflow():
             print()
             
             page_number += 1
-            
-            # Rate limiting - sleep between API calls
-            if next_page_token is not None:
-                logger.info(f"Sleeping for {Config.API_SLEEP_SECONDS} seconds to prevent rate limiting...")
-                time.sleep(Config.API_SLEEP_SECONDS)
-        
+
+            # No unconditional inter-page sleep. Rate limiting is handled
+            # reactively inside make_api_request(), which backs off and
+            # retries only when the API actually returns HTTP 429.
+
         # Final summary
         print("🎉 Secret Scanning Completed!")
         print("=" * 60)

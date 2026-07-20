@@ -129,6 +129,9 @@ resource "databricks_job" "driver" {
 
 resource "databricks_job" "secrets_scanner" {
   name = "SAT Secrets Scanner"
+  # Upper bound for the whole run. Generous enough for large multi-workspace
+  # accounts, but fails fast instead of letting a stuck run hang indefinitely.
+  timeout_seconds = 28800 # 8 hours
   tags = {
     Application = "SAT"
   }
