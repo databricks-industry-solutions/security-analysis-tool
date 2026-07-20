@@ -53,7 +53,7 @@ elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):
     mastername = ' '
     masterpwd = ' ' # we still need to send empty user/pwd.
     json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-else: #lets populate master key for accounts api
+else: # Populate the master key for the Accounts API
     client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
     json_.update({'token':token, 'client_secret': client_secret})
     mastername = ' '

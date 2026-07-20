@@ -38,7 +38,7 @@ def test_get_catalog(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_catalog('ramdas_murali_cat')
+    artifactsList = unitycatalogobj.get_catalog('example_catalog')
     print(artifactsList)    
 
 def test_get_connections(get_db_client):
@@ -54,7 +54,7 @@ def test_get_connection(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_connection('rkm_redshift')
+    artifactsList = unitycatalogobj.get_connection('example_connection')
     print(artifactsList)  
 
 def test_get_external_locations(get_db_client):
@@ -70,7 +70,7 @@ def test_get_external_location(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_external_location('rkm-external-location-storage')
+    artifactsList = unitycatalogobj.get_external_location('example-external-location-storage')
     print(artifactsList)      
 
 def test_get_functions(get_db_client):
@@ -94,7 +94,7 @@ def test_get_grants_effective_permissions(get_db_client):
     LOGGR.info('---------------------')
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_grants_effective_permissions('catalog', 'ramdas_murali_cat')
+    artifactsList = unitycatalogobj.get_grants_effective_permissions('catalog', 'example_catalog')
     print(artifactsList)  
 
 def test_get_grants_permissions(get_db_client):
@@ -102,7 +102,7 @@ def test_get_grants_permissions(get_db_client):
     LOGGR.info('---------------------')
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_grants_permissions('CATALOG', 'ramdas_murali_cat')
+    artifactsList = unitycatalogobj.get_grants_permissions('CATALOG', 'example_catalog')
     print(artifactsList)  
 
 def test_get_table_monitor(get_db_client):
@@ -110,7 +110,7 @@ def test_get_table_monitor(get_db_client):
     LOGGR.info('---------------------')
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_table_monitor('ramdas_murali_cat.ramdas_murali_monitor.parts')
+    artifactsList = unitycatalogobj.get_table_monitor('example_catalog.example_monitor.parts')
     print(artifactsList)  
 
 def test_get_workspace_metastore_assignments(get_db_client):
@@ -143,21 +143,21 @@ def test_get_model_versions(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_model_versions('sp_zipco_mistral_model.models.sp_mistral')
+    artifactsList = unitycatalogobj.get_model_versions('example_catalog.models.example_model')
     print(artifactsList)    
 
 def test_get_model_version(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_model_version('sp_zipco_mistral_model.models.sp_mistral','3')
+    artifactsList = unitycatalogobj.get_model_version('example_catalog.models.example_model','3')
     print(artifactsList)    
 
 def test_get_online_table(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_online_table('sp_zipco_mistral_model.models.sp_mistral')
+    artifactsList = unitycatalogobj.get_online_table('example_catalog.models.example_model')
     print(artifactsList)    
 
 def test_get_registered_models(get_db_client):
@@ -171,7 +171,7 @@ def test_get_registered_model(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_registered_model('vc_catalog.rag_chatbot_vinod_chakravarthy_cust.dbdemos_chatbot_model')
+    artifactsList = unitycatalogobj.get_registered_model('example_catalog.example_schema.dbdemos_chatbot_model')
     print(artifactsList)   
 
 def test_get_schemas_list(get_db_client):
@@ -179,7 +179,7 @@ def test_get_schemas_list(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_schemas_list('ramdas_murali_cat')
+    artifactsList = unitycatalogobj.get_schemas_list('example_catalog')
     print(artifactsList)    
 
 def test_get_schema(get_db_client):
@@ -187,7 +187,7 @@ def test_get_schema(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_schema('ramdas_murali_cat', 'ramdas_murali_db')
+    artifactsList = unitycatalogobj.get_schema('example_catalog', 'example_schema')
     print(artifactsList)  
 
 def test_get_credentials(get_db_client):
@@ -203,7 +203,7 @@ def test_get_credential(get_db_client):
     LOGGR.info('---------------------')
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_credential('vlad')
+    artifactsList = unitycatalogobj.get_credential('example_credential')
     print(artifactsList)  
 
 def test_get_tablesummaries(get_db_client):
@@ -211,7 +211,7 @@ def test_get_tablesummaries(get_db_client):
     LOGGR.info('---------------------')
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_tablesummaries(catalog_name='ramdas_murali_cat', schema_name='ram*', table_name=None, page_token=None)
+    artifactsList = unitycatalogobj.get_tablesummaries(catalog_name='example_catalog', schema_name='exam*', table_name=None, page_token=None)
     print(artifactsList)  
 
 
@@ -220,7 +220,7 @@ def test_get_tables(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_tables(catalog_name='ramdas_murali_cat', schema_name='ramdas_murali_db', page_token='', include_delta_metadata='true', omit_columns='', omit_properties='', include_browse='')
+    artifactsList = unitycatalogobj.get_tables(catalog_name='example_catalog', schema_name='example_schema', page_token='', include_delta_metadata='true', omit_columns='', omit_properties='', include_browse='')
     print(artifactsList)    
 
 def test_get_table(get_db_client):
@@ -228,7 +228,7 @@ def test_get_table(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_table('ramdas_murali_cat.ramdas_murali_db.logistics_table')
+    artifactsList = unitycatalogobj.get_table('example_catalog.example_schema.logistics_table')
     print(artifactsList)    
 
 def test_get_volumes(get_db_client):
@@ -236,7 +236,7 @@ def test_get_volumes(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_volumes(catalog_name='ramdas_murali_cat', schema_name='ramdas_murali_db', page_token='', include_browse='true')
+    artifactsList = unitycatalogobj.get_volumes(catalog_name='example_catalog', schema_name='example_schema', page_token='', include_browse='true')
     print(artifactsList)    
 
 def test_get_volume(get_db_client):
@@ -244,7 +244,7 @@ def test_get_volume(get_db_client):
     LOGGR.info('---------------------')    
     jsonstr = get_db_client
     unitycatalogobj = UnityCatalogClient(jsonstr)
-    artifactsList = unitycatalogobj.get_volume('ramdas_murali_cat.ramdas_murali_db.init_script_volume')
+    artifactsList = unitycatalogobj.get_volume('example_catalog.example_schema.init_script_volume')
     print(artifactsList)    
     
 #the user should have account admin privileges

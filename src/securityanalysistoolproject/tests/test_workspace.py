@@ -7,7 +7,7 @@ def test_get_list_notebooks(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     wsclient = WorkspaceClient(jsonstr)
-    notebookList=wsclient.get_list_notebooks('/Workspace/Users/ramdas.murali@databricks.com')
+    notebookList=wsclient.get_list_notebooks('/Workspace/Users/user@example.com')
     print(notebookList)
 
 

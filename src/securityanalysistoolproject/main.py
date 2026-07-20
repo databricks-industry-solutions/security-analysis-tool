@@ -30,7 +30,7 @@ from clientpkgs.azure_accounts_client import get_msal_token
 
 def main():
     configParser = configparser.ConfigParser()   
-    configFilePath = '/Users/ramdas.murali/_dev_stuff/config.txt'
+    configFilePath = '/path/to/config.txt'
     configParser.read(configFilePath)
     jsonstr = configParser['MEISTERSTUFF']['json']
     workspace_id = json.loads(jsonstr)['workspace_id']
@@ -89,7 +89,7 @@ def main():
         return
         # workspaceClient = WorkspaceClient(client_config)
         # notebookList = workspaceClient.get_all_notebooks()
-        #notebookList = workspaceClient.get_list_notebooks('/Repos/ramdas.murali+tzar@databricks.com/CSE/gold/workspace_analysis/dev')
+        #notebookList = workspaceClient.get_list_notebooks('/Repos/<user>@example.com/CSE/gold/workspace_analysis/dev')
         # print(notebookList)
         # libClient = LibrariesClient(client_config)
         # libList = libClient.get_libraries_status_list()

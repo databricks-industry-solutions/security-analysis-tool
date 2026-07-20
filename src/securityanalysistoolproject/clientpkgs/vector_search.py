@@ -26,7 +26,7 @@ class VectorSearch(SatDBClient):
         """
         Returns an array for the indexes.
         """
-        # fetch all indicies
+        # fetch all indices
         json_params={'endpoint_name': endpointName}
         indices_list = self.get(f"/vector-search/indexes", json_params=json_params, version='2.0').get('vector_indexes', [])
         return indices_list

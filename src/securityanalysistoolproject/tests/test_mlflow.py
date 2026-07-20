@@ -34,7 +34,7 @@ def test_get_list_registry_webhooks(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     mlFlowClient = MLFlowClient(jsonstr)
-    webhooksList = mlFlowClient.get_list_registry_webhooks("ramdas_murali_cat.ramdas_murali_db.basic_rag_demo")
+    webhooksList = mlFlowClient.get_list_registry_webhooks("example_catalog.example_schema.basic_rag_demo")
     LOGGR.debug(webhooksList)
 
 def test_get_list_transition_requests(get_db_client):
@@ -42,5 +42,5 @@ def test_get_list_transition_requests(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     mlFlowClient = MLFlowClient(jsonstr)
-    transitionRequests = mlFlowClient.get_list_transition_requests("ramdas_murali_cat.abimodel.abi_model", "1")
+    transitionRequests = mlFlowClient.get_list_transition_requests("example_catalog.example_schema.example_model", "1")
     LOGGR.debug(transitionRequests)

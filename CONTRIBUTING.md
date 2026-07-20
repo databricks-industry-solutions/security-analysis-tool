@@ -9,6 +9,7 @@ Before you begin:
 1. **Check existing issues**: Look through [GitHub Issues](https://github.com/databricks-industry-solutions/security-analysis-tool/issues) to see if your bug report or feature request already exists
 2. **Read the documentation**: Familiarize yourself with [SAT Documentation](https://databricks-industry-solutions.github.io/security-analysis-tool/)
 3. **Understand the project structure**: Review the codebase organization
+4. **Using an AI coding agent?** Read [AGENTS.md](AGENTS.md) for repository conventions and guardrails, with [CLAUDE.md](CLAUDE.md) as the detailed source of truth
 
 ### Project Structure
 
@@ -33,7 +34,7 @@ security-analysis-tool/
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Access to a Databricks workspace (for testing)
 - Git
 
