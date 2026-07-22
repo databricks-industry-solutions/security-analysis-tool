@@ -1889,7 +1889,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         wh_id = safe_get(wh, 'id')
                         all_vertices.append({
                             'id': wh_id,
-                            'node_type': 'Warehouse',
+                            'node_type': 'SQLWarehouse',
                             'name': safe_get(wh, 'name'),
                             'display_name': safe_get(wh, 'name'),
                             'email': None,

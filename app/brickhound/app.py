@@ -87,6 +87,10 @@ logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")
 logger.info(f"[CONFIG FINAL] EDGES_TABLE={EDGES_TABLE}")
 logger.info(f"[CONFIG FINAL] METADATA_TABLE={METADATA_TABLE}")
 
+# Define a mapping of resource types so that they match with API
+RESOURCE_TYPE_MAP = {'Warehouse': 'SQLWarehouse'}
+RESOURCE_TYPE_DISPLAY_MAP = {v: k for k, v in RESOURCE_TYPE_MAP.items()}
+
 # Global variable to cache the current run_id for this session
 _cached_run_id = None
 
@@ -1110,13 +1114,13 @@ def get_main_html():
         }
 
         /* Main Content */
-        .page { 
+        .page {
             display: none;
             padding: 32px;
             flex: 1;
             background: #0f1117;
         }
-        .page.active { 
+        .page.active {
             display: block;
         }
 
@@ -1172,7 +1176,7 @@ def get_main_html():
             background: rgba(255, 255, 255, 0.08);
         }
         .search-input::placeholder { color: rgba(255, 255, 255, 0.4); }
-        
+
         /* Autocomplete Dropdown */
         .autocomplete-dropdown {
             position: absolute;
@@ -1240,7 +1244,7 @@ def get_main_html():
             background: rgba(236, 72, 153, 0.2);
             color: #f472b6;
         }
-        
+
         .search-btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
@@ -1253,7 +1257,7 @@ def get_main_html():
             transition: all 0.2s;
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
         }
-        .search-btn:hover { 
+        .search-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
@@ -1350,7 +1354,7 @@ def get_main_html():
             gap: 16px;
             transition: all 0.2s;
         }
-        .result-card:hover { 
+        .result-card:hover {
             background: rgba(255, 255, 255, 0.05);
             transform: translateX(4px);
         }
@@ -1658,10 +1662,10 @@ def get_main_html():
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Spacer to push footer to bottom -->
                 <div class="sidebar-spacer"></div>
-                
+
                 <!-- Optional footer info -->
                 <div style="padding: 20px; border-top: 1px solid rgba(255, 255, 255, 0.05); background: rgba(0, 0, 0, 0.1); font-size: 0.75em; color: rgba(255, 255, 255, 0.4); text-align: center;">
                     <a href="https://www.databricks.com/trust" target="_blank" rel="noopener noreferrer" style="color: rgba(102, 126, 234, 0.8); text-decoration: none; font-size: 1em; transition: color 0.2s; white-space: nowrap; display: inline-block;" onmouseover="this.style.color='rgba(102, 126, 234, 1)'" onmouseout="this.style.color='rgba(102, 126, 234, 0.8)'">
@@ -1684,7 +1688,7 @@ def get_main_html():
                             const homePage = document.getElementById('page-home');
                             const targetPage = document.getElementById('page-' + hash);
                             const targetNav = document.querySelector('.nav-item[data-page="' + hash + '"]');
-                            
+
                             if (targetPage && homePage !== targetPage) {
                                 homePage.classList.remove('active');
                                 targetPage.classList.add('active');
@@ -1696,7 +1700,7 @@ def get_main_html():
                     }
                 })();
             </script>
-            
+
             <!-- Stats Header Bar -->
             <div class="stats-header-bar" id="stats-header-bar">
                 <div class="stats-header-toggle">
@@ -1755,7 +1759,7 @@ def get_main_html():
                         It helps to discover privilege escalation paths, identify over-privileged principals,
                         and understand complex permission relationships across workspace(s).
                     </p>
-                    
+
                     <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🎯 Key Features</h3>
                     <ul style="line-height: 1.5; color: var(--text-secondary); list-style-position: inside; margin-bottom: 13px; font-size: 0.88em;">
                         <li><strong>Principal Analysis</strong> - Discover what a user, group, or service principal can access</li>
@@ -1766,7 +1770,7 @@ def get_main_html():
                     </ul>
 
                     <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🚀 Getting Started</h3>
-                    
+
                     <!-- Environment Overview Instructions -->
                     <div style="padding: 13px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.02) 100%); border: 2px solid rgba(16, 185, 129, 0.2); border-radius: 10px; margin-bottom: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                         <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 7px;">
@@ -1779,7 +1783,7 @@ def get_main_html():
                             The top header bar shows the Databricks environment overview, metrics, and workspace coverage. Use the <strong>Data Collection</strong> dropdown to switch between different collection runs and view historical data.
                         </p>
                     </div>
-                    
+
                     <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.9em;">
                         Use the navigation menu on the left to explore different analysis capabilities:
                     </p>
@@ -2120,17 +2124,17 @@ def get_main_html():
         function navigateToPage(page) {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            
+
             // Activate the correct nav item (if not home page)
             if (page !== 'home') {
                 const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
                 if (navItem) navItem.classList.add('active');
             }
-            
+
             // Show the page
             document.getElementById('page-' + page).classList.add('active');
             currentPage = page;
-            
+
             // Update URL hash
             window.location.hash = page;
 
@@ -2176,7 +2180,7 @@ def get_main_html():
                         const vertices = run.vertices_count || 0;
                         return `<option value="${run.run_id}">${formatted} (${vertices} nodes)</option>`;
                     }).join('');
-                    
+
                     headerSelector.innerHTML = optionsHTML;
 
                     // Set current run_id to the latest (first in list)
@@ -2199,11 +2203,11 @@ def get_main_html():
         function selectRun(runId) {
             if (runId && runId !== currentRunId) {
                 currentRunId = runId;
-                
+
                 // Update header dropdown value
                 const headerSelector = document.getElementById('header-run-selector');
                 if (headerSelector) headerSelector.value = runId;
-                
+
                 // Reset cached filter data (will reload on next page visit)
                 secretScopeFilterData = { workspaces: [], scopes: [] };
 
@@ -2343,7 +2347,7 @@ def get_main_html():
         async function initApp() {
             await loadRuns();
             loadStats();
-            
+
             // Restore page from URL hash, default to home
             const hash = window.location.hash.substring(1);
             if (hash && document.getElementById(`page-${hash}`)) {
@@ -2370,12 +2374,9 @@ def get_main_html():
             const emojis = {
                 'User': '👤', 'AccountUser': '👤',
                 'Group': '👥', 'AccountGroup': '👥',
-                'ServicePrincipal': '🤖', 'AccountServicePrincipal': '🤖', 'Service Principal': '🤖',
-                'Catalog': '📦', 'Schema': '📁', 'Table': '📊', 'View': '👁',
-                'Cluster': '⚡', 'Job': '⏱', 'Warehouse': '🏭',
-                'ServingEndpoint': '🚀', 'SecretScope': '🔐'
+                'ServicePrincipal': '🤖', 'AccountServicePrincipal': '🤖', 'Service Principal': '🤖'
             };
-            return emojis[type] || '📄';
+            return emojis[type] || getResourceIcon(type) || '📄';
         }
 
         function getBadgeClass(perm) {
@@ -2594,7 +2595,7 @@ def get_main_html():
                             ` : ''}
                         </div>
                     </div>
-                    
+
                     <!-- Access Summary Card -->
                     <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
                         <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Access Summary</div>
@@ -2649,7 +2650,7 @@ def get_main_html():
                             <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
                                 <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
                                 <span style="font-size: 20px;">${getEmoji(type)}</span>
-                                <span style="font-weight: 600; flex: 1;">${type}s(${resourceCount})</span>
+                                <span style="font-weight: 600; flex: 1;">${type} (${resourceCount})</span>
                             </div>
                             <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
 
@@ -2811,7 +2812,7 @@ def get_main_html():
                     return typeMap[type] || { icon: '📄', color: '#6b7280' };
                 };
                 const typeInfo = getResourceTypeInfo(resourceType);
-                
+
                 // Get appropriate ID label based on resource type
                 const getIdLabel = (type) => {
                     if (type === 'Cluster') return 'Cluster ID';
@@ -2848,7 +2849,7 @@ def get_main_html():
                             ` : ''}
                         </div>
                     </div>
-                    
+
                     <!-- Access Summary Card -->
                     <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
                         <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Access Summary</div>
@@ -2955,7 +2956,7 @@ def get_main_html():
         // Browse Resources by Type
         async function browseResourcesByType(resourceType) {
             showLoading('resource-results');
-            
+
             try {
                 const res = await fetch('/api/browse-resources-by-type', {
                     method: 'POST',
@@ -2966,18 +2967,18 @@ def get_main_html():
                     })
                 });
                 const result = await res.json();
-                
+
                 if (!result.success) {
                     showEmpty('resource-results', result.message || 'No resources found');
                     return;
                 }
-                
+
                 const resources = result.resources || [];
                 if (resources.length === 0) {
                     showEmpty('resource-results', `No ${resourceType}s found in this collection`);
                     return;
                 }
-                
+
                 // Display the list of resources
                 let html = `
                     <div class="card">
@@ -2988,13 +2989,13 @@ def get_main_html():
                         <div class="results-body" style="padding: 0;">
                             <div style="max-height: 600px; overflow-y: auto;">
                 `;
-                
+
                 resources.forEach((resource, idx) => {
                     const isLast = idx === resources.length - 1;
                     html += `
                         <div class="browse-resource-item" data-resource-id="${escapeHtml(resource.id)}" data-resource-name="${escapeHtml(resource.name)}"
-                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;" 
-                             onmouseover="this.style.background='var(--bg-input)'" 
+                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;"
+                             onmouseover="this.style.background='var(--bg-input)'"
                              onmouseout="this.style.background='transparent'">
                             <div style="flex: 1; min-width: 0;">
                                 <div style="font-weight: 500; color: var(--text-primary); margin-bottom: 4px; word-break: break-all;">${escapeHtml(resource.name)}</div>
@@ -3004,15 +3005,15 @@ def get_main_html():
                         </div>
                     `;
                 });
-                
+
                 html += `
                             </div>
                         </div>
                     </div>
                 `;
-                
+
                 document.getElementById('resource-results').innerHTML = html;
-                
+
                 // Attach click event listeners to the resource items
                 document.querySelectorAll('.browse-resource-item').forEach(item => {
                     item.addEventListener('click', function() {
@@ -3029,7 +3030,7 @@ def get_main_html():
         // Browse Principals by Type
         async function browsePrincipalsByType(principalType) {
             showLoading('principal-results');
-            
+
             try {
                 const res = await fetch('/api/browse-principals-by-type', {
                     method: 'POST',
@@ -3040,18 +3041,18 @@ def get_main_html():
                     })
                 });
                 const result = await res.json();
-                
+
                 if (!result.success) {
                     showEmpty('principal-results', result.message || 'No principals found');
                     return;
                 }
-                
+
                 const principals = result.principals || [];
                 if (principals.length === 0) {
                     showEmpty('principal-results', `No ${principalType}s found in this collection`);
                     return;
                 }
-                
+
                 // Display the list of principals
                 const typeLabel = principalType === 'ServicePrincipal' ? 'Service Principals' : principalType + 's';
                 let html = `
@@ -3063,14 +3064,14 @@ def get_main_html():
                         <div class="results-body" style="padding: 0;">
                             <div style="max-height: 600px; overflow-y: auto;">
                 `;
-                
+
                 principals.forEach((principal, idx) => {
                     const isLast = idx === principals.length - 1;
                     const displayName = principal.display_name || principal.name || principal.email || principal.id;
                     html += `
                         <div class="browse-principal-item" data-principal-id="${escapeHtml(principal.id)}" data-principal-name="${escapeHtml(displayName)}"
-                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;" 
-                             onmouseover="this.style.background='var(--bg-input)'" 
+                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;"
+                             onmouseover="this.style.background='var(--bg-input)'"
                              onmouseout="this.style.background='transparent'">
                             <div style="flex: 1; min-width: 0;">
                                 <div style="font-weight: 500; color: var(--text-primary); margin-bottom: 4px; word-break: break-all;">${escapeHtml(displayName)}</div>
@@ -3080,15 +3081,15 @@ def get_main_html():
                         </div>
                     `;
                 });
-                
+
                 html += `
                             </div>
                         </div>
                     </div>
                 `;
-                
+
                 document.getElementById('principal-results').innerHTML = html;
-                
+
                 // Attach click event listeners to the principal items
                 document.querySelectorAll('.browse-principal-item').forEach(item => {
                     item.addEventListener('click', function() {
@@ -3105,7 +3106,7 @@ def get_main_html():
         // Browse Principals by Type for Escalation Paths
         async function browsePathsPrincipalsByType(principalType) {
             showLoading('paths-results');
-            
+
             try {
                 const res = await fetch('/api/browse-principals-by-type', {
                     method: 'POST',
@@ -3116,18 +3117,18 @@ def get_main_html():
                     })
                 });
                 const result = await res.json();
-                
+
                 if (!result.success) {
                     showEmpty('paths-results', result.message || 'No principals found');
                     return;
                 }
-                
+
                 const principals = result.principals || [];
                 if (principals.length === 0) {
                     showEmpty('paths-results', `No ${principalType}s found in this collection`);
                     return;
                 }
-                
+
                 // Display the list of principals
                 const typeLabel = principalType === 'ServicePrincipal' ? 'Service Principals' : principalType + 's';
                 let html = `
@@ -3139,14 +3140,14 @@ def get_main_html():
                         <div class="results-body" style="padding: 0;">
                             <div style="max-height: 600px; overflow-y: auto;">
                 `;
-                
+
                 principals.forEach((principal, idx) => {
                     const isLast = idx === principals.length - 1;
                     const displayName = principal.display_name || principal.name || principal.email || principal.id;
                     html += `
                         <div class="browse-paths-principal-item" data-principal-id="${escapeHtml(principal.id)}" data-principal-name="${escapeHtml(displayName)}"
-                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;" 
-                             onmouseover="this.style.background='var(--bg-input)'" 
+                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;"
+                             onmouseover="this.style.background='var(--bg-input)'"
                              onmouseout="this.style.background='transparent'">
                             <div style="flex: 1; min-width: 0;">
                                 <div style="font-weight: 500; color: var(--text-primary); margin-bottom: 4px; word-break: break-all;">${escapeHtml(displayName)}</div>
@@ -3156,15 +3157,15 @@ def get_main_html():
                         </div>
                     `;
                 });
-                
+
                 html += `
                             </div>
                         </div>
                     </div>
                 `;
-                
+
                 document.getElementById('paths-results').innerHTML = html;
-                
+
                 // Attach click event listeners to the principal items
                 document.querySelectorAll('.browse-paths-principal-item').forEach(item => {
                     item.addEventListener('click', function() {
@@ -3204,7 +3205,15 @@ def get_main_html():
                 'Job': '⚙️',
                 'Warehouse': '🏭',
                 'ServingEndpoint': '🚀',
-                'SecretScope': '🔐'
+                'SecretScope': '🔐',
+                'ClusterPolicy': '📋',
+                'Experiment': '🧪',
+                'Metastore': '🗄️',
+                'Pipeline': '🔄',
+                'Query': '❓',
+                'Secret': '🔒',
+                'VectorSearchEndpoint': '🔍',
+                'Workspace': '🌐',
             };
             return icons[type] || '📄';
         }
@@ -4515,40 +4524,40 @@ def get_main_html():
         let autocompleteTimeout = null;
         const principalSearchInput = document.getElementById('principal-search');
         const autocompleteDropdown = document.getElementById('principal-autocomplete');
-        
+
         if (principalSearchInput && autocompleteDropdown) {
             principalSearchInput.addEventListener('input', function(e) {
                 const query = e.target.value.trim();
-                
+
                 // Show/hide clear button
                 const clearBtn = document.getElementById('principal-clear-btn');
                 if (clearBtn) {
                     clearBtn.style.display = query ? 'flex' : 'none';
                 }
-                
+
                 // Clear the stored identifier when user manually types
                 delete principalSearchInput.dataset.identifier;
-                
+
                 // Clear existing timeout
                 clearTimeout(autocompleteTimeout);
-                
+
                 // Hide dropdown if query is too short
                 if (query.length < 2) {
                     autocompleteDropdown.classList.remove('show');
                     return;
                 }
-                
+
                 // Debounce the search
                 autocompleteTimeout = setTimeout(async () => {
                     try {
                         const url = `/api/search-principals?q=${encodeURIComponent(query)}&limit=10${currentRunId ? '&run_id=' + currentRunId : ''}`;
                         const res = await fetch(url);
                         const data = await res.json();
-                        
+
                         if (data.principals && data.principals.length > 0) {
                             let html = '';
                             data.principals.forEach(p => {
-                                const typeClass = p.type === 'User' || p.type === 'AccountUser' ? 'user' : 
+                                const typeClass = p.type === 'User' || p.type === 'AccountUser' ? 'user' :
                                                  p.type === 'Group' || p.type === 'AccountGroup' ? 'group' : 'sp';
                                 const typeName = p.type.includes('ServicePrincipal') ? 'SP' : p.type.replace('Account', '');
                                 const displayName = p.display_name || p.identifier;
@@ -4574,7 +4583,7 @@ def get_main_html():
                     }
                 }, 300); // 300ms debounce
             });
-            
+
             // Close dropdown when clicking outside
             document.addEventListener('click', function(e) {
                 if (!e.target.closest('.search-box')) {
@@ -4582,7 +4591,7 @@ def get_main_html():
                 }
             });
         }
-        
+
         function selectPrincipal(identifier, displayName) {
             if (principalSearchInput) {
                 // Show display name in the search box, but store the identifier for the API call
@@ -4602,7 +4611,7 @@ def get_main_html():
             const searchInput = document.getElementById('principal-search');
             const clearBtn = document.getElementById('principal-clear-btn');
             const resultsDiv = document.getElementById('principal-results');
-            
+
             if (searchInput) {
                 searchInput.value = '';
                 delete searchInput.dataset.identifier;
@@ -4619,40 +4628,40 @@ def get_main_html():
         let pathsAutocompleteTimeout = null;
         const pathsSearchInput = document.getElementById('paths-search');
         const pathsAutocompleteDropdown = document.getElementById('paths-autocomplete');
-        
+
         if (pathsSearchInput && pathsAutocompleteDropdown) {
             pathsSearchInput.addEventListener('input', function(e) {
                 const query = e.target.value.trim();
-                
+
                 // Show/hide clear button
                 const clearBtn = document.getElementById('paths-clear-btn');
                 if (clearBtn) {
                     clearBtn.style.display = query ? 'flex' : 'none';
                 }
-                
+
                 // Clear the stored identifier when user manually types
                 delete pathsSearchInput.dataset.identifier;
-                
+
                 // Clear existing timeout
                 clearTimeout(pathsAutocompleteTimeout);
-                
+
                 // Hide dropdown if query is too short
                 if (query.length < 2) {
                     pathsAutocompleteDropdown.classList.remove('show');
                     return;
                 }
-                
+
                 // Debounce the search
                 pathsAutocompleteTimeout = setTimeout(async () => {
                     try {
                         const url = `/api/search-principals?q=${encodeURIComponent(query)}&limit=10${currentRunId ? '&run_id=' + currentRunId : ''}`;
                         const res = await fetch(url);
                         const data = await res.json();
-                        
+
                         if (data.principals && data.principals.length > 0) {
                             let html = '';
                             data.principals.forEach(p => {
-                                const typeClass = p.type === 'User' || p.type === 'AccountUser' ? 'user' : 
+                                const typeClass = p.type === 'User' || p.type === 'AccountUser' ? 'user' :
                                                  p.type === 'Group' || p.type === 'AccountGroup' ? 'group' : 'sp';
                                 const typeName = p.type.includes('ServicePrincipal') ? 'SP' : p.type.replace('Account', '');
                                 const displayName = p.display_name || p.identifier;
@@ -4678,7 +4687,7 @@ def get_main_html():
                     }
                 }, 300); // 300ms debounce
             });
-            
+
             // Close dropdown when clicking outside
             document.addEventListener('click', function(e) {
                 if (!e.target.closest('.search-box')) {
@@ -4686,7 +4695,7 @@ def get_main_html():
                 }
             });
         }
-        
+
         function selectPathsPrincipal(identifier, displayName) {
             if (pathsSearchInput) {
                 // Show display name in the search box, but store the identifier for the API call
@@ -4706,7 +4715,7 @@ def get_main_html():
             const searchInput = document.getElementById('paths-search');
             const clearBtn = document.getElementById('paths-clear-btn');
             const resultsDiv = document.getElementById('paths-results');
-            
+
             if (searchInput) {
                 searchInput.value = '';
                 delete searchInput.dataset.identifier;
@@ -4724,7 +4733,7 @@ def get_main_html():
             const searchInput = document.getElementById('resource-search');
             const clearBtn = document.getElementById('resource-clear-btn');
             const resultsDiv = document.getElementById('resource-results');
-            
+
             if (searchInput) {
                 searchInput.value = '';
             }
@@ -4740,7 +4749,7 @@ def get_main_html():
         const resourceSearchInput = document.getElementById('resource-search');
         const resourceAutocompleteDropdown = document.getElementById('resource-autocomplete');
         let resourceAutocompleteTimeout = null;
-        
+
         if (resourceSearchInput && resourceAutocompleteDropdown) {
             resourceSearchInput.addEventListener('input', function(e) {
                 const query = e.target.value.trim();
@@ -4748,26 +4757,26 @@ def get_main_html():
                 if (clearBtn) {
                     clearBtn.style.display = query ? 'flex' : 'none';
                 }
-                
+
                 // Clear the stored resource ID when user manually types
                 delete resourceSearchInput.dataset.resourceId;
-                
+
                 // Clear existing timeout
                 clearTimeout(resourceAutocompleteTimeout);
-                
+
                 // Hide dropdown if query is too short
                 if (query.length < 2) {
                     resourceAutocompleteDropdown.classList.remove('show');
                     return;
                 }
-                
+
                 // Debounce the search
                 resourceAutocompleteTimeout = setTimeout(async () => {
                     try {
                         const url = `/api/search-resources?q=${encodeURIComponent(query)}&limit=10${currentRunId ? '&run_id=' + currentRunId : ''}`;
                         const res = await fetch(url);
                         const data = await res.json();
-                        
+
                         if (data.resources && data.resources.length > 0) {
                             let html = '';
                             data.resources.forEach(r => {
@@ -4801,7 +4810,7 @@ def get_main_html():
                             });
                             resourceAutocompleteDropdown.innerHTML = html;
                             resourceAutocompleteDropdown.classList.add('show');
-                            
+
                             // Add click event listeners to the items
                             document.querySelectorAll('.resource-autocomplete-item').forEach(item => {
                                 item.addEventListener('click', function() {
@@ -4819,7 +4828,7 @@ def get_main_html():
                     }
                 }, 300); // 300ms debounce
             });
-            
+
             // Close dropdown when clicking outside
             document.addEventListener('click', function(e) {
                 if (!e.target.closest('.search-box')) {
@@ -4827,7 +4836,7 @@ def get_main_html():
                 }
             });
         }
-        
+
         function selectResource(resourceId, resourceName) {
             if (resourceSearchInput) {
                 // Show display name in the search box, but store the ID for the API call
@@ -4964,15 +4973,15 @@ def api_search_principals():
     try:
         query = request.args.get('q', '').strip()
         limit = int(request.args.get('limit', 10))
-        
+
         if not query or len(query) < 2:
             return jsonify({'principals': []})
-        
+
         # Get current run_id
         run_id = get_current_run_id()
         if not run_id:
             return jsonify({'principals': [], 'error': 'No data collection runs available'})
-        
+
         # Build LIKE patterns from user input. `query` is bound via params
         # below — string interpolation only happens server-side, against
         # the bound value, so the user can't inject SQL.
@@ -5008,7 +5017,7 @@ def api_search_principals():
             "starts_with_pattern": starts_with_pattern,
         })
         principals = []
-        
+
         for row in results:
             principal = {
                 'identifier': row.get('id', ''),
@@ -5018,9 +5027,9 @@ def api_search_principals():
                 'email': row.get('email')
             }
             principals.append(principal)
-        
+
         return jsonify({'principals': principals})
-        
+
     except NoAccessError:
         # Surface to the Flask errorhandler as the friendly 403 banner.
         raise
@@ -5036,15 +5045,15 @@ def api_search_resources():
     try:
         query = request.args.get('q', '').strip()
         limit = int(request.args.get('limit', 10))
-        
+
         if not query or len(query) < 2:
             return jsonify({'resources': []})
-        
+
         # Get current run_id
         run_id = get_current_run_id()
         if not run_id:
             return jsonify({'resources': [], 'error': 'No data collection runs available'})
-        
+
         search_pattern = f"%{query}%"
         starts_with_pattern = f"{query}%"
 
@@ -5074,7 +5083,7 @@ def api_search_resources():
             "starts_with_pattern": starts_with_pattern,
         })
         resources = []
-        
+
         for row in results:
             resource = {
                 'identifier': row.get('id', ''),  # Use ID as identifier for exact matching
@@ -5082,9 +5091,9 @@ def api_search_resources():
                 'type': row.get('node_type', '')
             }
             resources.append(resource)
-        
+
         return jsonify({'resources': resources})
-        
+
     except NoAccessError:
         # Surface to the Flask errorhandler as the friendly 403 banner.
         raise
@@ -5099,12 +5108,13 @@ def api_browse_resources_by_type():
     """Get all resources of a specific type"""
     try:
         data = request.get_json() or {}
-        resource_type = data.get('resource_type', '')
+        raw_type = data.get('resource_type', '')
+        resource_type = RESOURCE_TYPE_MAP.get(raw_type, raw_type)
         run_id = get_current_run_id()
-        
+
         if not resource_type:
             return jsonify({'success': False, 'message': 'Resource type is required'})
-        
+
         if not run_id:
             return jsonify({'success': False, 'message': 'No data collection runs available'})
 
@@ -5138,7 +5148,7 @@ def api_browse_resources_by_type():
             'resource_type': resource_type,
             'count': len(resources)
         })
-        
+
     except NoAccessError:
         # Surface to the Flask errorhandler as the friendly 403 banner.
         raise
@@ -5156,10 +5166,10 @@ def api_browse_principals_by_type():
         data = request.get_json() or {}
         principal_type = data.get('principal_type', '')
         run_id = get_current_run_id()
-        
+
         if not principal_type:
             return jsonify({'success': False, 'message': 'Principal type is required'})
-        
+
         if not run_id:
             return jsonify({'success': False, 'message': 'No data collection runs available'})
 
@@ -5190,7 +5200,7 @@ def api_browse_principals_by_type():
 
         results = exec_query_df(sql, params=sql_params)
         principals = []
-        
+
         for row in results:
             principal = {
                 'id': row.get('id', ''),
@@ -5199,14 +5209,14 @@ def api_browse_principals_by_type():
                 'email': row.get('email', '')
             }
             principals.append(principal)
-        
+
         return jsonify({
             'success': True,
             'principals': principals,
             'principal_type': principal_type,
             'count': len(principals)
         })
-        
+
     except NoAccessError:
         # Surface to the Flask errorhandler as the friendly 403 banner.
         raise
@@ -5623,7 +5633,7 @@ def api_who_can_access():
         'resource_info': {
             'id': resource['id'],
             'name': resource['name'],
-            'type': resource['node_type'],
+            'type': RESOURCE_TYPE_DISPLAY_MAP.get(resource['node_type'], resource['node_type']),
             'owner': resource.get('owner')
         },
         'summary': {
@@ -5885,6 +5895,7 @@ def api_what_can_access():
     type_counts = {}
     for r in results:
         rt = r.get('resource_type', 'Unknown')
+        rt = RESOURCE_TYPE_DISPLAY_MAP.get(rt, rt)
         type_counts[rt] = type_counts.get(rt, 0) + 1
 
     # Get member count if principal is a group
