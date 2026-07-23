@@ -28,6 +28,15 @@ Use the interactive analysis notebooks:
 | `02_escalation_paths.py` | Find privilege escalation paths |
 | `03_impersonation_analysis.py` | Analyze impersonation risks |
 | `04_advanced_reports.py` | Generate compliance reports |
+| `05_share_to_account.py` | Detect (and optionally remediate) resources shared with all account users |
+
+> **Note:** `05_share_to_account.py` is **audit-log based**, not graph based. It reads
+> `system.access.audit` + `system.access.workspaces_latest` directly, so it does **not**
+> require the data collection job to have run first. It writes findings to
+> `brickhound_shared_to_account` and can be scheduled via
+> `terraform/common/brickhound_share_to_account_job.tf` (detection-only by default;
+> set the `remediate` parameter to `yes` to auto-remove the "account users" ACL entry).
+> Remediation requires the SAT service principal to be a member of each affected workspace.
 
 ### 3. Web UI (Optional)
 
@@ -41,7 +50,7 @@ https://<workspace-url>/apps/brickhound-sat
 BrickHound automatically uses SAT's configuration:
 - **Credentials**: From `sat_scope` secret scope
 - **Schema**: From SAT's `analysis_schema_name`
-- **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`
+- **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`, `brickhound_shared_to_account`
 
 No additional configuration needed if SAT is installed!
 

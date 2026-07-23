@@ -80,6 +80,11 @@ Once data collection completes, use the pre-built interactive notebooks in `/not
 | `02_escalation_paths.py` | Find privilege escalation paths | "Can this contractor reach Account Admin?" |
 | `03_impersonation_analysis.py` | Analyze impersonation risks | "Who can run jobs as elevated service principals?" |
 | `04_advanced_reports.py` | Generate compliance reports | "List all users with access to 50+ resources" |
+| `05_share_to_account.py` | Detect & optionally remediate resources shared to all account users | "Which dashboards/Genie spaces/Apps were shared with everyone?" |
+
+:::note
+`05_share_to_account.py` is audit-log based (reads `system.access.audit`) rather than graph based, so it does not require the data collection job to have run first. It writes findings to the `brickhound_shared_to_account` table and can be scheduled via the "SAT Permissions Analysis - Shared to Account Users" job. Detection is report-only by default; set the `remediate` parameter to `yes` to automatically remove the "account users" ACL entry (the SAT service principal must be a member of each affected workspace).
+:::
 
 ### Step 3: Web UI (Recommended)
 
@@ -97,6 +102,7 @@ The web UI provides:
   - High privilege principals
   - Over-privileged users
   - Orphaned resources
+  - Resources shared to all account users (read-only view of the latest detection run)
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
   <img src={useBaseUrl('/img/principal_analysis_home.png')} alt="Permissions Analysis Web UI Home" />
@@ -203,6 +209,17 @@ Discover lateral movement opportunities:
 - Clusters configured to run as specific service principals
 
 **Example Query:** Identify principals that can run jobs as elevated service principals.
+
+### Detect Shares to All Account Users
+
+Find resources shared with the built-in **account users** group — which grants access to every user in the account:
+- Lakeview dashboards
+- AI/BI Genie spaces
+- Databricks Apps
+
+Detection reads the audit log (`system.access.audit`) account-wide, so it captures shares across every running workspace without needing the permissions graph. Optional, opt-in remediation removes the offending ACL entry.
+
+**Example Query:** List every dashboard, Genie space, and App shared with all account users in the last 30 days, and optionally revoke that access.
 
 ### Generate Compliance Reports
 

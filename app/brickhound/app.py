@@ -81,6 +81,7 @@ logger.info(f"[CONFIG] BRICKHOUND_SCHEMA={BRICKHOUND_SCHEMA} -> CATALOG={CATALOG
 VERTICES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_vertices"
 EDGES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges"
 METADATA_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata"
+SHARED_TO_ACCOUNT_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_shared_to_account"
 
 logger.info(f"[CONFIG FINAL] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")
@@ -1656,6 +1657,10 @@ def get_main_html():
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             Secret Scope Access
                         </div>
+                        <div class="nav-item" data-page="sharedtoaccount">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            Shared to All Users
+                        </div>
                     </div>
                 </div>
                 
@@ -2083,6 +2088,15 @@ def get_main_html():
 
                 <div id="secretscopes-results"></div>
             </div>
+
+            <!-- Shared to All Account Users Report Page -->
+            <div class="page" id="page-sharedtoaccount">
+                <div class="page-header">
+                    <h1 class="page-title">Shared to All Account Users</h1>
+                    <p class="page-desc">Dashboards, Genie spaces, and Apps shared with the built-in "account users" group — accessible to every user in the account. Detected from the audit log by the SAT shared-to-account-users job.</p>
+                </div>
+                <div id="sharedtoaccount-results"></div>
+            </div>
         </main>
     </div>
 
@@ -2092,7 +2106,7 @@ def get_main_html():
 
         // Track current page and loaded reports
         let currentPage = 'dashboard';
-        const reportPages = ['isolated', 'orphaned', 'overprivileged', 'highprivilege', 'secretscopes'];
+        const reportPages = ['isolated', 'orphaned', 'overprivileged', 'highprivilege', 'secretscopes', 'sharedtoaccount'];
         const analysisPages = ['principal', 'resource', 'paths', 'risk', 'impersonation'];
 
         // Track which analyses have been performed (so we can refresh on run change)
@@ -2140,6 +2154,7 @@ def get_main_html():
             else if (page === 'overprivileged') loadOverPrivileged();
             else if (page === 'highprivilege') loadHighPrivilege();
             else if (page === 'secretscopes') loadSecretScopeAccess();
+            else if (page === 'sharedtoaccount') loadSharedToAccount();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
                 loadSourcePrincipals();
@@ -3609,6 +3624,130 @@ def get_main_html():
         }
 
         // Load Orphaned Resources Report
+        async function loadSharedToAccount() {
+            const container = document.getElementById('sharedtoaccount-results');
+            container.innerHTML = '<div class="loading">Loading shared-to-account-users findings...</div>';
+
+            try {
+                const res = await fetch('/api/report/shared-to-account');
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('sharedtoaccount-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                if (data.length === 0) {
+                    showEmpty('sharedtoaccount-results', 'No resources shared to all account users were found in the latest detection run.');
+                    return;
+                }
+
+                const typeLabels = { dashboards: 'Dashboards', genie: 'Genie Spaces', apps: 'Apps' };
+                const typeEmoji  = { dashboards: '📊', genie: '💬', apps: '🧩' };
+
+                // Group by resource_type
+                const byType = {};
+                data.forEach(d => {
+                    const t = d.resource_type || 'unknown';
+                    if (!byType[t]) byType[t] = [];
+                    byType[t].push(d);
+                });
+
+                let html = `
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Shared to All Account Users</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${summary.outstanding || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Outstanding</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${summary.remediated || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Remediated</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Shared Resources</span>
+                            <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                const typeOrder = ['dashboards', 'genie', 'apps'];
+                const sortedTypes = Object.keys(byType).sort((a, b) => {
+                    const aIdx = typeOrder.indexOf(a), bIdx = typeOrder.indexOf(b);
+                    if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                });
+
+                sortedTypes.forEach((type) => {
+                    const items = byType[type];
+                    const typeId = 'sharedtoaccount-type-' + type.replace(/[^a-zA-Z]/g, '');
+                    const label = typeLabels[type] || type;
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${typeEmoji[type] || '📄'}</span>
+                                <span style="font-weight: 600; flex: 1;">${label} (${items.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    items.forEach((item, idx) => {
+                        const isLast = idx === items.length - 1;
+                        const name = escapeHtml(item.resource_id || 'unknown');
+                        const sharedBy = escapeHtml(item.shared_by || 'unknown');
+                        const ws = escapeHtml(item.workspace_name || item.workspace_id || '');
+                        const when = escapeHtml((item.event_time || '').replace('T', ' ').slice(0, 19));
+                        const url = item.resource_url || '';
+
+                        let statusBadge;
+                        if (item.auto_remediated) {
+                            statusBadge = '<span style="color: #10b981; font-weight: 600;">✓ Remediated</span>';
+                        } else if (item.previously_remediated) {
+                            statusBadge = '<span style="color: #6b7280; font-weight: 600;">already removed</span>';
+                        } else {
+                            statusBadge = '<span style="color: #ef4444; font-weight: 600;">⚠ Outstanding</span>';
+                        }
+
+                        const nameHtml = url
+                            ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${name}</a>`
+                            : name;
+
+                        html += `
+                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; word-break: break-all;">${nameHtml}</div>
+                                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 2px;">
+                                        Shared by ${sharedBy}${ws ? ' · ' + ws : ''}${when ? ' · ' + when : ''}
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.8em; white-space: nowrap;">${statusBadge}</div>
+                            </div>`;
+                    });
+
+                    html += `</div></div>`;
+                });
+
+                html += `</div></div>`;
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('sharedtoaccount-results', 'Error: ' + e.message);
+            }
+        }
+
         async function loadOrphanedResources() {
             const container = document.getElementById('orphaned-results');
             container.innerHTML = '<div class="loading">Analyzing resources...</div>';
@@ -7284,6 +7423,70 @@ def report_orphaned_resources():
             'types': len(types)
         },
         'data': results
+    })
+
+
+@app.route('/api/report/shared-to-account')
+def report_shared_to_account():
+    """Resources shared with the built-in 'account users' group.
+
+    Reads the latest snapshot from brickhound_shared_to_account, which is
+    populated by the SAT shared-to-account-users detection notebook/job
+    (notebooks/brickhound/05_share_to_account.py). This endpoint is read-only;
+    remediation happens only in the notebook/job which holds SP credentials.
+    """
+    # This report has its own run_id (per detection run), independent of the
+    # graph collection run_id. Query runs as the calling user (OBO), so Unity
+    # Catalog enforces their grants on the findings table.
+    query = f"""
+    WITH latest AS (
+        SELECT MAX(run_id) AS run_id FROM {SHARED_TO_ACCOUNT_TABLE}
+    )
+    SELECT
+        s.resource_type,
+        s.resource_id,
+        s.workspace_id,
+        s.workspace_name,
+        s.resource_url,
+        s.shared_by,
+        s.permission,
+        s.group_name,
+        CAST(s.event_time AS STRING)          AS event_time,
+        CAST(s.detection_timestamp AS STRING) AS detection_timestamp,
+        s.auto_remediated,
+        s.previously_remediated
+    FROM {SHARED_TO_ACCOUNT_TABLE} s
+    JOIN latest l ON s.run_id = l.run_id
+    ORDER BY s.event_time DESC
+    """
+
+    try:
+        results = exec_query_df(query)
+    except Exception as e:
+        # Table absent (job never run) or no read grant — surface a friendly hint.
+        logger.warning("shared-to-account report query failed: %s", e)
+        return jsonify({
+            'error': (
+                'No shared-to-account-users data available yet. Run the '
+                '"SAT Permissions Analysis - Shared to Account Users" job (or the '
+                'notebooks/brickhound/05_share_to_account.py notebook) to populate it.'
+            )
+        })
+
+    outstanding = sum(
+        1 for r in results
+        if not r.get('auto_remediated') and not r.get('previously_remediated')
+    )
+    remediated = sum(1 for r in results if r.get('auto_remediated'))
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total': len(results),
+            'outstanding': outstanding,
+            'remediated': remediated,
+        },
+        'data': results,
     })
 
 
