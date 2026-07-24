@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Account Denylist Builder — Inactive-User Group Candidates
+# MAGIC # Account Denylist Recommender — Inactive-User Group Candidates
 # MAGIC *Find IdP groups whose members mostly aren't using Databricks — good denylist candidates*
 # MAGIC
 # MAGIC <div style="background-color: #fff3e0; border-left: 4px solid #d32f2f; padding: 12px; margin: 16px 0;">
@@ -35,7 +35,7 @@
 # MAGIC carry an `externalId` (provisioned from an identity provider) are considered, since the account
 # MAGIC access denylist operates on IdP groups; the built-in `account users` group and any local/system
 # MAGIC groups are excluded. Findings are written to **`brickhound_denylist_candidates`**; the SAT
-# MAGIC Permissions Analysis app surfaces them in the "Account Denylist Builder" tab.
+# MAGIC Permissions Analysis app surfaces them in the "Account Denylist Recommender" tab.
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
@@ -203,8 +203,14 @@ for g in groups:
         if is_inactive(u):
             inactive_members += 1
 
-    if inactive_members >= MIN_INACTIVE:
+    # An IdP group is a denylist candidate if it has inactive members OR has no
+    # user members at all. A zero-member group is a strong candidate: an IdP
+    # group with no active Databricks users is safe to deny. (Under AIM, SCIM
+    # returns members empty for external groups, so most land here — see the AIM
+    # note above.)
+    if inactive_members >= MIN_INACTIVE or total_members == 0:
         gid = str(g["id"])
+        reason = "no members via SCIM" if total_members == 0 else "has inactive members"
         rows.append({
             "group_id":         gid,
             "group_name":       g.get("displayName"),
@@ -213,15 +219,17 @@ for g in groups:
             "inactive_members": inactive_members,
             "active_members":   total_members - inactive_members,
             "inactive_pct":     round(100.0 * inactive_members / total_members, 1) if total_members else 0.0,
+            "candidate_reason": reason,
             # Deep link to the account-console group detail page for investigation.
             "console_url":      f"{ACCOUNTS_HOST}/user-management/groups/{gid}?account_id={ACCOUNT_ID}",
         })
 
+# Order: groups with inactive members first (by count, then %), then zero-member groups.
 candidates = pd.DataFrame(rows).sort_values(
     ["inactive_members", "inactive_pct"], ascending=False
 ) if rows else pd.DataFrame()
 print(f"Skipped {skipped_local} local/non-IdP group(s) (not denylist-eligible).")
-print(f"Candidate IdP groups (>= {MIN_INACTIVE} inactive members): {len(candidates)}")
+print(f"Candidate IdP groups (inactive members or zero members): {len(candidates)}")
 
 # COMMAND ----------
 
@@ -246,11 +254,12 @@ schema = StructType([
     StructField("inactive_members",    IntegerType(),   True),
     StructField("active_members",      IntegerType(),   True),
     StructField("inactive_pct",        DoubleType(),    True),
+    StructField("candidate_reason",    StringType(),    True),
     StructField("console_url",         StringType(),    True),
 ])
 _cols = ["run_id", "detection_timestamp", "inactive_days", "group_id", "group_name",
          "is_idp_managed", "total_members", "inactive_members", "active_members", "inactive_pct",
-         "console_url"]
+         "candidate_reason", "console_url"]
 
 if candidates.empty:
     cand_df = spark.createDataFrame([], schema=schema)
@@ -281,9 +290,10 @@ for _col, _comment in {
     "inactive_members":    "User members with no audit activity in the window",
     "active_members":      "User members with audit activity in the window",
     "inactive_pct":        "inactive_members / total_members as a percentage",
+    "candidate_reason":    "Why the group is a candidate: has inactive members, or no members via SCIM",
     "console_url":         "Deep link to the account-console group detail page",
 }.items():
-    spark.sql(f"ALTER TABLE {DENYLIST_CANDIDATES_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment}'")
+    spark.sql(f"ALTER TABLE {DENYLIST_CANDIDATES_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment.replace(chr(39), chr(39)*2)}'")
 
 print(f"Wrote {cand_df.count()} candidate group(s) to {DENYLIST_CANDIDATES_TABLE} (run_id={RUN_ID})")
 

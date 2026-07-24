@@ -89,7 +89,7 @@ Once data collection completes, use the pre-built interactive notebooks in `/not
 
 - **`05_share_to_account.py`** → `brickhound_shared_to_account`. Report-only by default; set `remediate=yes` to remove the "account users" ACL entry (the SAT service principal must be a member of each affected workspace).
 - **`06_privileged_non_idp_identities.py`** → `brickhound_privileged_non_idp`. Flags non-IdP (no `externalId`) groups with Account/Workspace Admin, and users/service principals with those roles assigned directly. Opt-in remediation removes the `account_admin` role via SCIM.
-- **`07_denylist_candidates.py`** → `brickhound_denylist_candidates`. Ranks **IdP-managed (external)** account groups by inactive-member count (inactive = no `system.access.audit` activity in the look-back window — a heuristic for the Automatic Identity Management "Inactive: No usage" status). Feeds the **Account Denylist Builder** tab. **AIM caveat:** under Automatic Identity Management, external group memberships are resolved just-in-time and are not returned by the account SCIM Groups API, so member-based ranking can be empty even for populated groups; in that case use the Entra ID dynamic-group rule helper in the app tab instead.
+- **`07_denylist_candidates.py`** → `brickhound_denylist_candidates`. Ranks **IdP-managed (external)** account groups by inactive-member count (inactive = no `system.access.audit` activity in the look-back window — a heuristic for the Automatic Identity Management "Inactive: No usage" status). Feeds the **Account Denylist Recommender** tab. **AIM caveat:** under Automatic Identity Management, external group memberships are resolved just-in-time and are not returned by the account SCIM Groups API, so member-based ranking can be empty even for populated groups; in that case use the Entra ID dynamic-group rule builder in the app tab instead.
 :::
 
 ### Step 3: Web UI (Recommended)
@@ -103,7 +103,7 @@ The web UI provides:
 - Interactive search for principals and resources
 - Escalation paths visualization
 - Impersonation analysis reports
-- Account Denylist Builder (inactive-user group candidates + an Entra ID dynamic-group rule helper)
+- Account Denylist Recommender (inactive-user group candidates + an Entra ID dynamic-group rule builder)
 - Security reports including:
   - Secret scope access
   - High privilege principals
@@ -243,7 +243,7 @@ Detection uses the account SCIM API (account-wide) plus workspace `admins` group
 
 Help scale the [account access denylist](https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist):
 - **Inactive-user group candidates** — account groups ranked by how many members have no recent `system.access.audit` activity (good groups to deny without disrupting active users)
-- **Entra ID dynamic-group rule helper** — a guided builder that emits [dynamic membership rule](https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-membership) syntax (guest users, domain match, department, company, disabled accounts) so a single denylist entry can cover thousands of identities
+- **Entra ID dynamic-group rule builder** — a guided builder that emits [dynamic membership rule](https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-membership) syntax (guest users, mail/UPN domain match, department, company, disabled accounts), combinable with AND/OR, so a single denylist entry can cover thousands of identities
 
 **Example Query:** Which IdP groups have the most inactive members, and what Entra rule denies all guest users?
 

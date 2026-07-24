@@ -1664,7 +1664,7 @@ def get_main_html():
                         </div>
                         <div class="nav-item" data-page="denylistbuilder">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                            Denylist Builder
+                            Denylist Recommender
                         </div>
                     </div>
 
@@ -2092,15 +2092,6 @@ def get_main_html():
                     <h1 class="page-title">High Privilege Principals</h1>
                     <p class="page-desc">Principals with admin-level privileges via direct or nested group membership</p>
                 </div>
-                <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Group management:</span>
-                    <select id="highprivilege-idp-filter" onchange="loadHighPrivilege()" style="padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em;">
-                        <option value="all">All groups</option>
-                        <option value="local">Local (not IdP-managed) only</option>
-                        <option value="idp">IdP-managed only</option>
-                    </select>
-                    <span style="font-size: 0.78em; color: var(--text-muted);">Filters privileged <b>groups</b> by whether they're provisioned from your IdP. Users/SPs are always shown.</span>
-                </div>
                 <div id="highprivilege-results"></div>
             </div>
 
@@ -2153,10 +2144,10 @@ def get_main_html():
                 <div id="privilegednonidp-results"></div>
             </div>
 
-            <!-- Account Denylist Builder Page -->
+            <!-- Account Denylist Recommender Page -->
             <div class="page" id="page-denylistbuilder">
                 <div class="page-header">
-                    <h1 class="page-title">Account Denylist Builder</h1>
+                    <h1 class="page-title">Account Denylist Recommender</h1>
                     <p class="page-desc">Tools to help build an <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">account access denylist</a>: find IdP groups whose members aren't using Databricks, and generate Entra ID dynamic-group rules that scale a single denylist entry to thousands of users.</p>
                 </div>
 
@@ -2167,14 +2158,14 @@ def get_main_html():
                         IdP-managed (external) groups ranked by count of inactive members (users with no
                         <code>system.access.audit</code> activity in the look-back window — a heuristic for the
                         <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/#status" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">"Inactive: No usage"</a> status). Groups whose members mostly aren't logging in are good denylist candidates.
-                        <br><span style="color: #f59e0b;">Note:</span> under Automatic Identity Management, IdP group memberships are resolved just-in-time and aren't returned by the account SCIM API, so this ranking can be empty even for populated groups. Where that's the case, use the Entra rule helper below.
+                        <br><span style="color: #f59e0b;">Note:</span> under Automatic Identity Management, IdP group memberships are resolved just-in-time and aren't returned by the account SCIM API, so this ranking can be empty even for populated groups. Where that's the case, use the Entra rule builder below.
                     </p>
                     <div id="denylist-candidates-results"></div>
                 </div>
 
                 <!-- Section 2: Entra ID dynamic group rule helper -->
                 <div>
-                    <h2 style="font-size: 1.1em; margin-bottom: 4px;">2. Entra ID Dynamic Group Rule Helper</h2>
+                    <h2 style="font-size: 1.1em; margin-bottom: 4px;">2. Entra ID Dynamic Group Rule Builder</h2>
                     <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 12px;">
                         Denylists support up to 100 groups, but a single
                         <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-membership" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">Entra ID dynamic group</a>
@@ -3713,7 +3704,7 @@ def get_main_html():
             }
         }
 
-        // ── Account Denylist Builder ──────────────────────────────────────────
+        // ── Account Denylist Recommender ──────────────────────────────────────
         async function loadDenylistBuilder() {
             renderEntraRuleBuilder();       // static; no data dependency
             await loadDenylistCandidates(); // data-backed table
@@ -3750,8 +3741,8 @@ def get_main_html():
                             <span class="results-count">${data.length} group${data.length === 1 ? '' : 's'}</span>
                         </div>
                         <div class="results-body" style="padding: 0;">
-                            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 8px; padding: 10px 24px; font-size: 0.75em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border);">
-                                <div>Group</div><div>Inactive</div><div>Active</div><div>Total</div><div>Inactive %</div>
+                            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1.4fr; gap: 8px; padding: 10px 24px; font-size: 0.75em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+                                <div>Group</div><div>Inactive</div><div>Active</div><div>Total</div><div>Inactive %</div><div>Reason</div>
                             </div>`;
                 data.forEach((c, idx) => {
                     const isLast = idx === data.length - 1;
@@ -3761,13 +3752,15 @@ def get_main_html():
                     const nameHtml = c.console_url
                         ? `<a href="${escapeHtml(c.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none; font-weight: 500;">${gname}</a>`
                         : `<span style="font-weight:500;">${gname}</span>`;
+                    const reason = escapeHtml(c.candidate_reason || '');
                     html += `
-                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 8px; padding: 12px 24px; align-items: center; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1.4fr; gap: 8px; padding: 12px 24px; align-items: center; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
                             <div style="min-width:0;"><span style="font-size:18px;">👥</span> ${nameHtml} <span style="color:#10b981;font-size:0.8em;">IdP</span></div>
                             <div style="color:#ef4444;font-weight:600;">${c.inactive_members ?? 0}</div>
                             <div style="color:#10b981;">${c.active_members ?? 0}</div>
                             <div>${c.total_members ?? 0}</div>
                             <div>${pct}</div>
+                            <div style="font-size:0.8em;color:var(--text-muted);">${reason}</div>
                         </div>`;
                 });
                 html += `</div></div>`;
@@ -4182,6 +4175,8 @@ def get_main_html():
                         const wsHtml = wsName
                             ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(wsName)}</span>` : '';
                         const whenHtml = when ? `<span style="margin-left: 10px;">🕒 ${when}</span>` : '';
+                        const sharedToHtml = item.group_name
+                            ? `<span style="margin-left: 10px;">👥 Shared to: ${escapeHtml(item.group_name)}</span>` : '';
 
                         html += `
                             <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
@@ -4189,7 +4184,7 @@ def get_main_html():
                                 <div style="flex: 1; min-width: 0;">
                                     <div style="font-weight: 500; word-break: break-all;">${nameHtml}</div>
                                     <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
-                                        <span>👤 Shared by ${sharedBy}</span>${wsHtml}${whenHtml}
+                                        <span>👤 Shared by ${sharedBy}</span>${sharedToHtml}${wsHtml}${whenHtml}
                                     </div>
                                 </div>
                                 <div style="font-size: 0.8em; white-space: nowrap;">${statusBadge}</div>
@@ -4464,19 +4459,8 @@ def get_main_html():
                     return;
                 }
 
-                let data = result.data || [];
+                const data = result.data || [];
                 const summary = result.summary || {};
-
-                // Local-vs-IdP filter: applies to GROUP principals only (is_idp_managed
-                // is null for users/SPs, which are always kept).
-                const idpFilter = (document.getElementById('highprivilege-idp-filter') || {}).value || 'all';
-                if (idpFilter !== 'all') {
-                    data = data.filter(d => {
-                        const isGroup = (d.principal_type || '').includes('Group');
-                        if (!isGroup) return true;
-                        return idpFilter === 'idp' ? d.is_idp_managed === true : d.is_idp_managed === false;
-                    });
-                }
 
                 // Group by role, then by principal type
                 const byRole = {
@@ -4502,7 +4486,6 @@ def get_main_html():
                             name: pname,
                             email: d.principal_email,
                             type: ptype,
-                            is_idp_managed: d.is_idp_managed,
                             access: []
                         };
                     }
@@ -4616,13 +4599,6 @@ def get_main_html():
                         if (principal.type.includes('Group')) pIcon = '👥';
                         else if (principal.type.includes('ServicePrincipal')) pIcon = '🤖';
                         const displayName = formatPrincipalName(principal.name, principal.email, null, null);
-                        // For groups, show whether they're IdP-managed or local.
-                        let idpTag = '';
-                        if (principal.type.includes('Group') && principal.is_idp_managed !== null && principal.is_idp_managed !== undefined) {
-                            idpTag = principal.is_idp_managed
-                                ? ' <span style="color:#10b981;font-size:0.75em;">· IdP-managed</span>'
-                                : ' <span style="color:#f59e0b;font-size:0.75em;">· local</span>';
-                        }
 
                         const accessList = principal.access.map(a => {
                             return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: ${roleColors[role]}20; color: ${roleColors[role]}; border-radius: 4px; font-size: 0.75em; margin-right: 6px; margin-bottom: 4px;">${a.via} <span style="opacity: 0.7;">(${a.access_type})</span></span>`;
@@ -4636,7 +4612,7 @@ def get_main_html():
                                 <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
                                 <span style="font-size: 20px;">${pIcon}</span>
                                 <div style="flex: 1; min-width: 0;">
-                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${displayName}${idpTag}</div>
+                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${displayName}</div>
                                     <div style="font-size: 0.85em; line-height: 1.6; margin-top: 8px;">
                                         ${accessList}
                                     </div>
@@ -8075,6 +8051,7 @@ def report_denylist_candidates():
         c.active_members,
         c.inactive_pct,
         c.inactive_days,
+        c.candidate_reason,
         c.console_url,
         CAST(c.detection_timestamp AS STRING) AS detection_timestamp
     FROM {DENYLIST_CANDIDATES_TABLE} c
@@ -8401,20 +8378,7 @@ def report_high_privilege_principals():
           AND c.run_id = '{run_id}'
     )
 
-    SELECT
-        hp.principal_id, hp.principal_name, hp.principal_email, hp.principal_type,
-        hp.role, hp.via, hp.access_type,
-        -- Expose IdP-managed signal (from the group/principal vertex metadata) so
-        -- the UI can filter local vs external (IdP-managed) groups. Only groups
-        -- carry a meaningful value; users/SPs are reported as null (n/a).
-        CASE
-            WHEN hp.principal_type IN ('Group', 'AccountGroup')
-            THEN COALESCE(
-                get_json_object(v.metadata, '$.is_idp_managed') = 'true'
-                OR get_json_object(v.metadata, '$.external_id') IS NOT NULL,
-                false)
-            ELSE NULL
-        END as is_idp_managed
+    SELECT principal_id, principal_name, principal_email, principal_type, role, via, access_type
     FROM (
         SELECT * FROM account_admins_direct
         UNION ALL
@@ -8425,9 +8389,7 @@ def report_high_privilege_principals():
         SELECT * FROM catalog_owners
         UNION ALL
         SELECT * FROM catalog_all_privileges
-    ) hp
-    LEFT JOIN {VERTICES_TABLE} v
-        ON v.run_id = '{run_id}' AND v.id = hp.principal_id
+    )
     ORDER BY
         CASE role
             WHEN 'Account Admin' THEN 1
@@ -8472,11 +8434,6 @@ def report_high_privilege_principals():
             summary['catalog_owner'] += 1
 
     summary['total_principals'] = len(summary['total_principals'])
-
-    # Normalize the IdP flag to a real bool/None for the JS filter.
-    for r in results:
-        v = r.get('is_idp_managed')
-        r['is_idp_managed'] = None if v is None or str(v).strip() == '' else _truthy(v)
 
     return jsonify({
         'success': True,
