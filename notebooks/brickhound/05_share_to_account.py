@@ -22,7 +22,7 @@
 # MAGIC | Resource | Audit action | ACL resource prefix |
 # MAGIC |---|---|---|
 # MAGIC | Lakeview dashboards | `changeWorkspaceAcl` | `dashboardsv3/` |
-# MAGIC | AI/BI Genie spaces  | `changeWorkspaceAcl` | `genie/` or `datarooms/` |
+# MAGIC | AI/BI Genie Agents  | `changeWorkspaceAcl` | `genie/` or `datarooms/` |
 # MAGIC | Databricks Apps     | `changeAppsAcl`      | *(full ACL JSON)* |
 # MAGIC
 # MAGIC Workspace metadata is sourced from `system.access.workspaces_latest`. Only workspaces with
@@ -165,7 +165,7 @@ class RemediationResult:
 
 
 class ResourceShareAuditor:
-    """Audit and optionally remediate Lakeview dashboards, Genie spaces, and
+    """Audit and optionally remediate Lakeview dashboards, Genie Agents, and
     Databricks Apps shared with the 'account users' group.
 
     Detection reads the audit log account-wide. Remediation mints one
@@ -441,7 +441,7 @@ class ResourceShareAuditor:
             if row["resource_type"] == "dashboards":
                 return f"{base}/dashboardsv3/{row['resource_id']}"
             elif row["resource_type"] == "genie":
-                return f"{base}/genie/{row['resource_id']}"
+                return f"{base}/genie/rooms/{row['resource_id']}"
             elif row["resource_type"] == "apps":
                 return f"{base}/apps/{row['resource_id']}"
             return ""
@@ -609,7 +609,7 @@ findings_df.write.format("delta").mode("append") \
 
 spark.sql(
     f"COMMENT ON TABLE {SHARED_TO_ACCOUNT_TABLE} IS "
-    "'SAT Permissions Analysis — resources (Lakeview dashboards, AI/BI Genie spaces, Databricks Apps) "
+    "'SAT Permissions Analysis — resources (Lakeview dashboards, AI/BI Genie Agents, Databricks Apps) "
     "shared with the built-in account users group, detected from system.access.audit. "
     "Each row is one share event; auto_remediated captures opt-in remediation outcomes. "
     "Stamped with run_id for point-in-time snapshots.'"

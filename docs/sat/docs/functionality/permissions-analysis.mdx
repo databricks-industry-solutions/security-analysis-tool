@@ -80,7 +80,7 @@ Once data collection completes, use the pre-built interactive notebooks in `/not
 | `02_escalation_paths.py` | Find privilege escalation paths | "Can this contractor reach Account Admin?" |
 | `03_impersonation_analysis.py` | Analyze impersonation risks | "Who can run jobs as elevated service principals?" |
 | `04_advanced_reports.py` | Generate compliance reports | "List all users with access to 50+ resources" |
-| `05_share_to_account.py` | Detect & optionally remediate resources shared to all account users | "Which dashboards/Genie spaces/Apps were shared with everyone?" |
+| `05_share_to_account.py` | Detect & optionally remediate resources shared to all account users | "Which dashboards/Genie Agents/Apps were shared with everyone?" |
 | `06_privileged_non_idp_identities.py` | Detect & optionally remediate privileged identities that are not IdP-managed | "Which non-IdP groups / direct users hold Account Admin?" |
 | `07_denylist_candidates.py` | Rank account groups by inactive members for the access denylist | "Which IdP groups' members aren't using Databricks?" |
 
@@ -89,7 +89,7 @@ Once data collection completes, use the pre-built interactive notebooks in `/not
 
 - **`05_share_to_account.py`** → `brickhound_shared_to_account`. Report-only by default; set `remediate=yes` to remove the "account users" ACL entry (the SAT service principal must be a member of each affected workspace).
 - **`06_privileged_non_idp_identities.py`** → `brickhound_privileged_non_idp`. Flags non-IdP (no `externalId`) groups with Account/Workspace Admin, and users/service principals with those roles assigned directly. Opt-in remediation removes the `account_admin` role via SCIM.
-- **`07_denylist_candidates.py`** → `brickhound_denylist_candidates`. Ranks account groups by inactive-member count (inactive = no `system.access.audit` activity in the look-back window — a heuristic for the Automatic Identity Management "Inactive: No usage" status). Feeds the **Account Denylist Builder** tab.
+- **`07_denylist_candidates.py`** → `brickhound_denylist_candidates`. Ranks **IdP-managed (external)** account groups by inactive-member count (inactive = no `system.access.audit` activity in the look-back window — a heuristic for the Automatic Identity Management "Inactive: No usage" status). Feeds the **Account Denylist Builder** tab. **AIM caveat:** under Automatic Identity Management, external group memberships are resolved just-in-time and are not returned by the account SCIM Groups API, so member-based ranking can be empty even for populated groups; in that case use the Entra ID dynamic-group rule helper in the app tab instead.
 :::
 
 ### Step 3: Web UI (Recommended)
@@ -222,12 +222,12 @@ Discover lateral movement opportunities:
 
 Find resources shared with the built-in **account users** group — which grants access to every user in the account:
 - Lakeview dashboards
-- AI/BI Genie spaces
+- AI/BI Genie Agents
 - Databricks Apps
 
 Detection reads the audit log (`system.access.audit`) account-wide, so it captures shares across every running workspace without needing the permissions graph. Optional, opt-in remediation removes the offending ACL entry.
 
-**Example Query:** List every dashboard, Genie space, and App shared with all account users in the last 30 days, and optionally revoke that access.
+**Example Query:** List every dashboard, Genie Agent, and App shared with all account users in the last 30 days, and optionally revoke that access.
 
 ### Detect Privileged Non-IdP Managed Identities
 

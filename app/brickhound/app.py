@@ -2092,6 +2092,15 @@ def get_main_html():
                     <h1 class="page-title">High Privilege Principals</h1>
                     <p class="page-desc">Principals with admin-level privileges via direct or nested group membership</p>
                 </div>
+                <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Group management:</span>
+                    <select id="highprivilege-idp-filter" onchange="loadHighPrivilege()" style="padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em;">
+                        <option value="all">All groups</option>
+                        <option value="local">Local (not IdP-managed) only</option>
+                        <option value="idp">IdP-managed only</option>
+                    </select>
+                    <span style="font-size: 0.78em; color: var(--text-muted);">Filters privileged <b>groups</b> by whether they're provisioned from your IdP. Users/SPs are always shown.</span>
+                </div>
                 <div id="highprivilege-results"></div>
             </div>
 
@@ -2130,7 +2139,7 @@ def get_main_html():
             <div class="page" id="page-sharedtoaccount">
                 <div class="page-header">
                     <h1 class="page-title">Shared to All Account Users</h1>
-                    <p class="page-desc">Dashboards, Genie spaces, and Apps shared with the built-in "account users" group — accessible to every user in the account. Detected from the audit log by the SAT shared-to-account-users job.</p>
+                    <p class="page-desc">Dashboards, Genie Agents, and Apps shared with the built-in "account users" group — accessible to every user in the account. Detected from the audit log by the SAT shared-to-account-users job.</p>
                 </div>
                 <div id="sharedtoaccount-results"></div>
             </div>
@@ -2155,9 +2164,10 @@ def get_main_html():
                 <div style="margin-bottom: 28px;">
                     <h2 style="font-size: 1.1em; margin-bottom: 4px;">1. Inactive-User Group Candidates</h2>
                     <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 12px;">
-                        Account groups ranked by count of inactive members (users with no
+                        IdP-managed (external) groups ranked by count of inactive members (users with no
                         <code>system.access.audit</code> activity in the look-back window — a heuristic for the
                         <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/#status" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">"Inactive: No usage"</a> status). Groups whose members mostly aren't logging in are good denylist candidates.
+                        <br><span style="color: #f59e0b;">Note:</span> under Automatic Identity Management, IdP group memberships are resolved just-in-time and aren't returned by the account SCIM API, so this ranking can be empty even for populated groups. Where that's the case, use the Entra rule helper below.
                     </p>
                     <div id="denylist-candidates-results"></div>
                 </div>
@@ -3719,7 +3729,11 @@ def get_main_html():
 
                 const data = result.data || [];
                 if (data.length === 0) {
-                    showEmpty('denylist-candidates-results', 'No candidate groups found in the latest run.');
+                    showEmpty('denylist-candidates-results',
+                        'No candidate IdP groups found in the latest run. Note: with Automatic Identity Management (AIM), ' +
+                        'external group memberships are resolved just-in-time and are not returned by the account SCIM API, ' +
+                        'so member-based ranking may be empty even for populated groups. Use the Entra ID dynamic-group ' +
+                        'rule helper below to build denylist groups.');
                     return;
                 }
                 const detTs = result.detection_timestamp
@@ -3741,13 +3755,15 @@ def get_main_html():
                             </div>`;
                 data.forEach((c, idx) => {
                     const isLast = idx === data.length - 1;
-                    const idp = c.is_idp_managed
-                        ? '<span style="color:#10b981;font-size:0.8em;">IdP</span>'
-                        : '<span style="color:#f59e0b;font-size:0.8em;">local</span>';
                     const pct = (c.inactive_pct != null) ? c.inactive_pct + '%' : '';
+                    const gname = escapeHtml(c.group_name || c.group_id);
+                    // Group name links to the account-console group detail page.
+                    const nameHtml = c.console_url
+                        ? `<a href="${escapeHtml(c.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none; font-weight: 500;">${gname}</a>`
+                        : `<span style="font-weight:500;">${gname}</span>`;
                     html += `
                         <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 8px; padding: 12px 24px; align-items: center; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
-                            <div style="min-width:0;"><span style="font-size:18px;">👥</span> <span style="font-weight:500;">${escapeHtml(c.group_name || c.group_id)}</span> ${idp}</div>
+                            <div style="min-width:0;"><span style="font-size:18px;">👥</span> ${nameHtml} <span style="color:#10b981;font-size:0.8em;">IdP</span></div>
                             <div style="color:#ef4444;font-weight:600;">${c.inactive_members ?? 0}</div>
                             <div style="color:#10b981;">${c.active_members ?? 0}</div>
                             <div>${c.total_members ?? 0}</div>
@@ -3761,42 +3777,64 @@ def get_main_html():
             }
         }
 
-        // Entra ID dynamic membership rule scenarios.
+        // Entra ID dynamic membership rule scenarios. Each builds a single
+        // parenthesized clause; multiple clauses combine via a chosen operator.
+        // `needs`: '' (no input), 'value' (single), or 'list' (comma-separated).
+        // Escape regex-special chars in a domain for use in an Entra -match rule.
+        // Domains only contain '.' as a regex metacharacter; escape it to '\.'.
+        // Built via fromCharCode(92) to avoid backslash literals (which the Python
+        // string layer serving this HTML would otherwise mangle).
+        const _bs = String.fromCharCode(92);
+        const _nl = String.fromCharCode(10);  // newline without a backslash escape (Python-string safe)
+        const _escRe = s => s.split('.').join(_bs + '.');
         const ENTRA_SCENARIOS = {
-            guests:        { label: 'All guest users', needs: [], rule: () => '(user.userType -eq "Guest")' },
-            domain_in:     { label: 'Email / UPN ends with domain(s)', needs: ['domains'],
-                             rule: v => v.domains.map(d => `(user.userPrincipalName -match ".*@${d.replace(/\\./g, '\\\\.')}$")`).join(' -or ') },
-            domain_not_in: { label: 'Email / UPN does NOT end with domain(s)', needs: ['domains'],
-                             rule: v => v.domains.map(d => `(user.userPrincipalName -notMatch ".*@${d.replace(/\\./g, '\\\\.')}$")`).join(' -and ') },
-            dept_eq:       { label: 'Department equals', needs: ['value'], rule: v => `(user.department -eq "${v.value}")` },
-            dept_ne:       { label: 'Department not equals', needs: ['value'], rule: v => `(user.department -ne "${v.value}")` },
-            dept_in:       { label: 'Department in list', needs: ['list'],
-                             rule: v => `(user.department -in [${v.list.map(x => `"${x}"`).join(', ')}])` },
-            company_eq:    { label: 'Company name equals', needs: ['value'], rule: v => `(user.companyName -eq "${v.value}")` },
-            company_ne:    { label: 'Company name not equals', needs: ['value'], rule: v => `(user.companyName -ne "${v.value}")` },
-            company_in:    { label: 'Company name in list', needs: ['list'],
-                             rule: v => `(user.companyName -in [${v.list.map(x => `"${x}"`).join(', ')}])` },
-            disabled:      { label: 'Account disabled', needs: [], rule: () => '(user.accountEnabled -eq false)' },
+            guests:         { label: 'Is a guest user', needs: '',
+                              rule: () => '(user.userType -eq "Guest")' },
+            members_only:   { label: 'Is a member (not guest)', needs: '',
+                              rule: () => '(user.userType -eq "Member")' },
+            disabled:       { label: 'Account is disabled', needs: '',
+                              rule: () => '(user.accountEnabled -eq false)' },
+            upn_domain:     { label: 'UPN ends with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.userPrincipalName -match ".*@${_escRe(d)}$"`).join(' -or ') + ')' },
+            upn_not_domain: { label: 'UPN does NOT end with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.userPrincipalName -notMatch ".*@${_escRe(d)}$"`).join(' -and ') + ')' },
+            mail_domain:    { label: 'Mail ends with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.mail -match ".*@${_escRe(d)}$"`).join(' -or ') + ')' },
+            mail_not_domain:{ label: 'Mail does NOT end with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.mail -notMatch ".*@${_escRe(d)}$"`).join(' -and ') + ')' },
+            dept_eq:        { label: 'Department equals', needs: 'value',
+                              rule: v => `(user.department -eq "${v}")` },
+            dept_ne:        { label: 'Department not equals', needs: 'value',
+                              rule: v => `(user.department -ne "${v}")` },
+            dept_in:        { label: 'Department in list', needs: 'list',
+                              rule: v => `(user.department -in [${v.map(x => `"${x}"`).join(', ')}])` },
+            company_eq:     { label: 'Company name equals', needs: 'value',
+                              rule: v => `(user.companyName -eq "${v}")` },
+            company_ne:     { label: 'Company name not equals', needs: 'value',
+                              rule: v => `(user.companyName -ne "${v}")` },
+            company_in:     { label: 'Company name in list', needs: 'list',
+                              rule: v => `(user.companyName -in [${v.map(x => `"${x}"`).join(', ')}])` },
         };
 
+        // Working set of condition rows for the builder.
+        let _entraConditions = [];
+        let _entraJoin = '-and';
+
         function renderEntraRuleBuilder() {
+            _entraConditions = [{ scenario: 'guests', value: '' }];
+            _entraJoin = '-and';
             const el = document.getElementById('entra-rule-builder');
-            const opts = Object.entries(ENTRA_SCENARIOS)
-                .map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('');
             el.innerHTML = `
                 <div style="background: var(--bg-input); border-radius: 12px; padding: 20px;">
-                    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
-                        <div style="flex: 1; min-width: 240px;">
-                            <label style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Scenario</label>
-                            <select id="entra-scenario" onchange="onEntraScenarioChange()" style="width: 100%; margin-top: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-dark); color: var(--text-primary);">
-                                ${opts}
-                            </select>
-                        </div>
-                        <div id="entra-input-wrap" style="flex: 2; min-width: 260px;">
-                            <label id="entra-input-label" style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Value(s)</label>
-                            <input id="entra-input" type="text" oninput="onEntraScenarioChange()" placeholder="e.g. contoso.com, fabrikam.com (comma-separated)" style="width: 100%; margin-top: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-dark); color: var(--text-primary);">
-                        </div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <span style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Combine conditions with</span>
+                        <select id="entra-join" onchange="onEntraJoinChange()" style="padding: 6px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em;">
+                            <option value="-and">AND (match all)</option>
+                            <option value="-or">OR (match any)</option>
+                        </select>
                     </div>
+                    <div id="entra-conditions"></div>
+                    <button onclick="addEntraCondition()" style="margin-top: 10px; padding: 6px 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--accent); cursor: pointer; font-size: 0.85em;">+ Add condition</button>
                     <div style="margin-top: 16px;">
                         <label style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Membership rule (paste into Entra "Dynamic membership rules")</label>
                         <div style="position: relative; margin-top: 6px;">
@@ -3809,37 +3847,75 @@ def get_main_html():
                         </div>
                     </div>
                 </div>`;
-            onEntraScenarioChange();
+            renderEntraConditions();
         }
 
-        function onEntraScenarioChange() {
-            const key = document.getElementById('entra-scenario').value;
-            const spec = ENTRA_SCENARIOS[key];
-            const wrap = document.getElementById('entra-input-wrap');
-            const label = document.getElementById('entra-input-label');
-            const input = document.getElementById('entra-input');
-            const needsInput = spec.needs.length > 0;
-            wrap.style.display = needsInput ? '' : 'none';
-            if (needsInput) {
-                label.textContent = (spec.needs[0] === 'domains' || spec.needs[0] === 'list') ? 'Value(s) — comma-separated' : 'Value';
+        function renderEntraConditions() {
+            const wrap = document.getElementById('entra-conditions');
+            const scenarioOpts = (sel) => Object.entries(ENTRA_SCENARIOS)
+                .map(([k, s]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${s.label}</option>`).join('');
+            wrap.innerHTML = _entraConditions.map((c, i) => {
+                const spec = ENTRA_SCENARIOS[c.scenario];
+                const needsInput = spec.needs !== '';
+                const placeholder = spec.needs === 'list' ? 'comma-separated, e.g. contoso.com, fabrikam.com' : 'value';
+                return `
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                        <span style="color: var(--text-muted); font-size: 0.85em; width: 44px;">${i === 0 ? 'Where' : (_entraJoin === '-and' ? 'AND' : 'OR')}</span>
+                        <select onchange="updateEntraCondition(${i}, 'scenario', this.value)" style="flex: 1; min-width: 200px; padding: 8px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.88em;">
+                            ${scenarioOpts(c.scenario)}
+                        </select>
+                        <input type="text" value="${escapeHtml(c.value || '')}" oninput="updateEntraCondition(${i}, 'value', this.value)" placeholder="${placeholder}" style="flex: 2; min-width: 200px; padding: 8px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.88em; ${needsInput ? '' : 'visibility: hidden;'}">
+                        <button onclick="removeEntraCondition(${i})" title="Remove" style="padding: 6px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: #ef4444; cursor: pointer; ${_entraConditions.length === 1 ? 'visibility: hidden;' : ''}">✕</button>
+                    </div>`;
+            }).join('');
+            regenEntraRule();
+        }
+
+        function addEntraCondition() { _entraConditions.push({ scenario: 'guests', value: '' }); renderEntraConditions(); }
+        function removeEntraCondition(i) { _entraConditions.splice(i, 1); renderEntraConditions(); }
+        function updateEntraCondition(i, field, val) {
+            _entraConditions[i][field] = val;
+            if (field === 'scenario') renderEntraConditions();  // input visibility may change
+            else regenEntraRule();
+        }
+        function onEntraJoinChange() {
+            _entraJoin = document.getElementById('entra-join').value;
+            renderEntraConditions();
+        }
+
+        function regenEntraRule() {
+            const clauses = [];
+            let incomplete = false;
+            for (const c of _entraConditions) {
+                const spec = ENTRA_SCENARIOS[c.scenario];
+                try {
+                    if (spec.needs === '') { clauses.push(spec.rule()); }
+                    else {
+                        const raw = (c.value || '').trim();
+                        if (!raw) { incomplete = true; continue; }
+                        if (spec.needs === 'list') {
+                            const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+                            if (!parts.length) { incomplete = true; continue; }
+                            clauses.push(spec.rule(parts));
+                        } else {
+                            clauses.push(spec.rule(raw));
+                        }
+                    }
+                } catch (e) { /* skip malformed */ }
             }
-            const raw = (input.value || '').trim();
-            let rule = '';
-            try {
-                if (!needsInput) {
-                    rule = spec.rule({});
-                } else if (raw) {
-                    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
-                    rule = spec.rule({ domains: parts, list: parts, value: raw });
-                } else {
-                    rule = '// enter value(s) above';
-                }
-            } catch (e) { rule = '// ' + e.message; }
-            document.getElementById('entra-rule-output').textContent = rule;
+            let rule;
+            if (!clauses.length) rule = '// add at least one complete condition';
+            else {
+                rule = clauses.length === 1 ? clauses[0] : clauses.join(` ${_entraJoin} `);
+                if (incomplete) rule += _nl + '// note: some conditions are missing values and were skipped';
+            }
+            const out = document.getElementById('entra-rule-output');
+            if (out) out.textContent = rule;
         }
 
         function copyEntraRule() {
-            const txt = document.getElementById('entra-rule-output').textContent;
+            const txt = document.getElementById('entra-rule-output').textContent
+                .split(_nl).filter(l => !l.trim().startsWith('//')).join(_nl).trim();
             navigator.clipboard.writeText(txt).catch(() => {});
         }
 
@@ -3897,10 +3973,10 @@ def get_main_html():
                         <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Privileged Non-IdP Summary</div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
                             <div><div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div></div>
-                            <div><div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${summary.non_idp || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Non-IdP</div></div>
                             <div><div style="font-size: 1.8em; font-weight: 700; color: var(--warning);">${summary.account_admin || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Acct Admin</div></div>
                             <div><div style="font-size: 1.8em; font-weight: 700; color: var(--warning);">${summary.workspace_admin || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">WS Admin</div></div>
                             <div><div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${summary.remediated || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Remediated</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${(summary.total || 0) - (summary.remediated || 0)}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Not Remediated</div></div>
                         </div>
                     </div>
                     <div class="results-container">
@@ -3910,49 +3986,73 @@ def get_main_html():
                         </div>
                         <div class="results-body" style="padding: 0;">`;
 
+                // Categorize a principal_type into a display bucket.
+                const categoryOf = (pt) => (pt || '').includes('Group') ? 'Groups'
+                                         : (pt || '').includes('ServicePrincipal') ? 'Service Principals'
+                                         : 'Users';
+                const categoryEmoji = { 'Users': '👤', 'Groups': '👥', 'Service Principals': '🤖' };
+                const categoryOrder = ['Users', 'Groups', 'Service Principals'];
+
                 ['account_admin', 'workspace_admin'].forEach((type) => {
                     const items = byType[type];
                     if (!items || !items.length) return;
-                    const typeId = 'privnonidp-type-' + type;
-                    const label = typeLabels[type] || type;
+                    const roleLabel = typeLabels[type] || type;
 
+                    // Role header
                     html += `
                         <div class="tree-type-group">
-                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
-                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                            <div style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--bg-input); border-bottom: 1px solid var(--border);">
                                 <span style="font-size: 20px;">🛡️</span>
-                                <span style="font-weight: 600; flex: 1;">${label} (${items.length})</span>
-                            </div>
-                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
-
-                    items.forEach((item, idx) => {
-                        const isLast = idx === items.length - 1;
-                        const icon = (item.principal_type || '').includes('Group') ? '👥'
-                                   : (item.principal_type || '').includes('ServicePrincipal') ? '🤖' : '👤';
-                        const who = formatPrincipalName(item.principal_name, item.principal_email || item.application_id, null, item.principal_id);
-                        const idpBadge = item.is_idp_managed
-                            ? '<span style="color: #10b981; font-weight: 600;">IdP-managed</span>'
-                            : '<span style="color: #ef4444; font-weight: 600;">⚠ Non-IdP</span>';
-                        const remBadge = item.auto_remediated
-                            ? ' <span style="color: #10b981;">· ✓ Remediated</span>' : '';
-                        const wsHtml = item.workspace_name || item.workspace_id
-                            ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(item.workspace_name || item.workspace_id)}</span>` : '';
-                        const ptype = escapeHtml(item.principal_type || '');
-
-                        html += `
-                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
-                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
-                                <div style="flex: 1; min-width: 0;">
-                                    <div style="font-weight: 500; word-break: break-all;">${icon} ${who}</div>
-                                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
-                                        <span>${ptype}</span>${wsHtml}
-                                    </div>
-                                </div>
-                                <div style="font-size: 0.8em; white-space: nowrap;">${idpBadge}${remBadge}</div>
+                                <span style="font-weight: 700; flex: 1;">${roleLabel} (${items.length})</span>
                             </div>`;
+
+                    // Split into Users / Groups / Service Principals subsections
+                    const byCat = { 'Users': [], 'Groups': [], 'Service Principals': [] };
+                    items.forEach(it => byCat[categoryOf(it.principal_type)].push(it));
+
+                    categoryOrder.forEach((cat) => {
+                        const catItems = byCat[cat];
+                        if (!catItems.length) return;
+                        const secId = 'privnonidp-' + type + '-' + cat.replace(/\s+/g, '');
+                        html += `
+                            <div class="tree-type-header" onclick="toggleTreeSection('${secId}')" style="display: flex; align-items: center; gap: 12px; padding: 12px 24px 12px 40px; cursor: pointer; border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${secId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 16px;">${categoryEmoji[cat]}</span>
+                                <span style="font-weight: 600; flex: 1;">${cat} (${catItems.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${secId}-content" style="display: none;">`;
+
+                        catItems.forEach((item, idx) => {
+                            const isLast = idx === catItems.length - 1;
+                            const who = formatPrincipalName(item.principal_name, item.principal_email || item.application_id, null, item.principal_id);
+                            // Link the name to the account console for investigation.
+                            const nameHtml = item.console_url
+                                ? `<a href="${escapeHtml(item.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${who}</a>`
+                                : who;
+                            const roleBadge = `<span style="color: var(--warning); font-weight: 600;">${roleLabel}</span>`;
+                            const idpBadge = item.is_idp_managed
+                                ? ' <span style="color: #10b981;">· IdP-managed</span>'
+                                : ' <span style="color: #ef4444;">· ⚠ Non-IdP</span>';
+                            const remBadge = item.auto_remediated
+                                ? ' <span style="color: #10b981;">· ✓ Remediated</span>'
+                                : ' <span style="color: #ef4444;">· Not Remediated</span>';
+                            const wsHtml = (item.workspace_name || item.workspace_id)
+                                ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(item.workspace_name || item.workspace_id)}</span>` : '';
+
+                            html += `
+                                <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 64px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                    <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="font-weight: 500; word-break: break-all;">${categoryEmoji[cat]} ${nameHtml}</div>
+                                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">${wsHtml}</div>
+                                    </div>
+                                    <div style="font-size: 0.8em; white-space: nowrap;">${roleBadge}${idpBadge}${remBadge}</div>
+                                </div>`;
+                        });
+                        html += `</div>`;
                     });
 
-                    html += `</div></div>`;
+                    html += `</div>`;
                 });
 
                 html += `</div></div>`;
@@ -3984,7 +4084,7 @@ def get_main_html():
                     return;
                 }
 
-                const typeLabels = { dashboards: 'Dashboards', genie: 'Genie Spaces', apps: 'Apps' };
+                const typeLabels = { dashboards: 'Dashboards', genie: 'Genie Agents', apps: 'Apps' };
                 const typeEmoji  = { dashboards: '📊', genie: '💬', apps: '🧩' };
 
                 // Group by resource_type
@@ -4024,7 +4124,7 @@ def get_main_html():
                             </div>
                             <div>
                                 <div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${summary.outstanding || 0}</div>
-                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Outstanding</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Not Remediated</div>
                             </div>
                             <div>
                                 <div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${summary.remediated || 0}</div>
@@ -4073,7 +4173,7 @@ def get_main_html():
 
                         const statusBadge = item.auto_remediated
                             ? '<span style="color: #10b981; font-weight: 600;">✓ Remediated</span>'
-                            : '<span style="color: #ef4444; font-weight: 600;">⚠ Outstanding</span>';
+                            : '<span style="color: #ef4444; font-weight: 600;">⚠ Not Remediated</span>';
 
                         const nameHtml = url
                             ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${name}</a>`
@@ -4364,8 +4464,19 @@ def get_main_html():
                     return;
                 }
 
-                const data = result.data || [];
+                let data = result.data || [];
                 const summary = result.summary || {};
+
+                // Local-vs-IdP filter: applies to GROUP principals only (is_idp_managed
+                // is null for users/SPs, which are always kept).
+                const idpFilter = (document.getElementById('highprivilege-idp-filter') || {}).value || 'all';
+                if (idpFilter !== 'all') {
+                    data = data.filter(d => {
+                        const isGroup = (d.principal_type || '').includes('Group');
+                        if (!isGroup) return true;
+                        return idpFilter === 'idp' ? d.is_idp_managed === true : d.is_idp_managed === false;
+                    });
+                }
 
                 // Group by role, then by principal type
                 const byRole = {
@@ -4391,6 +4502,7 @@ def get_main_html():
                             name: pname,
                             email: d.principal_email,
                             type: ptype,
+                            is_idp_managed: d.is_idp_managed,
                             access: []
                         };
                     }
@@ -4504,6 +4616,13 @@ def get_main_html():
                         if (principal.type.includes('Group')) pIcon = '👥';
                         else if (principal.type.includes('ServicePrincipal')) pIcon = '🤖';
                         const displayName = formatPrincipalName(principal.name, principal.email, null, null);
+                        // For groups, show whether they're IdP-managed or local.
+                        let idpTag = '';
+                        if (principal.type.includes('Group') && principal.is_idp_managed !== null && principal.is_idp_managed !== undefined) {
+                            idpTag = principal.is_idp_managed
+                                ? ' <span style="color:#10b981;font-size:0.75em;">· IdP-managed</span>'
+                                : ' <span style="color:#f59e0b;font-size:0.75em;">· local</span>';
+                        }
 
                         const accessList = principal.access.map(a => {
                             return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: ${roleColors[role]}20; color: ${roleColors[role]}; border-radius: 4px; font-size: 0.75em; margin-right: 6px; margin-bottom: 4px;">${a.via} <span style="opacity: 0.7;">(${a.access_type})</span></span>`;
@@ -4517,7 +4636,7 @@ def get_main_html():
                                 <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
                                 <span style="font-size: 20px;">${pIcon}</span>
                                 <div style="flex: 1; min-width: 0;">
-                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${displayName}</div>
+                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${displayName}${idpTag}</div>
                                     <div style="font-size: 0.85em; line-height: 1.6; margin-top: 8px;">
                                         ${accessList}
                                     </div>
@@ -7881,6 +8000,7 @@ def report_privileged_non_idp():
         p.workspace_id,
         p.workspace_name,
         p.workspaces_scanned,
+        p.console_url,
         CAST(p.detection_timestamp AS STRING) AS detection_timestamp,
         p.auto_remediated
     FROM {PRIVILEGED_NON_IDP_TABLE} p
@@ -7955,6 +8075,7 @@ def report_denylist_candidates():
         c.active_members,
         c.inactive_pct,
         c.inactive_days,
+        c.console_url,
         CAST(c.detection_timestamp AS STRING) AS detection_timestamp
     FROM {DENYLIST_CANDIDATES_TABLE} c
     JOIN latest l ON c.run_id = l.run_id
@@ -8280,7 +8401,20 @@ def report_high_privilege_principals():
           AND c.run_id = '{run_id}'
     )
 
-    SELECT principal_id, principal_name, principal_email, principal_type, role, via, access_type
+    SELECT
+        hp.principal_id, hp.principal_name, hp.principal_email, hp.principal_type,
+        hp.role, hp.via, hp.access_type,
+        -- Expose IdP-managed signal (from the group/principal vertex metadata) so
+        -- the UI can filter local vs external (IdP-managed) groups. Only groups
+        -- carry a meaningful value; users/SPs are reported as null (n/a).
+        CASE
+            WHEN hp.principal_type IN ('Group', 'AccountGroup')
+            THEN COALESCE(
+                get_json_object(v.metadata, '$.is_idp_managed') = 'true'
+                OR get_json_object(v.metadata, '$.external_id') IS NOT NULL,
+                false)
+            ELSE NULL
+        END as is_idp_managed
     FROM (
         SELECT * FROM account_admins_direct
         UNION ALL
@@ -8291,7 +8425,9 @@ def report_high_privilege_principals():
         SELECT * FROM catalog_owners
         UNION ALL
         SELECT * FROM catalog_all_privileges
-    )
+    ) hp
+    LEFT JOIN {VERTICES_TABLE} v
+        ON v.run_id = '{run_id}' AND v.id = hp.principal_id
     ORDER BY
         CASE role
             WHEN 'Account Admin' THEN 1
@@ -8336,6 +8472,11 @@ def report_high_privilege_principals():
             summary['catalog_owner'] += 1
 
     summary['total_principals'] = len(summary['total_principals'])
+
+    # Normalize the IdP flag to a real bool/None for the JS filter.
+    for r in results:
+        v = r.get('is_idp_managed')
+        r['is_idp_managed'] = None if v is None or str(v).strip() == '' else _truthy(v)
 
     return jsonify({
         'success': True,

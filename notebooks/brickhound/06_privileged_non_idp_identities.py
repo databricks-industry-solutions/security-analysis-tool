@@ -252,6 +252,17 @@ class PrivilegedIdentityAuditor:
         # Presence of an externalId means the identity was provisioned from an IdP.
         return bool(entity.get("externalId"))
 
+    def _console_url(self, principal_type: str, principal_id: str) -> str:
+        """Deep link to the account-console detail page for a principal."""
+        segment = {
+            "AccountGroup": "groups", "Group": "groups",
+            "AccountUser": "users", "User": "users",
+            "AccountServicePrincipal": "service-principals",
+            "ServicePrincipal": "service-principals",
+        }.get(principal_type, "users")
+        return (f"{self._accounts_host}/user-management/{segment}/{principal_id}"
+                f"?account_id={self._account_id}")
+
     # ── Detection ──────────────────────────────────────────────────────────────
 
     def detect_account_admins(self, include_idp: bool) -> list[dict]:
@@ -282,6 +293,7 @@ class PrivilegedIdentityAuditor:
                     "scope":          "account",
                     "workspace_id":   None,
                     "workspace_name": None,
+                    "console_url":    self._console_url(ptype, e.get("id")),
                 })
         return findings
 
@@ -357,6 +369,7 @@ class PrivilegedIdentityAuditor:
                         "scope":          "workspace",
                         "workspace_id":   ws_id,
                         "workspace_name": ws_name,
+                        "console_url":    self._console_url(ptype, mid),
                     })
         return findings, scanned
 
@@ -483,13 +496,14 @@ findings_schema = StructType([
     StructField("workspace_id",        StringType(),    True),
     StructField("workspace_name",      StringType(),    True),
     StructField("workspaces_scanned",  StringType(),    True),
+    StructField("console_url",         StringType(),    True),
     StructField("auto_remediated",     BooleanType(),   True),
 ])
 
 _cols = [
     "run_id", "detection_timestamp", "finding_type", "principal_type", "principal_id",
     "principal_name", "principal_email", "application_id", "is_idp_managed", "external_id",
-    "scope", "workspace_id", "workspace_name", "workspaces_scanned", "auto_remediated",
+    "scope", "workspace_id", "workspace_name", "workspaces_scanned", "console_url", "auto_remediated",
 ]
 
 _scanned_json = _json.dumps(workspaces_scanned)
@@ -530,6 +544,7 @@ for _col, _comment in {
     "workspace_id":        "Workspace id (workspace-admin findings only)",
     "workspace_name":      "Workspace name (workspace-admin findings only)",
     "workspaces_scanned":  "JSON array of workspace names scanned for workspace-admin membership this run",
+    "console_url":         "Deep link to the account-console detail page for this principal",
     "auto_remediated":     "True if the privileged role/membership was removed in this run",
 }.items():
     spark.sql(f"ALTER TABLE {PRIVILEGED_NON_IDP_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment}'")

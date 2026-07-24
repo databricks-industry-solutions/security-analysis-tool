@@ -1024,6 +1024,10 @@ if MULTI_WORKSPACE_MODE:
             for group in tqdm(account_groups, desc="Account Groups"):
                 group_id = f"account_group:{group.id}"
                 group_name = group.display_name
+                # externalId indicates the group was provisioned from an IdP;
+                # is_idp_managed lets downstream analysis distinguish IdP vs local
+                # groups (e.g. the High Privilege report's local/external filter).
+                group_external_id = safe_get(group, 'external_id')
                 all_vertices.append({
                     'id': group_id,
                     'node_type': 'AccountGroup',
@@ -1036,7 +1040,10 @@ if MULTI_WORKSPACE_MODE:
                     'updated_at': None,
                     'comment': None,
                     'properties': None,
-                    'metadata': None
+                    'metadata': safe_json({
+                        'external_id': group_external_id,
+                        'is_idp_managed': bool(group_external_id),
+                    })
                 })
 
                 # Collect memberships (now available from groups.get())
@@ -1372,7 +1379,10 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         'updated_at': None,
                         'comment': None,
                         'properties': safe_json({'workspace_id': str(ws_id)}),
-                        'metadata': safe_json({'external_id': safe_get(group, 'external_id')})
+                        'metadata': safe_json({
+                            'external_id': safe_get(group, 'external_id'),
+                            'is_idp_managed': bool(safe_get(group, 'external_id')),
+                        })
                     })
                     # Collect memberships
                     if hasattr(group, 'members') and group.members:

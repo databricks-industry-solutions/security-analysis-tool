@@ -11,6 +11,16 @@
 # MAGIC     status, which is not exposed programmatically. Use outputs as a starting point for denylist
 # MAGIC     decisions, not as an authoritative activity record.
 # MAGIC   </p>
+# MAGIC   <p style="margin: 8px 0 0 0; font-size: 0.8em; color: #d32f2f;">
+# MAGIC     <b>AIM limitation:</b> With Automatic Identity Management, external/IdP group memberships are
+# MAGIC     resolved just-in-time and are <b>not returned by the account SCIM Groups API</b> (members come
+# MAGIC     back empty) — even though the account console <i>does</i> show those members (it reads them
+# MAGIC     live from Entra). So a group can look populated in the console yet return zero members here.
+# MAGIC     Because this report ranks groups by their inactive <i>members</i>, IdP groups under AIM may
+# MAGIC     yield <b>no candidates even when they have many users</b>. It works for groups whose membership
+# MAGIC     IS available via SCIM (e.g. traditional SCIM-provisioned groups). For AIM accounts, use the
+# MAGIC     Entra ID dynamic-group rule helper in the app tab to build denylist groups instead.
+# MAGIC   </p>
 # MAGIC </div>
 # MAGIC
 # MAGIC ## What This Analysis Does
@@ -20,10 +30,12 @@
 # MAGIC groups whose members largely **aren't logging into Databricks** — you can deny them without
 # MAGIC disrupting active users.
 # MAGIC
-# MAGIC This notebook ranks account groups by their count of **inactive members** — account users with no
-# MAGIC `system.access.audit` activity in the look-back window. Findings are written to
-# MAGIC **`brickhound_denylist_candidates`**; the SAT Permissions Analysis app surfaces them in the
-# MAGIC "Account Denylist Builder" tab.
+# MAGIC This notebook ranks **IdP-managed (external) groups** by their count of **inactive members** —
+# MAGIC account users with no `system.access.audit` activity in the look-back window. Only groups that
+# MAGIC carry an `externalId` (provisioned from an identity provider) are considered, since the account
+# MAGIC access denylist operates on IdP groups; the built-in `account users` group and any local/system
+# MAGIC groups are excluded. Findings are written to **`brickhound_denylist_candidates`**; the SAT
+# MAGIC Permissions Analysis app surfaces them in the "Account Denylist Builder" tab.
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
@@ -167,8 +179,15 @@ def is_inactive(user: dict) -> bool:
 # COMMAND ----------
 
 # DBTITLE 1,Rank Groups by Inactive Members
+# Only IdP-managed (external) groups are eligible for the account access denylist —
+# the denylist operates on identity-provider groups. This also naturally excludes
+# the built-in 'account users' group and any local/system groups.
 rows = []
+skipped_local = 0
 for g in groups:
+    if not g.get("externalId"):
+        skipped_local += 1
+        continue
     members = g.get("members", []) or []
     total_members = 0
     inactive_members = 0
@@ -185,20 +204,24 @@ for g in groups:
             inactive_members += 1
 
     if inactive_members >= MIN_INACTIVE:
+        gid = str(g["id"])
         rows.append({
-            "group_id":         str(g["id"]),
+            "group_id":         gid,
             "group_name":       g.get("displayName"),
             "is_idp_managed":   bool(g.get("externalId")),
             "total_members":    total_members,
             "inactive_members": inactive_members,
             "active_members":   total_members - inactive_members,
             "inactive_pct":     round(100.0 * inactive_members / total_members, 1) if total_members else 0.0,
+            # Deep link to the account-console group detail page for investigation.
+            "console_url":      f"{ACCOUNTS_HOST}/user-management/groups/{gid}?account_id={ACCOUNT_ID}",
         })
 
 candidates = pd.DataFrame(rows).sort_values(
     ["inactive_members", "inactive_pct"], ascending=False
 ) if rows else pd.DataFrame()
-print(f"Candidate groups (>= {MIN_INACTIVE} inactive members): {len(candidates)}")
+print(f"Skipped {skipped_local} local/non-IdP group(s) (not denylist-eligible).")
+print(f"Candidate IdP groups (>= {MIN_INACTIVE} inactive members): {len(candidates)}")
 
 # COMMAND ----------
 
@@ -223,9 +246,11 @@ schema = StructType([
     StructField("inactive_members",    IntegerType(),   True),
     StructField("active_members",      IntegerType(),   True),
     StructField("inactive_pct",        DoubleType(),    True),
+    StructField("console_url",         StringType(),    True),
 ])
 _cols = ["run_id", "detection_timestamp", "inactive_days", "group_id", "group_name",
-         "is_idp_managed", "total_members", "inactive_members", "active_members", "inactive_pct"]
+         "is_idp_managed", "total_members", "inactive_members", "active_members", "inactive_pct",
+         "console_url"]
 
 if candidates.empty:
     cand_df = spark.createDataFrame([], schema=schema)
@@ -256,6 +281,7 @@ for _col, _comment in {
     "inactive_members":    "User members with no audit activity in the window",
     "active_members":      "User members with audit activity in the window",
     "inactive_pct":        "inactive_members / total_members as a percentage",
+    "console_url":         "Deep link to the account-console group detail page",
 }.items():
     spark.sql(f"ALTER TABLE {DENYLIST_CANDIDATES_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment}'")
 
