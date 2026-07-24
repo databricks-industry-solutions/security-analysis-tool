@@ -115,4 +115,93 @@ resources:
           spec:
             client: "5"
       {{- end }}
+
+    brickhound_privileged_non_idp:
+      name: "SAT Permissions Analysis - Privileged Non-IdP Identities (Experimental)"
+      tags:
+        Application: SAT
+      schedule:
+        quartz_cron_expression: "0 0 4 ? * SUN"
+        timezone_id: {{.job_timezone}}
+      max_concurrent_runs: 1
+      timeout_seconds: 3600
+      tasks:
+        - task_key: "detect_privileged_non_idp"
+          {{- if eq .serverless false }}
+          job_cluster_key: brickhound_privileged_non_idp_cluster
+          {{- else }}
+          environment_key: "default"
+          {{- end }}
+          notebook_task:
+            notebook_path: "/Workspace/Applications/SAT/files/notebooks/brickhound/06_privileged_non_idp_identities"
+            # Detection-only by default. Set remediate=yes deliberately to
+            # enable continuous auto-removal of privileged roles from non-IdP identities.
+            base_parameters:
+              finding_types: "account_admin,workspace_admin"
+              include_idp_managed: "no"
+              remediate: "no"
+
+      {{- if eq .serverless false }}
+      job_clusters:
+        - job_cluster_key: brickhound_privileged_non_idp_cluster
+          new_cluster:
+            data_security_mode: SINGLE_USER
+            num_workers: 3
+            spark_version: {{.latest_lts}}
+            runtime_engine: "PHOTON"
+            node_type_id: {{.node_type}}
+            {{- if eq .cloud "aws" }}
+            aws_attributes:
+              availability: SPOT_WITH_FALLBACK
+              first_on_demand: 1
+            {{- end }}
+      {{- else }}
+      environments:
+        - environment_key: "default"
+          spec:
+            client: "5"
+      {{- end }}
+
+    brickhound_denylist_candidates:
+      name: "SAT Permissions Analysis - Denylist Candidates (Experimental)"
+      tags:
+        Application: SAT
+      schedule:
+        quartz_cron_expression: "0 0 5 ? * SUN"
+        timezone_id: {{.job_timezone}}
+      max_concurrent_runs: 1
+      timeout_seconds: 3600
+      tasks:
+        - task_key: "detect_denylist_candidates"
+          {{- if eq .serverless false }}
+          job_cluster_key: brickhound_denylist_candidates_cluster
+          {{- else }}
+          environment_key: "default"
+          {{- end }}
+          notebook_task:
+            notebook_path: "/Workspace/Applications/SAT/files/notebooks/brickhound/07_denylist_candidates"
+            base_parameters:
+              inactive_days: "90"
+              min_inactive: "1"
+
+      {{- if eq .serverless false }}
+      job_clusters:
+        - job_cluster_key: brickhound_denylist_candidates_cluster
+          new_cluster:
+            data_security_mode: SINGLE_USER
+            num_workers: 3
+            spark_version: {{.latest_lts}}
+            runtime_engine: "PHOTON"
+            node_type_id: {{.node_type}}
+            {{- if eq .cloud "aws" }}
+            aws_attributes:
+              availability: SPOT_WITH_FALLBACK
+              first_on_demand: 1
+            {{- end }}
+      {{- else }}
+      environments:
+        - environment_key: "default"
+          spec:
+            client: "5"
+      {{- end }}
 {{- end }}

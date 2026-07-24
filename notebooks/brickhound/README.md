@@ -29,14 +29,24 @@ Use the interactive analysis notebooks:
 | `03_impersonation_analysis.py` | Analyze impersonation risks |
 | `04_advanced_reports.py` | Generate compliance reports |
 | `05_share_to_account.py` | Detect (and optionally remediate) resources shared with all account users |
+| `06_privileged_non_idp_identities.py` | Detect (and optionally remediate) privileged identities that are not IdP-managed |
+| `07_denylist_candidates.py` | Rank account groups by inactive members as account-denylist candidates |
 
-> **Note:** `05_share_to_account.py` is **audit-log based**, not graph based. It reads
-> `system.access.audit` + `system.access.workspaces_latest` directly, so it does **not**
-> require the data collection job to have run first. It writes findings to
-> `brickhound_shared_to_account` and can be scheduled via
-> `terraform/common/brickhound_share_to_account_job.tf` (detection-only by default;
-> set the `remediate` parameter to `yes` to auto-remove the "account users" ACL entry).
-> Remediation requires the SAT service principal to be a member of each affected workspace.
+> **Note:** `05`–`07` are **audit-log / account-SCIM based**, not graph based. They read
+> `system.access.audit`, `system.access.workspaces_latest`, and the account SCIM API
+> directly, so they do **not** require the data collection job to have run first. Each writes
+> its own `brickhound_*` table and has a scheduled job (in both `terraform/common/` and the
+> DABS template):
+>
+> - `05_share_to_account.py` → `brickhound_shared_to_account`. Detection-only by default; set
+>   `remediate=yes` to auto-remove the "account users" ACL entry (SP must be a member of each
+>   affected workspace).
+> - `06_privileged_non_idp_identities.py` → `brickhound_privileged_non_idp`. Flags non-IdP
+>   (no `externalId`) groups with Account/Workspace Admin, plus users/SPs with those roles
+>   assigned directly. Opt-in remediation removes the `account_admin` role via SCIM.
+> - `07_denylist_candidates.py` → `brickhound_denylist_candidates`. Ranks account groups by
+>   inactive-member count (inactive = no `system.access.audit` activity in the window — a
+>   heuristic). Feeds the "Account Denylist Builder" tab.
 
 ### 3. Web UI (Optional)
 

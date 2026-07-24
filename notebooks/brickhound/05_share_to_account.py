@@ -45,6 +45,9 @@
 # MAGIC - The service principal must have **Account Admin** and be a member of any workspace you want to
 # MAGIC   remediate.
 # MAGIC - Access to `system.access.audit` and `system.access.workspaces_latest` system tables.
+# MAGIC - **Azure only:** the compute running this notebook needs network egress to
+# MAGIC   `login.microsoftonline.com` (Entra ID) to mint the account token via MSAL. If serverless egress
+# MAGIC   is restricted, run this on a classic cluster (or allowlist that host).
 
 # COMMAND ----------
 
@@ -121,6 +124,11 @@ ACCOUNT_ID    = json_["account_id"]
 CLIENT_ID     = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-id")
 CLIENT_SECRET = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-secret")
 
+# tenant-id is required for Azure (Entra/MSAL auth); absent on AWS/GCP.
+TENANT_ID = None
+if cloud_type == "azure":
+    TENANT_ID = json_.get("tenant_id") or dbutils.secrets.get(scope=SECRETS_SCOPE, key="tenant-id")
+
 SHARED_TO_ACCOUNT_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_shared_to_account"
 
 print(f"Cloud type:     {cloud_type}")
@@ -173,11 +181,14 @@ class ResourceShareAuditor:
     }
 
     def __init__(self, accounts_host: str, account_id: str, client_id: str,
-                 client_secret: str, proxies: Optional[dict] = None) -> None:
+                 client_secret: str, cloud_type: str, tenant_id: Optional[str] = None,
+                 proxies: Optional[dict] = None) -> None:
         self._accounts_host = accounts_host.rstrip("/")
         self._account_id    = account_id
         self._client_id     = client_id
         self._client_secret = client_secret
+        self._cloud_type    = cloud_type
+        self._tenant_id     = tenant_id
         self._proxies       = proxies or {}
         self._acct_token    = self._mint_account_token()
         self._acct_hdrs     = {"Authorization": f"Bearer {self._acct_token}"}
@@ -185,7 +196,25 @@ class ResourceShareAuditor:
 
     # ── Token / group helpers ──────────────────────────────────────────────
 
+    def _mint_azure_msal_token(self) -> str:
+        """AAD token for the Databricks resource — valid for account SCIM and
+        workspace REST calls on Azure (matches SatDBClient.getAzureTokenWithMSAL)."""
+        import msal
+        app = msal.ConfidentialClientApplication(
+            client_id=self._client_id,
+            client_credential=self._client_secret,
+            authority=f"https://login.microsoftonline.com/{self._tenant_id}",
+        )
+        # Databricks programmatic scope.
+        token = app.acquire_token_for_client(scopes=["2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default"])
+        if not token or not token.get("access_token"):
+            raise Exception(f"MSAL token acquisition failed: {token.get('error_description') if token else 'no token'}")
+        return token["access_token"]
+
     def _mint_account_token(self) -> str:
+        # Azure authenticates via Entra/MSAL; AWS/GCP via the Databricks OIDC path.
+        if self._cloud_type == "azure":
+            return self._mint_azure_msal_token()
         resp = requests.post(
             f"{self._accounts_host}/oidc/accounts/{self._account_id}/v1/token",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -215,6 +244,10 @@ class ResourceShareAuditor:
         return groups[0]["id"], groups[0]["displayName"]
 
     def _mint_workspace_token(self, host: str) -> Optional[str]:
+        # On Azure the Databricks-scoped MSAL token is valid for workspace REST
+        # calls too, so reuse it. AWS/GCP mint a per-workspace OIDC token.
+        if self._cloud_type == "azure":
+            return self._acct_token
         resp = requests.post(
             f"{host}/oidc/v1/token",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -227,6 +260,31 @@ class ResourceShareAuditor:
             proxies=self._proxies,
         )
         return resp.json().get("access_token") if resp.ok else None
+
+    def _resolve_display_names(self, emails: list[str]) -> dict[str, str]:
+        """Map user email -> display name via account SCIM Users.
+
+        The audit log only records the sharer's email; the UI wants
+        "Full Name (email)" like the other reports. Best-effort: any email we
+        can't resolve is simply omitted (the UI falls back to the email).
+        """
+        name_map: dict[str, str] = {}
+        for email in emails:
+            try:
+                filter_q = urllib.parse.quote(f'userName eq "{email}"')
+                resp = requests.get(
+                    f"{self._accounts_host}/api/2.0/accounts/{self._account_id}/scim/v2/Users"
+                    f"?filter={filter_q}&attributes=displayName,userName",
+                    headers=self._acct_hdrs,
+                    proxies=self._proxies,
+                )
+                if resp.ok:
+                    users = resp.json().get("Resources", [])
+                    if users and users[0].get("displayName"):
+                        name_map[email] = users[0]["displayName"]
+            except Exception:
+                pass  # best-effort; UI falls back to email
+        return name_map
 
     # ── Remediation ────────────────────────────────────────────────────────
 
@@ -368,10 +426,15 @@ class ResourceShareAuditor:
         if df.empty:
             return df
 
-        df["group_name"]            = self.group_name
-        df["group_id"]              = self.group_id
-        df["auto_remediated"]       = False
-        df["previously_remediated"] = False
+        df["group_name"]      = self.group_name
+        df["group_id"]        = self.group_id
+        df["auto_remediated"] = False
+
+        # Resolve the sharer's email -> display name (audit log only has email)
+        # so the UI can show "Full Name (email)" like the other reports.
+        unique_emails = [e for e in df["shared_by"].dropna().unique() if e]
+        name_map = self._resolve_display_names(unique_emails)
+        df["shared_by_display_name"] = df["shared_by"].map(lambda e: name_map.get(e))
 
         def make_url(row):
             base = row["workspace_url"].rstrip("/") if row.get("workspace_url") else ""
@@ -460,6 +523,8 @@ auditor = ResourceShareAuditor(
     account_id    = ACCOUNT_ID,
     client_id     = CLIENT_ID,
     client_secret = CLIENT_SECRET,
+    cloud_type    = cloud_type,
+    tenant_id     = TENANT_ID,
     proxies       = json_.get("proxies", {}),
 )
 print(f"Group: '{auditor.group_name}'  (id={auditor.group_id})")
@@ -482,8 +547,12 @@ if REMEDIATE and not events.empty:
         r = result_lookup.get(resource_id)
         return bool(r and r.success and r.message == want_message)
 
-    events["auto_remediated"]       = events["resource_id"].map(lambda x: _status(x, "permission removed"))
-    events["previously_remediated"] = events["resource_id"].map(lambda x: _status(x, "already removed"))
+    # Treat both "permission removed" (removed now) and "already removed"
+    # (target ACL absent at PUT time) as remediated — we can't reliably tell
+    # them apart, so we don't track a separate previously_remediated flag.
+    events["auto_remediated"] = events["resource_id"].map(
+        lambda x: _status(x, "permission removed") or _status(x, "already removed")
+    )
 elif REMEDIATE:
     print("Remediation enabled, but no events to remediate.")
 else:
@@ -502,27 +571,27 @@ DETECTION_TIME = datetime.now(timezone.utc)
 print(f"Run ID: {RUN_ID}")
 
 findings_schema = StructType([
-    StructField("run_id",                StringType(),    False),
-    StructField("detection_timestamp",   TimestampType(), False),
-    StructField("resource_type",         StringType(),    False),
-    StructField("resource_id",           StringType(),    True),
-    StructField("workspace_id",          StringType(),    True),
-    StructField("workspace_name",        StringType(),    True),
-    StructField("resource_url",          StringType(),    True),
-    StructField("shared_by",             StringType(),    True),
-    StructField("permission",            StringType(),    True),
-    StructField("group_name",            StringType(),    True),
-    StructField("group_id",              StringType(),    True),
-    StructField("event_time",            TimestampType(), True),
-    StructField("event_date",            DateType(),      True),
-    StructField("auto_remediated",       BooleanType(),   True),
-    StructField("previously_remediated", BooleanType(),   True),
+    StructField("run_id",                 StringType(),    False),
+    StructField("detection_timestamp",    TimestampType(), False),
+    StructField("resource_type",          StringType(),    False),
+    StructField("resource_id",            StringType(),    True),
+    StructField("workspace_id",           StringType(),    True),
+    StructField("workspace_name",         StringType(),    True),
+    StructField("resource_url",           StringType(),    True),
+    StructField("shared_by",              StringType(),    True),
+    StructField("shared_by_display_name", StringType(),    True),
+    StructField("permission",             StringType(),    True),
+    StructField("group_name",             StringType(),    True),
+    StructField("group_id",               StringType(),    True),
+    StructField("event_time",             TimestampType(), True),
+    StructField("event_date",             DateType(),      True),
+    StructField("auto_remediated",        BooleanType(),   True),
 ])
 
 _cols = [
     "run_id", "detection_timestamp", "resource_type", "resource_id", "workspace_id",
-    "workspace_name", "resource_url", "shared_by", "permission", "group_name",
-    "group_id", "event_time", "event_date", "auto_remediated", "previously_remediated",
+    "workspace_name", "resource_url", "shared_by", "shared_by_display_name", "permission",
+    "group_name", "group_id", "event_time", "event_date", "auto_remediated",
 ]
 
 if events.empty:
@@ -542,25 +611,25 @@ spark.sql(
     f"COMMENT ON TABLE {SHARED_TO_ACCOUNT_TABLE} IS "
     "'SAT Permissions Analysis — resources (Lakeview dashboards, AI/BI Genie spaces, Databricks Apps) "
     "shared with the built-in account users group, detected from system.access.audit. "
-    "Each row is one share event; auto_remediated/previously_remediated capture opt-in remediation outcomes. "
+    "Each row is one share event; auto_remediated captures opt-in remediation outcomes. "
     "Stamped with run_id for point-in-time snapshots.'"
 )
 for _col, _comment in {
-    "run_id":                "Detection run identifier in format YYYYMMDD_HHMMSS_hash",
-    "detection_timestamp":   "UTC timestamp when this detection run executed",
-    "resource_type":         "Resource type: dashboards, genie, or apps",
-    "resource_id":           "Resource UUID (dashboards/genie) or app name (apps)",
-    "workspace_id":          "Databricks workspace ID where the resource lives",
-    "workspace_name":        "Workspace display name from system.access.workspaces_latest",
-    "resource_url":          "Direct link to the resource in its workspace",
-    "shared_by":             "Email of the user who granted the account users access",
-    "permission":            "Permission level granted to the account users group",
-    "group_name":            "Display name of the account users group",
-    "group_id":              "Account SCIM ID of the account users group",
-    "event_time":            "Timestamp of the share event in the audit log",
-    "event_date":            "Date of the share event in the audit log",
-    "auto_remediated":       "True if the account users ACL entry was removed in this run",
-    "previously_remediated": "True if the ACL entry was already absent when checked",
+    "run_id":                 "Detection run identifier in format YYYYMMDD_HHMMSS_hash",
+    "detection_timestamp":    "UTC timestamp when this detection run executed",
+    "resource_type":          "Resource type: dashboards, genie, or apps",
+    "resource_id":            "Resource UUID (dashboards/genie) or app name (apps)",
+    "workspace_id":           "Databricks workspace ID where the resource lives",
+    "workspace_name":         "Workspace display name from system.access.workspaces_latest",
+    "resource_url":           "Direct link to the resource in its workspace",
+    "shared_by":              "Email of the user who granted the account users access",
+    "shared_by_display_name": "Display name of the sharing user, resolved from account SCIM (may be null)",
+    "permission":             "Permission level granted to the account users group",
+    "group_name":             "Display name of the account users group",
+    "group_id":               "Account SCIM ID of the account users group",
+    "event_time":             "Timestamp of the share event in the audit log",
+    "event_date":             "Date of the share event in the audit log",
+    "auto_remediated":        "True if the account users ACL entry was removed in this run",
 }.items():
     spark.sql(f"ALTER TABLE {SHARED_TO_ACCOUNT_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment}'")
 
@@ -585,11 +654,10 @@ else:
 # MAGIC
 # MAGIC ### Remediation status
 # MAGIC
-# MAGIC - **`auto_remediated = true`** — the 'account users' ACL entry was removed in this run.
-# MAGIC - **`previously_remediated = true`** — the entry was already gone when checked (e.g. removed
-# MAGIC   manually, or by an earlier run).
-# MAGIC - **Both `false`** — the resource is still shared to all account users (report-only run, or
-# MAGIC   remediation failed — check the cell output for token/permission errors).
+# MAGIC - **`auto_remediated = true`** — the 'account users' ACL entry is no longer present after this
+# MAGIC   run (removed now, or already absent at the time we checked — we don't distinguish the two).
+# MAGIC - **`auto_remediated = false`** — the resource is still shared to all account users (report-only
+# MAGIC   run, or remediation failed — check the cell output for token/permission errors).
 # MAGIC
 # MAGIC ### Recommended workflow
 # MAGIC
