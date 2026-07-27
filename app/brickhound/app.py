@@ -3732,6 +3732,10 @@ def get_main_html():
                     ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC' : 'Unknown';
                 const days = result.inactive_days || '?';
                 const acctScope = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
+                // renderCoverageBlock escapes chip text, so pass it raw here.
+                const acctLabel = result.account_id
+                    ? 'Account ' + result.account_id + ' (all IdP groups)'
+                    : 'Account-wide (all IdP groups)';
 
                 let html = `
                     ${renderCoverageBlock({
@@ -3740,7 +3744,7 @@ def get_main_html():
                         scopeIcon: '🏛️',
                         scanned: acctScope,
                         failed: [],
-                        inReport: ['Account-wide (all IdP groups)'],
+                        inReport: [acctLabel],
                         note: 'Denylist analysis is account-level over account SCIM groups. Inactive = no system.access.audit activity in ' + escapeHtml(String(days)) + ' days. Metastore shown for environment context.'
                     })}
                     <div class="results-container">
@@ -8167,6 +8171,17 @@ def report_denylist_candidates():
     except Exception:
         metastores = []
 
+    # The account id is embedded in each group's console deep link
+    # (…/user-management/groups/{id}?account_id={acct}); pull it from the first
+    # row so the coverage block can name the account this report covers.
+    account_id = None
+    if results and results[0].get('console_url'):
+        try:
+            from urllib.parse import urlparse, parse_qs
+            account_id = parse_qs(urlparse(results[0]['console_url']).query).get('account_id', [None])[0]
+        except Exception:
+            account_id = None
+
     return jsonify({
         'success': True,
         'summary': {
@@ -8176,6 +8191,7 @@ def report_denylist_candidates():
         'detection_timestamp': detection_timestamp,
         'inactive_days': inactive_days,
         'metastores': metastores,
+        'account_id': account_id,
         'data': results,
     })
 
