@@ -9,6 +9,7 @@ Inspired by BloodHound for Active Directory analysis.
 from flask import Flask, request, jsonify, send_from_directory
 import os
 import re
+import json
 import uuid
 import logging
 from databricks.sdk import WorkspaceClient

@@ -257,8 +257,8 @@ class PrivilegedIdentityAuditor:
         segment = {
             "AccountGroup": "groups", "Group": "groups",
             "AccountUser": "users", "User": "users",
-            "AccountServicePrincipal": "service-principals",
-            "ServicePrincipal": "service-principals",
+            "AccountServicePrincipal": "serviceprincipals",
+            "ServicePrincipal": "serviceprincipals",
         }.get(principal_type, "users")
         return (f"{self._accounts_host}/user-management/{segment}/{principal_id}"
                 f"?account_id={self._account_id}")
