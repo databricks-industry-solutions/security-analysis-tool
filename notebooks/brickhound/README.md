@@ -46,7 +46,7 @@ Use the interactive analysis notebooks:
 >   assigned directly. Opt-in remediation removes the `account_admin` role via SCIM.
 > - `07_denylist_candidates.py` → `brickhound_denylist_candidates`. Ranks account groups by
 >   inactive-member count (inactive = no `system.access.audit` activity in the window — a
->   heuristic). Feeds the "Account Denylist Recommender" tab.
+>   heuristic). Feeds the "Account Denylist Builder" tab.
 
 ### 3. Web UI (Optional)
 

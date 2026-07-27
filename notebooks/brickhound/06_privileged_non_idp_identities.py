@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Privileged Non-IdP Managed Identities — Detection & Remediation
+# MAGIC # Privileged Non-IdP Group Identities — Detection & Remediation
 # MAGIC *Find privileged identities that are not centrally IdP-managed*
 # MAGIC
 # MAGIC <div style="background-color: #fff3e0; border-left: 4px solid #d32f2f; padding: 12px; margin: 16px 0;">
@@ -204,21 +204,28 @@ class PrivilegedIdentityAuditor:
         resp.raise_for_status()
         return resp.json()["access_token"]
 
-    def _mint_workspace_token(self, host: str) -> Optional[str]:
-        if self._cloud_type == "azure":
-            return self._acct_token
-        resp = requests.post(
-            f"{host}/oidc/v1/token",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={
-                "grant_type":    "client_credentials",
-                "client_id":     self._client_id,
-                "client_secret": self._client_secret,
-                "scope":         "all-apis",
-            },
-            proxies=self._proxies,
-        )
-        return resp.json().get("access_token") if resp.ok else None
+    @staticmethod
+    def _explain_http_error(resp) -> str:
+        """Turn an error response into a short, complete human reason (no raw
+        truncated JSON), so the UI hover shows something legible."""
+        status = resp.status_code
+        detail = ""
+        try:
+            body = resp.json()
+            detail = (body.get("X-Databricks-Reason-Phrase")
+                      or body.get("error_description")
+                      or body.get("message")
+                      or body.get("error") or "")
+        except Exception:
+            detail = (resp.text or "").strip()
+        # Recognise the common cross-workspace enforcement case explicitly.
+        if status == 403 and "cross workspace" in detail.lower():
+            return "SP token blocked by cross-workspace request enforcement (HTTP 403)"
+        if status in (401, 403):
+            return f"SP not authorized for this workspace (HTTP {status})"
+        # Keep it short but whole (single sentence, no giant JSON blob).
+        detail = " ".join(detail.split())[:160]
+        return f"HTTP {status}{': ' + detail if detail else ''}"
 
     # ── SCIM paging helper ─────────────────────────────────────────────────────
 
@@ -297,81 +304,120 @@ class PrivilegedIdentityAuditor:
                 })
         return findings
 
-    def detect_workspace_admins(self, workspaces: list[dict], include_idp: bool) -> tuple[list[dict], list[str]]:
-        """Members of each workspace's 'admins' group. Returns (findings, workspaces_scanned).
+    def _fetch_workspace_permission_assignments(self, ws_id: str) -> tuple[Optional[list], str]:
+        """Fetch permission assignments for a workspace via the account-level
+        workspaceassignment API. Returns (assignments, reason).
 
-        Each workspace is probed independently and defensively: a workspace the
-        compute can't reach (DNS/egress) or the SP isn't a member of is skipped,
-        not fatal. Only workspaces successfully queried appear in `scanned`.
+        This is an account-scoped call (uses the account token), so it does NOT
+        require minting a per-workspace token and is not subject to
+        cross-workspace request enforcement. `assignments` is None on failure.
+        """
+        import time
+        url = (f"{self._accounts_host}/api/2.0/accounts/{self._account_id}"
+               f"/workspaces/{ws_id}/permissionassignments")
+        last_err = None
+        for attempt in range(3):
+            try:
+                resp = requests.get(url, headers=self._acct_hdrs,
+                                    proxies=self._proxies, timeout=30)
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    last_err = f"HTTP {resp.status_code}"
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                if not resp.ok:
+                    return None, self._explain_http_error(resp)
+                return resp.json().get("permission_assignments", []) or [], "ok"
+            except requests.RequestException as e:
+                last_err = f"{type(e).__name__}"
+                time.sleep(2 * (attempt + 1))
+        return None, f"permissionassignments failed ({last_err})"
+
+    def detect_workspace_admins(self, workspaces: list[dict], include_idp: bool) -> tuple[list[dict], list[dict], list[dict]]:
+        """Workspace administrators, resolved via the account-level
+        workspaceassignment API (permissionassignments).
+
+        Returns (findings, scanned, failed) where scanned/failed are lists of
+        {"workspace": name, "reason": str}. For each workspace we read its
+        permission assignments from the account API and extract every principal
+        holding the ADMIN permission. Because this is an account-scoped call it
+        needs no per-workspace token and is immune to cross-workspace request
+        enforcement, so it is both fast (parallelizable) and reliable.
         """
         findings: list[dict] = []
-        scanned: list[str] = []
+        scanned: list[dict] = []
+        failed: list[dict] = []
 
         # Build an account-level lookup of externalId by SCIM id so we can tell
-        # which admin-group members are IdP-managed.
+        # which admins are IdP-managed.
         idp_by_id: dict[str, bool] = {}
         for resource, attrs in [("Groups", "id,externalId"), ("Users", "id,externalId"),
                                 ("ServicePrincipals", "id,externalId")]:
             for e in self._scim_list(resource, attrs):
                 idp_by_id[str(e.get("id"))] = self._is_idp_managed(e)
 
-        for ws in workspaces:
-            host = ws.get("workspace_url")
+        def _probe(ws: dict) -> tuple[dict, str, list]:
             ws_id = str(ws.get("workspace_id"))
             ws_name = ws.get("workspace_name")
-            if not host:
-                continue
-            try:
-                token = self._mint_workspace_token(host)
-                if not token:
-                    continue  # SP not a member of this workspace
-                hdrs = {"Authorization": f"Bearer {token}"}
-                # Find the workspace 'admins' group and expand members.
-                admins_filter = urllib.parse.quote('displayName eq "admins"')
-                resp = requests.get(
-                    f"{host}/api/2.0/preview/scim/v2/Groups"
-                    f"?filter={admins_filter}&attributes=id,members",
-                    headers=hdrs, proxies=self._proxies, timeout=15,
-                )
-                if not resp.ok:
+            label = ws_name or ws_id
+            assignments, reason = self._fetch_workspace_permission_assignments(ws_id)
+            return {"workspace": label, "reason": reason,
+                    "ws_id": ws_id, "ws_name": ws_name}, reason, assignments
+
+        # Fan out across workspaces; the account API tolerates concurrency well.
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            futures = [pool.submit(_probe, ws) for ws in workspaces]
+            for fut in as_completed(futures):
+                meta, reason, assignments = fut.result()
+                label = meta["workspace"]
+                ws_id = meta["ws_id"]
+                ws_name = meta["ws_name"]
+
+                if assignments is None:
+                    failed.append({"workspace": label, "reason": reason})
+                    print(f"  ⚠ {label}: not scanned ({reason})")
                     continue
-                groups = resp.json().get("Resources", [])
-            except Exception as e:
-                # Unreachable workspace (DNS/egress), timeout, or auth issue —
-                # skip it rather than failing the whole run.
-                print(f"  ⚠ Skipping workspace {ws_name or ws_id}: {type(e).__name__}")
-                continue
-            scanned.append(ws_name or ws_id)
-            for g in groups:
-                for m in g.get("members", []) or []:
-                    ref = m.get("$ref", "") or ""
-                    if "Users" in ref:
-                        ptype = "User"
-                    elif "ServicePrincipals" in ref:
+
+                scanned.append({"workspace": label, "reason": "ok"})
+                for pa in assignments:
+                    perms = pa.get("permissions", []) or []
+                    if "ADMIN" not in perms:
+                        continue
+                    principal = pa.get("principal", {}) or {}
+                    pid = str(principal.get("principal_id"))
+                    if principal.get("service_principal_name"):
                         ptype = "ServicePrincipal"
-                    elif "Groups" in ref:
+                        pname = principal.get("display_name") or principal.get("service_principal_name")
+                        pemail = None
+                        app_id = principal.get("service_principal_name")
+                    elif principal.get("group_name"):
                         ptype = "Group"
+                        pname = principal.get("display_name") or principal.get("group_name")
+                        pemail = None
+                        app_id = None
                     else:
                         ptype = "User"
-                    mid = str(m.get("value"))
-                    idp = idp_by_id.get(mid, False)
+                        pname = principal.get("display_name") or principal.get("user_name")
+                        pemail = principal.get("user_name")
+                        app_id = None
+
+                    idp = idp_by_id.get(pid, False)
                     if idp and not include_idp:
                         continue
                     findings.append({
                         "finding_type":   "workspace_admin",
                         "principal_type": ptype,
-                        "principal_id":   mid,
-                        "principal_name": m.get("display"),
-                        "principal_email": None,
-                        "application_id": None,
+                        "principal_id":   pid,
+                        "principal_name": pname,
+                        "principal_email": pemail,
+                        "application_id": app_id,
                         "is_idp_managed": idp,
                         "external_id":    None,
                         "scope":          "workspace",
                         "workspace_id":   ws_id,
                         "workspace_name": ws_name,
-                        "console_url":    self._console_url(ptype, mid),
+                        "console_url":    self._console_url(ptype, pid),
                     })
-        return findings, scanned
+        return findings, scanned, failed
 
     # ── Remediation ────────────────────────────────────────────────────────────
 
@@ -426,7 +472,8 @@ if "workspace_admin" in FINDING_TYPES:
 
 # DBTITLE 1,Detect Privileged Identities
 all_findings: list[dict] = []
-workspaces_scanned: list[str] = []
+workspaces_scanned: list[dict] = []
+workspaces_failed: list[dict] = []
 
 if "account_admin" in FINDING_TYPES:
     aa = auditor.detect_account_admins(INCLUDE_IDP_MANAGED)
@@ -434,8 +481,11 @@ if "account_admin" in FINDING_TYPES:
     all_findings.extend(aa)
 
 if "workspace_admin" in FINDING_TYPES and workspaces:
-    wa, workspaces_scanned = auditor.detect_workspace_admins(workspaces, INCLUDE_IDP_MANAGED)
-    print(f"Workspace Admin findings: {len(wa)} (across {len(workspaces_scanned)} workspace(s))")
+    wa, workspaces_scanned, workspaces_failed = auditor.detect_workspace_admins(workspaces, INCLUDE_IDP_MANAGED)
+    print(f"Workspace Admin findings: {len(wa)} "
+          f"(scanned {len(workspaces_scanned)}, not scanned {len(workspaces_failed)} of {len(workspaces)} workspace(s))")
+    if workspaces_failed:
+        print(f"  ⚠ Not scanned: {[w['workspace'] for w in workspaces_failed]}")
     all_findings.extend(wa)
 
 findings = pd.DataFrame(all_findings)
@@ -496,6 +546,7 @@ findings_schema = StructType([
     StructField("workspace_id",        StringType(),    True),
     StructField("workspace_name",      StringType(),    True),
     StructField("workspaces_scanned",  StringType(),    True),
+    StructField("workspaces_failed",   StringType(),    True),
     StructField("console_url",         StringType(),    True),
     StructField("auto_remediated",     BooleanType(),   True),
 ])
@@ -503,10 +554,13 @@ findings_schema = StructType([
 _cols = [
     "run_id", "detection_timestamp", "finding_type", "principal_type", "principal_id",
     "principal_name", "principal_email", "application_id", "is_idp_managed", "external_id",
-    "scope", "workspace_id", "workspace_name", "workspaces_scanned", "console_url", "auto_remediated",
+    "scope", "workspace_id", "workspace_name", "workspaces_scanned", "workspaces_failed",
+    "console_url", "auto_remediated",
 ]
 
+# JSON arrays of {workspace, reason}, stored identically on every row.
 _scanned_json = _json.dumps(workspaces_scanned)
+_failed_json = _json.dumps(workspaces_failed)
 
 if findings.empty:
     findings_df = spark.createDataFrame([], schema=findings_schema)
@@ -515,6 +569,7 @@ else:
     out["run_id"]              = RUN_ID
     out["detection_timestamp"] = DETECTION_TIME
     out["workspaces_scanned"]  = _scanned_json
+    out["workspaces_failed"]   = _failed_json
     out["principal_id"]        = out["principal_id"].astype(str)
     out["workspace_id"]        = out["workspace_id"].astype("object").where(out["workspace_id"].notna(), None)
     findings_df = spark.createDataFrame(out[_cols], schema=findings_schema)
@@ -543,7 +598,8 @@ for _col, _comment in {
     "scope":               "account or workspace",
     "workspace_id":        "Workspace id (workspace-admin findings only)",
     "workspace_name":      "Workspace name (workspace-admin findings only)",
-    "workspaces_scanned":  "JSON array of workspace names scanned for workspace-admin membership this run",
+    "workspaces_scanned":  "JSON array of {workspace, reason} successfully scanned for workspace-admin membership this run",
+    "workspaces_failed":   "JSON array of {workspace, reason} that could NOT be scanned this run (e.g. cross-workspace 403, SP not a member) — coverage gaps",
     "console_url":         "Deep link to the account-console detail page for this principal",
     "auto_remediated":     "True if the privileged role/membership was removed in this run",
 }.items():

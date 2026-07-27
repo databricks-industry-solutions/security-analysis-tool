@@ -1665,7 +1665,7 @@ def get_main_html():
                         </div>
                         <div class="nav-item" data-page="denylistbuilder">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                            Denylist Recommender
+                            Denylist Builder
                         </div>
                     </div>
 
@@ -2136,19 +2136,19 @@ def get_main_html():
                 <div id="sharedtoaccount-results"></div>
             </div>
 
-            <!-- Privileged Non-IdP Managed Identities Report Page -->
+            <!-- Privileged Non-IdP Group Identities Report Page -->
             <div class="page" id="page-privilegednonidp">
                 <div class="page-header">
-                    <h1 class="page-title">Privileged Non-IdP Managed Identities</h1>
+                    <h1 class="page-title">Privileged Non-IdP Group Identities</h1>
                     <p class="page-desc">Groups that are not IdP-managed (no externalId) holding Account Admin or Workspace Admin, plus users and service principals with those roles assigned directly. Detected by the SAT privileged-non-IdP job.</p>
                 </div>
                 <div id="privilegednonidp-results"></div>
             </div>
 
-            <!-- Account Denylist Recommender Page -->
+            <!-- Account Denylist Builder Page -->
             <div class="page" id="page-denylistbuilder">
                 <div class="page-header">
-                    <h1 class="page-title">Account Denylist Recommender</h1>
+                    <h1 class="page-title">Account Denylist Builder</h1>
                     <p class="page-desc">Tools to help build an <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">account access denylist</a>: find IdP groups whose members aren't using Databricks, and generate Entra ID dynamic-group rules that scale a single denylist entry to thousands of users.</p>
                 </div>
 
@@ -3705,7 +3705,7 @@ def get_main_html():
             }
         }
 
-        // ── Account Denylist Recommender ──────────────────────────────────────
+        // ── Account Denylist Builder ──────────────────────────────────────
         async function loadDenylistBuilder() {
             renderEntraRuleBuilder();       // static; no data dependency
             await loadDenylistCandidates(); // data-backed table
@@ -3731,11 +3731,18 @@ def get_main_html():
                 const detTs = result.detection_timestamp
                     ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC' : 'Unknown';
                 const days = result.inactive_days || '?';
+                const acctScope = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
 
                 let html = `
-                    <div style="background: var(--bg-input); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; font-size: 0.85em; color: var(--text-secondary);">
-                        🕒 Collected ${detTs} · inactive = no activity in ${escapeHtml(String(days))} days
-                    </div>
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Accounts',
+                        scopeIcon: '🏛️',
+                        scanned: acctScope,
+                        failed: [],
+                        inReport: ['Account-wide (all IdP groups)'],
+                        note: 'Denylist analysis is account-level over account SCIM groups. Inactive = no system.access.audit activity in ' + escapeHtml(String(days)) + ' days. Metastore shown for environment context.'
+                    })}
                     <div class="results-container">
                         <div class="results-header">
                             <span class="results-title">Candidate Groups</span>
@@ -3913,6 +3920,61 @@ def get_main_html():
             navigator.clipboard.writeText(txt).catch(() => {});
         }
 
+        // Scope-adaptive coverage block for the SAT audit-log/SCIM tabs (Shared
+        // to All Users, Privileged Non-IdP, Denylist). Rendered in the tab BODY —
+        // never touches BrickHound's global graph-collection header.
+        //
+        // cfg = {
+        //   dateTs:   detection timestamp string (shown "Data Collection Date & Time"),
+        //   scopeLabel: 'Accounts' | 'Metastores' | 'Workspaces' (drives the box title),
+        //   scopeIcon:  emoji for the scope entities,
+        //   scanned:  [{workspace/name, reason}]  (per-entity coverage; optional),
+        //   failed:   [{workspace/name, reason}]  (coverage gaps w/ reason; optional),
+        //   inReport: [names]                      (entities whose data appears),
+        //   note:     extra one-line context (optional)
+        // }
+        function renderCoverageBlock(cfg) {
+            const icon = cfg.scopeIcon || '🏢';
+            const nameOf = (x) => (x && typeof x === 'object') ? (x.workspace || x.name || '') : x;
+            const okChip = (x) => `<span style="display:inline-block; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:2px 8px; margin:2px; font-size:0.85em;">${icon} ${escapeHtml(nameOf(x))}</span>`;
+            // Failed entries render the reason inline (not hover-only) so it's fully visible.
+            const failItem = (x) => `<div style="padding:4px 0; font-size:0.85em;"><span style="color:#ef4444;">${icon} ${escapeHtml(nameOf(x))}</span><span style="color:var(--text-muted);"> — ${escapeHtml(x.reason || 'not scanned')}</span></div>`;
+
+            const scanned = cfg.scanned || [];
+            const failed = cfg.failed || [];
+            const inReport = cfg.inReport || [];
+
+            // Coverage summary line — only meaningful when we have a per-entity scan.
+            let coverageHtml = '';
+            if (scanned.length || failed.length) {
+                const okLine = `<span style="color:#10b981; font-weight:600;">✓ ${scanned.length} scanned</span>`;
+                const failLine = failed.length ? ` · <span style="color:#ef4444; font-weight:600;">✗ ${failed.length} not scanned</span>` : '';
+                coverageHtml = `<div style="margin-top:6px; font-size:0.9em;">${okLine}${failLine}</div>`
+                    + (failed.length ? `<div style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px;">${failed.map(failItem).join('')}</div>` : '');
+            }
+            const inReportHtml = inReport.length
+                ? `<div style="margin-top:6px;">${inReport.map(okChip).join('')}</div>`
+                : '<div style="margin-top:6px; color: var(--text-muted); font-size:0.9em;">None</div>';
+            const noteHtml = cfg.note ? `<div style="margin-top:8px; font-size:0.78em; color:var(--text-muted);">${escapeHtml(cfg.note)}</div>` : '';
+            const dateHtml = cfg.dateTs
+                ? `<div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">Data Collection Date &amp; Time</div>
+                   <div style="margin-top:6px; font-size:0.95em;">🕒 ${escapeHtml(cfg.dateTs)}</div>` : '';
+
+            return `
+                <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 1; min-width: 240px;">
+                        ${dateHtml}
+                    </div>
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 2; min-width: 300px;">
+                        <div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">${escapeHtml(cfg.scopeLabel || 'Workspaces')} in this Report</div>
+                        ${coverageHtml}
+                        <div style="font-size:0.78em; color:var(--text-muted); margin-top:${coverageHtml ? '10px' : '6px'};">In this report:</div>
+                        ${inReportHtml}
+                        ${noteHtml}
+                    </div>
+                </div>`;
+        }
+
         async function loadPrivilegedNonIdp() {
             const container = document.getElementById('privilegednonidp-results');
             container.innerHTML = '<div class="loading">Loading privileged non-IdP identities...</div>';
@@ -3937,10 +3999,6 @@ def get_main_html():
                 const detTs = result.detection_timestamp
                     ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC'
                     : 'Unknown';
-                const workspaces = result.workspaces || [];
-                const wsChips = workspaces.length
-                    ? workspaces.map(w => `<span style="display: inline-block; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; margin: 2px; font-size: 0.85em;">🏢 ${escapeHtml(w)}</span>`).join('')
-                    : '<span style="color: var(--text-muted);">Account-level only</span>';
 
                 const typeLabels = { account_admin: 'Account Admin', workspace_admin: 'Workspace Admin' };
 
@@ -3953,16 +4011,15 @@ def get_main_html():
                 });
 
                 let html = `
-                    <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-                        <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 1; min-width: 220px;">
-                            <div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">Data Collection Date &amp; Time</div>
-                            <div style="margin-top: 6px; font-size: 0.95em;">🕒 ${detTs}</div>
-                        </div>
-                        <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 2; min-width: 260px;">
-                            <div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">Workspaces Scanned (Workspace Admin)</div>
-                            <div style="margin-top: 6px;">${wsChips}</div>
-                        </div>
-                    </div>
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Workspaces',
+                        scopeIcon: '🏢',
+                        scanned: result.workspaces_scanned || [],
+                        failed: result.workspaces_failed || [],
+                        inReport: result.workspaces_in_report || [],
+                        note: 'Account Admin is detected account-wide; Workspace Admin is resolved per-workspace via the account workspace-assignment API (coverage above).'
+                    })}
                     <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
                         <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Privileged Non-IdP Summary</div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
@@ -4089,26 +4146,22 @@ def get_main_html():
                     byType[t].push(d);
                 });
 
-                // Header: detection run date/time + workspaces covered by this run.
+                // Header: detection run date/time + metastore scope + workspaces where shares were found.
                 const detTs = result.detection_timestamp
                     ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC'
                     : 'Unknown';
-                const workspaces = result.workspaces || [];
-                const wsChips = workspaces.length
-                    ? workspaces.map(w => `<span style="display: inline-block; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; margin: 2px; font-size: 0.85em;">🏢 ${escapeHtml(w)}</span>`).join('')
-                    : '<span style="color: var(--text-muted);">None</span>';
+                const metastores = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
 
                 let html = `
-                    <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-                        <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 1; min-width: 220px;">
-                            <div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">Data Collection Date &amp; Time</div>
-                            <div style="margin-top: 6px; font-size: 0.95em;">🕒 ${detTs}</div>
-                        </div>
-                        <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 2; min-width: 260px;">
-                            <div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">Workspaces in this Report</div>
-                            <div style="margin-top: 6px;">${wsChips}</div>
-                        </div>
-                    </div>
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Metastores',
+                        scopeIcon: '🗄️',
+                        scanned: metastores,
+                        failed: [],
+                        inReport: result.workspaces || [],
+                        note: 'Detection is account-wide over the audit log (system.access.audit) of the metastore above; the entities in this report are the workspaces where shares were found.'
+                    })}
                     <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
                         <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Shared to All Account Users</div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
@@ -7933,12 +7986,22 @@ def report_shared_to_account():
     remediated = sum(1 for r in results if r['auto_remediated'])
     outstanding = len(results) - remediated
 
-    # Header context: detection run timestamp + the distinct workspaces covered.
+    # Header context: detection run timestamp + the distinct workspaces where
+    # shares were found (in-report). Scope = the metastore the system tables
+    # (system.access.audit) are read from, since detection is account-wide over
+    # that metastore rather than a per-workspace scan.
     detection_timestamp = results[0]['detection_timestamp'] if results else None
     workspaces = sorted({
         (r.get('workspace_name') or r.get('workspace_id') or '')
         for r in results if (r.get('workspace_name') or r.get('workspace_id'))
     })
+    metastores = []
+    try:
+        rows = exec_query_df("SELECT current_metastore() AS m")
+        if rows and rows[0].get('m'):
+            metastores = [rows[0]['m']]
+    except Exception:
+        metastores = []
 
     return jsonify({
         'success': True,
@@ -7947,6 +8010,7 @@ def report_shared_to_account():
             'outstanding': outstanding,
             'remediated': remediated,
         },
+        'metastores': metastores,
         'detection_timestamp': detection_timestamp,
         'workspaces': workspaces,
         'data': results,
@@ -7977,6 +8041,7 @@ def report_privileged_non_idp():
         p.workspace_id,
         p.workspace_name,
         p.workspaces_scanned,
+        p.workspaces_failed,
         p.console_url,
         CAST(p.detection_timestamp AS STRING) AS detection_timestamp,
         p.auto_remediated
@@ -8009,13 +8074,25 @@ def report_privileged_non_idp():
     remediated = sum(1 for r in results if r['auto_remediated'])
 
     detection_timestamp = results[0]['detection_timestamp'] if results else None
-    # workspaces_scanned is a JSON array string stored identically on every row.
-    workspaces = []
-    if results and results[0].get('workspaces_scanned'):
-        try:
-            workspaces = sorted(set(json.loads(results[0]['workspaces_scanned'])))
-        except Exception:
-            workspaces = []
+
+    # workspaces_scanned / workspaces_failed are JSON arrays of {workspace,
+    # reason}, stored identically on every row (workspace-admin coverage).
+    def _cov(col):
+        if results and results[0].get(col):
+            try:
+                items = json.loads(results[0][col])
+                # tolerate legacy plain-string entries
+                return [x if isinstance(x, dict) else {'workspace': str(x), 'reason': 'ok'} for x in items]
+            except Exception:
+                return []
+        return []
+    scanned = _cov('workspaces_scanned')
+    failed = _cov('workspaces_failed')
+
+    # "Workspaces in this report" = distinct workspaces whose findings appear
+    # (workspace-admin findings carry a workspace_name; account-level ones don't).
+    in_report = sorted({r['workspace_name'] for r in results
+                        if r.get('workspace_name')})
 
     return jsonify({
         'success': True,
@@ -8027,7 +8104,9 @@ def report_privileged_non_idp():
             'remediated': remediated,
         },
         'detection_timestamp': detection_timestamp,
-        'workspaces': workspaces,
+        'workspaces_scanned': scanned,
+        'workspaces_failed': failed,
+        'workspaces_in_report': in_report,
         'data': results,
     })
 
@@ -8078,6 +8157,15 @@ def report_denylist_candidates():
 
     detection_timestamp = results[0]['detection_timestamp'] if results else None
     inactive_days = results[0]['inactive_days'] if results else None
+    # Denylist analysis is account-level (account SCIM groups). Surface the
+    # metastore for environment context.
+    metastores = []
+    try:
+        rows = exec_query_df("SELECT current_metastore() AS m")
+        if rows and rows[0].get('m'):
+            metastores = [rows[0]['m']]
+    except Exception:
+        metastores = []
 
     return jsonify({
         'success': True,
@@ -8087,6 +8175,7 @@ def report_denylist_candidates():
         },
         'detection_timestamp': detection_timestamp,
         'inactive_days': inactive_days,
+        'metastores': metastores,
         'data': results,
     })
 

@@ -89,7 +89,7 @@ Once data collection completes, use the pre-built interactive notebooks in `/not
 
 - **`05_share_to_account.py`** → `brickhound_shared_to_account`. Report-only by default; set `remediate=yes` to remove the "account users" ACL entry (the SAT service principal must be a member of each affected workspace).
 - **`06_privileged_non_idp_identities.py`** → `brickhound_privileged_non_idp`. Flags non-IdP (no `externalId`) groups with Account/Workspace Admin, and users/service principals with those roles assigned directly. Opt-in remediation removes the `account_admin` role via SCIM.
-- **`07_denylist_candidates.py`** → `brickhound_denylist_candidates`. Ranks **IdP-managed (external)** account groups by inactive-member count (inactive = no `system.access.audit` activity in the look-back window — a heuristic for the Automatic Identity Management "Inactive: No usage" status). Feeds the **Account Denylist Recommender** tab. **AIM caveat:** under Automatic Identity Management, external group memberships are resolved just-in-time and are not returned by the account SCIM Groups API, so member-based ranking can be empty even for populated groups; in that case use the Entra ID dynamic-group rule builder in the app tab instead.
+- **`07_denylist_candidates.py`** → `brickhound_denylist_candidates`. Ranks **IdP-managed (external)** account groups by inactive-member count (inactive = no `system.access.audit` activity in the look-back window — a heuristic for the Automatic Identity Management "Inactive: No usage" status). Feeds the **Account Denylist Builder** tab. **AIM caveat:** under Automatic Identity Management, external group memberships are resolved just-in-time and are not returned by the account SCIM Groups API, so member-based ranking can be empty even for populated groups; in that case use the Entra ID dynamic-group rule builder in the app tab instead.
 :::
 
 ### Step 3: Web UI (Recommended)
@@ -103,7 +103,7 @@ The web UI provides:
 - Interactive search for principals and resources
 - Escalation paths visualization
 - Impersonation analysis reports
-- Account Denylist Recommender (inactive-user group candidates + an Entra ID dynamic-group rule builder)
+- Account Denylist Builder (inactive-user group candidates + an Entra ID dynamic-group rule builder)
 - Security reports including:
   - Secret scope access
   - High privilege principals
@@ -229,7 +229,7 @@ Detection reads the audit log (`system.access.audit`) account-wide, so it captur
 
 **Example Query:** List every dashboard, Genie Agent, and App shared with all account users in the last 30 days, and optionally revoke that access.
 
-### Detect Privileged Non-IdP Managed Identities
+### Detect Privileged Non-IdP Group Identities
 
 Surface privileged access that bypasses your identity provider's governance:
 - Groups that are **not IdP-managed** (no `externalId`) holding **Account Admin** or **Workspace Admin**

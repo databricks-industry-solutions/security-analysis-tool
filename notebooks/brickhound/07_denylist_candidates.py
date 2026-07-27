@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Account Denylist Recommender — Inactive-User Group Candidates
+# MAGIC # Account Denylist Builder — Inactive-User Group Candidates
 # MAGIC *Find IdP groups whose members mostly aren't using Databricks — good denylist candidates*
 # MAGIC
 # MAGIC <div style="background-color: #fff3e0; border-left: 4px solid #d32f2f; padding: 12px; margin: 16px 0;">
@@ -35,7 +35,7 @@
 # MAGIC carry an `externalId` (provisioned from an identity provider) are considered, since the account
 # MAGIC access denylist operates on IdP groups; the built-in `account users` group and any local/system
 # MAGIC groups are excluded. Findings are written to **`brickhound_denylist_candidates`**; the SAT
-# MAGIC Permissions Analysis app surfaces them in the "Account Denylist Recommender" tab.
+# MAGIC Permissions Analysis app surfaces them in the "Account Denylist Builder" tab.
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
