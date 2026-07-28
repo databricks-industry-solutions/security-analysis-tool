@@ -8044,8 +8044,6 @@ def report_privileged_non_idp():
         p.scope,
         p.workspace_id,
         p.workspace_name,
-        p.workspaces_scanned,
-        p.workspaces_failed,
         p.console_url,
         CAST(p.detection_timestamp AS STRING) AS detection_timestamp,
         p.auto_remediated
@@ -8079,12 +8077,25 @@ def report_privileged_non_idp():
 
     detection_timestamp = results[0]['detection_timestamp'] if results else None
 
-    # workspaces_scanned / workspaces_failed are JSON arrays of {workspace,
-    # reason}, stored identically on every row (workspace-admin coverage).
+    # workspaces_scanned / workspaces_failed are large JSON blobs stored
+    # identically on every row (workspace-admin coverage), so we fetch them from
+    # a single row separately. Selecting them in the main query would multiply
+    # the blob by the row count and blow past the Statement Execution 25 MB
+    # inline result limit, which the endpoint would surface as a false "no data".
+    cov_rows = exec_query_df(f"""
+        WITH latest AS (
+            SELECT MAX(run_id) AS run_id FROM {PRIVILEGED_NON_IDP_TABLE}
+        )
+        SELECT p.workspaces_scanned, p.workspaces_failed
+        FROM {PRIVILEGED_NON_IDP_TABLE} p
+        JOIN latest l ON p.run_id = l.run_id
+        LIMIT 1
+    """)
+
     def _cov(col):
-        if results and results[0].get(col):
+        if cov_rows and cov_rows[0].get(col):
             try:
-                items = json.loads(results[0][col])
+                items = json.loads(cov_rows[0][col])
                 # tolerate legacy plain-string entries
                 return [x if isinstance(x, dict) else {'workspace': str(x), 'reason': 'ok'} for x in items]
             except Exception:
