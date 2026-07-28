@@ -1743,7 +1743,7 @@ def get_main_html():
             <!-- Stats Header Bar -->
             <div class="stats-header-bar" id="stats-header-bar">
                 <div class="stats-header-toggle">
-                    <span class="stats-header-toggle-text">Environment Overview and Metrics</span>
+                    <span class="stats-header-toggle-text">Graph Collection — Inventory &amp; Coverage</span>
                     <button class="stats-header-toggle-btn" onclick="toggleStatsHeader()">
                         <span id="stats-toggle-text">Collapse</span>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1808,18 +1808,28 @@ def get_main_html():
                         <li><strong>Security Reports</strong> - Pre-built reports for common security concerns</li>
                     </ul>
 
+                    <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🪪 Account &amp; Identity Governance <span style="font-size: 0.7em; font-weight: 600; color: #10b981; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle;">New</span></h3>
+                    <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 9px; font-size: 0.88em;">
+                        Account-level detections that complement Automatic Identity Management (AIM). These run their own account-wide detection jobs and are surfaced with their own point-in-time coverage:
+                    </p>
+                    <ul style="line-height: 1.5; color: var(--text-secondary); list-style-position: inside; margin-bottom: 13px; font-size: 0.88em;">
+                        <li><strong>Shared to All Users</strong> - Find resources shared with the built-in <em>account users</em> group (i.e. exposed to everyone in the account) and optionally remediate them</li>
+                        <li><strong>Privileged Non-IdP</strong> - Surface Account Admin / Workspace Admin held by identities that aren't IdP-managed (no <code>externalId</code>), or assigned directly to users and service principals — access that bypasses your identity provider's joiner/mover/leaver governance</li>
+                        <li><strong>Denylist Builder</strong> - Rank IdP groups by inactive members to find safe <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">account access denylist</a> candidates, plus an Entra ID dynamic-group rule helper to scale a single denylist entry to thousands of users</li>
+                    </ul>
+
                     <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🚀 Getting Started</h3>
                     
-                    <!-- Environment Overview Instructions -->
+                    <!-- Graph Collection status instructions -->
                     <div style="padding: 13px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.02) 100%); border: 2px solid rgba(16, 185, 129, 0.2); border-radius: 10px; margin-bottom: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                         <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 7px;">
                             <div style="width: 30px; height: 30px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 15px;">
                                 📈
                             </div>
-                            <div style="font-size: 0.9em; font-weight: 700; color: var(--text-primary);">Environment Overview & Metrics</div>
+                            <div style="font-size: 0.9em; font-weight: 700; color: var(--text-primary);">Graph Collection — Inventory &amp; Coverage</div>
                         </div>
                         <p style="color: var(--text-secondary); font-size: 0.82em; line-height: 1.35; margin: 0 0 0 39px;">
-                            The top header bar shows the Databricks environment overview, metrics, and workspace coverage. Use the <strong>Data Collection</strong> dropdown to switch between different collection runs and view historical data.
+                            When you open an <strong>Analysis Tool</strong> or graph <strong>Security Report</strong>, a header bar shows the graph collection's inventory and workspace coverage. Use its <strong>Data Collection</strong> dropdown to switch between collection runs and view historical data. Account &amp; Identity Governance pages run their own account-wide jobs and show their own coverage instead.
                         </p>
                     </div>
                     
@@ -2224,9 +2234,19 @@ def get_main_html():
             // Show the page
             document.getElementById('page-' + page).classList.add('active');
             currentPage = page;
-            
+
             // Update URL hash
             window.location.hash = page;
+
+            // The global stats header reflects the BrickHound graph collection run
+            // (inventory counts + collector workspace coverage, driven by the run
+            // selector). Hide it where it doesn't belong: the home/intro page (no
+            // data context yet) and the account-level detection pages, which have
+            // their own run_id and per-report coverage block — showing the global
+            // bar there only causes two-coverage-widget confusion.
+            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder'];
+            const statsBar = document.getElementById('stats-header-bar');
+            if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
             // Auto-load reports when navigating to report pages
             if (page === 'isolated') loadIsolatedPrincipals();
