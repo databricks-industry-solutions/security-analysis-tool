@@ -3937,8 +3937,28 @@ def get_main_html():
         //   inReport: [names]                      (entities whose data appears),
         //   note:     extra one-line context (optional)
         // }
+        // Collapse a long list of rendered items behind a "Show N more" toggle so
+        // reports covering hundreds of workspaces don't render as a giant wall.
+        function collapsibleList(items, renderItem, limit) {
+            if (!items.length) return '';
+            if (items.length <= limit) return items.map(renderItem).join('');
+            const id = 'covmore-' + (collapsibleList._n = (collapsibleList._n || 0) + 1);
+            const shown = items.slice(0, limit).map(renderItem).join('');
+            const rest = items.slice(limit).map(renderItem).join('');
+            const remaining = items.length - limit;
+            return `${shown}`
+                + `<span id="${id}" style="display:none;">${rest}</span>`
+                + `<a href="javascript:void(0)" onclick="const r=document.getElementById('${id}');`
+                + `const on=r.style.display==='none';r.style.display=on?'inline':'none';`
+                + `this.textContent=on?'Show less':'Show ${remaining} more';" `
+                + `style="display:inline-block; margin:2px 4px; font-size:0.85em; color:var(--accent);">`
+                + `Show ${remaining} more</a>`;
+        }
+
         function renderCoverageBlock(cfg) {
             const icon = cfg.scopeIcon || '🏢';
+            const CHIP_LIMIT = 12;   // chips shown before collapsing the remainder
+            const FAIL_LIMIT = 8;    // failed entries shown before collapsing
             const nameOf = (x) => (x && typeof x === 'object') ? (x.workspace || x.name || '') : x;
             const okChip = (x) => `<span style="display:inline-block; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:2px 8px; margin:2px; font-size:0.85em;">${icon} ${escapeHtml(nameOf(x))}</span>`;
             // Failed entries render the reason inline (not hover-only) so it's fully visible.
@@ -3954,10 +3974,10 @@ def get_main_html():
                 const okLine = `<span style="color:#10b981; font-weight:600;">✓ ${scanned.length} scanned</span>`;
                 const failLine = failed.length ? ` · <span style="color:#ef4444; font-weight:600;">✗ ${failed.length} not scanned</span>` : '';
                 coverageHtml = `<div style="margin-top:6px; font-size:0.9em;">${okLine}${failLine}</div>`
-                    + (failed.length ? `<div style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px;">${failed.map(failItem).join('')}</div>` : '');
+                    + (failed.length ? `<div style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px;">${collapsibleList(failed, failItem, FAIL_LIMIT)}</div>` : '');
             }
             const inReportHtml = inReport.length
-                ? `<div style="margin-top:6px;">${inReport.map(okChip).join('')}</div>`
+                ? `<div style="margin-top:6px;">${collapsibleList(inReport, okChip, CHIP_LIMIT)}</div>`
                 : '<div style="margin-top:6px; color: var(--text-muted); font-size:0.9em;">None</div>';
             const noteHtml = cfg.note ? `<div style="margin-top:8px; font-size:0.78em; color:var(--text-muted);">${escapeHtml(cfg.note)}</div>` : '';
             const dateHtml = cfg.dateTs
@@ -3972,7 +3992,7 @@ def get_main_html():
                     <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 2; min-width: 300px;">
                         <div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">${escapeHtml(cfg.scopeLabel || 'Workspaces')} in this Report</div>
                         ${coverageHtml}
-                        <div style="font-size:0.78em; color:var(--text-muted); margin-top:${coverageHtml ? '10px' : '6px'};">In this report:</div>
+                        <div style="font-size:0.78em; color:var(--text-muted); margin-top:${coverageHtml ? '10px' : '6px'};">In this report${inReport.length ? ` (${inReport.length})` : ''}:</div>
                         ${inReportHtml}
                         ${noteHtml}
                     </div>
