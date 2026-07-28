@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC **Notebook name:** 5. import_dashboard_template_lakeview.      
-# MAGIC **Functionality:** Imports dashboard template from code repo into Lakeview Dashboards section for SAT report.  
+# MAGIC **Notebook name:** 5. import_dashboard_template_lakeview.
+# MAGIC **Functionality:** Imports dashboard template from code repo into Lakeview Dashboards section for SAT report.
 
 # COMMAND ----------
 
@@ -18,7 +18,7 @@
 # COMMAND ----------
 
 dfexist = readWorkspaceConfigFile()
-dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceTempView('all_workspaces') 
+dfexist.filter((dfexist.analysis_enabled==True) & (dfexist.connection_test==True)).createOrReplaceTempView('all_workspaces')
 
 # COMMAND ----------
 
@@ -42,12 +42,12 @@ ws = (workspacedf.collect())[0]
 # COMMAND ----------
 
 from core.dbclient import SatDBClient
-json_.update({'url':'https://' + ws.deployment_url, 'workspace_id': ws.workspace_id,  'clusterid':clusterid, 'cloud_type':cloud_type})  
+json_.update({'url':'https://' + ws.deployment_url, 'workspace_id': ws.workspace_id,  'clusterid':clusterid, 'cloud_type':cloud_type})
 token = ''
 if cloud_type =='azure': #client secret always needed
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
   json_.update({'token':token, 'client_secret': client_secret})
-elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
+elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):
     client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
     json_.update({'token':token, 'client_secret': client_secret})
     mastername = ' '
@@ -61,7 +61,7 @@ else: #lets populate master key for accounts api
     #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
     #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
     json_.update({'token':token, 'mastername':mastername, 'masterpwd':masterpwd})
-    
+
 if (json_['use_mastercreds']) is False:
     tokenscope = json_['workspace_pat_scope']
     tokenkey = f"{json_['workspace_pat_token_prefix']}-{json_['workspace_id']}"
@@ -83,9 +83,9 @@ response = requests.get(
           'https://%s/api/2.0/sql/warehouses' % (DOMAIN),
           headers={'Authorization': 'Bearer %s' % token},
           json=None,
-          timeout=60 
+          timeout=60
         )
-        
+
 if response.status_code == 200:
     resources = json.loads(response.text)
     found = False
@@ -95,8 +95,8 @@ if response.status_code == 200:
             found = True
             break
     else:
-        dbutils.notebook.exit("The configured SQL Warehouse is not found.")            
-          
+        dbutils.notebook.exit("The configured SQL Warehouse is not found.")
+
 
 
 # COMMAND ----------
@@ -114,9 +114,9 @@ file_path = f'{basePath()}/dashboards/SAT_Dashboard_definition.json'
 
 # Strings to search for (covers both forms)
 patterns_to_replace = [
-    "`sat`.security_analysis",  
+    "`sat`.security_analysis",
     "`sat`.`security_analysis`",
-    "sat.security_analysis"    
+    "sat.security_analysis"
 ]
 
 # User-provided schema (from your config)
@@ -163,24 +163,59 @@ print("✅ Dashboard JSON file updated successfully!")
 
 # DBTITLE 1,Check if Dashboard exists first
 import requests
+import time
 
-response = requests.get(
-          'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % token},
-          timeout=60
+exists = False
+dashboard_id = None
+page_token = None
+MAX_RETRIES = 5
+
+while True:
+    params = {}
+    if page_token:
+        params['page_token'] = page_token
+
+    for attempt in range(MAX_RETRIES):
+        response = requests.get(
+            'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
+            headers={'Authorization': 'Bearer %s' % token},
+            params=params,
+            timeout=60
+        )
+        if response.status_code == 429:
+            wait_time = 2 ** attempt
+            print(f"Rate limited. Retrying in {wait_time}s...")
+            time.sleep(wait_time)
+        else:
+            break
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to list dashboards after retries: {response.status_code} {response.text}"
         )
 
-exists = True
-
-if 'Security Analysis Tool [SAT]' in response.text:
     json_response = response.json()
-    filtered_dashboard = [d for d in json_response['dashboards'] if d['display_name'] == 'Security Analysis Tool [SAT]']
+    dashboards = json_response.get('dashboards', [])
 
-    dashboard_id = filtered_dashboard[0]['dashboard_id']
-    print("Dashboard already exists")
-else:
-    exists = False
-    print("Dashboard doesn't exist yet")           
+    for d in dashboards:
+        if d['display_name'] == 'Security Analysis Tool [SAT]':
+            dashboard_id = d['dashboard_id']
+            exists = True
+            print(f"Dashboard already exists (ID: {dashboard_id})")
+            break
+
+    if exists:
+        break
+
+    page_token = json_response.get('next_page_token')
+    if not page_token:
+        break
+
+    # Small delay between pages to avoid hitting rate limits
+    time.sleep(1)
+
+if not exists:
+    print("Dashboard doesn't exist yet")
 
 
 # COMMAND ----------
@@ -225,13 +260,15 @@ response = requests.post(
 
 exists = False
 
-if 'RESOURCE_ALREADY_EXISTS' not in response.text:
+if 'ALREADY_EXISTS' not in response.text:
+    if response.status_code != 200:
+        raise Exception(f"Dashboard creation failed with status {response.status_code}: {response.text}")
     json_response = response.json()
     dashboard_id = json_response['dashboard_id']
     serialized_dashboard = json_response['serialized_dashboard']
 else:
     exists = True
-    print("Lakeview Dashboard already exists")  
+    print("Lakeview Dashboard already exists")
 
 # COMMAND ----------
 
