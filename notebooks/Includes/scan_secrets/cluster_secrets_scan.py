@@ -74,7 +74,7 @@ elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):
   mastername =' ' # this will not be present when using SPs
   masterpwd = ' '  # we still need to send empty user/pwd.
   json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
-else: #lets populate master key for accounts api
+else: # Populate the master key for the Accounts API
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
   json_.update({'token':'dapijedi', 'client_secret': client_secret})
   mastername = ' '
@@ -166,6 +166,7 @@ import subprocess
 import time
 import hashlib
 import logging
+import concurrent.futures
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 
@@ -211,6 +212,9 @@ class Config:
 
     # API settings
     API_SLEEP_SECONDS = 10  # Rate limiting between cluster API calls
+    # Concurrency: clusters are scanned in parallel (config fetch + TruffleHog
+    # scan are independent per cluster). DB inserts stay on the main thread.
+    MAX_WORKERS = 8
 
     # Scanning settings
     CONFIG_FIELD = "spark_env_vars"  # Which cluster config field to scan
@@ -755,6 +759,50 @@ print("✅ Database storage functions defined successfully!")
 
 # COMMAND ----------
 
+def _scan_one_cluster_for_secrets(cluster: Dict[str, Any]) -> Dict[str, Any]:
+    """Fetch a cluster's config and scan its env vars for secrets.
+
+    Pure worker: performs no DB writes, so it is safe to run in a thread pool.
+    Returns a result dict the main thread aggregates and persists. `scanned`
+    is True only when env vars were present and actually scanned (matching the
+    original loop's counting).
+    """
+    cluster_id = cluster.get('cluster_id')
+    cluster_name = cluster.get('cluster_name', 'Unknown')
+    result = {"cluster_id": cluster_id, "cluster_name": cluster_name, "scanned": False, "secrets": []}
+
+    try:
+        cluster_config = get_cluster_config(cluster_id)
+        if not cluster_config:
+            logger.warning(f"Failed to get config for cluster {cluster_id}, skipping")
+            return result
+
+        env_vars = extract_spark_env_vars(cluster_config)
+        if not env_vars:
+            logger.debug(f"No environment variables in cluster {cluster_name}, skipping")
+            return result
+
+        logger.info(f"Scanning {len(env_vars)} environment variables in cluster {cluster_name}")
+        file_path = serialize_env_vars_to_file(cluster_id, cluster_name, env_vars)
+        try:
+            built_in_results, custom_results = scan_cluster_config_for_secrets(file_path)
+            secrets_found = process_trufflehog_output(
+                built_in_results, custom_results, cluster_id, cluster_name, file_path
+            )
+        finally:
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+
+        result["scanned"] = True
+        result["secrets"] = secrets_found or []
+        return result
+    except Exception as e:
+        logger.error(f"Error scanning cluster {cluster_id}: {str(e)}")
+        return result
+
+
 def main_cluster_scanning_workflow():
     """
     Main workflow for scanning cluster configurations for secrets.
@@ -782,53 +830,29 @@ def main_cluster_scanning_workflow():
 
         logger.info(f"📊 Found {total_clusters} clusters to scan")
 
-        # Scan each cluster
-        for idx, cluster in enumerate(clusters, 1):
-            cluster_id = cluster.get('cluster_id')
-            cluster_name = cluster.get('cluster_name', 'Unknown')
-
-            logger.info(f"[{idx}/{total_clusters}] Processing cluster: {cluster_name} ({cluster_id})")
-
-            try:
-                # Get full cluster configuration
-                cluster_config = get_cluster_config(cluster_id)
-
-                if not cluster_config:
-                    logger.warning(f"Failed to get config for cluster {cluster_id}, skipping")
+        # Scan clusters in parallel (config fetch + TruffleHog scan per cluster
+        # are independent). The previous version scanned serially with a fixed
+        # API_SLEEP_SECONDS pause between every cluster — that sleep is gone;
+        # DB inserts are kept on the main thread for Spark safety.
+        max_workers = min(Config.MAX_WORKERS, max(1, total_clusters))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for res in pool.map(_scan_one_cluster_for_secrets, clusters):
+                if not res["scanned"]:
                     continue
-
-                # Extract spark_env_vars
-                env_vars = extract_spark_env_vars(cluster_config)
-
-                if not env_vars:
-                    logger.debug(f"No environment variables in cluster {cluster_name}, skipping")
-                    continue
-
-                logger.info(f"Scanning {len(env_vars)} environment variables in cluster {cluster_name}")
-
-                # Serialize to temp file
-                file_path = serialize_env_vars_to_file(cluster_id, cluster_name, env_vars)
-
-                # Run TruffleHog dual-scan
-                built_in_results, custom_results = scan_cluster_config_for_secrets(file_path)
-
-                # Process results
-                secrets_found = process_trufflehog_output(
-                    built_in_results, custom_results, cluster_id, cluster_name, file_path
-                )
 
                 clusters_scanned += 1
+                secrets_found = res["secrets"]
 
                 if secrets_found:
                     clusters_with_secrets += 1
                     total_secrets_found += len(secrets_found)
 
-                    print(f"  🚨 SECRETS DETECTED in {cluster_name}: {len(secrets_found)} secrets found")
+                    print(f"  🚨 SECRETS DETECTED in {res['cluster_name']}: {len(secrets_found)} secrets found")
 
-                    # Store in database
+                    # Store in database (main thread)
                     cluster_metadata = {
-                        "cluster_id": cluster_id,
-                        "cluster_name": cluster_name,
+                        "cluster_id": res["cluster_id"],
+                        "cluster_name": res["cluster_name"],
                         "config_field": Config.CONFIG_FIELD,
                         "secrets_found": len(secrets_found),
                         "secret_details": secrets_found
@@ -836,24 +860,10 @@ def main_cluster_scanning_workflow():
 
                     try:
                         insert_cluster_secret_scan_results(workspace_id, cluster_metadata, current_run_id)
-                        logger.info(f"Stored {len(secrets_found)} secrets for cluster {cluster_id}")
+                        logger.info(f"Stored {len(secrets_found)} secrets for cluster {res['cluster_id']}")
                     except Exception as insert_error:
-                        logger.error(f"Database insertion failed for cluster {cluster_id}: {str(insert_error)}")
+                        logger.error(f"Database insertion failed for cluster {res['cluster_id']}: {str(insert_error)}")
                         print(f"  ❌ Database insertion failed: {str(insert_error)}")
-
-                # Clean up temp file
-                try:
-                    os.remove(file_path)
-                except:
-                    pass
-
-                # Rate limiting
-                if idx < total_clusters:
-                    time.sleep(Config.API_SLEEP_SECONDS)
-
-            except Exception as e:
-                logger.error(f"Error scanning cluster {cluster_id}: {str(e)}")
-                continue
 
         # Insert tracking row if no secrets found anywhere
         if total_secrets_found == 0:

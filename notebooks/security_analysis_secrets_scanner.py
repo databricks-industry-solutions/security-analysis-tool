@@ -150,7 +150,7 @@ def processTruffleHogScan(wsrow, run_id):
     loggr.info(f"Running TruffleHog notebook scan for workspace: {workspace_id}")
     scan_result = dbutils.notebook.run(
         f"{basePath()}/notebooks/Includes/scan_secrets/notebook_secret_scan",
-        3600,  # 1 hour timeout for secrets scanning
+        14400,  # 4 hour timeout for secrets scanning
         {"json_": json.dumps(ws_json)},
     )
     loggr.info(f"Notebook scan completed for workspace: {workspace_id}")
@@ -192,7 +192,7 @@ def processClusterScan(wsrow, run_id):
     loggr.info(f"Running cluster config scan for workspace: {workspace_id}")
     scan_result = dbutils.notebook.run(
         f"{basePath()}/notebooks/Includes/scan_secrets/cluster_secrets_scan",
-        3600,  # 1 hour timeout for cluster scanning
+        14400,  # 4 hour timeout for cluster scanning
         {"json_": json.dumps(ws_json)},
     )
     loggr.info(f"Cluster scan completed for workspace: {workspace_id}")
@@ -203,7 +203,14 @@ def runTruffleHogScanForAllWorkspaces():
     """
     Run secret scanning (notebooks + clusters) for all configured workspaces.
     Each workspace gets a shared run_id for correlation between notebook and cluster findings.
+
+    Workspaces are scanned concurrently, and within each workspace the notebook
+    and cluster scans run concurrently. Degree of cross-workspace parallelism is
+    controlled by `secrets_max_parallel_workspaces` (default 4). A scan failure
+    in one workspace is logged and does not stop the others.
     """
+    import concurrent.futures
+
     loggr.info("Starting secret scanning for all configured workspaces")
 
     scan_workspaces = workspaces
@@ -214,42 +221,53 @@ def runTruffleHogScanForAllWorkspaces():
 
     loggr.info(f"Running secret scans on {len(scan_workspaces)} workspace(s)")
 
-    # Run secret scanning (sequential for now to avoid overwhelming the system)
-    for ws in scan_workspaces:
-        try:
-            # Generate shared run_id for this workspace
-            shared_run_id = generate_shared_run_id()
-            loggr.info(f"Starting scans for workspace: {ws.workspace_id} (run_id: {shared_run_id})")
-            print(f"🔍 Starting scans for workspace: {ws.workspace_id} (run_id: {shared_run_id})")
+    # Pre-allocate a shared run_id per workspace sequentially on the main thread.
+    # generate_shared_run_id() does INSERT + SELECT max(runID), which would race
+    # under concurrency (two workspaces could read the same max), so it must run
+    # before the parallel fan-out.
+    ws_run_ids = [(ws, generate_shared_run_id()) for ws in scan_workspaces]
 
-            # Scan notebooks
+    def scan_one_workspace(ws, shared_run_id):
+        loggr.info(f"Starting scans for workspace: {ws.workspace_id} (run_id: {shared_run_id})")
+        print(f"🔍 Starting scans for workspace: {ws.workspace_id} (run_id: {shared_run_id})")
+
+        def notebook_scan():
             try:
-                loggr.info(f"Starting notebook scan for workspace: {ws.workspace_id}")
-                notebook_result = processTruffleHogScan(ws, shared_run_id)
+                processTruffleHogScan(ws, shared_run_id)
                 loggr.info(f"Notebook scan completed for workspace: {ws.workspace_id}")
-                print(f"  ✅ Notebook scan completed")
+                print(f"  ✅ Notebook scan completed for {ws.workspace_id}")
             except Exception as e:
                 loggr.error(f"Notebook scan failed for workspace {ws.workspace_id}: {str(e)}")
-                print(f"  ❌ Notebook scan failed: {str(e)}")
-                # Continue to cluster scan even if notebook scan fails
+                print(f"  ❌ Notebook scan failed for {ws.workspace_id}: {str(e)}")
 
-            # Scan clusters
+        def cluster_scan():
             try:
-                loggr.info(f"Starting cluster scan for workspace: {ws.workspace_id}")
-                cluster_result = processClusterScan(ws, shared_run_id)
+                processClusterScan(ws, shared_run_id)
                 loggr.info(f"Cluster scan completed for workspace: {ws.workspace_id}")
-                print(f"  ✅ Cluster scan completed")
+                print(f"  ✅ Cluster scan completed for {ws.workspace_id}")
             except Exception as e:
                 loggr.error(f"Cluster scan failed for workspace {ws.workspace_id}: {str(e)}")
-                print(f"  ❌ Cluster scan failed: {str(e)}")
-                # Continue to next workspace
+                print(f"  ❌ Cluster scan failed for {ws.workspace_id}: {str(e)}")
 
-            print(f"✅ All scans completed for workspace: {ws.workspace_id}")
+        # Notebook and cluster scans are independent — run them concurrently.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as inner:
+            for f in [inner.submit(notebook_scan), inner.submit(cluster_scan)]:
+                f.result()
+        print(f"✅ All scans completed for workspace: {ws.workspace_id}")
 
-        except Exception as e:
-            loggr.error(f"Fatal error scanning workspace {ws.workspace_id}: {str(e)}")
-            print(f"❌ Fatal error for workspace: {ws.workspace_id}")
-            continue
+    max_parallel = max(1, int(json_.get("secrets_max_parallel_workspaces", 4)))
+    max_parallel = min(max_parallel, len(ws_run_ids))
+    loggr.info(f"Scanning up to {max_parallel} workspace(s) in parallel")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as pool:
+        futures = {pool.submit(scan_one_workspace, ws, rid): ws for ws, rid in ws_run_ids}
+        for f in concurrent.futures.as_completed(futures):
+            ws = futures[f]
+            try:
+                f.result()
+            except Exception as e:
+                loggr.error(f"Fatal error scanning workspace {ws.workspace_id}: {str(e)}")
+                print(f"❌ Fatal error for workspace: {ws.workspace_id}: {str(e)}")
 
 
 runTruffleHogScanForAllWorkspaces()

@@ -21,3 +21,5 @@ Any issues or bugs found should be submitted as **GitHub Issues** on the project
 ## Contributing
 
 We happily welcome contributions. We accept PRs pursuant to a CLA.
+
+Before you start, see [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution process and project structure. Contributors using an AI coding agent (Claude Code or otherwise) should read [AGENTS.md](AGENTS.md) — the tool-agnostic guide to repository conventions and guardrails — with [CLAUDE.md](CLAUDE.md) as the detailed source of truth.

@@ -15,7 +15,7 @@ def test_workspace(get_db_client):
     jsonstr = get_db_client 
     workspaceClient = WorkspaceClient(jsonstr)
     notebookList = workspaceClient.get_all_notebooks()
-    notebookListspecific = workspaceClient.get_list_notebooks('/Repos/ramdas.murali+tzar@databricks.com/CSE/gold/workspace_analysis/dev')
+    notebookListspecific = workspaceClient.get_list_notebooks('/Repos/user@example.com/CSE/gold/workspace_analysis/dev')
     print(notebookList)
     print(notebookListspecific)
 

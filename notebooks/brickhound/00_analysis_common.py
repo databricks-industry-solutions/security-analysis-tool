@@ -102,7 +102,7 @@ except ImportError as e:
 print("="*60 + "\n")
 
 def format_principal_name(display_name, email, name, principal_id=None):
-    """Format principal name with identifier in parentheses like 'Arun Pamulapati (arun.pamulapati@databricks.com)'"""
+    """Format principal name with identifier in parentheses like 'Jane Doe (jane.doe@example.com)'"""
     display = display_name or name or email or principal_id or 'Unknown'
     identifier = email or name or principal_id
     if identifier and display.lower() != identifier.lower():
