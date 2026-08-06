@@ -231,6 +231,9 @@ def runTruffleHogScanForAllWorkspaces():
         loggr.info(f"Starting scans for workspace: {ws.workspace_id} (run_id: {shared_run_id})")
         print(f"🔍 Starting scans for workspace: {ws.workspace_id} (run_id: {shared_run_id})")
 
+        # Scan failures for this workspace, surfaced in the final summary.
+        local_failures = []
+
         def notebook_scan():
             try:
                 processTruffleHogScan(ws, shared_run_id)
@@ -239,6 +242,7 @@ def runTruffleHogScanForAllWorkspaces():
             except Exception as e:
                 loggr.error(f"Notebook scan failed for workspace {ws.workspace_id}: {str(e)}")
                 print(f"  ❌ Notebook scan failed for {ws.workspace_id}: {str(e)}")
+                local_failures.append(f"{ws.workspace_id}/notebooks: {str(e)}")
 
         def cluster_scan():
             try:
@@ -248,26 +252,51 @@ def runTruffleHogScanForAllWorkspaces():
             except Exception as e:
                 loggr.error(f"Cluster scan failed for workspace {ws.workspace_id}: {str(e)}")
                 print(f"  ❌ Cluster scan failed for {ws.workspace_id}: {str(e)}")
+                local_failures.append(f"{ws.workspace_id}/clusters: {str(e)}")
 
         # Notebook and cluster scans are independent — run them concurrently.
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as inner:
             for f in [inner.submit(notebook_scan), inner.submit(cluster_scan)]:
                 f.result()
-        print(f"✅ All scans completed for workspace: {ws.workspace_id}")
+        if local_failures:
+            print(f"⚠️  Scans finished WITH FAILURES for workspace: {ws.workspace_id}")
+        else:
+            print(f"✅ All scans completed for workspace: {ws.workspace_id}")
+        return local_failures
 
     max_parallel = max(1, int(json_.get("secrets_max_parallel_workspaces", 4)))
     max_parallel = min(max_parallel, len(ws_run_ids))
     loggr.info(f"Scanning up to {max_parallel} workspace(s) in parallel")
 
+    # One workspace failing must not stop the others, but the job must not report
+    # success while the results table holds an incomplete picture.
+    failures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as pool:
         futures = {pool.submit(scan_one_workspace, ws, rid): ws for ws, rid in ws_run_ids}
         for f in concurrent.futures.as_completed(futures):
             ws = futures[f]
             try:
-                f.result()
+                failures.extend(f.result() or [])
             except Exception as e:
                 loggr.error(f"Fatal error scanning workspace {ws.workspace_id}: {str(e)}")
                 print(f"❌ Fatal error for workspace: {ws.workspace_id}: {str(e)}")
+                failures.append(f"{ws.workspace_id}: {str(e)}")
+
+    print()
+    print("=" * 60)
+    if failures:
+        print(f"❌ Secret scanning completed with {len(failures)} failure(s):")
+        for failure in failures:
+            print(f"   • {failure}")
+        message = (
+            f"Secret scanning failed for {len(failures)} workspace scan(s). "
+            f"Results in the table are INCOMPLETE — do not treat the totals as a "
+            f"clean bill of health. See the failures listed above."
+        )
+        loggr.error(message)
+        raise RuntimeError(message)
+
+    print(f"✅ Secret scanning completed successfully for {len(ws_run_ids)} workspace(s)")
 
 
 runTruffleHogScanForAllWorkspaces()

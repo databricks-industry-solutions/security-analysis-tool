@@ -456,9 +456,53 @@ def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str,
 
     return None, 429
 
+def _get_with_retry(url: str, what: str) -> Optional[requests.Response]:
+    """
+    Make a GET request, retrying with exponential backoff on HTTP 429.
+
+    Notebook export and get-status are issued concurrently across MAX_WORKERS
+    threads, which can trip workspace rate limits. Retrying keeps a throttled
+    notebook in the scan instead of dropping it.
+
+    Args:
+        url (str): URL to request
+        what (str): Short description of the operation, used in log messages
+
+    Returns:
+        Optional[requests.Response]: Response, or None if the request never
+            reached the server
+    """
+    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error during {what}: {str(e)}")
+            return None
+
+        if response.status_code != 429:
+            return response
+
+        if attempt == max_attempts - 1:
+            logger.warning(f"Rate limit persisted after {max_attempts} attempts during {what}")
+            return response
+
+        backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
+        logger.warning(
+            f"Rate limit hit during {what}. Backing off {backoff}s "
+            f"(attempt {attempt + 1}/{max_attempts})"
+        )
+        time.sleep(backoff)
+
+    return None
+
+
 def check_notebook_status(notebook_path: str) -> int:
     """
     Check if a notebook exists and is accessible.
+
+    Retries on HTTP 429 so a throttled response doesn't drop the notebook.
 
     Args:
         notebook_path (str): Path to the notebook
@@ -467,14 +511,10 @@ def check_notebook_status(notebook_path: str) -> int:
         int: HTTP status code (200=accessible, 403=no permission, 404=not found)
     """
     check_url = f"{base_url}/api/2.0/workspace/get-status?path={notebook_path}"
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
-
-    try:
-        response = requests.get(check_url, headers=headers, timeout=30)
-        return response.status_code
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error checking notebook status for {notebook_path}: {str(e)}")
-        return 500  # Internal server error
+    response = _get_with_retry(check_url, f"get-status for {notebook_path}")
+    if response is None:
+        return 500  # treated as an unexpected status by callers
+    return response.status_code
 
 
 def _get_object_metadata(path: str) -> Optional[Dict[str, Any]]:
@@ -584,20 +624,24 @@ def get_fuse_path(workspace_path: str) -> Optional[str]:
 def export_notebook_content(notebook_path: str) -> Optional[Dict[str, Any]]:
     """
     Export notebook content from Databricks workspace.
-    
+
+    Retries on HTTP 429 so a throttled export doesn't silently drop the
+    notebook from the scan.
+
     Args:
         notebook_path (str): Path to the notebook
-        
+
     Returns:
         Optional[Dict[str, Any]]: Notebook export response or None if error
     """
+    url = f"{base_url}/api/2.0/workspace/export?path={notebook_path}"
+    response = _get_with_retry(url, f"export of {notebook_path}")
+    if response is None:
+        return None
     try:
-        headers = {"Authorization": f"Bearer {token}","User-Agent": "databricks-sat/0.1.0"}
-        url = f"{base_url}/api/2.0/workspace/export?path={notebook_path}"
-        response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
+    except (requests.exceptions.RequestException, ValueError) as e:
         logger.error(f"Error exporting notebook content for {notebook_path}: {str(e)}")
         return None
 
@@ -766,67 +810,106 @@ print("✅ Utility functions defined successfully!")
 
 # COMMAND ----------
 
+# Table setup runs once per scan rather than once per finding: it issues a
+# CREATE TABLE IF NOT EXISTS plus one ALTER TABLE per column for comments.
+_results_table_ready = False
+
+# Findings attempted vs. actually persisted, used to detect a partial write.
+insert_stats = {"attempted": 0, "written": 0, "failed": 0}
+
+
+def ensure_results_table() -> None:
+    """Create and annotate the results table once per scan."""
+    global _results_table_ready
+    if _results_table_ready:
+        return
+    create_notebooks_secret_scan_results_table()
+    _results_table_ready = True
+
+
+def _sql_str(value: Any) -> str:
+    """Render a value as a single-quoted SQL literal, escaping embedded quotes."""
+    return "'" + str(value or "").replace("'", "''") + "'"
+
+
 def insert_secret_scan_results(workspace_id: str, notebook_metadata: Dict[str, Any], run_id: int) -> None:
     """
-    Insert secret scan results into the notebooks_secret_scan_results table.
-    Only inserts records when secrets are actually found to avoid database bloat.
+    Insert secret scan results for a single notebook.
 
     Args:
         workspace_id (str): Workspace ID being scanned
         notebook_metadata (Dict[str, Any]): Notebook metadata with secret details
         run_id (int): SAT run ID for tracking
     """
+    insert_secret_scan_results_batch(workspace_id, [notebook_metadata], run_id)
+
+
+def insert_secret_scan_results_batch(workspace_id: str,
+                                     notebook_metadatas: List[Dict[str, Any]],
+                                     run_id: int) -> None:
+    """
+    Insert all findings for a batch of notebooks in a single statement.
+
+    Only notebooks with secrets are persisted, to avoid table bloat. Insert
+    failures are logged and counted in `insert_stats` rather than raised, so a
+    failed batch does not abort the scan; the caller checks those counters to
+    report an incomplete run.
+
+    Args:
+        workspace_id (str): Workspace ID being scanned
+        notebook_metadatas (List[Dict[str, Any]]): Notebook metadata with secret details
+        run_id (int): SAT run ID for tracking
+    """
     import time
 
-    try:
-        # Create the table if it doesn't exist
-        create_notebooks_secret_scan_results_table()
-        logger.debug(f"Inserting secret scan results for workspace_id: {workspace_id}")
-        logger.debug(f"Notebook metadata: {json.dumps(notebook_metadata, indent=2)}")
-        scan_time = time.time()
+    rows: List[str] = []
+    scan_time = time.time()
+
+    for notebook_metadata in notebook_metadatas:
+        if notebook_metadata.get("secrets_found", 0) <= 0:
+            continue
+
         notebook_id = notebook_metadata.get("object_id", "")
         notebook_path = notebook_metadata.get("path", "")
         notebook_name = notebook_metadata.get("name", "")
         secrets_found = notebook_metadata.get("secrets_found", 0)
 
-        if secrets_found > 0:
-            # Only insert records when secrets are found
-            secret_details = notebook_metadata.get("secret_details", [])
+        for secret in notebook_metadata.get("secret_details", []):
+            rows.append(
+                "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, cast({} as timestamp))".format(
+                    _sql_str(workspace_id),
+                    _sql_str(notebook_id),
+                    _sql_str(notebook_path),
+                    _sql_str(notebook_name),
+                    _sql_str(secret.get("DetectorName", "Unknown")),
+                    _sql_str(secret.get("Raw_SHA", "")),
+                    _sql_str(secret.get("SourceFile", "")),
+                    "true" if secret.get("Verified", False) else "false",
+                    int(secrets_found),
+                    int(run_id),
+                    scan_time,
+                )
+            )
 
-            for secret in secret_details:
-                detector_name = secret.get("DetectorName", "Unknown")
-                secret_sha256 = secret.get("Raw_SHA", "")
-                source_file = secret.get("SourceFile", "")
-                verified = secret.get("Verified", False)
+    if not rows:
+        return
 
-                # Escape single quotes in string values for SQL (replace ' with '')
-                workspace_id_escaped = workspace_id.replace("'", "''")
-                notebook_id_escaped = notebook_id.replace("'", "''")
-                notebook_path_escaped = notebook_path.replace("'", "''")
-                notebook_name_escaped = notebook_name.replace("'", "''")
-                detector_name_escaped = detector_name.replace("'", "''")
-                secret_sha256_escaped = secret_sha256.replace("'", "''")
-                source_file_escaped = source_file.replace("'", "''")
-
-                # Insert individual secret record
-                sql = f"""
-                INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
-                (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
-                 secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-                VALUES ('{workspace_id_escaped}', '{notebook_id_escaped}', '{notebook_path_escaped}', '{notebook_name_escaped}',
-                        '{detector_name_escaped}', '{secret_sha256_escaped}', '{source_file_escaped}', {verified},
-                        {secrets_found}, {run_id}, cast({scan_time} as timestamp))
-                """
-
-                spark.sql(sql)
-                logger.debug(f"Inserted secret scan result for notebook {notebook_id}, detector: {detector_name}")
-        else:
-            # Don't insert anything for clean notebooks to avoid database bloat
-            logger.debug(f"No secrets found in notebook {notebook_id}, skipping database insert")
-            
+    insert_stats["attempted"] += len(rows)
+    try:
+        ensure_results_table()
+        spark.sql(
+            f"""
+            INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
+            (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
+             secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
+            VALUES {", ".join(rows)}
+            """
+        )
+        insert_stats["written"] += len(rows)
+        logger.info(f"Persisted {len(rows)} secret finding(s)")
     except Exception as e:
-        logger.error(f"Failed to insert secret scan results for notebook {notebook_id}: {str(e)}")
-        # Don't raise exception to avoid stopping the scan process
+        insert_stats["failed"] += len(rows)
+        logger.error(f"Failed to insert {len(rows)} secret scan result(s): {str(e)}")
 
 def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     """
@@ -1103,7 +1186,7 @@ def _scan_and_record_chunk(chunk: List[Dict[str, Any]],
             key = os.path.basename(finding.get("SourceFile", ""))
             findings_by_notebook.setdefault(key, []).append(finding)
 
-        # Phase 4: set counts, surface alerts, persist.
+        # Phase 4: set counts and surface alerts.
         for key, metadata in basename_to_meta.items():
             secret_results = findings_by_notebook.get(key, [])
             if secret_results:
@@ -1113,8 +1196,12 @@ def _scan_and_record_chunk(chunk: List[Dict[str, Any]],
                 print(json.dumps(secret_results, indent=2))
             else:
                 metadata["secrets_found"] = 0
-            if run_id is not None and workspace_id is not None:
-                insert_secret_scan_results(workspace_id, metadata, run_id)
+
+        # Phase 5: persist the whole chunk in one statement.
+        if run_id is not None and workspace_id is not None:
+            insert_secret_scan_results_batch(
+                workspace_id, list(basename_to_meta.values()), run_id
+            )
     finally:
         shutil.rmtree(scan_dir, ignore_errors=True)
 
@@ -1222,10 +1309,13 @@ def main_scanning_workflow():
     
     # Initialize tracking variables
     results_list = []
-    total_notebooks_processed = 0
+    total_notebooks_processed = 0   # notebooks actually read and scanned
+    total_notebooks_discovered = 0  # notebooks discovery returned
     total_secrets_found = 0
     notebooks_with_secrets = 0
-    
+
+    insert_stats.update({"attempted": 0, "written": 0, "failed": 0})
+
     # Setup API request parameters
     url = f"{base_url}/api/2.0/search-midtier/unified-search"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
@@ -1286,7 +1376,8 @@ def main_scanning_workflow():
                 print(f"📂 workspace/list found {len(batch)} notebooks/files to scan")
                 _process_notebook_batch(batch, results_list, Config.RESULTS_LOG_FILE,
                                         current_run_id, workspace_id)
-                total_notebooks_processed = len(batch)
+                total_notebooks_discovered = len(batch)
+                total_notebooks_processed = len(results_list)
                 notebooks_with_secrets = sum(
                     1 for n in results_list if n.get("secrets_found", 0) > 0
                 )
@@ -1299,22 +1390,33 @@ def main_scanning_workflow():
                 logger.warning(f"Failed to get response for page {page_number}")
                 break
             
-            # Process response and scan notebooks
+            # Record the pre-page length so per-page counters cover exactly the
+            # notebooks this page contributed. Search can return more notebooks
+            # than can be materialized (permissions or export failure), so
+            # slicing by the search count would recount the previous page.
             page_start_time = time.time()
-            next_page_token = process_search_response(response, results_list, Config.RESULTS_LOG_FILE, 
+            results_before_page = len(results_list)
+            next_page_token = process_search_response(response, results_list, Config.RESULTS_LOG_FILE,
                                                      current_run_id, workspace_id)
             page_end_time = time.time()
-            
-            # Update counters
-            page_notebooks = len(response.get("results", []))
+
+            page_window = results_list[results_before_page:]
+            page_notebooks = len(page_window)
+            page_discovered = len(response.get("results", []))
             total_notebooks_processed += page_notebooks
-            
+            total_notebooks_discovered += page_discovered
+
             # Count secrets found in this page
-            page_secrets = sum(1 for notebook in results_list[-page_notebooks:] if notebook.get("secrets_found", 0) > 0)
-            page_total_secrets = sum(notebook.get("secrets_found", 0) for notebook in results_list[-page_notebooks:])
+            page_secrets = sum(1 for notebook in page_window if notebook.get("secrets_found", 0) > 0)
+            page_total_secrets = sum(notebook.get("secrets_found", 0) for notebook in page_window)
             notebooks_with_secrets += page_secrets
             total_secrets_found += page_total_secrets
-            
+
+            if page_discovered > page_notebooks:
+                print(f"   ⚠️  Page {page_number}: {page_discovered - page_notebooks} of "
+                      f"{page_discovered} notebook(s) could not be read (permissions or "
+                      f"export failure) and were NOT scanned")
+
             # Only show page summary if secrets were found or if it's a significant milestone
             if page_total_secrets > 0:
                 print(f"   ⚠️  Page {page_number}: {page_notebooks} notebooks processed, {page_total_secrets} secrets found in {page_secrets} notebook(s)")
@@ -1332,16 +1434,18 @@ def main_scanning_workflow():
         # Final summary
         print("🎉 Secret Scanning Completed!")
         print("=" * 60)
-        print(f"📊 Total notebooks processed: {total_notebooks_processed}")
+        print(f"📊 Notebooks discovered: {total_notebooks_discovered}")
+        print(f"📊 Notebooks scanned: {total_notebooks_processed}")
         print(f"🔍 Notebooks with secrets: {notebooks_with_secrets}")
         print(f"🚨 Total secrets detected: {total_secrets_found}")
-        
+        print(f"💾 Findings written to table: {insert_stats['written']} of {insert_stats['attempted']}")
+
         if notebooks_with_secrets > 0:
             print(f"⚠️  Security Alert: {notebooks_with_secrets} notebook(s) contain potential secrets!")
             print("   Please review the detailed results above and take appropriate action.")
         else:
             print("✅ No secrets detected in any notebooks. Great job!")
-        
+
         print(f"📝 Detailed results logged to: {Config.RESULTS_LOG_FILE}")
 
         # --- Insert a row if no secrets were found in any notebooks
@@ -1349,15 +1453,37 @@ def main_scanning_workflow():
             print("✅ No secrets found in any notebooks. Inserting a single tracking row for this run.")
             logger.info("No secrets found in any notebooks. Inserting a single row to track this run.")
             insert_no_secrets_tracking_row(workspace_id, current_run_id)
-        
+
+        # Fail loudly on a partial scan: reported totals must not look clean
+        # when notebooks went unscanned or findings failed to persist.
+        unscanned = total_notebooks_discovered - total_notebooks_processed
+        unwritten = insert_stats["attempted"] - insert_stats["written"]
+        if unscanned > 0 or unwritten > 0:
+            problems = []
+            if unscanned > 0:
+                problems.append(
+                    f"{unscanned} of {total_notebooks_discovered} discovered notebook(s) "
+                    f"were not scanned (permissions, throttling, or export failure)"
+                )
+            if unwritten > 0:
+                problems.append(
+                    f"{unwritten} of {insert_stats['attempted']} finding(s) failed to persist"
+                )
+            message = "INCOMPLETE SCAN for workspace " + f"{workspace_id}: " + "; ".join(problems)
+            print(f"❌ {message}")
+            logger.error(message)
+            raise RuntimeError(message)
+
         # Return summary statistics
         return {
             "total_notebooks": total_notebooks_processed,
+            "notebooks_discovered": total_notebooks_discovered,
             "notebooks_with_secrets": notebooks_with_secrets,
             "total_secrets": total_secrets_found,
+            "findings_written": insert_stats["written"],
             "results": results_list
         }
-        
+
     except KeyboardInterrupt:
         print("\n⏹️  Scanning interrupted by user")
         logger.info("Scanning workflow interrupted by user")
@@ -1365,7 +1491,7 @@ def main_scanning_workflow():
     except Exception as e:
         logger.error(f"Unexpected error in scanning workflow: {str(e)}")
         print(f"❌ Error occurred during scanning: {str(e)}")
-        return None
+        raise
 
 # Execute the scanning workflow
 if __name__ == "__main__":
@@ -1381,6 +1507,10 @@ if __name__ == "__main__":
 # COMMAND ----------
 
 # Results Analysis and Cleanup
+
+# Bound unconditionally: main_scanning_workflow() returns None on an interrupted
+# scan, and the cleanup cell below reads this outside the guard.
+notebooks_by_secrets = []
 
 # Display scan results summary if available
 if 'scan_results' in locals() and scan_results:
