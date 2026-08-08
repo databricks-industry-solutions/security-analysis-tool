@@ -1,0 +1,63 @@
+[project]
+name = "security-analysis-tool"
+description = "Monitor the Security Health of Databricks Workspaces"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+]
+dynamic = ["version"]
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# --- Ruff (linter + formatter) ---
+[tool.ruff]
+target-version = "py38"
+line-length = 120
+src = ["src/securityanalysistoolproject", "dabs"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501", # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "clientpkgs", "sat"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# --- Pytest ---
+[tool.pytest.ini_options]
+testpaths = ["src/securityanalysistoolproject/tests"]
+pythonpath = ["src/securityanalysistoolproject"]
+addopts = "-v --tb=short"
+
+# --- Coverage ---
+[tool.coverage.run]
+source = ["src/securityanalysistoolproject"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+# --- Mypy (optional type checking) ---
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
