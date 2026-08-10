@@ -19,6 +19,10 @@
 
 secret_scopes = dbutils.secrets.listScopes()
 
+# Resolve the configured scope and key map from json_ (set by initialize.py).
+# Falls back to defaults for standalone / manual notebook runs.
+_sat_scope = json_.get("secret_scope", json_.get("master_name_scope", "sat_scope"))
+_sat_keys  = json_.get("secret_keys", DEFAULT_SECRET_KEYS)
 
 # COMMAND ----------
 
@@ -28,16 +32,16 @@ secret_scopes = dbutils.secrets.listScopes()
 # COMMAND ----------
 
 found = False
-for secret_scope in secret_scopes:
-   
-   if secret_scope.name == json_['master_name_scope']:
-      print('Your SAT configuration has the required scope name')
-      found=True
+for _scope_entry in secret_scopes:
+   if _scope_entry.name == _sat_scope:
+      print(f'Your SAT configuration has the required scope: {_sat_scope}')
+      found = True
       break
 if not found:
-   dbutils.notebook.exit(f'Your SAT configuration is missing required scope {json_["master_name_scope"]}, please review setup instructions')
-
-      
+   dbutils.notebook.exit(
+       f'Your SAT configuration is missing required scope "{_sat_scope}". '
+       f'Please review setup instructions or set the secret_scope job parameter.'
+   )
 
 # COMMAND ----------
 
@@ -55,50 +59,31 @@ cloud_type = getCloudType(hostname)
 
 # MAGIC %md
 # MAGIC ### Let us check if there are required configs in the SAT scope
+# MAGIC
+# MAGIC For 0.9+ installs most values are delivered as job parameters (not secrets),
+# MAGIC so this check validates that **at minimum** the credential secret is readable.
+# MAGIC Non-secret values (account_id, client_id, etc.) are verified via json_ which
+# MAGIC was already populated by initialize.py — a missing param or scope value would
+# MAGIC have caused initialize.py to fail before reaching this point.
 
 # COMMAND ----------
 
+# Only client_secret is required to be in the scope for all clouds.
+_missing = []
+_client_secret_key = _sat_keys.get("client_secret", "client-secret")
+try:
+   dbutils.secrets.get(scope=_sat_scope, key=_client_secret_key)
+except Exception as e:
+   _missing.append(f"  - client_secret (scope='{_sat_scope}', key='{_client_secret_key}'): {e}")
 
-if cloud_type == "aws":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration is has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
-
-# COMMAND ----------
-
-if cloud_type == "azure":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='subscription-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='tenant-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
-
-# COMMAND ----------
-
-if cloud_type == "gcp":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration is has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')
+if _missing:
+   dbutils.notebook.exit(
+       "Your SAT configuration is missing required secret(s):\n"
+       + "\n".join(_missing)
+       + "\nPlease review setup instructions."
+   )
+else:
+   print(f"SAT scope '{_sat_scope}' has the required credential secret.")
 
 # COMMAND ----------
 

@@ -62,15 +62,16 @@ if not found:
 
 
 try:
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-   print("Your SAT configuration is has required secret names")
+   assert json_.get('account_id'), "account_id missing"
+   assert json_.get('use_sp_auth') or json_.get('client_id'), "client_id/use_sp_auth missing"
+   _sat_scope = json_.get("secret_scope", json_['master_name_scope'])
+   _sat_keys  = json_.get("secret_keys", DEFAULT_SECRET_KEYS)
+   dbutils.secrets.get(scope=_sat_scope, key=_sat_keys.get("client_secret", "client-secret"))
+   assert json_.get('sql_warehouse_id'), "sql_warehouse_id missing"
+   assert json_.get('analysis_schema_name'), "analysis_schema_name missing"
+   print("Your SAT configuration has all required values")
 except Exception as e:
-   dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
+   dbutils.notebook.exit(f'Your SAT configuration is missing a required value, please review setup instructions: {e}')
 
 # COMMAND ----------
 
@@ -79,12 +80,23 @@ except Exception as e:
 
 # COMMAND ----------
 
-sat_scope = json_['master_name_scope']
+sat_scope = json_.get("secret_scope", json_['master_name_scope'])
+_sat_keys = json_.get("secret_keys", DEFAULT_SECRET_KEYS)
 
+print(f"Secret scope: {sat_scope}")
+print("Keys present in scope:")
 for key in dbutils.secrets.list(sat_scope):
-    print(key.key)
-    secretvalue = dbutils.secrets.get(scope=sat_scope, key=key.key)
-    print(secretvalue)
+    try:
+        val = dbutils.secrets.get(scope=sat_scope, key=key.key)
+        print(f"  {key.key}: {'[set, {0} chars]'.format(len(val)) if val else '[empty]'}")
+    except Exception as e:
+        print(f"  {key.key}: [error reading: {e}]")
+
+print(f"\nConfig values (from job parameters / scope fallback):")
+for field in ("account_id", "client_id", "sql_warehouse_id", "analysis_schema_name", "use_sp_auth"):
+    v = json_.get(field, "<not set>")
+    display_v = f"{str(v)[:4]}...{str(v)[-4:]}" if v and len(str(v)) > 8 else v
+    print(f"  {field}: {display_v}")
 
 
 # COMMAND ----------
@@ -128,7 +140,9 @@ def getGCPTokenwithOAuth(source, baccount, client_id, client_secret):
 
 # COMMAND ----------
 
-token = getGCPTokenwithOAuth(workspaceUrl,False, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
+token = getGCPTokenwithOAuth(workspaceUrl, False,
+    json_.get("client_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("client_id", "client-id")),
+    dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("client_secret", "client-secret")))
 
 print("Workspace token obtained" if token else "Workspace token FAILED")
 
@@ -169,7 +183,11 @@ print(response.json())
 
 # COMMAND ----------
 
-access_token = getGCPTokenwithOAuth(dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id'),True, dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id'), dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret'))
+access_token = getGCPTokenwithOAuth(
+    json_.get("account_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("account_id", "account-console-id")),
+    True,
+    json_.get("client_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("client_id", "client-id")),
+    dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("client_secret", "client-secret")))
 
 print("Account token obtained" if access_token else "Account token FAILED")
 
@@ -185,7 +203,7 @@ print("Account token obtained" if access_token else "Account token FAILED")
 
 import requests
 
-DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=sat_scope, key="account-console-id")
+DATABRICKS_ACCOUNT_ID = json_.get("account_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("account_id", "account-console-id"))
 url = f'https://accounts.gcp.databricks.com/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
 
 ## Note: The access token must be generated for a Service Principal that has account admin privileges to run this command.  

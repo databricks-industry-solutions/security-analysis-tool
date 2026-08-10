@@ -11,7 +11,7 @@ config:
 
 # Environment variables
 # REQUIRED: Replace placeholders with actual values from your SAT configuration
-# Example: Use full catalog and schema name exaple if your SAT schema is "security_catalog.security_analysis", use:
+# Example: Use full catalog and schema name, e.g. if your SAT schema is "security_catalog.security_analysis", use:
 # BRICKHOUND_SCHEMA: "security_catalog.security_analysis"
 env:
   - name: "PORT"
@@ -19,7 +19,7 @@ env:
   - name: "BRICKHOUND_SCHEMA"
     valueFrom: "analysis_schema_name"
   - name: "WAREHOUSE_ID"
-    valueFrom: "sql-warehouse-id"
+    valueFrom: "warehouse"
 
 # Resource requirements
 resources:

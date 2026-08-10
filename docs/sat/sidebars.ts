@@ -60,6 +60,7 @@ const sidebars = {
             'installation/terraform/gcp',
           ],
         },
+        'installation/secret-scope',
       ],
     },
     'upgrade',

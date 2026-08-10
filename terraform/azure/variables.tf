@@ -29,6 +29,24 @@ variable "secret_scope_name" {
   default     = "sat_scope"
 }
 
+variable "manage_secrets" {
+  type        = bool
+  description = "When true (default), SAT creates the secret scope and writes the client_secret. Set to false to bring a pre-existing scope."
+  default     = true
+}
+
+variable "secret_key_names" {
+  type        = map(string)
+  description = "Override map from logical key name to physical secret key name."
+  default     = {}
+}
+
+variable "app_config_scope_name" {
+  type        = string
+  description = "Secret scope for BrickHound app valueFrom bindings. Defaults to secret_scope_name."
+  default     = ""
+}
+
 variable "analysis_schema_name" {
   type        = string
   description = "Name of the schema to be used for analysis"
@@ -107,4 +125,9 @@ variable "job_schedule_timezone_id" {
     condition     = can(regex("^([A-Za-z]+(/[A-Za-z0-9_+\\-]+)+|UTC)$", var.job_schedule_timezone_id))
     error_message = "Must be a valid IANA time zone ID (e.g. America/New_York, Etc/UTC) or UTC."
   }
+}
+variable "scope_provided_keys" {
+  type        = list(string)
+  description = "Logical key names pre-populated in the user's existing scope. Mirrors the DABS scope_contains checkbox. SAT will not write these keys and the app binding uses the user's scope directly."
+  default     = []
 }
