@@ -53,12 +53,16 @@
 # MAGIC
 # MAGIC **If SAT is already installed:**
 # MAGIC - No additional configuration needed
-# MAGIC - BrickHound automatically uses credentials from `sat_scope` secret scope
-# MAGIC - Required secrets (already configured by SAT):
-# MAGIC   - `account-console-id` (Account UUID)
-# MAGIC   - `client-id` (Service Principal Application ID)
-# MAGIC   - `client-secret` (Service Principal OAuth Secret)
-# MAGIC   - `analysis_schema_name` (Unity Catalog schema: `catalog.schema`)
+# MAGIC - BrickHound automatically uses credentials from the configured SAT secret scope
+# MAGIC   (default: `sat_scope`; override via the `secret_scope` job parameter)
+# MAGIC - The service principal `client-secret` must remain in the secret scope.
+# MAGIC   All other values (`account-console-id`, `client-id`, etc.) can be supplied
+# MAGIC   as direct job parameters instead (see `notebooks/Utils/initialize.py`).
+# MAGIC - Required secrets/params (already configured by SAT installer):
+# MAGIC   - `account-console-id` / `account_id_param` (Account UUID)
+# MAGIC   - `client-id` / `client_id_param` (Service Principal Application ID)
+# MAGIC   - `client-secret` (Service Principal OAuth Secret — scope only)
+# MAGIC   - `analysis_schema_name` / `analysis_schema_name_param` (Unity Catalog schema: `catalog.schema`)
 # MAGIC
 # MAGIC **If SAT is not installed:**
 # MAGIC - Run the SAT installer: `./install.sh` in the SAT project root
@@ -78,8 +82,11 @@
 # Configuration is automatically read from SAT's sat_scope
 
 
-# Read catalog and schema from SAT configuration
-analysis_schema = dbutils.secrets.get(scope=SECRETS_SCOPE, key="analysis_schema_name")
+# Read catalog and schema from SAT configuration.
+# json_["analysis_schema_name"] is resolved by initialize.py via the
+# resolve_sat_value() chain (param → scope → fail), so no direct secret
+# read is needed here.
+analysis_schema = json_["analysis_schema_name"]
 CATALOG = analysis_schema.split('.')[0]
 SCHEMA = analysis_schema.split('.')[1]
 
@@ -93,7 +100,7 @@ print("BrickHound Configuration (SAT Integration)")
 print("=" * 60)
 print(f"Catalog:        {CATALOG}")
 print(f"Schema:         {SCHEMA}")
-print(f"Secrets Scope:  {SECRETS_SCOPE}")
+print(f"Secrets Scope:  {json_.get('secret_scope', SECRETS_SCOPE)}")
 print(f"Vertices:       {VERTICES_TABLE}")
 print(f"Edges:          {EDGES_TABLE}")
 print(f"Metadata:       {COLLECTION_METADATA_TABLE}")

@@ -50,3 +50,37 @@ If you see fewer Identity & Access rows on Azure dashboards than before, this is
 - Run the diagnosis notebook for your cloud (`notebooks/diagnosis/sat_diagnosis_<cloud>.py`) — see [Troubleshooting](./troubleshooting.mdx).
 - Check the [Troubleshooting](./troubleshooting.mdx) page for entries on the Permissions Analysis consent banner, missing UC SELECT, and NS-14 expected behavior.
 - Open a [GitHub Issue](https://github.com/databricks-industry-solutions/security-analysis-tool/issues) if you hit something not covered.
+
+## Upgrading to 0.9.0
+
+### Permissions Analysis app — re-deploy required
+
+The BrickHound app (`sat-permissions-exp`) no longer uses a `sql-warehouse-id` secret
+resource. `WAREHOUSE_ID` now resolves from the existing `sql_warehouse` resource via
+`valueFrom: "warehouse"` in `app.yaml`, so the granted warehouse and the queried
+warehouse are always the same object.
+
+**Action required:** after upgrading, re-deploy the app to pick up the updated `app.yaml`:
+
+```bash
+# DABS install
+databricks apps deploy sat-permissions-exp \
+  --source-code-path /Workspace/Applications/SAT/files/app/brickhound
+
+# Terraform install
+terraform apply   # updates the app resource; then re-deploy manually or via CI
+```
+
+The orphaned `sql-warehouse-id` key in existing scopes is harmless — it will simply
+stop being read.
+
+### Secret scope: direct job parameters replace scope reads
+
+For 0.9.0+ installs, values such as `account-console-id`, `client-id`,
+`analysis_schema_name`, etc. are passed as direct job `base_parameters` rather than
+read from the scope at every run. The scope read still works as a fallback so existing
+0.8.x scopes continue to function unchanged — no migration is required unless you want
+to clean up the now-optional keys.
+
+See the [Secret Scope Reference](./installation/secret-scope.mdx) for the full key list
+and BYO-scope instructions.

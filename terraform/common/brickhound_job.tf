@@ -55,7 +55,8 @@ resource "databricks_job" "brickhound_data_collection" {
     environment_key = var.run_on_serverless ? "default" : null
 
     notebook_task {
-      notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/permission_analysis_data_collection"
+      notebook_path   = "${databricks_repo.security_analysis_tool.path}/notebooks/permission_analysis_data_collection"
+      base_parameters = local.sat_base_parameters
     }
 
     timeout_seconds = 14400 # 4 hours max (permissions collection can take time for large accounts)

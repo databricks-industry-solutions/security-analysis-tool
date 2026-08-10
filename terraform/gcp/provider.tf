@@ -23,6 +23,12 @@ module "common" {
   proxies                         = var.proxies
   run_on_serverless               = var.run_on_serverless
   secret_scope_name               = var.secret_scope_name
+  manage_secrets                  = var.manage_secrets
+  secret_key_names                = var.secret_key_names
+  app_config_scope_name           = var.app_config_scope_name
+  scope_provided_keys             = var.scope_provided_keys
+  client_id                       = var.client_id
+  use_sp_auth                     = var.use_sp_auth
   secrets_scanner_cron_expression = var.secrets_scanner_cron_expression
   driver_cron_expression          = var.driver_cron_expression
   job_compute_num_workers         = var.job_compute_num_workers

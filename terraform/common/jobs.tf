@@ -53,7 +53,8 @@ resource "databricks_job" "initializer" {
       }
     }
     notebook_task {
-      notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_initializer"
+      notebook_path   = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_initializer"
+      base_parameters = local.sat_base_parameters
     }
   }
 
@@ -114,7 +115,8 @@ resource "databricks_job" "driver" {
       }
     }
     notebook_task {
-      notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_driver"
+      notebook_path   = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_driver"
+      base_parameters = local.sat_base_parameters
     }
   }
 
@@ -185,7 +187,8 @@ resource "databricks_job" "secrets_scanner" {
       }
     }
     notebook_task {
-      notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_secrets_scanner"
+      notebook_path   = "${databricks_repo.security_analysis_tool.path}/notebooks/security_analysis_secrets_scanner"
+      base_parameters = local.sat_base_parameters
     }
   }
 

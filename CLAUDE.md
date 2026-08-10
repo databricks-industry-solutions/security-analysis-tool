@@ -600,7 +600,7 @@ This ensures users have complete visibility into what changes were made and whet
 
 ## Important Implementation Details
 
-1. **Secret Storage:** All credentials stored in Databricks secret scope `sat_scope` during DABS installation
+1. **Secret Storage:** Only `client_secret` (SP OAuth secret) and the dormant PAT prefix must live in the secret scope. The scope name is configurable (`secret_scope_name` in Terraform; `secret_scope` prompt in DABS); default `sat_scope`. All other values — Account ID, Client ID, SQL Warehouse ID, `analysis_schema_name`, proxies, etc. — are passed as direct job `base_parameters` in 0.9+ installs, with the scope as a fallback so 0.8.x scopes continue to work unchanged.
 2. **Workspace filtering:** Use `serverless_filter` SQL clause when running on serverless
 3. **Pagination:** Controlled by `maxpages` and `timebetweencalls` config parameters
 4. **Token refresh:** Tokens regenerated per API call in `_update_token_master()` based on endpoint routing
@@ -616,7 +616,7 @@ BrickHound provides graph-based permissions analysis within SAT, complementing S
 ### Location and Structure
 
 **Notebooks**: `/notebooks/brickhound/`
-- `00_config.py` - Configuration (reads from sat_scope)
+- `00_config.py` - Configuration (reads `analysis_schema_name` from `json_`, which was set by `initialize.py` via param→scope resolution)
 - `00_analysis_common.py` - Shared utilities
 - `01_data_collection.py` - Main collector (2694 lines)
 - `02-05_*.py` - Interactive analysis notebooks
@@ -636,11 +636,11 @@ BrickHound provides graph-based permissions analysis within SAT, complementing S
 
 ### Architecture
 
-**Credentials**: Uses SAT's `sat_scope` secret scope
-- `account-console-id` → Account UUID
-- `client-id` → Service Principal Application ID  
-- `client-secret` → Service Principal OAuth Secret
-- `analysis_schema_name` → Unity Catalog schema (catalog.schema format)
+**Credentials**: Uses the configured SAT secret scope (default `sat_scope`; configurable via `secret_scope_name` / `secret_scope` prompt)
+- `client-secret` → Service Principal OAuth Secret (scope-only; never a job param)
+- `account-console-id` → Account UUID (job param for 0.9+; scope fallback for 0.8.x)
+- `client-id` → Service Principal Application ID (job param for 0.9+; scope fallback)
+- `analysis_schema_name` → Unity Catalog schema, e.g. `catalog.schema` (job param for 0.9+; scope fallback; can also be pre-populated in a BYO scope)
 
 **Storage**: Same Unity Catalog schema as SAT
 - Tables: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`
@@ -706,14 +706,14 @@ mcp__databricks__get_job_details(
 ### Key Design Decisions
 
 1. **Namespaced Tables**: `brickhound_` prefix keeps everything in SAT's schema while avoiding conflicts
-2. **Reuse sat_scope**: Simplifies credential management, no new secrets needed
+2. **Reuse SAT scope by default**: Simplifies credential management. In BYO mode (`manage_secrets=false`), `analysis_schema_name` can come from the user's own scope — no new scope needed. When BrickHound is deployed with a BYO credential scope and the schema is not pre-populated there, SAT creates a lightweight `sat_app_scope` holding only that one config value.
 3. **Separate Job**: Allows independent execution, different schedule (weekly vs. 3x/week)
 4. **Keep SDK Separate**: Avoids dependency conflicts (databricks-sdk vs. requests/msal)
 5. **Complementary Analysis**: BrickHound (permissions) + SAT (config) = comprehensive security
 
 ### Integration Points
 
-1. **Configuration**: BrickHound reads `analysis_schema_name` from sat_scope in `00_config.py`
+1. **Configuration**: BrickHound reads `analysis_schema_name` from `json_` (set by `initialize.py` via param→scope resolution) in `00_config.py`
 2. **Authentication**: Uses same service principal as SAT (client-id/client-secret)
 3. **Storage**: Writes to SAT's Unity Catalog schema
 4. **Deployment**: Included in SAT's Terraform deployment (brickhound_job.tf)
@@ -721,9 +721,6 @@ mcp__databricks__get_job_details(
 
 ### Documentation Files
 
-- `docs/BRICKHOUND_INTEGRATION.md` - Integration guide
-- `docs/brickhound_README.md` - Original BrickHound documentation
-- `docs/brickhound_PERMISSIONS.md` - Required permissions
 - `notebooks/brickhound/README.md` - Quick start guide
 
 ### Comparison: SAT vs. BrickHound

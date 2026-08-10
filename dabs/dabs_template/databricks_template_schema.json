@@ -49,6 +49,60 @@
         "warehouse_id": {
             "type": "string",
             "description": "The ID of the SQL warehouse to use for SAT Permissions Analysis"
+        },
+        "secret_scope": {
+            "type": "string",
+            "description": "Databricks secret scope name that holds SAT credentials",
+            "default": "sat_scope"
+        },
+        "secret_key_names": {
+            "type": "string",
+            "description": "JSON map of logical->physical secret key name overrides (empty = use defaults)",
+            "default": "{}"
+        },
+        "app_config_scope": {
+            "type": "string",
+            "description": "Secret scope used for BrickHound app valueFrom bindings (defaults to secret_scope)",
+            "default": "sat_scope"
+        },
+        "account_id": {
+            "type": "string",
+            "description": "Databricks Account UUID"
+        },
+        "client_id": {
+            "type": "string",
+            "description": "Service Principal Application (client) ID"
+        },
+        "tenant_id": {
+            "type": "string",
+            "description": "Azure Tenant ID (Azure only)"
+        },
+        "subscription_id": {
+            "type": "string",
+            "description": "Azure Subscription ID (Azure only)"
+        },
+        "sql_warehouse_id": {
+            "type": "string",
+            "description": "SQL Warehouse ID for SAT dashboard import"
+        },
+        "analysis_schema_name": {
+            "type": "string",
+            "description": "Unity Catalog schema for SAT tables (catalog.schema)"
+        },
+        "analysis_schema_key": {
+            "type": "string",
+            "description": "Physical secret key name used for the analysis_schema_name app resource binding",
+            "default": "analysis_schema_name"
+        },
+        "proxies": {
+            "type": "string",
+            "description": "JSON proxy map e.g. {\"http\": \"http://proxy:8080\"}",
+            "default": "{}"
+        },
+        "use_sp_auth": {
+            "type": "string",
+            "description": "Use Service Principal auth (true/false, AWS and GCP only)",
+            "default": "false"
         }
     },
     "success_message": ""

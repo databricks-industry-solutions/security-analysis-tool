@@ -43,3 +43,24 @@ run_on_serverless = false # [Only monitor current workspace]
 # Customize to use a different scope name (useful for multiple SAT instances or naming conventions)
 # Example: "sat_scope_prod" or "sat_scope_scan1"
 # secret_scope_name = "sat_scope"
+
+# Bring Your Own Secret Scope (Optional)
+# Set manage_secrets = false if you have a pre-existing secret scope that SAT should read from.
+# SAT will only write the client_secret key (the only true credential).
+# manage_secrets = true
+
+# Secret Key Name Overrides (Optional)
+# Map logical names to physical names for keys in your existing scope.
+# Example: { client_secret = "my-sp-client-secret" }
+# secret_key_names = {}
+
+# App Config Scope (Optional — only relevant when manage_secrets = false)
+# Scope for BrickHound app valueFrom bindings (analysis_schema_name, sql-warehouse-id).
+# app_config_scope_name = ""
+# Pre-existing scope keys (Optional — only relevant when manage_secrets = false)
+# List the logical names of values that are already in your scope.
+# SAT will not write them and the BrickHound app binding will point at your scope.
+# Supported: client_secret, account_id, client_id, tenant_id, subscription_id,
+#            proxies, analysis_schema_name
+# Example: scope_provided_keys = ["client_secret", "analysis_schema_name"]
+# scope_provided_keys = []

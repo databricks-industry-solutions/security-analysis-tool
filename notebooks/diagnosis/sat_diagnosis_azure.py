@@ -61,16 +61,18 @@ if not found:
 # COMMAND ----------
 
 try:
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='subscription-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='tenant-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-   dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-   print("Your SAT configuration has required secret names")
+   assert json_.get('account_id'), "account_id missing"
+   assert json_.get('client_id'), "client_id missing"
+   assert json_.get('tenant_id'), "tenant_id missing"
+   assert json_.get('subscription_id'), "subscription_id missing"
+   _sat_scope = json_.get("secret_scope", json_['master_name_scope'])
+   _sat_keys  = json_.get("secret_keys", DEFAULT_SECRET_KEYS)
+   dbutils.secrets.get(scope=_sat_scope, key=_sat_keys.get("client_secret", "client-secret"))
+   assert json_.get('sql_warehouse_id'), "sql_warehouse_id missing"
+   assert json_.get('analysis_schema_name'), "analysis_schema_name missing"
+   print("Your SAT configuration has all required values")
 except Exception as e:
-   dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
+   dbutils.notebook.exit(f'Your SAT configuration is missing a required value, please review setup instructions: {e}')
 
 # COMMAND ----------
 
@@ -79,12 +81,24 @@ except Exception as e:
 
 # COMMAND ----------
 
-sat_scope = json_['master_name_scope']
+sat_scope = json_.get("secret_scope", json_['master_name_scope'])
+_sat_keys = json_.get("secret_keys", DEFAULT_SECRET_KEYS)
 
+print(f"Secret scope: {sat_scope}")
+print("Keys present in scope:")
 for key in dbutils.secrets.list(sat_scope):
-    print(key.key)
-    secretvalue = dbutils.secrets.get(scope=sat_scope, key=key.key)
-    print(secretvalue)
+    try:
+        val = dbutils.secrets.get(scope=sat_scope, key=key.key)
+        print(f"  {key.key}: {'[set, {0} chars]'.format(len(val)) if val else '[empty]'}")
+    except Exception as e:
+        print(f"  {key.key}: [error reading: {e}]")
+
+print(f"\nConfig values (from job parameters / scope fallback):")
+for field in ("account_id", "client_id", "tenant_id", "subscription_id",
+              "sql_warehouse_id", "analysis_schema_name"):
+    v = json_.get(field, "<not set>")
+    display_v = f"{str(v)[:4]}...{str(v)[-4:]}" if v and len(str(v)) > 8 else v
+    print(f"  {field}: {display_v}")
 
 
 # COMMAND ----------
@@ -96,15 +110,15 @@ for key in dbutils.secrets.list(sat_scope):
 
 import msal
 
-# Define Azure AD constants
-TENANT_ID = dbutils.secrets.get(scope=sat_scope, key="tenant-id")
-CLIENT_ID = dbutils.secrets.get(scope=sat_scope, key="client-id") 
+# Define Azure AD constants — prefer json_ values (set by initialize.py).
+TENANT_ID = json_.get("tenant_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("tenant_id", "tenant-id"))
+CLIENT_ID = json_.get("client_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("client_id", "client-id"))
 AUTHORITY = "https://login.microsoftonline.com/" + TENANT_ID
 
 app = msal.ConfidentialClientApplication(
     client_id=CLIENT_ID,
     authority=AUTHORITY,
-    client_credential=(dbutils.secrets.get(scope=sat_scope, key="client-secret"))
+    client_credential=dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("client_secret", "client-secret"))
 )
 
 # Acquire token for managed identity
@@ -167,7 +181,7 @@ print(response.json())
 
 import requests
 
-DATABRICKS_ACCOUNT_ID = dbutils.secrets.get(scope=sat_scope, key="account-console-id")
+DATABRICKS_ACCOUNT_ID = json_.get("account_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("account_id", "account-console-id"))
 url = f'https://accounts.azuredatabricks.net/api/2.0/accounts/{DATABRICKS_ACCOUNT_ID}/workspaces'
 
 ## Note: The access token must be generated for a Service Principal that has account admin privileges to run this command.  
@@ -194,13 +208,13 @@ def get_msal_token():
     """
     validate client id and secret from microsoft and google
     """
-    # Define Azure AD constants
-    TENANT_ID = dbutils.secrets.get(scope=sat_scope, key="tenant-id")
-    CLIENT_ID = dbutils.secrets.get(scope=sat_scope, key="client-id") 
+    # Define Azure AD constants — prefer json_ values (set by initialize.py).
+    TENANT_ID = json_.get("tenant_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("tenant_id", "tenant-id"))
+    CLIENT_ID = json_.get("client_id") or dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("client_id", "client-id"))
     try:
         app = msal.ConfidentialClientApplication(
             client_id=CLIENT_ID,
-            client_credential=(dbutils.secrets.get(scope=sat_scope, key="client-secret")),
+            client_credential=dbutils.secrets.get(scope=sat_scope, key=_sat_keys.get("client_secret", "client-secret")),
             authority=f"https://login.microsoftonline.com/{TENANT_ID}",
         )
         # call for default scope in order to verify client id and secret.
