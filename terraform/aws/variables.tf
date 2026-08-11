@@ -29,19 +29,25 @@ variable "secret_scope_name" {
   default     = "sat_scope"
 }
 
+variable "manage_secrets" {
+  type        = bool
+  description = "When true (default), SAT creates the secret scope and writes the client_secret. Set to false to bring a pre-existing scope."
+  default     = true
+}
+
+variable "secret_key_names" {
+  type        = map(string)
+  description = "Override map from logical key name to physical secret key name."
+  default     = {}
+}
+
+variable "app_config_scope_name" {
+  type        = string
+  description = "Secret scope for BrickHound app valueFrom bindings. Defaults to secret_scope_name."
+  default     = ""
+}
+
 ### AWS Specific Variables
-
-variable "account_user" {
-  description = "Account Console Username"
-  type        = string
-  default     = " "
-}
-
-variable "account_pass" {
-  description = "Account Console Password"
-  type        = string
-  default     = " "
-}
 
 variable "use_sp_auth" {
   description = "Authenticate with Service Principal OAuth tokens instead of user and password"
@@ -117,3 +123,9 @@ variable "job_schedule_timezone_id" {
   }
 }
 
+
+variable "scope_provided_keys" {
+  type        = list(string)
+  description = "Logical key names pre-populated in the user's existing scope. Mirrors the DABS scope_contains checkbox. SAT will not write these keys and the app binding uses the user's scope directly."
+  default     = []
+}

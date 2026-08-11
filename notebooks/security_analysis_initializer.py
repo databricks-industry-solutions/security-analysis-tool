@@ -33,7 +33,10 @@ cloud_type = getCloudType(hostname)
 # COMMAND ----------
 
 def run_notebook(notebook_path, timeout):
-    status = dbutils.notebook.run(notebook_path, timeout)
+    # SAT_CHILD_PARAMS is defined by %run ./Utils/initialize above.
+    # dbutils.notebook.run() creates an isolated widget context — the child
+    # does NOT inherit the parent's widgets, so all values must be forwarded.
+    status = dbutils.notebook.run(notebook_path, timeout, SAT_CHILD_PARAMS)
     if status != "OK":
         loggr.exception(f"Error Encountered in {notebook_path}", status)
         dbutils.notebook.exit()

@@ -56,10 +56,10 @@ resource "databricks_job" "brickhound_denylist_candidates" {
     notebook_task {
       notebook_path = "${databricks_repo.security_analysis_tool.path}/notebooks/brickhound/07_denylist_candidates"
 
-      base_parameters = {
+      base_parameters = merge(local.sat_base_parameters, {
         inactive_days = "90"
         min_inactive  = "1"
-      }
+      })
     }
 
     timeout_seconds = 3600 # 1 hour

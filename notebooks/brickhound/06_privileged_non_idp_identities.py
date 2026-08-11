@@ -109,13 +109,25 @@ WORKSPACE_URL = (
 )
 ACCOUNTS_HOST = resolve_accounts_host(cloud_type, WORKSPACE_URL, json_.get("accounts_console", ""))
 ACCOUNT_ID    = json_["account_id"]
-CLIENT_ID     = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-id")
-CLIENT_SECRET = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-secret")
+CLIENT_ID     = json_.get("client_id") or read_sat_secret(
+    json_.get("secret_scope", SECRETS_SCOPE),
+    json_.get("secret_keys", SECRET_KEYS),
+    "client_id",
+)
+CLIENT_SECRET = read_sat_secret(
+    json_.get("secret_scope", SECRETS_SCOPE),
+    json_.get("secret_keys", SECRET_KEYS),
+    "client_secret",
+)
 
 # tenant-id is required for Azure (Entra/MSAL auth); absent on AWS/GCP.
 TENANT_ID = None
 if cloud_type == "azure":
-    TENANT_ID = json_.get("tenant_id") or dbutils.secrets.get(scope=SECRETS_SCOPE, key="tenant-id")
+    TENANT_ID = json_.get("tenant_id") or read_sat_secret(
+        json_.get("secret_scope", SECRETS_SCOPE),
+        json_.get("secret_keys", SECRET_KEYS),
+        "tenant_id",
+    )
 
 PRIVILEGED_NON_IDP_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_privileged_non_idp"
 

@@ -56,7 +56,7 @@ To verify the configuration applied correctly, open **Compute → Apps → sat-p
 
 | Section | Expected entries |
 |---|---|
-| App resources | `warehouse` (SQL warehouse, Can use), `analysis_schema_name` (secret, Can read), `sql-warehouse-id` (secret, Can read) |
+| App resources | `warehouse` (SQL warehouse, Can use — also supplies `WAREHOUSE_ID` via `valueFrom`), `analysis_schema_name` (secret, Can read) |
 | User authorization | `sql` scope present |
 
 ### 3. Grant Unity Catalog permissions

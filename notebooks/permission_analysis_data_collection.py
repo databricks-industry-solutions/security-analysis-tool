@@ -393,18 +393,30 @@ SP_CREDENTIALS['cloud_type'] = cloud_type
 
 print(f"\n1. Loading Service Principal Credentials...")
 
-# Get the secrets scope name (default: "sat_scope" for SAT integration)
-secrets_scope = SECRETS_SCOPE if 'SECRETS_SCOPE' in dir() else "sat_scope"
+# Get the secrets scope and key map from SAT configuration (set by initialize.py
+# via %run ./brickhound/00_config which %runs ../Utils/initialize).
+# Fall back to sat_scope / default keys for standalone notebook runs.
+secrets_scope = json_.get("secret_scope", SECRETS_SCOPE if 'SECRETS_SCOPE' in dir() else "sat_scope")
+_secret_keys  = json_.get("secret_keys",  DEFAULT_SECRET_KEYS if 'DEFAULT_SECRET_KEYS' in dir() else {
+    "account_id": "account-console-id", "client_id": "client-id",
+    "client_secret": "client-secret", "tenant_id": "tenant-id",
+})
 
 try:
-    # Updated for SAT integration: using SAT secret key names
-    SP_CREDENTIALS['account_id'] = dbutils.secrets.get(scope=secrets_scope, key="account-console-id")
-    SP_CREDENTIALS['client_id'] = dbutils.secrets.get(scope=secrets_scope, key="client-id")
-    SP_CREDENTIALS['client_secret'] = dbutils.secrets.get(scope=secrets_scope, key="client-secret")
+    # Non-secret config: prefer values already in json_ (populated by initialize.py
+    # via param->scope resolution); fall back to scope read for standalone runs.
+    SP_CREDENTIALS['account_id'] = json_.get("account_id") or dbutils.secrets.get(
+        scope=secrets_scope, key=_secret_keys.get("account_id", "account-console-id"))
+    SP_CREDENTIALS['client_id']  = json_.get("client_id") or dbutils.secrets.get(
+        scope=secrets_scope, key=_secret_keys.get("client_id", "client-id"))
+    # client_secret is always scope-only — never in json_ / params.
+    SP_CREDENTIALS['client_secret'] = dbutils.secrets.get(
+        scope=secrets_scope, key=_secret_keys.get("client_secret", "client-secret"))
 
     # Try to load tenant_id for Azure (optional for AWS/GCP)
     try:
-        SP_CREDENTIALS['tenant_id'] = dbutils.secrets.get(scope=secrets_scope, key="tenant-id")
+        SP_CREDENTIALS['tenant_id'] = json_.get("tenant_id") or dbutils.secrets.get(
+            scope=secrets_scope, key=_secret_keys.get("tenant_id", "tenant-id"))
         print(f"   ✓ Loaded tenant-id for Azure authentication")
     except Exception:
         # tenant_id not required for AWS/GCP, only log for debugging

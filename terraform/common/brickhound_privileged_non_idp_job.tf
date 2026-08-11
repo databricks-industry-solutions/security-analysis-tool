@@ -59,11 +59,11 @@ resource "databricks_job" "brickhound_privileged_non_idp" {
 
       # Detection-only by default. Set remediate=yes deliberately to enable
       # continuous auto-removal of privileged roles from non-IdP identities.
-      base_parameters = {
+      base_parameters = merge(local.sat_base_parameters, {
         finding_types       = "account_admin,workspace_admin"
         include_idp_managed = "no"
         remediate           = "no"
-      }
+      })
     }
 
     timeout_seconds = 3600 # 1 hour
