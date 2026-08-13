@@ -37,6 +37,17 @@ app = Flask(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger(__name__)
 
+# Tag all databricks-sdk traffic from this app as SAT so it is attributed to
+# SAT usage in Databricks telemetry, consistent with core/dbclient.py and
+# notebooks/permission_analysis_data_collection.py. `with_product` is a
+# process-global, so the per-request WorkspaceClients built in get_connection()
+# all inherit it. Guarded in case an older SDK lacks the useragent module.
+try:
+    from databricks.sdk import useragent
+    useragent.with_product("databricks-sat", "0.1.0")
+except Exception as e:  # pragma: no cover - defensive; SDK version drift
+    logger.warning("Could not set SAT product user-agent (SDK default will be used): %s", e)
+
 # Configuration - Read from environment variables (set in app.yaml)
 # These MUST be configured in app.yaml - no hardcoded defaults
 logger.info("[CONFIG] Environment variables check:")

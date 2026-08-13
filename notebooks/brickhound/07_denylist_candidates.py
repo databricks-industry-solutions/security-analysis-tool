@@ -104,6 +104,10 @@ import pandas as pd
 import requests
 from pyspark.sql import functions as F
 
+# Tag SAT's direct REST traffic so it is attributed to SAT usage in Databricks
+# telemetry, matching core/dbclient.py and the other SAT notebooks.
+SAT_USER_AGENT = "databricks-sat/0.1.0"
+
 
 def mint_account_token() -> str:
     # Azure authenticates via Entra/MSAL; AWS/GCP via the Databricks OIDC path.
@@ -120,7 +124,8 @@ def mint_account_token() -> str:
         return token["access_token"]
     resp = requests.post(
         f"{ACCOUNTS_HOST}/oidc/accounts/{ACCOUNT_ID}/v1/token",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={"Content-Type": "application/x-www-form-urlencoded",
+                 "User-Agent": SAT_USER_AGENT},
         data={"grant_type": "client_credentials", "client_id": CLIENT_ID,
               "client_secret": CLIENT_SECRET, "scope": "all-apis"},
         proxies=json_.get("proxies", {}),
@@ -129,7 +134,7 @@ def mint_account_token() -> str:
     return resp.json()["access_token"]
 
 TOKEN = mint_account_token()
-HDRS  = {"Authorization": f"Bearer {TOKEN}"}
+HDRS  = {"Authorization": f"Bearer {TOKEN}", "User-Agent": SAT_USER_AGENT}
 
 
 def scim_list(resource: str, attributes: str) -> list:
