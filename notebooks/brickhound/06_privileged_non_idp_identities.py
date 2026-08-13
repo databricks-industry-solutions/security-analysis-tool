@@ -138,6 +138,10 @@ import pandas as pd
 import requests
 from pyspark.sql import functions as F
 
+# Tag SAT's direct REST traffic so it is attributed to SAT usage in Databricks
+# telemetry, matching core/dbclient.py and the other SAT notebooks.
+SAT_USER_AGENT = "databricks-sat/0.1.0"
+
 
 @dataclass(frozen=True)
 class RemediationResult:
@@ -169,7 +173,8 @@ class PrivilegedIdentityAuditor:
         self._tenant_id     = tenant_id
         self._proxies       = proxies or {}
         self._acct_token    = self._mint_account_token()
-        self._acct_hdrs     = {"Authorization": f"Bearer {self._acct_token}"}
+        self._acct_hdrs     = {"Authorization": f"Bearer {self._acct_token}",
+                               "User-Agent": SAT_USER_AGENT}
 
     # ── Token helpers ────────────────────────────────────────────────────────
 
@@ -192,7 +197,8 @@ class PrivilegedIdentityAuditor:
             return self._mint_azure_msal_token()
         resp = requests.post(
             f"{self._accounts_host}/oidc/accounts/{self._account_id}/v1/token",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/x-www-form-urlencoded",
+                     "User-Agent": SAT_USER_AGENT},
             data={
                 "grant_type":    "client_credentials",
                 "client_id":     self._client_id,

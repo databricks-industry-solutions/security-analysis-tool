@@ -150,6 +150,10 @@ import pandas as pd
 import requests
 from pyspark.sql import functions as F
 
+# Tag SAT's direct REST traffic so it is attributed to SAT usage in Databricks
+# telemetry, matching core/dbclient.py and the other SAT notebooks.
+SAT_USER_AGENT = "databricks-sat/0.1.0"
+
 
 @dataclass(frozen=True)
 class RemediationResult:
@@ -191,7 +195,8 @@ class ResourceShareAuditor:
         self._tenant_id     = tenant_id
         self._proxies       = proxies or {}
         self._acct_token    = self._mint_account_token()
-        self._acct_hdrs     = {"Authorization": f"Bearer {self._acct_token}"}
+        self._acct_hdrs     = {"Authorization": f"Bearer {self._acct_token}",
+                               "User-Agent": SAT_USER_AGENT}
         self.group_id, self.group_name = self._resolve_group()
 
     # ── Token / group helpers ──────────────────────────────────────────────
@@ -217,7 +222,8 @@ class ResourceShareAuditor:
             return self._mint_azure_msal_token()
         resp = requests.post(
             f"{self._accounts_host}/oidc/accounts/{self._account_id}/v1/token",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/x-www-form-urlencoded",
+                     "User-Agent": SAT_USER_AGENT},
             data={
                 "grant_type":    "client_credentials",
                 "client_id":     self._client_id,
@@ -250,7 +256,8 @@ class ResourceShareAuditor:
             return self._acct_token
         resp = requests.post(
             f"{host}/oidc/v1/token",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={"Content-Type": "application/x-www-form-urlencoded",
+                     "User-Agent": SAT_USER_AGENT},
             data={
                 "grant_type":    "client_credentials",
                 "client_id":     self._client_id,
@@ -296,7 +303,7 @@ class ResourceShareAuditor:
             return RemediationResult(workspace_id, resource_id, resource_type, False, "unknown resource type")
 
         url  = f"{host}{path}"
-        hdrs = {"Authorization": f"Bearer {token}"}
+        hdrs = {"Authorization": f"Bearer {token}", "User-Agent": SAT_USER_AGENT}
 
         get_resp = requests.get(url, headers=hdrs, proxies=self._proxies)
         if not get_resp.ok:
