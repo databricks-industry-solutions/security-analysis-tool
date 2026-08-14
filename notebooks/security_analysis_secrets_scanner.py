@@ -67,13 +67,43 @@ if is_serverless:
 workspacesdf = spark.sql(f"select * from `all_workspaces` {serverless_filter}")
 display(workspacesdf)
 workspaces = workspacesdf.collect()
+
 if workspaces is None or len(workspaces) == 0:
+    # Nothing configured. The workspace this job is running in is a valid scan
+    # target on its own -- its id and URL are both available from the runtime --
+    # so register it rather than exiting with no work done. Without this the scan
+    # silently completes having scanned nothing, which reads as "no secrets found"
+    # on the dashboard and is the most misleading possible outcome for a security
+    # tool. The multi-workspace path via account_workspaces is unchanged.
     loggr.info(
-        "Workspaces are not configured for analysis, check the workspace_configs.csv and "
-        + json_["analysis_schema_name"]
-        + ".account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. "
+        "No workspaces configured for analysis; falling back to the current "
+        "workspace (%s). To scan additional workspaces, add them to %s.account_workspaces "
+        "with analysis_enabled = True.",
+        current_workspace, json_["analysis_schema_name"],
     )
-    # dbutils.notebook.exit("Unsuccessful analysis.")
+    deployment_url = hostname.replace("https://", "").replace("http://", "").rstrip("/")
+    spark.sql(f"""
+        INSERT INTO {json_["analysis_schema_name"]}.account_workspaces
+        SELECT '{current_workspace}', '{deployment_url}',
+               'Current workspace', 'RUNNING', True
+        WHERE NOT EXISTS (
+            SELECT 1 FROM {json_["analysis_schema_name"]}.account_workspaces
+            WHERE workspace_id = '{current_workspace}'
+        )
+    """)
+    dfexist = getWorkspaceConfig()
+    dfexist.filter(dfexist.analysis_enabled == True).createOrReplaceTempView("all_workspaces")
+    workspacesdf = spark.sql(f"select * from `all_workspaces` {serverless_filter}")
+    workspaces = workspacesdf.collect()
+    loggr.info("Self-registered current workspace; %d workspace(s) now eligible", len(workspaces))
+
+if workspaces is None or len(workspaces) == 0:
+    raise RuntimeError(
+        "No workspaces are eligible for secret scanning, and the current workspace "
+        f"({current_workspace}) could not be registered automatically. Check "
+        f"{json_['analysis_schema_name']}.account_workspaces. Failing rather than "
+        "reporting an empty scan as a clean result."
+    )
 
 # COMMAND ----------
 
@@ -216,8 +246,12 @@ def runTruffleHogScanForAllWorkspaces():
     scan_workspaces = workspaces
 
     if scan_workspaces is None or len(scan_workspaces) == 0:
-        loggr.info("No workspaces configured for secret scanning")
-        return
+        # Returning normally here would mark the job SUCCEEDED having scanned
+        # nothing, which the dashboard renders as "no secrets found".
+        raise RuntimeError(
+            "No workspaces configured for secret scanning. Nothing was scanned, so "
+            "this run proves nothing about the presence of secrets."
+        )
 
     loggr.info(f"Running secret scans on {len(scan_workspaces)} workspace(s)")
 

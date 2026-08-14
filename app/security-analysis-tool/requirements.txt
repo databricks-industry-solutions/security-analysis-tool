@@ -4,3 +4,7 @@
 flask~=3.0
 werkzeug~=3.0
 databricks-sdk~=0.33.0
+
+# Security assistant — calls the workspace's model serving endpoint via the
+# OpenAI-compatible API that Databricks Foundation Model serving exposes.
+openai~=1.40

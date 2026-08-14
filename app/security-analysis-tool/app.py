@@ -12,6 +12,7 @@ import re
 import json
 import uuid
 import logging
+import threading
 from databricks.sdk import WorkspaceClient
 
 # Strict allowlist for run_id values used in SQL identifier positions. The
@@ -96,7 +97,7 @@ _cached_run_id = None
 
 
 class NoAccessError(Exception):
-    """Raised when the calling user lacks UC SELECT on the BrickHound tables.
+    """Raised when the calling user lacks UC SELECT on the permissions-graph tables.
 
     Caught by the Flask errorhandler below and rendered as a friendly banner
     rather than a 500 / SQL stack trace.
@@ -144,6 +145,15 @@ def _looks_like_no_access(exc):
     return any(k in msg for k in keywords)
 
 
+def _log_no_access_detail(exc):
+    """Record the underlying error verbatim.
+
+    The user-facing banner is deliberately short, which makes diagnosis hard when
+    the guess is wrong. This keeps the raw provider message in the app log.
+    """
+    logger.warning("no_access underlying error: %r", exc)
+
+
 def _no_access_message(exc=None):
     """Pick the most accurate banner text based on the underlying error.
 
@@ -151,25 +161,30 @@ def _no_access_message(exc=None):
       * Missing OAuth scope on the app — the platform forwards a token but
         it doesn't carry `sql`, so the warehouse rejects with
         "Invalid scope, required scopes: sql". Fix is on the app config.
-      * Missing UC grant — the user lacks SELECT on the brickhound_*
+      * Missing UC grant — the user lacks SELECT on the permissions-graph
         tables. Fix is on the schema grants.
     """
     msg = str(exc).lower() if exc is not None else ""
+    if exc is not None:
+        _log_no_access_detail(exc)
     if "invalid scope" in msg or "required scopes" in msg:
         return (
-            "This app's user authorization is missing the `sql` scope, "
-            "which the Statement Execution API requires to read the "
-            "BrickHound tables. Ask your admin to add it: redeploy SAT "
-            "(`./install.sh` or `terraform apply`), or set it manually "
-            "via Compute → Apps → sat-permissions-exp → Edit → User "
-            "authorization → + Add scope → `sql`."
+            "This app needs your permission to run queries on your behalf.\n\n"
+            "Sign out and sign back in to grant it: open the account menu in the "
+            "top-right of the app and choose Sign out, then reload this page and "
+            "accept the access request. Your existing sign-in was issued before "
+            "query access was enabled, so it cannot be upgraded in place.\n\n"
+            "The app only ever reads data, and only what your own Unity Catalog "
+            "permissions already allow."
         )
+
     return (
-        "You don't have Unity Catalog SELECT on the SAT permissions "
-        "analysis tables. Ask your admin to grant SELECT on "
-        f"`{CATALOG}`.`{SCHEMA}`.brickhound_vertices, "
-        f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges, and "
-        f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata to your user or group."
+        "You don't have read access to the security analysis data.\n\n"
+        "This app shows only what your own Unity Catalog permissions allow, so "
+        f"nothing is displayed until you are granted SELECT on the "
+        f"{CATALOG}.{SCHEMA} schema.\n\n"
+        "Ask whoever administers your Databricks account for read access to that "
+        "schema, then reload this page."
     )
 
 
@@ -186,13 +201,43 @@ def get_user_email():
         return "unknown"
 
 
+
+def _token_has_sql_scope(token):
+    """Whether a forwarded user token carries the `sql` scope.
+
+    Databricks Apps forwards a user token whenever user authorization is enabled,
+    but that token only carries the scopes the platform has actually minted for
+    the app. A token without `sql` cannot call the Statement Execution API, and
+    the failure surfaces late as a confusing permission error — so it is checked
+    up front by reading the token's own claims.
+
+    Returns True when the scope is present, False when provably absent, and True
+    when the token cannot be decoded (fail open, so an unexpected token format
+    does not disable on-behalf-of-user access).
+    """
+    if not token:
+        return False
+    try:
+        import base64
+        parts = token.split(".")
+        if len(parts) < 2:
+            return True
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:  # noqa: BLE001
+        return True
+    scope_claim = claims.get("scope") or claims.get("scp") or ""
+    scopes = scope_claim.split() if isinstance(scope_claim, str) else list(scope_claim)
+    return "sql" in scopes
+
+
 def get_connection():
     """Get a Databricks SDK client, preferring the calling user's identity (OBO).
 
     When the Apps platform forwards the user's OAuth token via the
     `x-forwarded-access-token` header, we build a per-request WorkspaceClient
     bound to that token. This makes every Statement Execution run as the
-    user, so UC enforces the user's grants on the brickhound tables.
+    user, so UC enforces the user's grants on the permissions-graph tables.
 
     If the header is absent (user authorization not configured for this app
     in the Databricks UI, or local dev), we fall back to the app SP. This
@@ -205,6 +250,41 @@ def get_connection():
     except RuntimeError:
         # Outside a request context — keep user_token None and use SP.
         pass
+
+    # A forwarded token that lacks the `sql` scope cannot call the Statement
+    # Execution API.
+    #
+    # The app does NOT quietly fall back to its service principal here: doing so
+    # shows every viewer the same data while looking identical to per-user
+    # filtering, which is exactly the wrong failure mode for a security tool. The
+    # request fails with an explanation instead.
+    #
+    # ALLOW_SERVICE_PRINCIPAL_FALLBACK=true opts into the shared-visibility mode
+    # for deployments where per-user filtering is not required and every viewer is
+    # already trusted with the whole dataset.
+    if user_token and not _token_has_sql_scope(user_token):
+        allow_fallback = (
+            os.getenv("ALLOW_SERVICE_PRINCIPAL_FALLBACK", "false").strip().lower()
+            == "true"
+        )
+        if not allow_fallback:
+            raise NoAccessError(
+                "This app cannot query on your behalf yet.\n\n"
+                "Your sign-in does not include query access, so the app has no way "
+                "to read the security tables as you. Rather than showing data that "
+                "is not filtered to your own permissions, it stops here.\n\n"
+                "An administrator can resolve this by recreating the app with query "
+                "access enabled, which is how per-user filtering is granted."
+            )
+        if not hasattr(get_connection, "_scope_fallback_logged"):
+            logger.warning(
+                "Forwarded user token lacks the `sql` scope and "
+                "ALLOW_SERVICE_PRINCIPAL_FALLBACK is enabled: querying as the app "
+                "service principal. Results are NOT filtered per user."
+            )
+            get_connection._scope_fallback_logged = True
+        user_token = None
+        get_connection._degraded_to_sp = True
 
     if user_token:
         # `auth_type="pat"` is required: without it the SDK's auth resolver
@@ -793,7 +873,7 @@ def get_main_html():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Permissions Analysis Tool - Security Analysis</title>
+    <title>Security Analysis Tool</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <style>
         :root {
@@ -1002,6 +1082,530 @@ def get_main_html():
             font-size: 24px;
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
         }
+        /* ---------------------------------------------------------------
+           Security assistant — floating launcher and slide-over panel.
+           Fixed position so it is reachable from every page without taking
+           a nav slot.
+           --------------------------------------------------------------- */
+        .assistant-fab {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 52px;
+            height: 52px;
+            border-radius: 26px;
+            border: none;
+            cursor: pointer;
+            z-index: 1200;
+            display: grid;
+            place-items: center;
+            color: #fff;
+            background: linear-gradient(135deg, #667eea 0%, #8b5cf6 100%);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, .42);
+            transition: transform .16s ease, box-shadow .16s ease;
+        }
+        .assistant-fab:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(102,126,234,.55); }
+        .assistant-fab svg { width: 23px; height: 23px; }
+        .assistant-fab.hidden { display: none; }
+
+        .assistant-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 460px;
+            max-width: 94vw;
+            background: var(--bg-card);
+            border-left: 1px solid var(--border);
+            box-shadow: -14px 0 40px rgba(0, 0, 0, .5);
+            z-index: 1300;
+            display: flex;
+            flex-direction: column;
+            transform: translateX(100%);
+            transition: transform .22s ease;
+        }
+        .assistant-panel.open { transform: translateX(0); }
+
+        .assistant-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .assistant-head-mark {
+            width: 28px; height: 28px; flex: 0 0 28px;
+            border-radius: 8px;
+            display: grid; place-items: center;
+            background: linear-gradient(135deg, #667eea 0%, #8b5cf6 100%);
+            color: #fff;
+        }
+        .assistant-head-mark svg { width: 15px; height: 15px; }
+        .assistant-head-title { font-weight: 650; font-size: .96em; }
+        .assistant-head-sub { font-size: .72em; color: var(--text-muted); }
+        .assistant-close {
+            background: transparent; border: none; cursor: pointer;
+            color: var(--text-muted); font-size: 1.25em; line-height: 1;
+        }
+        .assistant-close:hover { background: var(--bg-input); color: var(--text-primary); }
+
+        /* Header actions sit together at the right edge. */
+        .assistant-head-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            flex: 0 0 auto;
+        }
+        .assistant-icon-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            padding: 4px;
+            border-radius: 6px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+        }
+        .assistant-icon-btn:hover { background: var(--bg-input); color: var(--text-primary); }
+        .assistant-icon-btn svg { width: 15px; height: 15px; }
+        .assistant-icon-btn,
+        .assistant-close {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            display: grid;
+            place-items: center;
+            border-radius: 6px;
+            flex: 0 0 28px;
+        }
+        .assistant-icon-btn.is-open { background: var(--bg-input); color: #a5b4fc; }
+
+        .assistant-models {
+            padding: 12px 16px 14px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.16);
+        }
+        .assistant-models-head {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 7px;
+        }
+        .assistant-models-head span:first-child {
+            font-size: 0.72em;
+            font-weight: 650;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .assistant-models-note {
+            margin-left: auto;
+            font-size: 0.7em;
+            color: var(--text-muted);
+        }
+        .assistant-models select {
+            width: 100%;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-family: inherit;
+            font-size: 0.85em;
+            cursor: pointer;
+        }
+        .assistant-models select:focus {
+            outline: none;
+            border-color: rgba(102, 126, 234, 0.7);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.14);
+        }
+        .assistant-models-hint {
+            font-size: 0.74em;
+            color: var(--text-muted);
+            margin-top: 6px;
+            min-height: 14px;
+        }
+
+        .assistant-log { flex: 1; overflow-y: auto; padding: 16px; }
+        .assistant-msg { display: flex; gap: 9px; margin-bottom: 15px; }
+        .assistant-av {
+            width: 24px; height: 24px; flex: 0 0 24px; border-radius: 6px;
+            display: grid; place-items: center; font-size: .62em; font-weight: 700;
+        }
+        .assistant-msg.me .assistant-av { background: var(--bg-input); color: var(--text-secondary); }
+        .assistant-msg.ai .assistant-av { background: linear-gradient(135deg,#667eea,#8b5cf6); color: #fff; }
+        .assistant-body { flex: 1; min-width: 0; }
+        .assistant-who {
+            font-size: .66em; font-weight: 660; letter-spacing: .05em;
+            text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px;
+        }
+        .assistant-text { font-size: .9em; line-height: 1.5; word-wrap: break-word; }
+        .assistant-text div { margin-bottom: 4px; }
+        .assistant-text ul { margin: 5px 0 8px 17px; padding: 0; }
+        .assistant-text li { margin-bottom: 3px; }
+        .assistant-text code {
+            background: rgba(255,255,255,.07); padding: 1px 4px; border-radius: 3px;
+            font-size: .92em;
+        }
+
+        .assistant-trace {
+            margin-top: 7px; border: 1px solid var(--border);
+            border-radius: 6px; background: rgba(0,0,0,.22);
+        }
+        .assistant-trace summary {
+            padding: 5px 9px; cursor: pointer; font-size: .76em; color: var(--text-muted);
+        }
+        .assistant-trace pre {
+            margin: 0; padding: 9px; border-top: 1px solid var(--border);
+            font-size: .72em; color: var(--text-muted); overflow-x: auto;
+        }
+
+        .assistant-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+        .assistant-chip {
+            padding: 5px 10px; border-radius: 13px; cursor: pointer;
+            background: var(--bg-input); border: 1px solid var(--border);
+            font-size: .76em; color: var(--text-secondary);
+        }
+        .assistant-chip:hover { border-color: var(--accent); color: var(--text-primary); }
+
+        .assistant-compose {
+            border-top: 1px solid var(--border);
+            padding: 12px 14px;
+            display: flex; gap: 8px; align-items: flex-end;
+        }
+        .assistant-compose textarea {
+            flex: 1; resize: none; min-height: 36px; max-height: 150px;
+            background: var(--bg-input); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: 6px;
+            padding: 8px 10px; font-family: inherit; font-size: .88em;
+        }
+        .assistant-compose textarea:focus { outline: none; border-color: var(--accent); }
+        .assistant-note {
+            padding: 0 14px 10px; font-size: .7em; color: var(--text-muted);
+            display: flex; align-items: center; gap: 5px;
+        }
+        .assistant-note svg { width: 11px; height: 11px; flex: 0 0 11px; }
+
+        /* Buttons used by the secret-scanning filters and the assistant.
+           Matches .search-btn's gradient and lift so the app reads as one
+           surface, at a size suited to inline controls. */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            padding: 10px 20px;
+            font-family: inherit;
+            font-size: 0.88em;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.28);
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(102, 126, 234, 0.42);
+        }
+        .btn:active:not(:disabled) { transform: translateY(0); }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn svg { width: 15px; height: 15px; }
+
+        /* btn-primary is an alias so markup can be explicit about intent. */
+        .btn-primary { }
+
+        .btn-stop {
+            background: var(--bg-input);
+            color: #fca5a5;
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            box-shadow: none;
+        }
+        .btn-stop:hover:not(:disabled) {
+            background: rgba(248, 113, 113, 0.12);
+            border-color: rgba(248, 113, 113, 0.7);
+        }
+        .btn-ghost {
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            box-shadow: none;
+        }
+        .btn-ghost:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        .btn-sm { padding: 7px 13px; font-size: 0.8em; border-radius: 8px; }
+
+        /* ---------------------------------------------------------------
+           Data Collection. Laid out as grouped rows rather than free-floating
+           cards: an operator scans a list of pipelines, checks freshness, and
+           acts on one — the same shape an observability console uses.
+           --------------------------------------------------------------- */
+        .collect-group { margin-bottom: 26px; }
+        .collect-group-head {
+            display: flex;
+            align-items: baseline;
+            gap: 9px;
+            margin-bottom: 9px;
+        }
+        .collect-group-title {
+            font-size: 0.74em;
+            font-weight: 700;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .collect-group-rule {
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .collect-row {
+            display: grid;
+            /* status rail | name+description | freshness | actions
+               Fixed outer columns keep the status dots and action buttons on the
+               same vertical line across every row, regardless of text length. */
+            grid-template-columns: 132px minmax(0, 1fr) 150px auto;
+            gap: 20px;
+            align-items: start;
+            padding: 15px 18px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: border-color 0.16s, background 0.16s;
+        }
+        .collect-row:hover { border-color: rgba(102, 126, 234, 0.35); }
+        .collect-row.is-running { border-color: rgba(102, 126, 234, 0.5); }
+        .collect-row.is-stale { box-shadow: inset 3px 0 0 #f59e0b; }
+        .collect-row.is-failed { box-shadow: inset 3px 0 0 #ef4444; }
+        .collect-row.is-unconfigured { opacity: 0.6; }
+
+        .collect-name { font-weight: 600; font-size: 0.95em; margin-bottom: 3px; }
+        .collect-desc {
+            font-size: 0.79em;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+        .collect-feeds {
+            font-size: 0.75em;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        .collect-feeds span { color: var(--text-secondary); }
+
+        /* Status rail — first column, so health is the first thing scanned. */
+        .collect-state {
+            display: flex; align-items: center; gap: 7px;
+            font-size: 0.84em; font-weight: 500;
+            white-space: nowrap;
+        }
+        .collect-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
+        .collect-dot.ok      { background: #22c55e; }
+        .collect-dot.stale   { background: #f59e0b; }
+        .collect-dot.failed  { background: #ef4444; }
+        .collect-dot.idle    { background: #64748b; }
+        .collect-dot.running { background: #667eea; animation: collect-pulse 1.4s ease-in-out infinite; }
+        @keyframes collect-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(102,126,234,.6); }
+            50%      { box-shadow: 0 0 0 5px rgba(102,126,234,0); }
+        }
+        .collect-substate {
+            font-size: 0.75em; color: var(--text-muted);
+            margin-top: 4px; padding-left: 14px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Freshness */
+        /* The job name links to its definition in Workflows. Styled as a heading
+           first so the row stays scannable; the arrow appears on hover only.
+           The SVG needs explicit sizing on all axes — an unconstrained inline SVG
+           expands to fill its grid cell, which previously blew the row to 762px. */
+        .collect-link {
+            color: var(--text-primary);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .collect-link:hover { color: #a5b4fc; text-decoration: none; }
+        .collect-link-icon {
+            width: 12px;
+            height: 12px;
+            min-width: 12px;
+            min-height: 12px;
+            flex: 0 0 12px;
+            opacity: 0;
+            transition: opacity 0.14s;
+        }
+        .collect-link:hover .collect-link-icon { opacity: 0.75; }
+
+        /* Guard: any icon added to a row later inherits a sane box. */
+        .collect-row svg { max-width: 16px; max-height: 16px; }
+
+        /* Anchors styled as buttons need the button box model. */
+        a.btn, a.btn:hover { text-decoration: none; }
+        a.btn.btn-sm { line-height: 1; }
+
+        .collect-fresh { font-size: 0.84em; color: var(--text-secondary); white-space: nowrap; }
+        .collect-fresh-sub { font-size: 0.75em; color: var(--text-muted); margin-top: 4px; }
+
+        /* Actions */
+        .collect-actions {
+            display: flex; gap: 7px; align-items: center;
+            justify-self: end; white-space: nowrap;
+        }
+
+        /* Progress line spanning the full row while a collection runs. */
+        .collect-bar {
+            grid-column: 1 / -1;
+            height: 3px;
+            border-radius: 2px;
+            background: var(--bg-input);
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .collect-bar-fill {
+            height: 100%;
+            width: 34%;
+            border-radius: 2px;
+            background: linear-gradient(90deg, transparent, #667eea 45%, #8b5cf6 62%, transparent);
+            animation: collect-sweep 1.7s ease-in-out infinite;
+        }
+        @keyframes collect-sweep {
+            0%   { transform: translateX(-110%); }
+            100% { transform: translateX(330%); }
+        }
+
+        .collect-row.just-finished { animation: collect-flash 1.8s ease-out; }
+        @keyframes collect-flash {
+            0%   { box-shadow: inset 0 0 0 2px rgba(34,197,94,.5); }
+            100% { box-shadow: inset 0 0 0 2px rgba(34,197,94,0); }
+        }
+
+        /* Schedule drawer — same surface language as the rest of the app. */
+        .collect-drawer {
+            grid-column: 1 / -1;
+            margin-top: 12px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+        }
+        .collect-drawer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+            gap: 12px;
+            align-items: end;
+        }
+        .collect-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+        .collect-field-label {
+            font-size: 0.71em;
+            font-weight: 650;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .collect-drawer select,
+        .collect-drawer input[type="text"] {
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 9px 11px;
+            font-family: inherit;
+            font-size: 0.86em;
+            width: 100%;
+        }
+        .collect-drawer select:focus,
+        .collect-drawer input[type="text"]:focus {
+            outline: none;
+            border-color: rgba(102, 126, 234, 0.7);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.14);
+        }
+
+        /* Toggle switch, so enabling a schedule doesn't rely on a raw checkbox. */
+        .collect-switch {
+            display: inline-flex; align-items: center; gap: 9px;
+            cursor: pointer; font-size: 0.86em; color: var(--text-secondary);
+        }
+        .collect-switch input { position: absolute; opacity: 0; pointer-events: none; }
+        .collect-switch-track {
+            width: 36px; height: 20px; border-radius: 11px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            position: relative;
+            transition: background 0.18s, border-color 0.18s;
+            flex: 0 0 36px;
+        }
+        .collect-switch-track::after {
+            content: "";
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: var(--text-muted);
+            transition: transform 0.18s, background 0.18s;
+        }
+        .collect-switch input:checked + .collect-switch-track {
+            background: rgba(102, 126, 234, 0.28);
+            border-color: rgba(102, 126, 234, 0.6);
+        }
+        .collect-switch input:checked + .collect-switch-track::after {
+            transform: translateX(16px);
+            background: #a5b4fc;
+        }
+
+        .collect-msg { font-size: 0.82em; margin-top: 10px; min-height: 18px; }
+
+        @media (max-width: 1100px) {
+            .collect-row { grid-template-columns: minmax(0, 1fr); gap: 11px; }
+            .collect-actions { justify-self: start; }
+            .collect-substate { padding-left: 0; }
+        }
+
+        /* Secret-scanning filter row */
+        .secrets-filter-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .secrets-filter-row .filter-field {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1 1 180px;
+            min-width: 0;
+        }
+        .secrets-filter-row .filter-label {
+            font-size: 0.72em;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .secrets-filter-row select {
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 0.9em;
+            width: 100%;
+            cursor: pointer;
+        }
+        .secrets-filter-row select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
         .logo-text {
             font-size: 0.95em;
             font-weight: 700;
@@ -1634,7 +2238,7 @@ def get_main_html():
                 <div class="logo" style="cursor: pointer;" data-page="home">
                     <div class="logo-icon">🛡️</div>
                     <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <span class="logo-text">Principal and Resource Permissions Analysis Tool (Experimental)</span>
+                        <span class="logo-text">Security Analysis Tool</span>
                         <div style="font-size: 0.65em; color: #d32f2f; line-height: 1.2;">
                             <strong>⚠️ Note:</strong> May have incomplete data. Outputs are visibility/audit aids, not authoritative compliance determinations.
                         </div>
@@ -1645,6 +2249,14 @@ def get_main_html():
             <!-- Sidebar Navigation -->
             <nav class="sidebar-nav">
                 <div class="nav-sections-container">
+                    <div class="nav-section">
+                        <div class="nav-label">⚙️ Operations</div>
+                        <div class="nav-item" data-page="collection">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            Data Collection
+                        </div>
+                    </div>
+
                     <div class="nav-section">
                         <div class="nav-label">🔍 Analysis Tools</div>
                         <div class="nav-item" data-page="principal">
@@ -1700,8 +2312,20 @@ def get_main_html():
                             Privileged Non-IdP
                         </div>
                     </div>
+
+                    <div class="nav-section">
+                        <div class="nav-label">🔑 Secret Scanning</div>
+                        <div class="nav-item" data-page="secretsoverview">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 17h.01"/></svg>
+                            Credential Exposure
+                        </div>
+                        <div class="nav-item" data-page="secretsfindings">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                            Secret Findings
+                        </div>
+                    </div>
                 </div>
-                
+
                 <!-- Spacer to push footer to bottom -->
                 <div class="sidebar-spacer"></div>
                 
@@ -1735,6 +2359,15 @@ def get_main_html():
                                     targetNav.classList.add('active');
                                 }
                             }
+
+                            // Match navigateToPage's rule here too, otherwise deep
+                            // links to these pages briefly flash the graph-collection
+                            // bar before the main script hides it.
+                            const noStatsBar = ['home', 'sharedtoaccount', 'privilegednonidp',
+                                                'denylistbuilder', 'collection',
+                                                'secretsoverview', 'secretsfindings'];
+                            const bar = document.getElementById('stats-header-bar');
+                            if (bar && noStatsBar.includes(hash)) bar.style.display = 'none';
                         });
                     }
                 })();
@@ -1786,17 +2419,27 @@ def get_main_html():
             </div>
 
             <!-- Home/About Page -->
+            <!-- Data Collection: run and schedule the jobs that populate this app. -->
+            <div class="page" id="page-collection">
+                <div class="page-header">
+                    <h1 class="page-title">Data Collection</h1>
+                    <p class="page-desc">Monitor collection health, run analyses on demand, and manage recurring schedules</p>
+                </div>
+                <div id="collection-panel"></div>
+            </div>
+
             <div class="page active" id="page-home">
                 <div class="page-header" style="text-align: center; margin-bottom: 18px;">
-                    <h1 class="page-title" style="margin-bottom: 6px; font-size: 1.8em;">🛡️ Principal and Resource Permissions Analysis Tool</h1>
+                    <h1 class="page-title" style="margin-bottom: 6px; font-size: 1.8em;">🛡️ Security Analysis Tool</h1>
                 </div>
 
                 <div class="card" style="padding: 20px;">
-                    <h2 style="font-size: 1.2em; margin-bottom: 10px; color: var(--primary);">What is the Principal and Resource Permissions Analysis Tool?</h2>
+                    <h2 style="font-size: 1.2em; margin-bottom: 10px; color: var(--primary);">What is the Security Analysis Tool?</h2>
                     <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.92em;">
-                        The Principal and Resource Permissions Analysis Tool is a graph-based security analysis platform for Databricks environments.
-                        It helps to discover privilege escalation paths, identify over-privileged principals,
-                        and understand complex permission relationships across workspace(s).
+                        The Security Analysis Tool is a security observability platform for Databricks environments.
+                        It maps the permissions graph to surface privilege escalation paths, over-privileged principals,
+                        and complex access relationships across workspaces; scans notebooks and cluster configurations
+                        for hardcoded credentials; and answers questions about any of it in plain language.
                     </p>
                     
                     <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🎯 Key Features</h3>
@@ -2187,8 +2830,109 @@ def get_main_html():
                     <div id="entra-rule-builder"></div>
                 </div>
             </div>
+
+            <!-- Credential Exposure (secret scanning overview) -->
+            <div class="page" id="page-secretsoverview">
+                <div class="page-header">
+                    <h1 class="page-title">Credential Exposure</h1>
+                    <p class="page-desc">Hardcoded credentials found in notebook source and cluster environment variables by the SAT secret scanner. Secrets are stored as SHA-256 hashes, never plaintext. <strong>Active</strong> means the credential was validated against the live service and is confirmed working.</p>
+                </div>
+                <div id="secretsoverview-results"></div>
+            </div>
+
+            <!-- Secret Findings (detail table) -->
+            <div class="page" id="page-secretsfindings">
+                <div class="page-header">
+                    <h1 class="page-title">Secret Findings</h1>
+                    <p class="page-desc">Individual detections from the most recent scan per workspace. Filter by workspace, source, detector, or confirmed-active status.</p>
+                </div>
+                <div class="card" style="padding: 16px; margin-bottom: 18px;">
+                    <div class="secrets-filter-row">
+                        <div class="filter-field">
+                            <label class="filter-label">Workspace</label>
+                            <select id="sf-workspace"><option value="">All workspaces</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label class="filter-label">Source</label>
+                            <select id="sf-source">
+                                <option value="">Notebooks and clusters</option>
+                                <option value="notebook">Notebooks</option>
+                                <option value="cluster">Cluster configs</option>
+                            </select>
+                        </div>
+                        <div class="filter-field">
+                            <label class="filter-label">Detector</label>
+                            <select id="sf-detector"><option value="">All detectors</option></select>
+                        </div>
+                        <div class="filter-field">
+                            <label class="filter-label">Status</label>
+                            <select id="sf-verified">
+                                <option value="false">All findings</option>
+                                <option value="true">Confirmed active only</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="sf-apply">Apply</button>
+                    </div>
+                </div>
+                <div id="secretsfindings-results"></div>
+            </div>
+
         </main>
     </div>
+
+    <!-- Security assistant: floating launcher + slide-over panel, available on
+         every page rather than occupying a nav slot. -->
+    <button class="assistant-fab" id="assistant-fab" title="Ask the security assistant" aria-label="Open security assistant">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+    </button>
+
+    <aside class="assistant-panel" id="assistant-panel" aria-label="Security assistant">
+        <div class="assistant-head">
+            <div class="assistant-head-mark">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            </div>
+            <div style="min-width:0;">
+                <div class="assistant-head-title">Security Assistant</div>
+                <div class="assistant-head-sub" id="assistant-model-label">Permissions, secrets, and audit activity</div>
+            </div>
+            <div class="assistant-head-actions">
+            <button class="assistant-icon-btn" id="assistant-model-btn" title="Change model" aria-label="Change model">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            </button>
+            <button class="assistant-close" id="assistant-close" aria-label="Close">&times;</button>
+            </div>
+        </div>
+
+        <!-- Model selector. Lists the chat endpoints available on this
+             workspace's AI Gateway; the choice applies to the next message. -->
+        <div class="assistant-models" id="assistant-models" style="display:none;">
+            <div class="assistant-models-head">
+                <span>Model</span>
+                <span class="assistant-models-note">Served through the AI Gateway</span>
+            </div>
+            <select id="assistant-model-select"><option>Loading…</option></select>
+            <div class="assistant-models-hint" id="assistant-model-hint"></div>
+        </div>
+        <div class="assistant-log" id="assistant-log"></div>
+        <div class="assistant-compose">
+            <textarea id="assistant-input" rows="1" placeholder="Ask a security question&hellip;"></textarea>
+            <button class="btn btn-primary" id="assistant-send">Send</button>
+            <button class="btn btn-stop" id="assistant-stop" hidden>Stop</button>
+        </div>
+        <div class="assistant-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Read-only — the assistant can explain findings but cannot change permissions or data.
+        </div>
+    </aside>
+
+
 
     <script>
         // Current run_id state
@@ -2238,13 +2982,14 @@ def get_main_html():
             // Update URL hash
             window.location.hash = page;
 
-            // The global stats header reflects the BrickHound graph collection run
-            // (inventory counts + collector workspace coverage, driven by the run
-            // selector). Hide it where it doesn't belong: the home/intro page (no
-            // data context yet) and the account-level detection pages, which have
-            // their own run_id and per-report coverage block — showing the global
-            // bar there only causes two-coverage-widget confusion.
-            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder'];
+            // The global stats header describes the permissions graph collection run
+            // (inventory counts and collector coverage, driven by the run selector).
+            // Hide it on pages it does not describe: the intro page, the
+            // account-level detection reports (own run_id and coverage block), the
+            // secret scanning pages (different dataset entirely), and Data
+            // Collection, which reports freshness for every job itself.
+            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder',
+                                       'collection', 'secretsoverview', 'secretsfindings'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
@@ -2257,6 +3002,9 @@ def get_main_html():
             else if (page === 'sharedtoaccount') loadSharedToAccount();
             else if (page === 'privilegednonidp') loadPrivilegedNonIdp();
             else if (page === 'denylistbuilder') loadDenylistBuilder();
+            else if (page === 'collection') loadCollectionPanel();
+            else if (page === 'secretsoverview') loadSecretsOverview();
+            else if (page === 'secretsfindings') loadSecretsFindings();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
                 loadSourcePrincipals();
@@ -3584,6 +4332,1020 @@ def get_main_html():
         // =====================================================================
 
         // Load Isolated Principals Report
+
+        // ------------------------------------------------------------------
+        // Secret scanning
+        //
+        // Findings come from the SAT secret scanner. "Confirmed active" means
+        // TruffleHog validated the credential against the live service, so those
+        // are ranked first everywhere — they are the ones that need rotating now.
+        // ------------------------------------------------------------------
+
+        // Rendered when the scanner has not populated its tables. Deliberately
+        // distinct from an empty result: "no findings" and "never scanned" are
+        // very different answers, and conflating them gives false assurance.
+        function showSecretsNotReady(containerId, message) {
+            document.getElementById(containerId).innerHTML = `
+                <div class="results-container">
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                        <p style="font-weight:600;color:var(--text-primary);margin-bottom:6px;">No scan results yet</p>
+                        <p>${escapeHtml(message || '')}</p>
+                    </div>
+                </div>`;
+        }
+
+        function secretStatBlock(label, value, color) {
+            return `
+                <div>
+                    <div style="font-size: 1.8em; font-weight: 700; color: ${color};">${value}</div>
+                    <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">${escapeHtml(label)}</div>
+                </div>`;
+        }
+
+        // Horizontal distribution bar — avoids pulling in a charting library.
+        function secretBar(label, value, max, color) {
+            const pct = max > 0 ? (value / max) * 100 : 0;
+            return `
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                    <div style="flex:0 0 190px;font-size:0.85em;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+                    <div style="flex:1;height:7px;background:var(--bg-input);border-radius:4px;overflow:hidden;">
+                        <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;"></div>
+                    </div>
+                    <div style="flex:0 0 48px;text-align:right;font-size:0.85em;font-variant-numeric:tabular-nums;">${value}</div>
+                </div>`;
+        }
+
+        function secretStatusBadge(verified) {
+            const active = verified === true || String(verified) === 'true';
+            return active
+                ? '<span class="badge" style="background:rgba(239,68,68,.15);color:#fca5a5;">ACTIVE</span>'
+                : '<span class="badge" style="background:rgba(148,163,184,.15);color:#cbd5e1;">unverified</span>';
+        }
+
+
+        // ------------------------------------------------------------------
+        // Security assistant (floating panel)
+        // ------------------------------------------------------------------
+
+        const assistantState = { session: null, busy: false, ready: null,
+                                 controller: null, turnId: null };
+
+
+        // Model selector — lists the gateway's chat endpoints and switches which
+        // one answers the next message.
+        let assistantModelsLoaded = false;
+
+        function assistantShortModel(name) {
+            // Endpoint names are long ("databricks-claude-opus-4-7"); the prefix is
+            // noise once you know everything is served through the gateway.
+            return String(name || '').replace(/^databricks-/, '');
+        }
+
+        async function assistantToggleModels() {
+            const box = document.getElementById('assistant-models');
+            const btn = document.getElementById('assistant-model-btn');
+            const showing = box.style.display !== 'none';
+            box.style.display = showing ? 'none' : 'block';
+            btn.classList.toggle('is-open', !showing);
+            if (!showing && !assistantModelsLoaded) await assistantLoadModels();
+        }
+
+        async function assistantLoadModels() {
+            const select = document.getElementById('assistant-model-select');
+            const hint = document.getElementById('assistant-model-hint');
+            try {
+                const data = await fetch('/api/assistant/models').then(r => r.json());
+                if (data.error) {
+                    select.innerHTML = '<option>Unavailable</option>';
+                    hint.textContent = data.error;
+                    return;
+                }
+                const models = data.models || [];
+                select.innerHTML = models.map(m =>
+                    `<option value="${escapeHtml(m.name)}" ${m.name === data.active ? 'selected' : ''}>${escapeHtml(assistantShortModel(m.name))}</option>`
+                ).join('');
+                hint.textContent = `${models.length} endpoints available`;
+                assistantModelsLoaded = true;
+                assistantSetModelLabel(data.active);
+
+                select.onchange = async () => {
+                    const endpoint = select.value;
+                    hint.textContent = 'Switching…';
+                    try {
+                        const res = await fetch('/api/assistant/models', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ endpoint: endpoint }),
+                        }).then(r => r.json());
+                        if (res.error) { hint.textContent = res.error; return; }
+                        assistantSetModelLabel(res.active);
+                        hint.textContent = 'Applies to your next message.';
+                    } catch (e) {
+                        hint.textContent = e.message;
+                    }
+                };
+            } catch (e) {
+                select.innerHTML = '<option>Unavailable</option>';
+                hint.textContent = e.message;
+            }
+        }
+
+        function assistantSetModelLabel(name) {
+            const label = document.getElementById('assistant-model-label');
+            if (label && name) label.textContent = assistantShortModel(name);
+        }
+
+        function assistantOpen() {
+            document.getElementById('assistant-panel').classList.add('open');
+            document.getElementById('assistant-fab').classList.add('hidden');
+            if (assistantState.ready === null) assistantInit();
+            const input = document.getElementById('assistant-input');
+            if (input) setTimeout(() => input.focus(), 220);
+        }
+
+        function assistantClose() {
+            document.getElementById('assistant-panel').classList.remove('open');
+            document.getElementById('assistant-fab').classList.remove('hidden');
+        }
+
+        async function assistantInit() {
+            const log = document.getElementById('assistant-log');
+            log.innerHTML = '<div class="loading"><div class="spinner"></div>Connecting&hellip;</div>';
+            try {
+                const cfg = await fetch('/api/assistant/config').then(r => r.json());
+                assistantState.ready = !!cfg.ready;
+                if (cfg.model) assistantSetModelLabel(cfg.model);
+                if (!cfg.ready) {
+                    log.innerHTML = `
+                        <div class="empty-state" style="padding:24px 8px;">
+                            <p style="font-weight:600;color:var(--text-primary);margin-bottom:6px;">Assistant unavailable</p>
+                            <p style="font-size:.88em;">${escapeHtml(cfg.message || '')}</p>
+                        </div>`;
+                    return;
+                }
+                log.innerHTML = `
+                    <div class="assistant-chips">
+                        ${(cfg.suggestions || []).map(q =>
+                            `<div class="assistant-chip" data-ask="${escapeHtml(q)}">${escapeHtml(q)}</div>`).join('')}
+                    </div>
+                    <div style="font-size:.85em;color:var(--text-muted);line-height:1.5;">
+                        Ask about permissions, exposed credentials, or workspace activity.
+                        Answers are grounded in the collected data — the assistant reads it
+                        through a fixed set of tools and cannot modify anything.
+                    </div>`;
+                log.querySelectorAll('[data-ask]').forEach(chip => {
+                    chip.addEventListener('click', () => {
+                        document.getElementById('assistant-input').value = chip.dataset.ask;
+                        assistantSend();
+                    });
+                });
+            } catch (e) {
+                assistantState.ready = false;
+                log.innerHTML = `<div class="empty-state" style="padding:24px 8px;"><p>Could not reach the assistant: ${escapeHtml(e.message)}</p></div>`;
+            }
+        }
+
+        // Minimal markdown: bold, inline code, and bullet lines. The assistant is
+        // instructed to keep formatting simple, so a full parser is unnecessary.
+        function assistantMarkdown(text) {
+            const out = [];
+            let inList = false;
+            // Split on newlines using String.fromCharCode(10). A backslash escape
+            // cannot be used here: this whole template is a Python f-string, so
+            // Python would consume the escape and emit a literal line break,
+            // which is a JavaScript syntax error.
+            escapeHtml(text).split(String.fromCharCode(10)).forEach(raw => {
+                const line = raw
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+                if (bullet) {
+                    if (!inList) { out.push('<ul>'); inList = true; }
+                    out.push(`<li>${bullet[1]}</li>`);
+                } else {
+                    if (inList) { out.push('</ul>'); inList = false; }
+                    out.push(line.trim() ? `<div>${line}</div>` : '<div style="height:6px"></div>');
+                }
+            });
+            if (inList) out.push('</ul>');
+            return out.join('');
+        }
+
+        function assistantAppend(role, html) {
+            const log = document.getElementById('assistant-log');
+            // Clear the intro block on the first real exchange.
+            const chips = log.querySelector('.assistant-chips');
+            if (chips) log.innerHTML = '';
+            const wrap = document.createElement('div');
+            wrap.className = 'assistant-msg ' + (role === 'user' ? 'me' : 'ai');
+            wrap.innerHTML = `
+                <div class="assistant-av">${role === 'user' ? 'You' : 'AI'}</div>
+                <div class="assistant-body">
+                    <div class="assistant-who">${role === 'user' ? 'You' : 'Assistant'}</div>
+                    <div class="assistant-text">${html}</div>
+                </div>`;
+            log.appendChild(wrap);
+            log.scrollTop = log.scrollHeight;
+            return wrap;
+        }
+
+        // Abort the in-flight turn. The fetch is cancelled locally and the server is
+        // told to stop, so a long tool loop stops spending tokens rather than
+        // running on invisibly after the user gave up on it.
+        function assistantStop() {
+            if (!assistantState.busy) return;
+            const turn = assistantState.turnId;
+            if (assistantState.controller) assistantState.controller.abort();
+            if (turn) {
+                fetch('/api/assistant/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ turn_id: turn }),
+                }).catch(() => {});
+            }
+        }
+
+        async function assistantSend() {
+            if (assistantState.busy) return;
+            const input = document.getElementById('assistant-input');
+            const question = input.value.trim();
+            if (!question) return;
+
+            input.value = '';
+            assistantState.busy = true;
+            assistantState.controller = new AbortController();
+            assistantState.turnId = 'turn-' + Date.now() + '-' +
+                Math.random().toString(36).slice(2, 8);
+            const sendBtn = document.getElementById('assistant-send');
+            const stopBtn = document.getElementById('assistant-stop');
+            sendBtn.disabled = true;
+            sendBtn.hidden = true;
+            stopBtn.hidden = false;
+            assistantAppend('user', assistantMarkdown(question));
+            const pending = assistantAppend('ai', '<div class="loading" style="padding:0;"><div class="spinner"></div>Investigating&hellip;</div>');
+
+            try {
+                const res = await fetch('/api/assistant/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: assistantState.controller.signal,
+                    body: JSON.stringify({
+                        message: question,
+                        session_id: assistantState.session,
+                        turn_id: assistantState.turnId,
+                    }),
+                });
+                const result = await res.json();
+                if (result.error) {
+                    pending.querySelector('.assistant-text').innerHTML =
+                        `<span style="color:#fca5a5;">${escapeHtml(result.error)}</span>`;
+                } else {
+                    assistantState.session = result.session_id;
+                    let html = assistantMarkdown(result.answer || '(no answer)');
+                    const calls = result.tool_calls || [];
+                    if (calls.length) {
+                        // String.fromCharCode(10) rather than a backslash escape: the
+                        // enclosing Python f-string would consume '\\n' and emit a raw
+                        // line break, which is a JavaScript syntax error.
+                        const lines = calls.map(t =>
+                            `${t.name || t.tool_name}(${JSON.stringify(t.args || t.tool_args || {})})`).join(String.fromCharCode(10));
+                        html += `<details class="assistant-trace"><summary>${calls.length} data lookup${calls.length === 1 ? '' : 's'}</summary><pre>${escapeHtml(lines)}</pre></details>`;
+                    }
+                    pending.querySelector('.assistant-text').innerHTML = html;
+                }
+            } catch (e) {
+                const stopped = e.name === 'AbortError';
+                pending.querySelector('.assistant-text').innerHTML = stopped
+                    ? '<span style="color:#94a3b8;">Stopped.</span>'
+                    : `<span style="color:#fca5a5;">${escapeHtml(e.message)}</span>`;
+            } finally {
+                assistantState.busy = false;
+                assistantState.controller = null;
+                assistantState.turnId = null;
+                const sendBtn = document.getElementById('assistant-send');
+                const stopBtn = document.getElementById('assistant-stop');
+                sendBtn.disabled = false;
+                sendBtn.hidden = false;
+                stopBtn.hidden = true;
+                const log = document.getElementById('assistant-log');
+                log.scrollTop = log.scrollHeight;
+            }
+        }
+
+        // Wire the assistant once the DOM exists.
+        (function wireAssistant() {
+            function attach() {
+                const fab = document.getElementById('assistant-fab');
+                if (!fab) return;
+                fab.addEventListener('click', assistantOpen);
+                document.getElementById('assistant-model-btn')
+                        .addEventListener('click', assistantToggleModels);
+                document.getElementById('assistant-close').addEventListener('click', assistantClose);
+                document.getElementById('assistant-send').addEventListener('click', assistantSend);
+                document.getElementById('assistant-stop').addEventListener('click', assistantStop);
+                const input = document.getElementById('assistant-input');
+                input.addEventListener('keydown', ev => {
+                    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); assistantSend(); }
+                    // Escape stops a running turn, matching the Stop button.
+                    if (ev.key === 'Escape' && assistantState.busy) { ev.preventDefault(); assistantStop(); }
+                });
+                document.addEventListener('keydown', ev => {
+                    if (ev.key === 'Escape') assistantClose();
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', attach);
+            } else {
+                attach();
+            }
+        })();
+
+
+        // ------------------------------------------------------------------
+        // Data collection control
+        //
+        // Starts the SAT collection jobs and follows the run to completion, so a
+        // refresh never requires leaving the app. Only the two jobs bound in the
+        // app's configuration can be started.
+        // ------------------------------------------------------------------
+
+        let collectionPollTimers = {};
+        let collectionElapsedTimer = null;
+        const collectionRunStart = {};
+
+        // A collection older than this is flagged stale — the data on screen may no
+        // longer reflect the workspace.
+        const COLLECT_STALE_HOURS = 36;
+
+        function formatElapsed(ms) {
+            if (!ms || ms < 0) return '0s';
+            const total = Math.floor(ms / 1000);
+            const h = Math.floor(total / 3600);
+            const m = Math.floor((total % 3600) / 60);
+            const sec = total % 60;
+            if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+            if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`;
+            return `${sec}s`;
+        }
+
+        function formatAgo(ms) {
+            if (!ms) return null;
+            const diff = Date.now() - Number(ms);
+            if (diff < 60000) return 'just now';
+            if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+            return `${Math.floor(diff / 86400000)}d ago`;
+        }
+
+        function collectionStageText(run) {
+            const state = String(run.state || '').toUpperCase();
+            if (state === 'PENDING' || state === 'QUEUED' || state === 'BLOCKED') {
+                return 'Waiting for compute';
+            }
+            const total = Number(run.tasks_total) || 0;
+            const done = Number(run.tasks_done) || 0;
+            if (total > 1 && done > 0) return `Running · ${done} of ${total} steps complete`;
+            return 'Running';
+        }
+
+        // Status is derived from the last run plus its age, so "succeeded three days
+        // ago" reads as stale rather than healthy.
+        function collectionHealth(run) {
+            if (!run) return { tone: 'idle', text: 'Never collected' };
+            if (run.active) return { tone: 'running', text: collectionStageText(run) };
+            // A cancellation is a deliberate act, not a fault: it gets the neutral
+            // idle treatment rather than the red that means something went wrong.
+            // The API reports the termination code, which is USER_CANCELED for a
+            // cancel from this UI and CANCELED for other cancellation paths.
+            if (String(run.result || '').indexOf('CANCEL') !== -1) {
+                return { tone: 'idle', text: 'Cancelled' };
+            }
+            if (run.result && run.result !== 'SUCCESS') {
+                return { tone: 'failed', text: 'Failed' };
+            }
+            const ageH = run.start_time ? (Date.now() - Number(run.start_time)) / 3600000 : null;
+            if (ageH !== null && ageH > COLLECT_STALE_HOURS) {
+                return { tone: 'stale', text: 'Stale' };
+            }
+            return { tone: 'ok', text: 'Healthy' };
+        }
+
+        function collectionRow(job) {
+            if (!job.configured) {
+                return `
+                    <div class="collect-row is-unconfigured">
+                        <div class="collect-state">
+                            <span class="collect-dot idle"></span>
+                            <span>Not connected</span>
+                        </div>
+                        <div>
+                            <div class="collect-name">${escapeHtml(job.label)}</div>
+                            <div class="collect-desc">${escapeHtml(job.description)}</div>
+                        </div>
+                        <div class="collect-fresh-sub">Re-run the installer to manage this here.</div>
+                        <div class="collect-actions"></div>
+                    </div>`;
+            }
+
+            const run = job.latest_run;
+            const health = collectionHealth(run);
+            const active = run && run.active;
+            if (active && run.start_time) collectionRunStart[job.kind] = Number(run.start_time);
+
+            const rowClass = active ? ' is-running'
+                : health.tone === 'stale' ? ' is-stale'
+                : health.tone === 'failed' ? ' is-failed' : '';
+
+            const substate = active
+                ? `<div class="collect-substate" data-elapsed="${escapeHtml(job.kind)}">${formatElapsed(Date.now() - (Number(run.start_time) || Date.now()))} elapsed</div>`
+                : '';
+
+            let freshness = '<div class="collect-fresh-sub">No runs recorded</div>';
+            if (run && run.start_time) {
+                const duration = (run.end_time && run.start_time)
+                    ? formatElapsed(Number(run.end_time) - Number(run.start_time)) : null;
+                freshness = `
+                    <div class="collect-fresh">${escapeHtml(formatAgo(run.start_time))}</div>
+                    <div class="collect-fresh-sub">
+                        ${duration ? 'Completed in ' + escapeHtml(duration) : 'In progress'}
+                    </div>`;
+            }
+
+            const nameCell = job.job_url
+                ? `<a class="collect-link" href="${escapeHtml(job.job_url)}" target="_blank" rel="noopener"
+                      title="Open in Workflows">${escapeHtml(job.label)}<svg class="collect-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg></a>`
+                : escapeHtml(job.label);
+
+            return `
+                <div class="collect-row${rowClass}" data-kind="${escapeHtml(job.kind)}">
+                    <div>
+                        <div class="collect-state">
+                            <span class="collect-dot ${health.tone}"></span>
+                            <span>${escapeHtml(health.text)}</span>
+                        </div>
+                        ${substate}
+                    </div>
+                    <div>
+                        <div class="collect-name">${nameCell}</div>
+                        <div class="collect-desc">${escapeHtml(job.description)}</div>
+                        ${job.feeds ? `<div class="collect-feeds">Powers <span>${escapeHtml(job.feeds)}</span></div>` : ''}
+                    </div>
+                    <div>${freshness}</div>
+                    <div class="collect-actions">
+                        ${run && run.run_page_url
+                            ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(run.run_page_url)}" target="_blank" rel="noopener">Last run</a>`
+                            : ''}
+                        <button class="btn btn-sm btn-ghost" onclick="toggleScheduleEditor('${escapeHtml(job.kind)}')">Schedule</button>
+                        ${active
+                            ? `<button class="btn btn-sm btn-stop" onclick="cancelCollection('${escapeHtml(job.kind)}')">Cancel run</button>`
+                            : `<button class="btn btn-sm" onclick="startCollection('${escapeHtml(job.kind)}')">Run now</button>`}
+                    </div>
+                    ${active ? '<div class="collect-bar"><div class="collect-bar-fill"></div></div>' : ''}
+                    <div class="collect-drawer" id="schedule-${escapeHtml(job.kind)}" style="display:none;"></div>
+                </div>`;
+        }
+
+        function startElapsedTicker() {
+            if (collectionElapsedTimer) clearInterval(collectionElapsedTimer);
+            collectionElapsedTimer = setInterval(() => {
+                let any = false;
+                document.querySelectorAll('[data-elapsed]').forEach(node => {
+                    const started = collectionRunStart[node.dataset.elapsed];
+                    if (!started) return;
+                    any = true;
+                    node.textContent = formatElapsed(Date.now() - started) + ' elapsed';
+                });
+                if (!any) { clearInterval(collectionElapsedTimer); collectionElapsedTimer = null; }
+            }, 1000);
+        }
+
+        async function loadCollectionPanel(options) {
+            const panel = document.getElementById('collection-panel');
+            const quiet = options && options.quiet;
+            // Preserve any open schedule drawer across a quiet refresh.
+            const openDrawers = quiet
+                ? Array.from(document.querySelectorAll('.collect-drawer'))
+                    .filter(d => d.style.display !== 'none').map(d => d.id.replace('schedule-', ''))
+                : [];
+
+            if (!quiet) {
+                panel.innerHTML = '<div class="loading"><div class="spinner"></div>Checking collection status…</div>';
+            }
+            try {
+                const result = await fetch('/api/collection/status').then(r => r.json());
+                if (result.error) {
+                    panel.innerHTML = `
+                        <div class="card" style="padding:16px 18px;">
+                            <div style="font-weight:600;margin-bottom:4px;">Couldn't check collection status</div>
+                            <div style="font-size:.85em;color:var(--text-muted);">${escapeHtml(result.error)}</div>
+                        </div>`;
+                    return null;
+                }
+                const jobs = result.jobs || [];
+                const groups = result.groups || [];
+                const stale = jobs.filter(j => j.configured && collectionHealth(j.latest_run).tone === 'stale').length;
+                const failed = jobs.filter(j => j.configured && collectionHealth(j.latest_run).tone === 'failed').length;
+
+                let banner = '';
+                if (failed > 0) {
+                    banner = `<div class="alert" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 15px;margin-bottom:18px;font-size:.87em;color:#fca5a5;">
+                        ${failed} collection${failed === 1 ? '' : 's'} failed on the last run. Views that depend on them may be showing older data.
+                    </div>`;
+                } else if (stale > 0) {
+                    banner = `<div class="alert" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 15px;margin-bottom:18px;font-size:.87em;color:#fcd34d;">
+                        ${stale} collection${stale === 1 ? '' : 's'} last ran more than ${COLLECT_STALE_HOURS} hours ago.
+                    </div>`;
+                }
+
+                const sections = groups.map(group => {
+                    const inGroup = jobs.filter(j => j.group === group);
+                    if (!inGroup.length) return '';
+                    return `
+                        <div class="collect-group">
+                            <div class="collect-group-head">
+                                <span class="collect-group-title">${escapeHtml(group)}</span>
+                                <span class="collect-group-rule"></span>
+                            </div>
+                            ${inGroup.map(collectionRow).join('')}
+                        </div>`;
+                }).join('');
+
+                panel.innerHTML = banner + sections;
+                if (jobs.some(j => j.latest_run && j.latest_run.active)) startElapsedTicker();
+                openDrawers.forEach(kind => toggleScheduleEditor(kind));
+                return jobs;
+            } catch (e) {
+                panel.innerHTML = `<div class="card" style="padding:16px;"><div style="color:#fca5a5;">${escapeHtml(e.message)}</div></div>`;
+                return null;
+            }
+        }
+
+        async function startCollection(kind) {
+            try {
+                const result = await fetch('/api/collection/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: kind }),
+                }).then(r => r.json());
+
+                await loadCollectionPanel({ quiet: true });
+                if (result.error) {
+                    collectionRowNote(kind, result.error, 'error');
+                    return;
+                }
+                collectionRunStart[kind] = Date.now();
+                startElapsedTicker();
+                pollCollectionRun(result.run_id, kind);
+            } catch (e) {
+                await loadCollectionPanel();
+            }
+        }
+
+        // Show a message inside a collection row, for outcomes that belong next to
+        // the job they concern rather than in a global banner.
+        function collectionRowNote(kind, text, tone) {
+            const row = document.querySelector(`.collect-row[data-kind="${kind}"]`);
+            if (!row) return;
+            const note = document.createElement('div');
+            const color = tone === 'error' ? '#fca5a5' : '#94a3b8';
+            note.style.cssText =
+                `grid-column:1/-1;margin-top:9px;font-size:.83em;color:${color};`;
+            note.textContent = text;
+            row.appendChild(note);
+        }
+
+        async function cancelCollection(kind) {
+            const row = document.querySelector(`.collect-row[data-kind="${kind}"]`);
+            const btn = row && row.querySelector('.btn-stop');
+            if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
+            try {
+                const result = await fetch('/api/collection/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: kind }),
+                }).then(r => r.json());
+
+                if (result.error) {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Cancel run'; }
+                    await loadCollectionPanel({ quiet: true });
+                    collectionRowNote(kind, result.error, 'error');
+                    return;
+                }
+                if (!result.cancelled) {
+                    if (collectionPollTimers[kind]) clearTimeout(collectionPollTimers[kind]);
+                    delete collectionRunStart[kind];
+                    await loadCollectionPanel({ quiet: true });
+                    collectionRowNote(kind, result.message || 'That job was not running.', 'muted');
+                    return;
+                }
+
+                // Jobs take several seconds to actually reach TERMINATED, so an
+                // immediate refresh would still read RUNNING and leave the row stuck
+                // on stale state. Keep polling the run until it settles.
+                if (result.run_id) {
+                    pollCollectionRun(result.run_id, kind);
+                } else {
+                    delete collectionRunStart[kind];
+                    await loadCollectionPanel({ quiet: true });
+                }
+            } catch (e) {
+                await loadCollectionPanel({ quiet: true });
+                collectionRowNote(kind, e.message, 'error');
+            }
+        }
+
+        function pollCollectionRun(runId, kind) {
+            if (collectionPollTimers[kind]) clearTimeout(collectionPollTimers[kind]);
+            let attempts = 0;
+            const tick = async () => {
+                attempts += 1;
+                try {
+                    const run = await fetch(`/api/collection/run/${runId}`).then(r => r.json());
+                    await loadCollectionPanel({ quiet: true });
+                    if (!run.active) {
+                        delete collectionRunStart[kind];
+                        const row = document.querySelector(`.collect-row[data-kind="${kind}"]`);
+                        if (row && run.result === 'SUCCESS') row.classList.add('just-finished');
+                        return;
+                    }
+                } catch (e) { /* transient; keep polling */ }
+                // Fast early polling so short runs feel responsive, backing off so a
+                // long collection doesn't hammer the API.
+                const delay = attempts <= 6 ? 5000 : attempts <= 20 ? 15000 : 30000;
+                if (attempts < 160) collectionPollTimers[kind] = setTimeout(tick, delay);
+            };
+            collectionPollTimers[kind] = setTimeout(tick, 3000);
+        }
+
+        const SCHEDULE_PRESETS = [
+            { label: 'Every hour',           cron: '0 0 * * * ?' },
+            { label: 'Daily at 02:00',       cron: '0 0 2 * * ?' },
+            { label: 'Daily at 08:00',       cron: '0 0 8 * * ?' },
+            { label: 'Weekdays at 08:00',    cron: '0 0 8 ? * MON-FRI' },
+            { label: 'Weekly, Sunday 02:00', cron: '0 0 2 ? * SUN' },
+        ];
+
+        async function toggleScheduleEditor(kind) {
+            const box = document.getElementById(`schedule-${kind}`);
+            if (!box) return;
+            if (box.style.display !== 'none' && box.dataset.loaded === '1') {
+                box.style.display = 'none';
+                box.dataset.loaded = '';
+                return;
+            }
+            box.style.display = 'block';
+            box.innerHTML = '<div class="loading" style="padding:6px 0;"><div class="spinner"></div>Loading schedule…</div>';
+            try {
+                const sched = await fetch(`/api/collection/schedule/${kind}`).then(r => r.json());
+                if (sched.error) {
+                    box.innerHTML = `<div style="font-size:.84em;color:#fca5a5;">${escapeHtml(sched.error)}</div>`;
+                    box.dataset.loaded = '1';
+                    return;
+                }
+                const current = sched.cron || '';
+                const matched = SCHEDULE_PRESETS.find(p => p.cron === current);
+                box.innerHTML = `
+                    <div class="collect-drawer-grid">
+                        <div class="collect-field">
+                            <span class="collect-field-label">Automatic collection</span>
+                            <label class="collect-switch">
+                                <input type="checkbox" id="sched-on-${kind}" ${sched.paused ? '' : 'checked'}>
+                                <span class="collect-switch-track"></span>
+                                <span id="sched-on-label-${kind}">${sched.paused ? 'Off' : 'On'}</span>
+                            </label>
+                        </div>
+                        <div class="collect-field">
+                            <span class="collect-field-label">Frequency</span>
+                            <select id="sched-preset-${kind}">
+                                ${SCHEDULE_PRESETS.map(pr =>
+                                    `<option value="${escapeHtml(pr.cron)}" ${pr.cron === current ? 'selected' : ''}>${escapeHtml(pr.label)}</option>`).join('')}
+                                <option value="__custom" ${matched ? '' : 'selected'}>Custom schedule…</option>
+                            </select>
+                        </div>
+                        <div class="collect-field">
+                            <span class="collect-field-label">Time zone</span>
+                            <input type="text" id="sched-tz-${kind}" value="${escapeHtml(sched.timezone || 'UTC')}">
+                        </div>
+                        <div class="collect-field" id="sched-custom-${kind}" style="${matched ? 'display:none;' : ''}">
+                            <span class="collect-field-label">Cron expression</span>
+                            <input type="text" id="sched-cron-${kind}" value="${escapeHtml(current)}" placeholder="0 0 8 ? * *">
+                        </div>
+                        <div class="collect-field" style="flex:0 0 auto;">
+                            <span class="collect-field-label">&nbsp;</span>
+                            <button class="btn btn-sm" onclick="saveSchedule('${escapeHtml(kind)}')">Save schedule</button>
+                        </div>
+                    </div>
+                    <div class="collect-msg" id="sched-msg-${kind}"></div>`;
+                box.dataset.loaded = '1';
+
+                const preset = document.getElementById(`sched-preset-${kind}`);
+                preset.addEventListener('change', () => {
+                    const isCustom = preset.value === '__custom';
+                    document.getElementById(`sched-custom-${kind}`).style.display = isCustom ? 'flex' : 'none';
+                    if (!isCustom) document.getElementById(`sched-cron-${kind}`).value = preset.value;
+                });
+                const toggle = document.getElementById(`sched-on-${kind}`);
+                toggle.addEventListener('change', () => {
+                    document.getElementById(`sched-on-label-${kind}`).textContent = toggle.checked ? 'On' : 'Off';
+                });
+            } catch (e) {
+                box.innerHTML = `<div style="font-size:.84em;color:#fca5a5;">${escapeHtml(e.message)}</div>`;
+                box.dataset.loaded = '1';
+            }
+        }
+
+        async function saveSchedule(kind) {
+            const msg = document.getElementById(`sched-msg-${kind}`);
+            const preset = document.getElementById(`sched-preset-${kind}`).value;
+            const cron = preset === '__custom'
+                ? document.getElementById(`sched-cron-${kind}`).value.trim()
+                : preset;
+            const timezone = document.getElementById(`sched-tz-${kind}`).value.trim() || 'UTC';
+            const enabled = document.getElementById(`sched-on-${kind}`).checked;
+            msg.innerHTML = '<span style="color:var(--text-muted);">Saving…</span>';
+            try {
+                const result = await fetch(`/api/collection/schedule/${kind}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cron: cron, timezone: timezone, paused: !enabled }),
+                }).then(r => r.json());
+                if (result.error) {
+                    msg.innerHTML = `<span style="color:#fca5a5;">${escapeHtml(result.error)}</span>`;
+                    return;
+                }
+                msg.innerHTML = enabled
+                    ? '<span style="color:#86efac;">Saved — this collection will run on the new schedule.</span>'
+                    : '<span style="color:#86efac;">Saved — automatic collection is off. You can still run it manually.</span>';
+                loadCollectionPanel({ quiet: true });
+            } catch (e) {
+                msg.innerHTML = `<span style="color:#fca5a5;">${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        async function loadSecretsOverview() {
+            const container = document.getElementById('secretsoverview-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading scan results...</div>';
+
+            try {
+                const [sumRes, detRes, wsRes, topRes, sharedRes] = await Promise.all([
+                    fetch('/api/secrets/summary').then(r => r.json()),
+                    fetch('/api/secrets/by-detector').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/secrets/by-workspace').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/secrets/top-objects').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/secrets/shared').then(r => r.json()).catch(() => ({})),
+                ]);
+
+                if (sumRes.ready === false) {
+                    showSecretsNotReady('secretsoverview-results', sumRes.message);
+                    return;
+                }
+                if (sumRes.error) { showEmpty('secretsoverview-results', sumRes.error); return; }
+
+                const s = sumRes.summary || {};
+                const verified = Number(s.verified_findings || 0);
+                const total = Number(s.total_findings || 0);
+
+                let html = '';
+
+                // Lead with the urgent case: confirmed-live credentials.
+                if (verified > 0) {
+                    html += `
+                        <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+                            <div style="font-weight:600;color:#fca5a5;margin-bottom:3px;">${verified} confirmed active credential${verified === 1 ? '' : 's'} exposed</div>
+                            <div style="font-size:0.87em;color:var(--text-secondary);">
+                                These were validated against the live service and are working right now. Rotate them, then remove them from source.
+                            </div>
+                        </div>`;
+                }
+
+                html += `
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Exposure Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; text-align: center;">
+                            ${secretStatBlock('Confirmed active', verified, verified > 0 ? '#ef4444' : '#22c55e')}
+                            ${secretStatBlock('Total findings', total, total > 0 ? '#f59e0b' : '#22c55e')}
+                            ${secretStatBlock('Distinct secrets', s.distinct_secrets || 0, '#3b82f6')}
+                            ${secretStatBlock('Objects affected', s.affected_objects || 0, '#3b82f6')}
+                            ${secretStatBlock('In notebooks', s.notebook_findings || 0, '#8b5cf6')}
+                            ${secretStatBlock('In cluster configs', s.cluster_findings || 0, '#8b5cf6')}
+                        </div>
+                        <div style="margin-top:12px;font-size:0.8em;color:var(--text-muted);text-align:center;">
+                            ${s.workspaces_scanned || 0} workspace(s) scanned &middot; ${s.affected_workspaces || 0} with findings
+                            ${s.last_scan_time ? '&middot; last scan ' + escapeHtml(String(s.last_scan_time).slice(0, 16)) : ''}
+                        </div>
+                    </div>`;
+
+                // Detector distribution and per-workspace exposure, side by side.
+                const detRows = (detRes && detRes.rows) || [];
+                const wsRows = (wsRes && wsRes.rows) || [];
+                html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;margin-bottom:16px;">';
+
+                if (detRows.length) {
+                    const max = Math.max(...detRows.map(r => Number(r.findings) || 0), 1);
+                    html += `
+                        <div class="card" style="padding:16px 18px;">
+                            <div style="font-weight:600;margin-bottom:12px;">Findings by Detector</div>
+                            ${detRows.map(r => secretBar(
+                                r.detector_name,
+                                Number(r.findings) || 0,
+                                max,
+                                Number(r.verified) > 0 ? '#ef4444' : '#f59e0b'
+                            )).join('')}
+                        </div>`;
+                }
+
+                if (wsRows.length) {
+                    html += `
+                        <div class="card" style="padding:16px 18px;">
+                            <div style="font-weight:600;margin-bottom:12px;">Exposure by Workspace</div>
+                            <table class="data-table" style="width:100%;">
+                                <thead><tr><th>Workspace</th><th style="text-align:right;">Findings</th><th style="text-align:right;">Active</th></tr></thead>
+                                <tbody>
+                                    ${wsRows.map(r => `
+                                        <tr>
+                                            <td>${escapeHtml(r.workspace_name || r.workspace_id)}</td>
+                                            <td style="text-align:right;">${Number(r.findings) > 0
+                                                ? `<span style="color:#f59e0b;font-weight:600;">${r.findings}</span>`
+                                                : '<span style="color:#22c55e;">clean</span>'}</td>
+                                            <td style="text-align:right;">${Number(r.verified) > 0
+                                                ? `<span style="color:#ef4444;font-weight:600;">${r.verified}</span>`
+                                                : '—'}</td>
+                                        </tr>`).join('')}
+                                </tbody>
+                            </table>
+                        </div>`;
+                }
+                html += '</div>';
+
+                // A repeated hash means one credential was copied to several
+                // places; every copy has to be found before rotation is complete.
+                const sharedRows = (sharedRes && sharedRes.rows) || [];
+                if (sharedRows.length) {
+                    html += `
+                        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+                            <div style="font-weight:600;margin-bottom:4px;">Reused Credentials</div>
+                            <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:12px;">
+                                The same secret found in more than one place. Rotating it means updating every copy.
+                            </div>
+                            <table class="data-table" style="width:100%;">
+                                <thead><tr><th>Status</th><th>Detector</th><th>Hash</th><th style="text-align:right;">Copies</th><th style="text-align:right;">Workspaces</th><th>Example</th></tr></thead>
+                                <tbody>
+                                    ${sharedRows.map(r => `
+                                        <tr>
+                                            <td>${secretStatusBadge(Number(r.verified) > 0)}</td>
+                                            <td>${escapeHtml(r.detector_name)}</td>
+                                            <td style="font-family:monospace;font-size:0.85em;">${escapeHtml(String(r.secret_sha256 || '').slice(0, 12))}…</td>
+                                            <td style="text-align:right;font-weight:600;">${r.occurrences}</td>
+                                            <td style="text-align:right;">${r.workspaces}</td>
+                                            <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.example_object)}</td>
+                                        </tr>`).join('')}
+                                </tbody>
+                            </table>
+                        </div>`;
+                }
+
+                // Where to start remediating.
+                const topRows = (topRes && topRes.rows) || [];
+                if (topRows.length) {
+                    html += `
+                        <div class="card" style="padding:16px 18px;">
+                            <div style="font-weight:600;margin-bottom:4px;">Most Exposed Objects</div>
+                            <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:12px;">
+                                Notebooks and cluster configurations holding the most findings, confirmed-active first.
+                            </div>
+                            <table class="data-table" style="width:100%;">
+                                <thead><tr><th>Source</th><th>Object</th><th>Location</th><th style="text-align:right;">Findings</th><th style="text-align:right;">Active</th><th style="text-align:right;">Detectors</th></tr></thead>
+                                <tbody>
+                                    ${topRows.map(r => `
+                                        <tr>
+                                            <td><span class="badge" style="background:rgba(148,163,184,.14);color:#cbd5e1;">${escapeHtml(r.source_type)}</span></td>
+                                            <td style="max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.object_name)}</td>
+                                            <td style="font-family:monospace;font-size:0.82em;color:var(--text-muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.object_path)}</td>
+                                            <td style="text-align:right;font-weight:600;">${r.findings}</td>
+                                            <td style="text-align:right;">${Number(r.verified) > 0
+                                                ? `<span style="color:#ef4444;font-weight:600;">${r.verified}</span>` : '—'}</td>
+                                            <td style="text-align:right;">${r.detectors}</td>
+                                        </tr>`).join('')}
+                                </tbody>
+                            </table>
+                        </div>`;
+                }
+
+                if (total === 0) {
+                    html += `
+                        <div class="card" style="padding:22px;text-align:center;">
+                            <div style="font-weight:600;color:#22c55e;margin-bottom:4px;">No hardcoded credentials found</div>
+                            <div style="font-size:0.88em;color:var(--text-muted);">
+                                ${s.workspaces_scanned || 0} workspace(s) scanned clean in the latest run.
+                            </div>
+                        </div>`;
+                }
+
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('secretsoverview-results', 'Failed to load scan results: ' + e.message);
+            }
+        }
+
+        let secretsFiltersLoaded = false;
+
+        async function loadSecretsFindings() {
+            if (!secretsFiltersLoaded) {
+                // Populate filter dropdowns once from the aggregate endpoints.
+                try {
+                    const [ws, det] = await Promise.all([
+                        fetch('/api/secrets/by-workspace').then(r => r.json()),
+                        fetch('/api/secrets/by-detector').then(r => r.json()),
+                    ]);
+                    const wsSel = document.getElementById('sf-workspace');
+                    ((ws && ws.rows) || []).forEach(r => {
+                        const o = document.createElement('option');
+                        o.value = r.workspace_id;
+                        o.textContent = r.workspace_name || r.workspace_id;
+                        wsSel.appendChild(o);
+                    });
+                    const detSel = document.getElementById('sf-detector');
+                    ((det && det.rows) || []).forEach(r => {
+                        const o = document.createElement('option');
+                        o.value = r.detector_name;
+                        o.textContent = r.detector_name;
+                        detSel.appendChild(o);
+                    });
+                } catch (e) { /* filters degrade to defaults; the table still loads */ }
+                const applyBtn = document.getElementById('sf-apply');
+                if (applyBtn) applyBtn.addEventListener('click', runSecretsFindings);
+                ['sf-workspace', 'sf-source', 'sf-detector', 'sf-verified'].forEach(id => {
+                    const sel = document.getElementById(id);
+                    if (sel) sel.addEventListener('change', runSecretsFindings);
+                });
+                secretsFiltersLoaded = true;
+            }
+            runSecretsFindings();
+        }
+
+        async function runSecretsFindings() {
+            const container = document.getElementById('secretsfindings-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading findings...</div>';
+
+            const p = new URLSearchParams();
+            const ws = document.getElementById('sf-workspace').value;
+            const src = document.getElementById('sf-source').value;
+            const det = document.getElementById('sf-detector').value;
+            const ver = document.getElementById('sf-verified').value;
+            if (ws) p.set('workspace_id', ws);
+            if (src) p.set('source_type', src);
+            if (det) p.set('detector', det);
+            if (ver === 'true') p.set('verified_only', 'true');
+
+            try {
+                const res = await fetch('/api/secrets/findings?' + p.toString());
+                const result = await res.json();
+                if (result.ready === false) {
+                    showSecretsNotReady('secretsfindings-results', result.message);
+                    return;
+                }
+                if (result.error) { showEmpty('secretsfindings-results', result.error); return; }
+
+                const rows = result.rows || [];
+                if (!rows.length) {
+                    showEmpty('secretsfindings-results', 'No findings match these filters.');
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div class="results-container">
+                        <div class="results-header">
+                            <div class="results-title">${result.count} finding${result.count === 1 ? '' : 's'}${result.truncated ? ' (truncated)' : ''}</div>
+                            <div style="font-size:0.8em;color:var(--text-muted);">Secrets shown as SHA-256 prefixes, never plaintext</div>
+                        </div>
+                        <table class="data-table">
+                            <thead><tr>
+                                <th>Status</th><th>Source</th><th>Object</th><th>Location</th>
+                                <th>Detector</th><th>Hash</th><th>Workspace</th><th>Scanned</th>
+                            </tr></thead>
+                            <tbody>
+                                ${rows.map(r => `
+                                    <tr>
+                                        <td>${secretStatusBadge(r.verified)}</td>
+                                        <td><span class="badge" style="background:rgba(148,163,184,.14);color:#cbd5e1;">${escapeHtml(r.source_type)}</span></td>
+                                        <td style="max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.object_name)}</td>
+                                        <td style="font-family:monospace;font-size:0.82em;color:var(--text-muted);max-width:290px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.object_path)}</td>
+                                        <td>${escapeHtml(r.detector_name)}</td>
+                                        <td style="font-family:monospace;font-size:0.85em;">${escapeHtml(String(r.secret_sha256 || '').slice(0, 12))}…</td>
+                                        <td style="font-size:0.85em;color:var(--text-muted);">${escapeHtml(r.workspace_id)}</td>
+                                        <td style="font-size:0.85em;color:var(--text-muted);">${escapeHtml(String(r.scan_time || '').slice(0, 16))}</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            } catch (e) {
+                showEmpty('secretsfindings-results', 'Failed to load findings: ' + e.message);
+            }
+        }
+
         async function loadIsolatedPrincipals() {
             const container = document.getElementById('isolated-results');
             container.innerHTML = '<div class="loading">Analyzing principals...</div>';
@@ -3946,7 +5708,7 @@ def get_main_html():
 
         // Scope-adaptive coverage block for the SAT audit-log/SCIM tabs (Shared
         // to All Users, Privileged Non-IdP, Denylist). Rendered in the tab BODY —
-        // never touches BrickHound's global graph-collection header.
+        // never touches the global graph-collection header.
         //
         // cfg = {
         //   dateTs:   detection timestamp string (shown "Data Collection Date & Time"),
@@ -5554,7 +7316,7 @@ def get_main_html():
 
 @app.route('/health')
 def health():
-    return '{"status":"healthy","service":"brickhound"}'
+    return '{"status":"healthy","service":"security-analysis-tool"}'
 
 
 @app.route('/api/debug')
@@ -6100,6 +7862,29 @@ def api_who_can_access():
           AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
           AND e.permission_level IS NOT NULL
     ),
+    implicit_grants AS (
+        -- Grants whose grantee has no vertex row. Databricks implicit groups
+        -- ('account users', '_workspace_users_<workspace_id>') are only ever edge
+        -- sources, yet they include every user in the account or workspace — so a
+        -- grant to one is effectively public. The other CTEs inner-join the
+        -- grantee to a vertex and therefore miss these entirely.
+        SELECT
+            e.src as principal_id,
+            e.src as principal_name,
+            'ImplicitGroup' as principal_type,
+            CAST(NULL AS STRING) as principal_email,
+            e.permission_level,
+            'Direct' as grant_type,
+            CAST(NULL AS STRING) as inheritance_path
+        FROM {EDGES_TABLE} e
+        LEFT JOIN {VERTICES_TABLE} v
+               ON (e.src = v.id OR e.src = v.email OR e.src = v.name)
+              AND v.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.dst = '{sanitize(r_id)}'
+          AND e.permission_level IS NOT NULL
+          AND v.id IS NULL
+    ),
     group_grants AS (
         -- Direct grants to groups (show the group itself)
         SELECT
@@ -6232,6 +8017,8 @@ def api_who_can_access():
     ),
     all_access AS (
         SELECT * FROM direct_grants
+        UNION ALL
+        SELECT * FROM implicit_grants
         UNION ALL
         SELECT * FROM group_grants
         UNION ALL
@@ -8845,6 +10632,1269 @@ def report_secret_scopes_filters():
             'query_error': query_error,
             'query': scopes_query.strip()
         }
+    })
+
+
+# ---------------------------------------------------------------------------
+# Secret scanning
+#
+# Reads notebooks_secret_scan_results and clusters_secret_scan_results, written
+# by the SAT secret scanner job. Each scan gets a run_id; these views report the
+# latest completed run per workspace.
+#
+# A row with secret_sha256 IS NULL and secrets_found = 0 is a tracking marker
+# meaning "this workspace was scanned and was clean" — not a finding. Every
+# query filters those out of finding counts while still using them to tell
+# "scanned clean" apart from "never scanned".
+#
+# secrets_found is deliberately never SUMmed: it repeats the per-object count on
+# every row for that object, so summing over-counts. Rows are counted instead.
+# ---------------------------------------------------------------------------
+
+NOTEBOOK_SECRETS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.notebooks_secret_scan_results"
+CLUSTER_SECRETS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.clusters_secret_scan_results"
+
+_SECRETS_NOT_READY = (
+    'No secret scan results yet. The SAT Secrets Scanner job populates these '
+    'tables — it runs on a schedule after installation, and can also be '
+    'triggered from the Jobs UI.'
+)
+
+
+def _secrets_table_present(table_name):
+    """True if a scan table exists in the SAT schema.
+
+    Checked per request rather than cached at import so a first scan becomes
+    visible without restarting the app.
+    """
+    try:
+        rows = exec_query_df(
+            f"SHOW TABLES IN `{CATALOG}`.`{SCHEMA}` LIKE '{table_name}'"
+        )
+        return bool(rows)
+    except NoAccessError:
+        raise
+    except Exception:
+        logger.info("secret scan table check failed for %s", table_name, exc_info=True)
+        return False
+
+
+def _secrets_sources():
+    """Which scan tables exist: (notebooks, clusters)."""
+    return (
+        _secrets_table_present('notebooks_secret_scan_results'),
+        _secrets_table_present('clusters_secret_scan_results'),
+    )
+
+
+def _latest_runs_cte(has_nb, has_cl):
+    """Newest run_id per workspace across whichever scan tables exist."""
+    parts = []
+    if has_nb:
+        parts.append(f"SELECT workspace_id, run_id FROM {NOTEBOOK_SECRETS_TABLE}")
+    if has_cl:
+        parts.append(f"SELECT workspace_id, run_id FROM {CLUSTER_SECRETS_TABLE}")
+    union = "\n        UNION ALL\n        ".join(parts)
+    return f"""latest_runs AS (
+        SELECT workspace_id, MAX(run_id) AS latest_run_id
+        FROM (
+        {union}
+        )
+        GROUP BY workspace_id
+    )"""
+
+
+def _findings_cte(has_nb, has_cl):
+    """Normalise both scan tables into one shape so views treat them alike."""
+    parts = []
+    if has_nb:
+        parts.append(f"""
+        SELECT 'notebook' AS source_type, s.workspace_id, s.run_id,
+               s.notebook_id AS object_id, s.notebook_name AS object_name,
+               s.notebook_path AS object_path,
+               s.detector_name, s.secret_sha256, s.verified, s.scan_time
+        FROM {NOTEBOOK_SECRETS_TABLE} s
+        JOIN latest_runs r ON s.workspace_id = r.workspace_id
+                          AND s.run_id = r.latest_run_id
+        WHERE s.secret_sha256 IS NOT NULL""")
+    if has_cl:
+        parts.append(f"""
+        SELECT 'cluster' AS source_type, s.workspace_id, s.run_id,
+               s.cluster_id AS object_id, s.cluster_name AS object_name,
+               CONCAT(s.config_field, COALESCE(CONCAT('.', s.config_key), '')) AS object_path,
+               s.detector_name, s.secret_sha256, s.verified, s.scan_time
+        FROM {CLUSTER_SECRETS_TABLE} s
+        JOIN latest_runs r ON s.workspace_id = r.workspace_id
+                          AND s.run_id = r.latest_run_id
+        WHERE s.secret_sha256 IS NOT NULL""")
+    return "findings AS (" + "\n        UNION ALL".join(parts) + "\n    )"
+
+
+@app.route('/api/secrets/summary')
+def api_secrets_summary():
+    """Headline exposure counts across the fleet."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT
+      COUNT(*)                                          AS total_findings,
+      COUNT(DISTINCT secret_sha256)                     AS distinct_secrets,
+      COUNT(DISTINCT CONCAT(source_type, ':', COALESCE(object_id, ''))) AS affected_objects,
+      COUNT(DISTINCT workspace_id)                      AS affected_workspaces,
+      SUM(CASE WHEN verified THEN 1 ELSE 0 END)         AS verified_findings,
+      SUM(CASE WHEN source_type = 'notebook' THEN 1 ELSE 0 END) AS notebook_findings,
+      SUM(CASE WHEN source_type = 'cluster'  THEN 1 ELSE 0 END) AS cluster_findings,
+      MAX(scan_time)                                    AS last_scan_time
+    FROM findings
+    """)
+    summary = rows[0] if rows else {}
+
+    scanned = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)}
+    SELECT COUNT(*) AS workspaces_scanned FROM latest_runs
+    """)
+    workspaces_scanned = (scanned[0].get('workspaces_scanned') if scanned else 0) or 0
+
+    # Tables can exist while holding no rows — created by an earlier install and
+    # never populated. That is "not scanned", not "scanned clean"; reporting zero
+    # findings for it would be false assurance.
+    try:
+        if int(workspaces_scanned) == 0:
+            return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+    except (TypeError, ValueError):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+
+    summary['workspaces_scanned'] = workspaces_scanned
+    return jsonify({'ready': True, 'summary': summary})
+
+
+@app.route('/api/secrets/by-detector')
+def api_secrets_by_detector():
+    """Findings grouped by detector type."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT detector_name,
+           COUNT(*) AS findings,
+           COUNT(DISTINCT secret_sha256) AS distinct_secrets,
+           SUM(CASE WHEN verified THEN 1 ELSE 0 END) AS verified
+    FROM findings
+    GROUP BY detector_name
+    ORDER BY findings DESC
+    """)
+    return jsonify({'ready': True, 'rows': rows})
+
+
+@app.route('/api/secrets/by-workspace')
+def api_secrets_by_workspace():
+    """Per-workspace rollup, including workspaces that scanned clean."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+
+    has_names = _secrets_table_present('account_workspaces')
+    name_col = ("COALESCE(w.workspace_name, l.workspace_id)"
+                if has_names else "l.workspace_id")
+    name_join = (f"LEFT JOIN `{CATALOG}`.`{SCHEMA}`.account_workspaces w "
+                 f"ON w.workspace_id = l.workspace_id" if has_names else "")
+    group_extra = ", w.workspace_name" if has_names else ""
+
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT l.workspace_id,
+           {name_col} AS workspace_name,
+           l.latest_run_id AS run_id,
+           COUNT(f.secret_sha256) AS findings,
+           COUNT(DISTINCT f.secret_sha256) AS distinct_secrets,
+           SUM(CASE WHEN f.verified THEN 1 ELSE 0 END) AS verified,
+           SUM(CASE WHEN f.source_type = 'notebook' THEN 1 ELSE 0 END) AS notebook_findings,
+           SUM(CASE WHEN f.source_type = 'cluster'  THEN 1 ELSE 0 END) AS cluster_findings,
+           MAX(f.scan_time) AS last_scan_time
+    FROM latest_runs l
+    LEFT JOIN findings f ON f.workspace_id = l.workspace_id
+    {name_join}
+    GROUP BY l.workspace_id, l.latest_run_id{group_extra}
+    ORDER BY findings DESC, l.workspace_id
+    """)
+    return jsonify({'ready': True, 'rows': rows})
+
+
+@app.route('/api/secrets/top-objects')
+def api_secrets_top_objects():
+    """Objects holding the most findings — where remediation starts."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT source_type, workspace_id, object_name, object_path,
+           COUNT(*) AS findings,
+           SUM(CASE WHEN verified THEN 1 ELSE 0 END) AS verified,
+           COUNT(DISTINCT detector_name) AS detectors
+    FROM findings
+    GROUP BY source_type, workspace_id, object_name, object_path
+    ORDER BY verified DESC, findings DESC
+    LIMIT 25
+    """)
+    return jsonify({'ready': True, 'rows': rows})
+
+
+@app.route('/api/secrets/shared')
+def api_secrets_shared():
+    """One credential appearing in several places.
+
+    A repeated hash means the same secret was copied; rotating it requires
+    finding every copy, so these are grouped rather than listed individually.
+    """
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT secret_sha256,
+           detector_name,
+           MAX(CASE WHEN verified THEN 1 ELSE 0 END) AS verified,
+           COUNT(*) AS occurrences,
+           COUNT(DISTINCT workspace_id) AS workspaces,
+           MIN(object_name) AS example_object
+    FROM findings
+    GROUP BY secret_sha256, detector_name
+    HAVING COUNT(*) > 1
+    ORDER BY occurrences DESC
+    LIMIT 25
+    """)
+    return jsonify({'ready': True, 'rows': rows})
+
+
+@app.route('/api/secrets/trend')
+def api_secrets_trend():
+    """Findings per scan run, so regressions are visible over time."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+    parts = []
+    if has_nb:
+        parts.append(f"SELECT run_id, 'notebook' AS source_type, secret_sha256, scan_time FROM {NOTEBOOK_SECRETS_TABLE}")
+    if has_cl:
+        parts.append(f"SELECT run_id, 'cluster' AS source_type, secret_sha256, scan_time FROM {CLUSTER_SECRETS_TABLE}")
+    union = "\n        UNION ALL\n        ".join(parts)
+    rows = exec_query_df(f"""
+    WITH all_rows AS ({union})
+    SELECT run_id,
+           MIN(scan_time) AS run_time,
+           COUNT(secret_sha256) AS findings,
+           SUM(CASE WHEN source_type = 'notebook' THEN 1 ELSE 0 END) AS notebook_findings,
+           SUM(CASE WHEN source_type = 'cluster'  THEN 1 ELSE 0 END) AS cluster_findings
+    FROM all_rows
+    GROUP BY run_id
+    ORDER BY run_id DESC
+    LIMIT 20
+    """)
+    return jsonify({'ready': True, 'rows': list(reversed(rows))})
+
+
+@app.route('/api/secrets/findings')
+def api_secrets_findings():
+    """Detail table. Filters: workspace_id, source_type, detector, verified_only."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+
+    try:
+        limit = max(1, min(2000, int(request.args.get('limit', 500))))
+    except (TypeError, ValueError):
+        limit = 500
+
+    where = []
+    params = {}
+    workspace_id = request.args.get('workspace_id')
+    if workspace_id:
+        where.append("workspace_id = :workspace_id")
+        params['workspace_id'] = workspace_id
+    source_type = request.args.get('source_type')
+    if source_type in ('notebook', 'cluster'):
+        where.append("source_type = :source_type")
+        params['source_type'] = source_type
+    detector = request.args.get('detector')
+    if detector:
+        where.append("detector_name = :detector")
+        params['detector'] = detector
+    if request.args.get('verified_only', 'false').lower() == 'true':
+        where.append("verified")
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT source_type, workspace_id, run_id, object_name, object_path,
+           detector_name, secret_sha256, verified, scan_time
+    FROM findings
+    {where_sql}
+    ORDER BY verified DESC, workspace_id, source_type, object_name
+    LIMIT {limit}
+    """, params or None)
+    return jsonify({
+        'ready': True,
+        'rows': rows,
+        'count': len(rows),
+        'truncated': len(rows) >= limit,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Security assistant
+#
+# Answers questions about the permissions graph, secret scan results, and the
+# audit log. The assistant reaches data only through registered tools — it cannot
+# issue SQL of its own, and no tool writes to the security tables or triggers a
+# job. Its only writes are conversation history and its own tool-call audit trail,
+# both allowlisted in agent/sql_client.py.
+# ---------------------------------------------------------------------------
+
+# Seed prompts for an empty conversation, chosen to span both datasets and to
+# show the cross-dataset chaining the assistant is good at.
+ASSISTANT_SUGGESTIONS = [
+    "Which service principals hold admin or ownership rights?",
+    "What is exposed to everyone in the account?",
+    "Who can read the production secret scopes?",
+    "What can the SAT service principal access?",
+    "Are there hardcoded credentials confirmed active right now?",
+]
+
+_agent_tools_registered = False
+
+
+def _ensure_agent_ready():
+    """Import and register the assistant's tools on first use.
+
+    Deferred rather than done at import time so a missing optional dependency
+    degrades the assistant alone instead of preventing the app from booting.
+    """
+    global _agent_tools_registered
+    if _agent_tools_registered:
+        return True, None
+    try:
+        from agent.tools import register_all
+        register_all()
+        _agent_tools_registered = True
+        return True, None
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("assistant tools failed to register")
+        return False, str(exc)
+
+
+def _assistant_user():
+    """Best-effort identity of the signed-in user, for session ownership."""
+    forwarded = (request.headers.get('X-Forwarded-Email')
+                 or request.headers.get('X-Forwarded-Preferred-Username'))
+    if forwarded:
+        return forwarded
+    try:
+        workspace_client, _ = get_connection()
+        me = workspace_client.current_user.me()
+        return me.user_name or me.display_name or 'unknown'
+    except Exception:  # noqa: BLE001
+        return 'unknown'
+
+
+def _model_endpoint_available(endpoint_name):
+    """Check that the configured serving endpoint exists in this workspace.
+
+    Databricks Foundation Model endpoints are not present in every workspace, and
+    an absent one otherwise fails with an opaque RESOURCE_DOES_NOT_EXIST on the
+    first question. Returns (available, message).
+    """
+    try:
+        workspace_client, _ = get_connection()
+        names = {e.name for e in workspace_client.serving_endpoints.list() if e.name}
+    except Exception as exc:  # noqa: BLE001
+        # If the check itself fails, don't block the assistant — let the call try.
+        logger.info("serving endpoint check failed: %s", exc)
+        return True, None
+
+    if endpoint_name in names:
+        return True, None
+
+    if names:
+        listed = ", ".join(sorted(names)[:6])
+        return False, (
+            f"Model serving endpoint '{endpoint_name}' was not found in this "
+            f"workspace. Available endpoints: {listed}. Update MODEL_ENDPOINT and "
+            f"redeploy."
+        )
+    return False, (
+        f"Model serving endpoint '{endpoint_name}' was not found, and this "
+        f"workspace has no serving endpoints available. Enable Foundation Model "
+        f"APIs or point MODEL_ENDPOINT at an existing endpoint, then redeploy."
+    )
+
+
+# ---------------------------------------------------------------------------
+# AI Gateway integration
+#
+# Model calls, model selection, and usage reporting all go through the
+# workspace's AI Gateway. Requests carry a usage_context map that the gateway
+# persists to system.serving.endpoint_usage, so this app's traffic is separable
+# for tracing and cost attribution.
+# ---------------------------------------------------------------------------
+
+# Endpoint chosen in the UI, held in memory. A restart falls back to
+# MODEL_ENDPOINT, which is the installer-managed default.
+_selected_model = {'endpoint': None}
+
+
+def _active_model():
+    return _selected_model['endpoint'] or os.getenv('MODEL_ENDPOINT') or 'databricks-claude-opus-4-7'
+
+
+@app.route('/api/assistant/models')
+def api_assistant_models():
+    """Chat endpoints available on the gateway, and which one is in use.
+
+    ``?refresh=1`` re-probes rather than using the cached result, for when the
+    gateway's model line-up changes mid-session.
+    """
+    refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+    try:
+        from agent.supervisor import list_chat_endpoints
+        endpoints = list_chat_endpoints(refresh=refresh)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("listing gateway endpoints failed")
+        return jsonify({'error': str(exc), 'models': [], 'active': _active_model()}), 500
+
+    return jsonify({
+        'models': endpoints,
+        'active': _active_model(),
+        'default': os.getenv('MODEL_ENDPOINT'),
+        'gateway': (os.getenv('AI_GATEWAY_BASE_URL')
+                    or f"{(os.getenv('DATABRICKS_HOST') or '').rstrip('/')}/serving-endpoints"),
+    })
+
+
+@app.route('/api/assistant/models', methods=['POST'])
+def api_assistant_models_select():
+    """Switch the assistant's model.
+
+    Validated against the gateway's own list so a selection cannot point at an
+    endpoint that does not exist or is not chat-capable.
+    """
+    payload = request.get_json(silent=True) or {}
+    endpoint = (payload.get('endpoint') or '').strip()
+    if not endpoint:
+        return jsonify({'error': 'An endpoint name is required.'}), 400
+
+    try:
+        from agent.supervisor import list_chat_endpoints
+        available = {e['name'] for e in list_chat_endpoints()}
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    if endpoint not in available:
+        return jsonify({
+            'error': (f"'{endpoint}' is not an available chat endpoint on this "
+                      f"workspace's AI Gateway.")
+        }), 400
+
+    _selected_model['endpoint'] = endpoint
+    logger.info("assistant model set to %s by %s", endpoint, _assistant_user())
+    return jsonify({'active': endpoint, 'saved': True})
+
+
+@app.route('/api/assistant/usage')
+def api_assistant_usage():
+    """Token usage and request counts for this app, from the gateway's own records.
+
+    Reads system.serving.endpoint_usage, filtered on the usage_context this app
+    stamps on every request, so the figures cover assistant traffic only rather
+    than everything sharing the endpoint.
+    """
+    try:
+        days = max(1, min(90, int(request.args.get('days', 7))))
+    except (TypeError, ValueError):
+        days = 7
+
+    try:
+        rows = exec_query_df(f"""
+            SELECT
+              e.served_entity_id,
+              COALESCE(se.endpoint_name, e.served_entity_id) AS endpoint,
+              COUNT(*)                        AS requests,
+              SUM(e.input_token_count)        AS input_tokens,
+              SUM(e.output_token_count)       AS output_tokens,
+              COUNT(DISTINCT e.usage_context['end_user'])  AS users,
+              COUNT(DISTINCT e.usage_context['session'])   AS sessions,
+              SUM(CASE WHEN e.status_code >= 400 THEN 1 ELSE 0 END) AS errors,
+              MAX(e.request_time)             AS last_request
+            FROM system.serving.endpoint_usage e
+            LEFT JOIN system.serving.served_entities se
+                   ON se.served_entity_id = e.served_entity_id
+            WHERE e.request_time >= current_timestamp() - INTERVAL {days} DAYS
+              AND e.usage_context['application'] = 'security-analysis-tool'
+            GROUP BY e.served_entity_id, COALESCE(se.endpoint_name, e.served_entity_id)
+            ORDER BY requests DESC
+        """)
+    except NoAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.info("gateway usage query failed: %s", exc)
+        return jsonify({
+            'available': False,
+            'message': ('Usage records are not readable from this app. Access to '
+                        'system.serving.endpoint_usage is required to report token '
+                        'consumption.'),
+        })
+
+    # The system table is populated on a delay, so an empty result for a recent
+    # window is expected rather than a fault. Report the freshness alongside the
+    # figures so a reader can tell "no usage" from "not yet ingested".
+    latest = None
+    try:
+        freshness = exec_query_df(
+            "SELECT MAX(request_time) AS latest FROM system.serving.endpoint_usage")
+        if freshness:
+            latest = freshness[0].get('latest')
+    except Exception:  # noqa: BLE001
+        pass
+
+    return jsonify({
+        'available': True,
+        'days': days,
+        'rows': rows,
+        'records_through': latest,
+        'note': ('Usage records are ingested by the platform on a delay, so very '
+                 'recent activity may not appear yet.') if not rows else None,
+    })
+
+
+@app.route('/api/assistant/config')
+def api_assistant_config():
+    """Whether the assistant can answer, plus suggested prompts."""
+    endpoint = _active_model()
+    if not endpoint:
+        return jsonify({
+            'ready': False,
+            'message': ('The security assistant is not configured. Set MODEL_ENDPOINT '
+                        'to a model serving endpoint and redeploy.'),
+        })
+    ok, err = _ensure_agent_ready()
+    if not ok:
+        return jsonify({'ready': False, 'message': f'Assistant unavailable: {err}'})
+
+    available, detail = _model_endpoint_available(endpoint)
+    if not available:
+        return jsonify({'ready': False, 'message': detail})
+
+    return jsonify({
+        'ready': True,
+        'suggestions': ASSISTANT_SUGGESTIONS,
+        'genie_configured': bool(os.getenv('GENIE_SPACE_ID')),
+        'read_only': True,
+        'model': endpoint,
+    })
+
+
+@app.route('/api/assistant/chat', methods=['POST'])
+def api_assistant_chat():
+    """Answer one conversational turn."""
+    if not os.getenv('MODEL_ENDPOINT'):
+        return jsonify({'error': 'The security assistant is not configured.'}), 503
+    ok, err = _ensure_agent_ready()
+    if not ok:
+        return jsonify({'error': f'Assistant unavailable: {err}'}), 503
+
+    payload = request.get_json(silent=True) or {}
+    message = (payload.get('message') or '').strip()
+    session_id = payload.get('session_id')
+    turn_id = (payload.get('turn_id') or '').strip() or None
+    if not message:
+        return jsonify({'error': 'message is required'}), 400
+    if len(message) > 4000:
+        return jsonify({'error': 'message is too long (4000 character limit)'}), 400
+
+    try:
+        from agent import sessions
+        from agent.logging_util import new_session_id
+        from agent.supervisor import get_supervisor
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("assistant import failed")
+        return jsonify({'error': f'Assistant unavailable: {exc}'}), 503
+
+    session_id = session_id or new_session_id()
+    user = _assistant_user()
+
+    # History is a convenience, not a correctness requirement — answer even if the
+    # sessions table is unreachable.
+    try:
+        history = sessions.load(session_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("session load failed; continuing without history", exc_info=True)
+        history = []
+
+    if turn_id:
+        _register_turn(turn_id)
+
+    def run_turn(endpoint):
+        return get_supervisor().chat(
+            session_id=session_id,
+            user=user,
+            history=history,
+            new_message=message,
+            model=endpoint,
+            is_cancelled=(lambda: _turn_cancelled(turn_id)) if turn_id else None,
+        )
+
+    try:
+        try:
+            result = run_turn(_active_model())
+        except Exception as exc:  # noqa: BLE001
+            # A model can be retired between being picked and being used. Rather than
+            # dead-ending the conversation, drop the stale choice, re-probe the gateway
+            # and answer on the default endpoint.
+            if 'deprecated' in str(exc).lower():
+                logger.warning("selected model %s is deprecated; falling back", _active_model())
+                _selected_model['endpoint'] = None
+                try:
+                    from agent.supervisor import list_chat_endpoints
+                    list_chat_endpoints(refresh=True)
+                    result = run_turn(_active_model())
+                except Exception as retry_exc:  # noqa: BLE001
+                    logger.exception("fallback after deprecation also failed")
+                    return jsonify({'error': str(retry_exc), 'session_id': session_id}), 500
+            else:
+                logger.exception("assistant turn failed")
+                return jsonify({'error': str(exc), 'session_id': session_id}), 500
+    finally:
+        if turn_id:
+            _release_turn(turn_id)
+
+    # A cancelled turn is not persisted: it holds a partial exchange the user
+    # abandoned, and saving it would carry that into the next question's context.
+    if not result.get('cancelled'):
+        # A persistence failure must not lose the answer the user already waited for.
+        try:
+            sessions.save(session_id, user, result.get('messages', []))
+        except Exception:  # noqa: BLE001
+            logger.warning("session save failed", exc_info=True)
+
+    return jsonify({
+        'session_id': session_id,
+        'answer': result.get('reply', ''),
+        'tool_calls': result.get('tool_calls', []),
+        'cancelled': bool(result.get('cancelled')),
+        # Which gateway endpoint answered, so the UI can show it per message.
+        'model': result.get('model') or _active_model(),
+    })
+
+
+# In-flight assistant turns, so a Stop from the browser can halt the tool loop
+# server-side. Without this the fetch is abandoned but the loop keeps calling the
+# model and running tools, spending tokens on an answer nobody will read.
+_active_turns = {}
+_turns_lock = threading.Lock()
+_MAX_TRACKED_TURNS = 256
+
+
+def _register_turn(turn_id):
+    with _turns_lock:
+        # Bound the map so a client that never completes a turn cannot grow it
+        # without limit; oldest entries go first.
+        while len(_active_turns) >= _MAX_TRACKED_TURNS:
+            _active_turns.pop(next(iter(_active_turns)), None)
+        _active_turns[turn_id] = False
+
+
+def _release_turn(turn_id):
+    with _turns_lock:
+        _active_turns.pop(turn_id, None)
+
+
+def _turn_cancelled(turn_id):
+    with _turns_lock:
+        return bool(_active_turns.get(turn_id))
+
+
+@app.route('/api/assistant/cancel', methods=['POST'])
+def api_assistant_cancel():
+    """Ask an in-flight assistant turn to stop at its next checkpoint."""
+    payload = request.get_json(silent=True) or {}
+    turn_id = (payload.get('turn_id') or '').strip()
+    if not turn_id:
+        return jsonify({'error': 'turn_id is required'}), 400
+    with _turns_lock:
+        known = turn_id in _active_turns
+        if known:
+            _active_turns[turn_id] = True
+    # An unknown id means the turn already finished -- not an error worth
+    # surfacing, since the user's intent (it is not running) already holds.
+    return jsonify({'cancelled': known, 'turn_id': turn_id})
+
+
+def _sp_workspace_client():
+    """WorkspaceClient authenticated as the app's service principal.
+
+    Job control uses this rather than the calling user's token. The job resource
+    binding in app.yaml grants CAN_MANAGE_RUN to the app's service principal, and
+    Databricks Apps exposes no user-authorization scope for the Jobs API — so an
+    on-behalf-of-user token cannot start a run no matter its UC grants.
+
+    Reading security data still runs as the user (see get_connection), so UC
+    continues to enforce per-user visibility on findings.
+    """
+    from databricks.sdk import WorkspaceClient
+    return WorkspaceClient()
+
+
+
+# ---------------------------------------------------------------------------
+# Data collection control
+#
+# Lets an operator refresh the permissions graph or re-run the secret scanners
+# without leaving the app.
+#
+# Scope is deliberately narrow: only the job IDs bound in this app's
+# configuration can be started. There is no endpoint that accepts an arbitrary
+# job ID, nothing here edits a job definition, and the security assistant has no
+# tool that reaches these routes — it can explain findings but cannot cause
+# anything to run.
+# ---------------------------------------------------------------------------
+
+# Logical name -> env vars that may carry that job's ID. Databricks Apps exposes
+# a bound job resource as DATABRICKS_JOB_ID_<RESOURCE_NAME>; the plain names are
+# accepted as an override and for local runs.
+COLLECTION_JOBS = {
+    'permissions': {
+        'label': 'Permissions Graph',
+        'group': 'Access',
+        'description': 'Collects identities, groups, and grants, then builds the access graph.',
+        'env': ('PERMISSIONS_JOB_ID', 'DATABRICKS_JOB_ID_PERMISSIONS_JOB'),
+        'feeds': 'Principal and resource analysis, escalation paths, high privilege',
+    },
+    'secrets': {
+        'label': 'Secret Scanner',
+        'group': 'Secrets',
+        'description': 'Scans notebook source and cluster environment variables for credentials.',
+        'env': ('SECRETS_JOB_ID', 'DATABRICKS_JOB_ID_SECRETS_JOB'),
+        'feeds': 'Credential exposure, secret findings',
+    },
+    'shared_to_account': {
+        'label': 'Shared to All Users',
+        'group': 'Access',
+        'description': 'Finds dashboards, Genie spaces, and apps shared with every account user.',
+        'env': ('SHARED_TO_ACCOUNT_JOB_ID',),
+        'feeds': 'Shared to All Users',
+    },
+    'privileged_non_idp': {
+        'label': 'Privileged Non-IdP Identities',
+        'group': 'Identity',
+        'description': 'Finds admin roles held outside identity-provider-managed groups.',
+        'env': ('PRIVILEGED_NON_IDP_JOB_ID',),
+        'feeds': 'Privileged Non-IdP',
+    },
+    'denylist_candidates': {
+        'label': 'Denylist Candidates',
+        'group': 'Identity',
+        'description': 'Ranks IdP groups whose members show no recent Databricks activity.',
+        'env': ('DENYLIST_JOB_ID',),
+        'feeds': 'Denylist Builder',
+    },
+}
+
+# Display order for the groups above.
+COLLECTION_GROUPS = ('Access', 'Identity', 'Secrets')
+
+# Run states that mean a collection is still in flight.
+_ACTIVE_RUN_STATES = {
+    'PENDING', 'RUNNING', 'QUEUED', 'TERMINATING', 'BLOCKED', 'WAITING_FOR_RETRY',
+}
+
+
+def _collection_job_id(kind):
+    """Resolve a job ID from the app's configuration, or None if unbound.
+
+    Checks the explicit names first, then scans for a Databricks Apps job binding
+    whose variable name mentions this collection. The platform derives that name
+    from the resource key and has changed its exact form between versions, so
+    matching on a substring is more durable than hardcoding one spelling.
+    """
+    spec = COLLECTION_JOBS.get(kind)
+    if not spec:
+        return None
+    for var in spec['env']:
+        value = (os.getenv(var) or '').strip()
+        if value.isdigit():
+            return value
+    for name, value in os.environ.items():
+        upper = name.upper()
+        if 'JOB' in upper and kind.upper()[:6] in upper:
+            value = (value or '').strip()
+            if value.isdigit():
+                logger.info("resolved %s job id from env var %s", kind, name)
+                return value
+    return None
+
+
+def _normalise_run(run):
+    """Flatten a Jobs API run into what the UI needs.
+
+    The API carries both a legacy ``state`` and a newer ``status``; whichever is
+    populated is used so this works across workspace versions.
+    """
+    if run is None:
+        return None
+    life_cycle = None
+    result = None
+    status = getattr(run, 'status', None)
+    if status is not None:
+        life_cycle = str(getattr(status, 'state', '') or '').split('.')[-1] or None
+        details = getattr(status, 'termination_details', None)
+        result = str(getattr(details, 'code', '') or '').split('.')[-1] or None
+    if life_cycle is None:
+        state = getattr(run, 'state', None)
+        if state is not None:
+            life_cycle = str(getattr(state, 'life_cycle_state', '') or '').split('.')[-1] or None
+            result = str(getattr(state, 'result_state', '') or '').split('.')[-1] or None
+    # Task counts let the UI show real progress instead of an indefinite spinner.
+    tasks_total = 0
+    tasks_done = 0
+    current_stage = None
+    for task in (getattr(run, 'tasks', None) or []):
+        tasks_total += 1
+        t_status = getattr(task, 'status', None)
+        t_state = getattr(task, 'state', None)
+        t_life = None
+        if t_status is not None:
+            t_life = str(getattr(t_status, 'state', '') or '').split('.')[-1] or None
+        if t_life is None and t_state is not None:
+            t_life = str(getattr(t_state, 'life_cycle_state', '') or '').split('.')[-1] or None
+        if (t_life or '').upper() == 'TERMINATED':
+            tasks_done += 1
+        elif (t_life or '').upper() in _ACTIVE_RUN_STATES and current_stage is None:
+            current_stage = getattr(task, 'task_key', None)
+
+    return {
+        'run_id': getattr(run, 'run_id', None),
+        'state': life_cycle,
+        'result': result,
+        'active': (life_cycle or '').upper() in _ACTIVE_RUN_STATES,
+        'start_time': getattr(run, 'start_time', None),
+        'end_time': getattr(run, 'end_time', None),
+        'run_page_url': getattr(run, 'run_page_url', None),
+        'tasks_total': tasks_total,
+        'tasks_done': tasks_done,
+        'current_stage': current_stage,
+    }
+
+
+def _latest_run(workspace_client, job_id):
+    try:
+        runs = list(workspace_client.jobs.list_runs(job_id=int(job_id), limit=1))
+    except Exception:  # noqa: BLE001
+        logger.info("list_runs failed for job %s", job_id, exc_info=True)
+        return None
+    return _normalise_run(runs[0]) if runs else None
+
+
+@app.route('/api/collection/status')
+def api_collection_status():
+    """Configured collection jobs and the state of their most recent run."""
+    try:
+        workspace_client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    # Each job needs its most recent run, which is a ~1s API call. Done serially
+    # across five jobs that made this page take four seconds to load, so the
+    # lookups are fanned out across a small thread pool instead.
+    #
+    # The per-job jobs.get() call that fetched the display name was also dropped:
+    # the name is only used for a tooltip, and the run URL already supplies
+    # everything needed to link to the job.
+    configured = {
+        kind: job_id
+        for kind, job_id in ((k, _collection_job_id(k)) for k in COLLECTION_JOBS)
+        if job_id
+    }
+
+    runs = {}
+    if configured:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(configured)) as pool:
+            futures = {
+                pool.submit(_latest_run, workspace_client, job_id): kind
+                for kind, job_id in configured.items()
+            }
+            for future in concurrent.futures.as_completed(futures):
+                kind = futures[future]
+                try:
+                    runs[kind] = future.result()
+                except Exception:  # noqa: BLE001
+                    logger.info("latest run lookup failed for %s", kind, exc_info=True)
+                    runs[kind] = None
+
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    workspace_id = (os.getenv('WORKSPACE_ID') or '').strip()
+
+    jobs = []
+    for kind, spec in COLLECTION_JOBS.items():
+        job_id = configured.get(kind)
+        entry = {
+            'kind': kind,
+            'label': spec['label'],
+            'group': spec.get('group', 'Other'),
+            'description': spec['description'],
+            'feeds': spec.get('feeds'),
+            'job_id': job_id,
+            'configured': bool(job_id),
+        }
+        if job_id:
+            entry['latest_run'] = runs.get(kind)
+            # The workspace UI expects /?o=<workspace_id>#job/<id>. Prefer deriving
+            # the prefix from the run URL the API returned, since that is
+            # authoritative; fall back to WORKSPACE_ID when there are no runs yet.
+            run_url = (entry.get('latest_run') or {}).get('run_page_url') or ''
+            if '#job/' in run_url:
+                entry['job_url'] = f"{run_url.split('#job/')[0]}#job/{job_id}"
+            elif host:
+                entry['job_url'] = (
+                    f"{host}/?o={workspace_id}#job/{job_id}" if workspace_id
+                    else f"{host}/#job/{job_id}"
+                )
+            else:
+                entry['job_url'] = None
+        else:
+            entry['message'] = (
+                f"The {spec['label']} job is not connected to this app. Re-run the "
+                f"installer to manage it here, or start it from Workflows."
+            )
+        jobs.append(entry)
+    return jsonify({'jobs': jobs, 'groups': list(COLLECTION_GROUPS)})
+
+
+@app.route('/api/collection/run', methods=['POST'])
+def api_collection_run():
+    """Start a collection job. Body: {"kind": "permissions"|"secrets"}.
+
+    Refuses when that job already has a run in flight, so repeated clicks cannot
+    stack concurrent collections writing the same tables.
+    """
+    payload = request.get_json(silent=True) or {}
+    kind = (payload.get('kind') or '').strip()
+    if kind not in COLLECTION_JOBS:
+        return jsonify({'error': f"Unknown collection '{kind}'"}), 400
+
+    job_id = _collection_job_id(kind)
+    if not job_id:
+        return jsonify({
+            'error': (f"The {COLLECTION_JOBS[kind]['label']} job is not bound to this "
+                      f"app. Re-run the SAT installer to enable in-app collection.")
+        }), 409
+
+    try:
+        workspace_client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    existing = _latest_run(workspace_client, job_id)
+    if existing and existing.get('active'):
+        return jsonify({
+            'error': f"{COLLECTION_JOBS[kind]['label']} is already running.",
+            'latest_run': existing,
+        }), 409
+
+    try:
+        started = workspace_client.jobs.run_now(job_id=int(job_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_now failed for %s", kind)
+        return jsonify({
+            'error': (f"Could not start {COLLECTION_JOBS[kind]['label']}: {exc}. The "
+                      f"app needs CAN_MANAGE_RUN on this job.")
+        }), 500
+
+    run_id = getattr(started, 'run_id', None)
+    logger.info("started %s collection job=%s run_id=%s", kind, job_id, run_id)
+    return jsonify({'kind': kind, 'job_id': job_id, 'run_id': run_id, 'started': True})
+
+
+@app.route('/api/collection/run/<int:run_id>')
+def api_collection_run_status(run_id):
+    """Poll one run, so the UI can follow a collection it started."""
+    try:
+        workspace_client = _sp_workspace_client()
+        run = workspace_client.jobs.get_run(run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+    normalised = _normalise_run(run) or {}
+    normalised['run_id'] = run_id
+    return jsonify(normalised)
+
+
+@app.route('/api/collection/cancel', methods=['POST'])
+def api_collection_cancel():
+    """Cancel the in-flight run of a collection job.
+
+    Body: {"kind": "<collection>"} to cancel whatever that job currently has in
+    flight, or {"run_id": <id>} to cancel a specific run. Cancelling by kind is
+    what the UI uses, so a stuck collection can be stopped without the operator
+    having to find the run id.
+    """
+    payload = request.get_json(silent=True) or {}
+    kind = (payload.get('kind') or '').strip()
+    run_id = payload.get('run_id')
+
+    if not kind and not run_id:
+        return jsonify({'error': 'kind or run_id is required'}), 400
+    if kind and kind not in COLLECTION_JOBS:
+        return jsonify({'error': f"Unknown collection '{kind}'"}), 400
+
+    try:
+        workspace_client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    if not run_id:
+        job_id = _collection_job_id(kind)
+        if not job_id:
+            return jsonify({
+                'error': (f"The {COLLECTION_JOBS[kind]['label']} job is not bound to "
+                          f"this app.")
+            }), 409
+        latest = _latest_run(workspace_client, job_id)
+        if not latest or not latest.get('active'):
+            # Nothing running: the caller's intent already holds, so this is not an
+            # error worth surfacing as one.
+            return jsonify({
+                'cancelled': False,
+                'kind': kind,
+                'message': f"{COLLECTION_JOBS[kind]['label']} is not currently running.",
+            })
+        run_id = latest.get('run_id')
+
+    try:
+        run_id = int(run_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'run_id must be numeric'}), 400
+
+    try:
+        workspace_client.jobs.cancel_run(run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("cancel_run failed for run_id=%s", run_id)
+        return jsonify({
+            'error': (f"Could not cancel run {run_id}: {exc}. The app needs "
+                      f"CAN_MANAGE_RUN on this job.")
+        }), 500
+
+    logger.info("cancelled collection run kind=%s run_id=%s by %s",
+                kind or '<by run_id>', run_id, _assistant_user())
+    return jsonify({'cancelled': True, 'kind': kind or None, 'run_id': run_id})
+
+
+@app.route('/api/collection/debug')
+def api_collection_debug():
+    """Which job-related environment variables the app can see.
+
+    Values are reported only as digit-or-not so no configuration leaks; this is
+    for confirming that a job resource binding actually reached the container.
+    """
+    seen = {
+        name: ('<digits>' if (value or '').strip().isdigit() else '<non-numeric>')
+        for name, value in sorted(os.environ.items())
+        if 'JOB' in name.upper()
+    }
+    return jsonify({
+        'job_env_vars': seen,
+        'resolved': {k: _collection_job_id(k) for k in COLLECTION_JOBS},
+    })
+
+
+@app.route('/api/collection/schedule/<kind>')
+def api_collection_schedule(kind):
+    """Current schedule for a collection job."""
+    if kind not in COLLECTION_JOBS:
+        return jsonify({'error': f"Unknown collection '{kind}'"}), 400
+    job_id = _collection_job_id(kind)
+    if not job_id:
+        return jsonify({'error': 'This collection is not connected to the app.'}), 409
+    try:
+        job = _sp_workspace_client().jobs.get(job_id=int(job_id))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    settings = getattr(job, 'settings', None)
+    schedule = getattr(settings, 'schedule', None) if settings else None
+    pause = str(getattr(schedule, 'pause_status', '') or '').split('.')[-1]
+    return jsonify({
+        'kind': kind,
+        'job_id': job_id,
+        'job_name': getattr(settings, 'name', None) if settings else None,
+        'cron': getattr(schedule, 'quartz_cron_expression', None) if schedule else None,
+        'timezone': getattr(schedule, 'timezone_id', None) if schedule else None,
+        'paused': pause.upper() == 'PAUSED',
+        'has_schedule': schedule is not None,
+    })
+
+
+@app.route('/api/collection/schedule/<kind>', methods=['POST'])
+def api_collection_schedule_update(kind):
+    """Change a collection job's schedule.
+
+    Accepts a Quartz cron expression and timezone, or {"paused": true|false} to
+    suspend and resume without discarding the expression. Scoped to the two
+    configured collection jobs — no other job can be modified from here.
+    """
+    if kind not in COLLECTION_JOBS:
+        return jsonify({'error': f"Unknown collection '{kind}'"}), 400
+    job_id = _collection_job_id(kind)
+    if not job_id:
+        return jsonify({'error': 'This collection is not connected to the app.'}), 409
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        client = _sp_workspace_client()
+        job = client.jobs.get(job_id=int(job_id))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    settings = getattr(job, 'settings', None)
+    existing = getattr(settings, 'schedule', None) if settings else None
+
+    cron = (payload.get('cron') or '').strip() or (
+        getattr(existing, 'quartz_cron_expression', None) if existing else None)
+    timezone = (payload.get('timezone') or '').strip() or (
+        getattr(existing, 'timezone_id', None) if existing else None) or 'UTC'
+
+    if not cron:
+        return jsonify({'error': 'A schedule expression is required.'}), 400
+
+    # Reject obviously malformed expressions before calling the API, so the user
+    # gets a clear message instead of a generic server error.
+    if len(cron.split()) not in (6, 7):
+        return jsonify({
+            'error': ('That schedule is not a valid Quartz expression. It needs 6 or 7 '
+                      'fields, for example "0 0 8 ? * *" for daily at 08:00.')
+        }), 400
+
+    paused = payload.get('paused')
+    if paused is None and existing is not None:
+        paused = str(getattr(existing, 'pause_status', '') or '').split('.')[-1].upper() == 'PAUSED'
+    paused = bool(paused)
+
+    try:
+        from databricks.sdk.service.jobs import CronSchedule, PauseStatus
+        client.jobs.update(
+            job_id=int(job_id),
+            new_settings={
+                'schedule': CronSchedule(
+                    quartz_cron_expression=cron,
+                    timezone_id=timezone,
+                    pause_status=PauseStatus.PAUSED if paused else PauseStatus.UNPAUSED,
+                ),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("schedule update failed for %s", kind)
+        return jsonify({'error': f'Could not save the schedule: {exc}'}), 500
+
+    logger.info("updated %s schedule cron=%r tz=%s paused=%s", kind, cron, timezone, paused)
+    return jsonify({'kind': kind, 'cron': cron, 'timezone': timezone, 'paused': paused, 'saved': True})
+
+
+@app.route('/api/auth/whoami')
+def api_auth_whoami():
+    """Report what the forwarded user token actually contains.
+
+    Diagnostic for on-behalf-of-user problems. The app config can advertise a
+    scope while the token the platform forwards does not carry it, and the two are
+    indistinguishable from the error text alone. This decodes the token's own
+    claims so the answer is factual rather than inferred.
+
+    The token itself is never returned or logged — only its scope list, issue time
+    and audience.
+    """
+    import base64
+    import datetime
+
+    token = request.headers.get('x-forwarded-access-token')
+    out = {
+        'obo_header_present': bool(token),
+        'forwarded_email': request.headers.get('X-Forwarded-Email'),
+        'app_configured_scopes': None,
+        'token_claims': None,
+    }
+
+    if not token:
+        out['diagnosis'] = (
+            'The platform is not forwarding a user token, so the app falls back to '
+            'its service principal. User authorization is not active for this app.'
+        )
+        return jsonify(out)
+
+    # A Databricks OAuth token is a JWT; the payload is the middle segment.
+    try:
+        parts = token.split('.')
+        if len(parts) < 2:
+            out['diagnosis'] = 'Forwarded token is not a JWT, so its scopes cannot be read.'
+            return jsonify(out)
+        payload_b64 = parts[1] + '=' * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+    except Exception as exc:  # noqa: BLE001
+        out['diagnosis'] = f'Could not decode the forwarded token: {exc}'
+        return jsonify(out)
+
+    scope_claim = claims.get('scope') or claims.get('scp') or ''
+    scopes = scope_claim.split() if isinstance(scope_claim, str) else list(scope_claim)
+    issued = claims.get('iat')
+    out['token_claims'] = {
+        'scopes': scopes,
+        'has_sql_scope': 'sql' in scopes,
+        'issued_at': (datetime.datetime.utcfromtimestamp(issued).isoformat() + 'Z') if issued else None,
+        'expires_at': (datetime.datetime.utcfromtimestamp(claims['exp']).isoformat() + 'Z') if claims.get('exp') else None,
+        'audience': claims.get('aud'),
+        'subject': claims.get('sub'),
+    }
+
+    if 'sql' in scopes:
+        out['diagnosis'] = (
+            'The forwarded token carries the sql scope. If queries still fail, the '
+            'cause is Unity Catalog grants rather than app authorization.'
+        )
+    else:
+        out['diagnosis'] = (
+            'The forwarded token does not carry the sql scope. Compare issued_at '
+            'against when the scope was added: an older timestamp means the session '
+            'predates it, a newer one means the platform is not minting the scope '
+            'for this app.'
+        )
+    return jsonify(out)
+
+
+@app.route('/api/auth/mode')
+def api_auth_mode():
+    """Which identity the app is querying as.
+
+    The UI shows a notice when queries run as the app's service principal rather
+    than as the signed-in user, because in that mode results are not filtered by
+    the viewer's own Unity Catalog permissions.
+    """
+    token = request.headers.get('x-forwarded-access-token')
+    per_user = bool(token) and _token_has_sql_scope(token)
+    return jsonify({
+        'per_user': per_user,
+        'identity': 'signed-in user' if per_user else 'application service principal',
+        'notice': None if per_user else (
+            'Results are not filtered to your own permissions. This app is querying '
+            'with its own service account because your sign-in was not granted query '
+            'access. An administrator can enable it under the app settings.'
+        ),
     })
 
 

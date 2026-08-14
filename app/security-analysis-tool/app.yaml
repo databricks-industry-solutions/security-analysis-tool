@@ -1,0 +1,63 @@
+name: security-analysis-tool
+display_name: "Security Analysis Tool"
+description: "Permissions analysis, secret scanning, and a security assistant for Databricks"
+
+config:
+  command:
+    - "python"
+    - "app.py"
+
+env:
+  - name: "PORT"
+    value: "8000"
+
+  # Unity Catalog schema holding SAT results, as '<catalog>.<schema>'.
+  # BRICKHOUND_SCHEMA is kept as a variable name for compatibility with existing
+  # deployments; the tables it points at are unchanged.
+  - name: "BRICKHOUND_SCHEMA"
+    valueFrom: "analysis_schema_name"
+  - name: "SAT_SCHEMA"
+    valueFrom: "analysis_schema_name"
+
+  - name: "WAREHOUSE_ID"
+    valueFrom: "sql-warehouse-id"
+
+  # Serving endpoint backing the security assistant.
+  - name: "MODEL_ENDPOINT"
+    valueFrom: "model-endpoint"
+
+  # Genie space created during installation. Empty when Genie was declined — the
+  # assistant reports that tool as unavailable and keeps working.
+  - name: "GENIE_SPACE_ID"
+    valueFrom: "genie-space-id"
+
+  # Scopes audit-log queries to this workspace by default.
+  - name: "WORKSPACE_ID"
+    valueFrom: "workspace-id"
+
+  # Collection job IDs, so the app can start a refresh from its UI. The job
+  # resource bindings below grant permission to run them; Databricks Apps does
+  # not inject the IDs themselves, so they are supplied here. The installer
+  # writes these secrets.
+  - name: "PERMISSIONS_JOB_ID"
+    valueFrom: "permissions-job-id"
+  - name: "SECRETS_JOB_ID"
+    valueFrom: "secrets-job-id"
+  - name: "SHARED_TO_ACCOUNT_JOB_ID"
+    valueFrom: "shared-to-account-job-id"
+  - name: "PRIVILEGED_NON_IDP_JOB_ID"
+    valueFrom: "privileged-non-idp-job-id"
+  - name: "DENYLIST_JOB_ID"
+    valueFrom: "denylist-job-id"
+
+resources:
+  compute:
+    size: "small"
+
+health_check:
+  path: "/health"
+  port: 8000
+  timeout: 30
+
+dependencies:
+  # Python packages from requirements.txt are installed automatically.

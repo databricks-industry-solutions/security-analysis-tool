@@ -42,7 +42,7 @@ def form():
         ),
         Confirm(
             name="enable_serverless",
-            message="Run on serverless? [Only monitor current workspace]",
+            message="Run collection jobs on serverless compute?",
             default=True,
         ),
         List(
@@ -71,16 +71,12 @@ def form():
         ),
     ]
 
-    # Job Scheduling Configuration
+    # Collection schedules. SAT now collects two datasets: the permissions graph
+    # and hardcoded-secret scan results.
     scheduling = [
         Text(
-            name="driver_schedule",
-            message="Driver job schedule (Quartz cron expression)",
-            default="0 0 8 ? * Mon,Wed,Fri",
-        ),
-        Text(
-            name="secrets_scanner_schedule", 
-            message="Secrets scanner job schedule (Quartz cron expression)",
+            name="secrets_scanner_schedule",
+            message="Secret scanning schedule (Quartz cron expression)",
             default="0 0 8 ? * *",
         ),
         Text(
@@ -90,22 +86,54 @@ def form():
         ),
     ]
 
-    # Permissions Analysis Configuration
-    brickhound = [
-        Confirm(
-            name="enable_brickhound",
-            message="Deploy Permissions Analysis?",
-            default=True,
-        ),
+    # Permissions analysis is a core dataset, not an add-on.
+    permissions = [
         Text(
             name="brickhound_schedule",
-            message="Permissions Analysis schedule (Quartz cron expression)",
+            message="Permissions analysis schedule (Quartz cron expression)",
             default="0 0 2 ? * *",
-            ignore=lambda x: not x.get("enable_brickhound", False),
         ),
     ]
 
-    questions = questions + cloud_specific_questions(client) + proxies + scheduling + brickhound
+    # The app surfaces both datasets and hosts the security assistant. The Genie
+    # space it uses is created by this installer; nothing to set up by hand.
+    application = [
+        Confirm(
+            name="enable_app",
+            message="Deploy the Security Analysis app (dashboards + assistant)?",
+            default=True,
+        ),
+        Text(
+            name="model_endpoint",
+            message="Model serving endpoint for the assistant",
+            default="databricks-claude-opus-4-7",
+            ignore=lambda x: not x.get("enable_app", False),
+        ),
+        Confirm(
+            name="enable_genie",
+            message="Create the Genie space for natural-language queries?",
+            default=True,
+            ignore=lambda x: not x.get("enable_app", False),
+        ),
+    ]
+
+    # Genie Space Configuration
+    genie = [
+        Confirm(
+            name="enable_genie_space",
+            message="Create a SAT Genie space for natural-language queries over findings?",
+            default=True,
+        ),
+    ]
+
+    questions = (
+        questions
+        + cloud_specific_questions(client)
+        + proxies
+        + scheduling
+        + permissions
+        + application
+    ) + genie
     return client, prompt(questions), profile
 
 
@@ -165,16 +193,12 @@ def cloud_specific_questions(client: WorkspaceClient):
 def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
 
     scope_name = "sat_scope"
-    # Only create the scope if it doesn't already exist. Previous versions
-    # deleted and recreated the scope on every install, which wiped ACLs —
-    # including the READ ACL that Databricks Apps auto-creates when a
-    # `secret` resource is bound to an app. That left re-installs with the
-    # BrickHound app unable to resolve its `valueFrom` env vars and crashing
-    # at startup. Overwriting individual keys with `put_secret` below
-    # preserves existing ACLs.
-    existing = {scope.name for scope in client.secrets.list_scopes()}
-    if scope_name not in existing:
-        client.secrets.create_scope(scope_name)
+    for scope in client.secrets.list_scopes():
+        if scope.name == scope_name:
+            client.secrets.delete_scope(scope_name)
+            break
+
+    client.secrets.create_scope(scope_name)
 
     client.secrets.put_secret(
         scope=scope_name,
@@ -191,6 +215,24 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
         key="analysis_schema_name",
         string_value=f'`{answers["catalog"]}`.{answers["security_analysis_schema"]}',
     )
+
+    # Workspace id, used by the app to scope audit-log queries by default.
+    try:
+        client.secrets.put_secret(
+            scope=scope_name,
+            key="workspace-id",
+            string_value=str(client.get_workspace_id()),
+        )
+    except Exception:  # noqa: BLE001
+        # Non-fatal: the app falls back to resolving this at runtime.
+        pass
+
+    if answers.get("enable_app", False):
+        client.secrets.put_secret(
+            scope=scope_name,
+            key="model-endpoint",
+            string_value=answers.get("model_endpoint", "databricks-claude-opus-4-7"),
+        )
 
     if answers["use_proxy"]:
         client.secrets.put_secret(
@@ -209,6 +251,12 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
             key="proxies",
             string_value="{}",
         )
+
+    client.secrets.put_secret(
+        scope=scope_name,
+        key="enable-genie-space",
+        string_value="true" if answers.get("enable_genie_space", False) else "false",
+    )
 
     if cloud_type == "aws" or cloud_type == "gcp":
         client.secrets.put_secret(

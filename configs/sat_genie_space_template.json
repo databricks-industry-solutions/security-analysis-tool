@@ -1,0 +1,315 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {
+        "id": "01f0341c0a3e67c3146720fa1b950492",
+        "question": [
+          "Which service principals hold ALL PRIVILEGES on any catalog or schema?"
+        ]
+      },
+      {
+        "id": "01f0c75de8c1b7c3ae5252091267a736",
+        "question": [
+          "Who can read secrets from the production secret scopes?"
+        ]
+      },
+      {
+        "id": "01f0bee98bf120e8906382754c6be528",
+        "question": [
+          "How many hardcoded credentials were found in notebooks in the latest scan?"
+        ]
+      },
+      {
+        "id": "01f058e2791934fdd9cfdd6d0e892cb6",
+        "question": [
+          "List workspaces with verified active secrets, ordered by finding count."
+        ]
+      },
+      {
+        "id": "01f0112f2dfa31205df3f5f9db109460",
+        "question": [
+          "Which groups grant access to tables in the finance catalog?"
+        ]
+      },
+      {
+        "id": "01f026eab90d2b0be7cd188983eae071",
+        "question": [
+          "Show the most common secret detector types across all workspaces."
+        ]
+      },
+      {
+        "id": "01f077ec676ad8200ac1dc865f46b4a6",
+        "question": [
+          "Which principals can access the most tables?"
+        ]
+      },
+      {
+        "id": "01f00bd73b6a1a5c68cf36d753107c01",
+        "question": [
+          "Are there clusters with credentials in their environment variables?"
+        ]
+      },
+      {
+        "id": "01f0d991b1bb53f9347945c7e3065141",
+        "question": [
+          "How has the number of secret findings changed over the last 10 scans?"
+        ]
+      },
+      {
+        "id": "01f056f991b96ec8f910d334500c4564",
+        "question": [
+          "Which secret scopes can be managed by more than five principals?"
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "identifier": "{UC_SCHEMA}.account_workspaces",
+        "column_configs": [
+          {
+            "column_name": "deployment_url"
+          },
+          {
+            "column_name": "workspace_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "workspace_name",
+            "enable_entity_matching": true
+          }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.brickhound_collection_metadata",
+        "column_configs": [
+          {
+            "column_name": "collection_time",
+            "enable_format_assistance": true
+          },
+          {
+            "column_name": "edge_count",
+            "enable_format_assistance": true
+          },
+          {
+            "column_name": "run_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "vertex_count",
+            "enable_format_assistance": true
+          }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.brickhound_edges",
+        "column_configs": [
+          {
+            "column_name": "created_at",
+            "enable_format_assistance": true
+          },
+          {
+            "column_name": "dst",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "inherited"
+          },
+          {
+            "column_name": "permission_level",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "properties"
+          },
+          {
+            "column_name": "relationship",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "run_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "src",
+            "enable_entity_matching": true
+          }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.brickhound_vertices",
+        "column_configs": [
+          {
+            "column_name": "active"
+          },
+          {
+            "column_name": "application_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "comment"
+          },
+          {
+            "column_name": "created_at",
+            "enable_format_assistance": true
+          },
+          {
+            "column_name": "display_name",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "email",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "metadata"
+          },
+          {
+            "column_name": "name",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "node_type",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "owner",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "properties"
+          },
+          {
+            "column_name": "run_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "updated_at",
+            "enable_format_assistance": true
+          }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.clusters_secret_scan_results",
+        "column_configs": [
+          {
+            "column_name": "cluster_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "cluster_name",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "config_field",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "config_key",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "detector_name",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "run_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "scan_time",
+            "enable_format_assistance": true
+          },
+          {
+            "column_name": "secret_sha256"
+          },
+          {
+            "column_name": "secrets_found",
+            "enable_format_assistance": true
+          },
+          {
+            "column_name": "verified"
+          },
+          {
+            "column_name": "workspace_id",
+            "enable_entity_matching": true
+          }
+        ]
+      },
+      {
+        "identifier": "{UC_SCHEMA}.notebooks_secret_scan_results",
+        "column_configs": [
+          {
+            "column_name": "detector_name",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "notebook_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "notebook_name",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "notebook_path",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "run_id",
+            "enable_entity_matching": true
+          },
+          {
+            "column_name": "scan_time",
+            "enable_format_assistance": true
+          },
+          {
+            "column_name": "secret_sha256"
+          },
+          {
+            "column_name": "secrets_found",
+            "enable_format_assistance": true
+          },
+          {
+            "column_name": "verified"
+          },
+          {
+            "column_name": "workspace_id",
+            "enable_entity_matching": true
+          }
+        ]
+      }
+    ]
+  },
+  "instructions": {
+    "text_instructions": [
+      {
+        "id": "01f0bf5f4400481065a29433f97eda4a",
+        "content": [
+          "This Genie space answers questions about two Databricks security datasets: the permissions graph (`brickhound_vertices`, `brickhound_edges`) and hardcoded-credential scan results (`notebooks_secret_scan_results`, `clusters_secret_scan_results`).",
+          "PERMISSIONS GRAPH \u2014 entities. `brickhound_vertices` holds one row per entity. Principals have node_type in 'User', 'AccountUser', 'ServicePrincipal', 'AccountServicePrincipal'. Groups are 'Group' or 'AccountGroup'. Resources include 'Catalog', 'Schema', 'Table', 'View', 'Cluster', 'Job', 'SecretScope', 'Query', 'ServingEndpoint'.",
+          "PERMISSIONS GRAPH \u2014 relationships. `brickhound_edges.src` is the principal or group holding the relationship; `dst` is the entity being accessed or contained. Unity Catalog privileges appear as relationship values: 'ALL PRIVILEGES', 'SELECT', 'USE SCHEMA', 'USE CATALOG', 'EXECUTE', 'READ VOLUME', 'CREATE TABLE'. Structural relationships are 'MemberOf' (principal belongs to group) and 'Contains' (catalog contains schema, schema contains table). Access relationships include 'WorkspaceAccess', 'CanReadSecret', 'CanManageSecret', 'MANAGE', 'BROWSE'.",
+          "JOINING THE GRAPH. `src` and `dst` usually match `vertices.id`, but may also match a vertex `name` or `email`. Join with (e.src = v.id OR e.src = v.name OR e.src = v.email). Always constrain both tables to the same run_id.",
+          "COUNTING GRANTS. `permission_level` mirrors `relationship` for privilege edges and is NULL for structural ones, so filter `permission_level IS NOT NULL` to count only real grants and exclude 'MemberOf' and 'Contains'.",
+          "GROUP MEMBERSHIP IS TRANSITIVE. A user in group A, where A is a member of group B, holds everything granted to B. Expanding nested groups needs a recursive traversal of 'MemberOf' edges \u2014 cap recursion at ten levels to avoid cycles. When asked who can access something, include both direct grantees and principals who inherit through group membership.",
+          "OWNERSHIP AND INHERITANCE. `edges.inherited = true` means the permission arrives via group membership or UC hierarchy rather than a direct grant. Resource owners (`vertices.owner`) hold implicit ALL PRIVILEGES with no explicit edge, so include ownership when answering access questions.",
+          "LATEST COLLECTION. The graph is a point-in-time snapshot per run_id. Unless asked for history, use the newest: SELECT MAX(run_id) FROM brickhound_collection_metadata, falling back to MAX(run_id) from the vertices table.",
+          "SECRET SCANNING. These tables record credentials found hardcoded in notebook source and in cluster environment variables. `detector_name` identifies the match: 'DapiToken', 'DkeaToken', 'DsapiToken' and 'DoseToken' are Databricks tokens; other values such as 'Slack', 'Postgres' and 'AWS' come from built-in detectors.",
+          "SECRET ROW SEMANTICS \u2014 IMPORTANT. A row where `secret_sha256 IS NULL` and `secrets_found = 0` is a tracking marker meaning the workspace was scanned and was clean. It is NOT a finding. Always filter `secret_sha256 IS NOT NULL` when counting findings.",
+          "NEVER SUM secrets_found. That column repeats the per-object finding count on every row for that object, so summing it over-counts. Use COUNT(*) for findings, or COUNT(DISTINCT secret_sha256) for distinct credentials.",
+          "VERIFIED SECRETS. `verified = true` means the credential was validated against the live service and is confirmed active. These are the most urgent findings \u2014 surface them first when asked about risk or priority.",
+          "SECRETS ARE HASHED. `secret_sha256` is a SHA-256 hash, never plaintext. Use it to correlate: the same hash in several notebooks means one credential was copied, and every location should be reported.",
+          "LATEST SCAN. Secret results also accumulate per run_id. For current state take MAX(run_id) per workspace_id across both scan tables, since a workspace may have been scanned by only one of the two scanners.",
+          "WORKSPACE NAMES. Join `workspace_id` to `account_workspaces` to report a readable `workspace_name` instead of a numeric id.",
+          "DO NOT confuse an empty result with a clean estate. If a query returns nothing because the collection job has not run, say the data is unavailable rather than reporting that nothing was found."
+        ]
+      }
+    ]
+  }
+}
