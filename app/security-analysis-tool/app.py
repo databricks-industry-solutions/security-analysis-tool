@@ -10,6 +10,7 @@ from flask import Flask, request, jsonify, send_from_directory
 import os
 import re
 import json
+import time
 import uuid
 import logging
 import threading
@@ -1950,6 +1951,123 @@ def get_main_html():
             border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Secret-scanning summary. Six figures sat in a bare grid with no
+           separation, so the numbers read as one run of digits; each now gets a
+           bounded cell, and the grid wraps instead of crushing columns. */
+        .secret-summary { padding: 18px 20px; margin-bottom: 16px; }
+        .secret-section-title {
+            font-weight: 600;
+            font-size: 0.95em;
+            margin-bottom: 14px;
+        }
+        .secret-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .secret-stat {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 10px;
+            padding: 14px 10px;
+            text-align: center;
+        }
+        .secret-stat-value {
+            font-size: 1.7em;
+            font-weight: 700;
+            line-height: 1.15;
+            font-variant-numeric: tabular-nums;
+        }
+        .secret-stat-label {
+            margin-top: 4px;
+            font-size: 0.72em;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            line-height: 1.3;
+        }
+        .secret-summary-foot {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            font-size: 0.82em;
+            color: var(--text-muted);
+        }
+        /* Card headers used above the secret tables. */
+        .secret-card { padding: 16px 18px; }
+        .secret-card-sub {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            margin-top: 3px;
+            margin-bottom: 14px;
+        }
+        /* Table cards let the table meet the card edge, so the head rule spans
+           the full width instead of stopping short of it. */
+        .secret-table-card { padding: 16px 0 4px; }
+        .secret-table-card > .secret-section-title,
+        .secret-table-card > .secret-card-sub { padding: 0 18px; }
+        .secret-table-card .data-table th:first-child,
+        .secret-table-card .data-table td:first-child { padding-left: 18px; }
+        .secret-table-card .data-table th:last-child,
+        .secret-table-card .data-table td:last-child { padding-right: 18px; }
+
+        /* Tabular data in the secret-scanning views. These tables previously
+           carried a class with no rule behind it, so they fell back to browser
+           defaults: no cell padding, collapsed columns, and text from adjacent
+           cells running together. */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        .data-table th {
+            text-align: left;
+            padding: 10px 14px;
+            font-size: 0.78em;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            white-space: nowrap;
+        }
+        .data-table td {
+            padding: 11px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            vertical-align: middle;
+        }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:hover { background: rgba(255, 255, 255, 0.035); }
+        /* Numeric columns are right-aligned by the markup; keep them from
+           touching the next column's value. */
+        .data-table th[style*="right"], .data-table td[style*="right"] {
+            padding-right: 18px;
+        }
+        .data-table .nowrap-muted {
+            white-space: nowrap;
+            font-size: 0.88em;
+            color: var(--text-muted);
+        }
+        /* A table flush inside .results-container needs its own edge padding. */
+        .data-table-padded th:first-child,
+        .data-table-padded td:first-child { padding-left: 24px; }
+        .data-table-padded th:last-child,
+        .data-table-padded td:last-child { padding-right: 24px; }
+        .data-table .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.88em;
+            color: var(--text-muted);
+        }
+        /* Long paths and hashes truncate rather than forcing the table wide. */
+        .data-table .truncate {
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .results-header {
             padding: 20px 24px;
@@ -4359,9 +4477,9 @@ def get_main_html():
 
         function secretStatBlock(label, value, color) {
             return `
-                <div>
-                    <div style="font-size: 1.8em; font-weight: 700; color: ${color};">${value}</div>
-                    <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">${escapeHtml(label)}</div>
+                <div class="secret-stat">
+                    <div class="secret-stat-value" style="color: ${color};">${value}</div>
+                    <div class="secret-stat-label">${escapeHtml(label)}</div>
                 </div>`;
         }
 
@@ -5122,9 +5240,9 @@ def get_main_html():
                 }
 
                 html += `
-                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
-                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Exposure Summary</div>
-                        <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; text-align: center;">
+                    <div class="card secret-summary">
+                        <div class="secret-section-title">Exposure Summary</div>
+                        <div class="secret-stat-grid">
                             ${secretStatBlock('Confirmed active', verified, verified > 0 ? '#ef4444' : '#22c55e')}
                             ${secretStatBlock('Total findings', total, total > 0 ? '#f59e0b' : '#22c55e')}
                             ${secretStatBlock('Distinct secrets', s.distinct_secrets || 0, '#3b82f6')}
@@ -5132,9 +5250,10 @@ def get_main_html():
                             ${secretStatBlock('In notebooks', s.notebook_findings || 0, '#8b5cf6')}
                             ${secretStatBlock('In cluster configs', s.cluster_findings || 0, '#8b5cf6')}
                         </div>
-                        <div style="margin-top:12px;font-size:0.8em;color:var(--text-muted);text-align:center;">
-                            ${s.workspaces_scanned || 0} workspace(s) scanned &middot; ${s.affected_workspaces || 0} with findings
-                            ${s.last_scan_time ? '&middot; last scan ' + escapeHtml(String(s.last_scan_time).slice(0, 16)) : ''}
+                        <div class="secret-summary-foot">
+                            ${s.workspaces_scanned || 0} workspace${Number(s.workspaces_scanned) === 1 ? '' : 's'} scanned
+                            &middot; ${s.affected_workspaces || 0} with findings
+                            ${s.last_scan_time ? '&middot; last scan ' + escapeHtml(String(s.last_scan_time).slice(0, 16).replace('T', ' ')) : ''}
                         </div>
                     </div>`;
 
@@ -5146,8 +5265,8 @@ def get_main_html():
                 if (detRows.length) {
                     const max = Math.max(...detRows.map(r => Number(r.findings) || 0), 1);
                     html += `
-                        <div class="card" style="padding:16px 18px;">
-                            <div style="font-weight:600;margin-bottom:12px;">Findings by Detector</div>
+                        <div class="card secret-card">
+                            <div class="secret-section-title">Findings by Detector</div>
                             ${detRows.map(r => secretBar(
                                 r.detector_name,
                                 Number(r.findings) || 0,
@@ -5159,9 +5278,9 @@ def get_main_html():
 
                 if (wsRows.length) {
                     html += `
-                        <div class="card" style="padding:16px 18px;">
-                            <div style="font-weight:600;margin-bottom:12px;">Exposure by Workspace</div>
-                            <table class="data-table" style="width:100%;">
+                        <div class="card secret-table-card">
+                            <div class="secret-section-title">Exposure by Workspace</div>
+                            <table class="data-table">
                                 <thead><tr><th>Workspace</th><th style="text-align:right;">Findings</th><th style="text-align:right;">Active</th></tr></thead>
                                 <tbody>
                                     ${wsRows.map(r => `
@@ -5185,22 +5304,22 @@ def get_main_html():
                 const sharedRows = (sharedRes && sharedRes.rows) || [];
                 if (sharedRows.length) {
                     html += `
-                        <div class="card" style="padding:16px 18px;margin-bottom:16px;">
-                            <div style="font-weight:600;margin-bottom:4px;">Reused Credentials</div>
-                            <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:12px;">
+                        <div class="card secret-table-card" style="margin-bottom:16px;">
+                            <div class="secret-section-title">Reused Credentials</div>
+                            <div class="secret-card-sub">
                                 The same secret found in more than one place. Rotating it means updating every copy.
                             </div>
-                            <table class="data-table" style="width:100%;">
+                            <table class="data-table">
                                 <thead><tr><th>Status</th><th>Detector</th><th>Hash</th><th style="text-align:right;">Copies</th><th style="text-align:right;">Workspaces</th><th>Example</th></tr></thead>
                                 <tbody>
                                     ${sharedRows.map(r => `
                                         <tr>
                                             <td>${secretStatusBadge(Number(r.verified) > 0)}</td>
                                             <td>${escapeHtml(r.detector_name)}</td>
-                                            <td style="font-family:monospace;font-size:0.85em;">${escapeHtml(String(r.secret_sha256 || '').slice(0, 12))}…</td>
+                                            <td class="mono">${escapeHtml(String(r.secret_sha256 || '').slice(0, 12))}…</td>
                                             <td style="text-align:right;font-weight:600;">${r.occurrences}</td>
                                             <td style="text-align:right;">${r.workspaces}</td>
-                                            <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.example_object)}</td>
+                                            <td class="truncate">${escapeHtml(r.example_object)}</td>
                                         </tr>`).join('')}
                                 </tbody>
                             </table>
@@ -5211,19 +5330,19 @@ def get_main_html():
                 const topRows = (topRes && topRes.rows) || [];
                 if (topRows.length) {
                     html += `
-                        <div class="card" style="padding:16px 18px;">
-                            <div style="font-weight:600;margin-bottom:4px;">Most Exposed Objects</div>
-                            <div style="font-size:0.85em;color:var(--text-muted);margin-bottom:12px;">
+                        <div class="card secret-table-card">
+                            <div class="secret-section-title">Most Exposed Objects</div>
+                            <div class="secret-card-sub">
                                 Notebooks and cluster configurations holding the most findings, confirmed-active first.
                             </div>
-                            <table class="data-table" style="width:100%;">
+                            <table class="data-table">
                                 <thead><tr><th>Source</th><th>Object</th><th>Location</th><th style="text-align:right;">Findings</th><th style="text-align:right;">Active</th><th style="text-align:right;">Detectors</th></tr></thead>
                                 <tbody>
                                     ${topRows.map(r => `
                                         <tr>
                                             <td><span class="badge" style="background:rgba(148,163,184,.14);color:#cbd5e1;">${escapeHtml(r.source_type)}</span></td>
-                                            <td style="max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.object_name)}</td>
-                                            <td style="font-family:monospace;font-size:0.82em;color:var(--text-muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.object_path)}</td>
+                                            <td class="truncate" style="max-width:230px;">${escapeHtml(r.object_name)}</td>
+                                            <td class="mono truncate">${escapeHtml(r.object_path)}</td>
                                             <td style="text-align:right;font-weight:600;">${r.findings}</td>
                                             <td style="text-align:right;">${Number(r.verified) > 0
                                                 ? `<span style="color:#ef4444;font-weight:600;">${r.verified}</span>` : '—'}</td>
@@ -5321,7 +5440,7 @@ def get_main_html():
                             <div class="results-title">${result.count} finding${result.count === 1 ? '' : 's'}${result.truncated ? ' (truncated)' : ''}</div>
                             <div style="font-size:0.8em;color:var(--text-muted);">Secrets shown as SHA-256 prefixes, never plaintext</div>
                         </div>
-                        <table class="data-table">
+                        <table class="data-table data-table-padded">
                             <thead><tr>
                                 <th>Status</th><th>Source</th><th>Object</th><th>Location</th>
                                 <th>Detector</th><th>Hash</th><th>Workspace</th><th>Scanned</th>
@@ -5331,12 +5450,12 @@ def get_main_html():
                                     <tr>
                                         <td>${secretStatusBadge(r.verified)}</td>
                                         <td><span class="badge" style="background:rgba(148,163,184,.14);color:#cbd5e1;">${escapeHtml(r.source_type)}</span></td>
-                                        <td style="max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.object_name)}</td>
-                                        <td style="font-family:monospace;font-size:0.82em;color:var(--text-muted);max-width:290px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.object_path)}</td>
-                                        <td>${escapeHtml(r.detector_name)}</td>
-                                        <td style="font-family:monospace;font-size:0.85em;">${escapeHtml(String(r.secret_sha256 || '').slice(0, 12))}…</td>
-                                        <td style="font-size:0.85em;color:var(--text-muted);">${escapeHtml(r.workspace_id)}</td>
-                                        <td style="font-size:0.85em;color:var(--text-muted);">${escapeHtml(String(r.scan_time || '').slice(0, 16))}</td>
+                                        <td class="truncate" style="max-width:210px;">${escapeHtml(r.object_name)}</td>
+                                        <td class="mono truncate" style="max-width:290px;">${escapeHtml(r.object_path)}</td>
+                                        <td style="white-space:nowrap;">${escapeHtml(r.detector_name)}</td>
+                                        <td class="mono">${escapeHtml(String(r.secret_sha256 || '').slice(0, 12))}…</td>
+                                        <td class="mono">${escapeHtml(r.workspace_id)}</td>
+                                        <td class="nowrap-muted">${escapeHtml(String(r.scan_time || '').slice(0, 16).replace('T', ' '))}</td>
                                     </tr>`).join('')}
                             </tbody>
                         </table>
@@ -11339,6 +11458,11 @@ def api_assistant_cancel():
     return jsonify({'cancelled': known, 'turn_id': turn_id})
 
 
+# Cached service-principal client; see _sp_workspace_client for why.
+_sp_client = None
+_sp_client_lock = threading.Lock()
+
+
 def _sp_workspace_client():
     """WorkspaceClient authenticated as the app's service principal.
 
@@ -11349,9 +11473,21 @@ def _sp_workspace_client():
 
     Reading security data still runs as the user (see get_connection), so UC
     continues to enforce per-user visibility on findings.
+
+    The client is cached: constructing one resolves credentials from scratch,
+    which measured 0.65-1.0s and was the largest single cost in loading the data
+    collection page. The SDK refreshes the underlying OAuth token itself, so a
+    long-lived client keeps working. This is the app's own identity and carries no
+    per-user state, so sharing one across requests is safe -- unlike
+    get_connection(), which must stay per-request because it binds a user token.
     """
-    from databricks.sdk import WorkspaceClient
-    return WorkspaceClient()
+    global _sp_client
+    if _sp_client is None:
+        with _sp_client_lock:
+            if _sp_client is None:
+                from databricks.sdk import WorkspaceClient
+                _sp_client = WorkspaceClient()
+    return _sp_client
 
 
 
@@ -11504,6 +11640,66 @@ def _latest_run(workspace_client, job_id):
     return _normalise_run(runs[0]) if runs else None
 
 
+# Cached collection-run state. Keyed by nothing: there is one set of jobs and the
+# lookups run as the app, so every caller sees the same answer.
+_COLLECTION_CACHE_TTL = 4.0
+_collection_cache = {'at': 0.0, 'runs': None}
+_collection_cache_lock = threading.Lock()
+
+
+def _fetch_collection_runs(workspace_client, configured):
+    """Latest run per configured job, fetched concurrently."""
+    import concurrent.futures
+
+    runs = {}
+    if not configured:
+        return runs
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(configured)) as pool:
+        futures = {
+            pool.submit(_latest_run, workspace_client, job_id): kind
+            for kind, job_id in configured.items()
+        }
+        for future in concurrent.futures.as_completed(futures):
+            kind = futures[future]
+            try:
+                runs[kind] = future.result()
+            except Exception:  # noqa: BLE001
+                logger.info("latest run lookup failed for %s", kind, exc_info=True)
+                runs[kind] = None
+    return runs
+
+
+def _cached_collection_runs(workspace_client, configured, force=False):
+    """Run state for every configured job, cached briefly.
+
+    Returns (runs, cached_age_seconds). A cache entry is not used when a run is
+    active, so an in-progress collection always reports live state; that is the
+    one case where a stale answer would be visible to the user.
+    """
+    now = time.time()
+    with _collection_cache_lock:
+        cached = _collection_cache['runs']
+        age = now - _collection_cache['at']
+        fresh = cached is not None and age < _COLLECTION_CACHE_TTL
+        any_active = bool(cached) and any(
+            (r or {}).get('active') for r in cached.values())
+        if fresh and not force and not any_active:
+            return cached, round(age, 2)
+
+    runs = _fetch_collection_runs(workspace_client, configured)
+    with _collection_cache_lock:
+        _collection_cache['runs'] = runs
+        _collection_cache['at'] = time.time()
+    return runs, 0.0
+
+
+def _invalidate_collection_cache():
+    """Drop cached run state after an action that changes it."""
+    with _collection_cache_lock:
+        _collection_cache['runs'] = None
+        _collection_cache['at'] = 0.0
+
+
 @app.route('/api/collection/status')
 def api_collection_status():
     """Configured collection jobs and the state of their most recent run."""
@@ -11525,21 +11721,14 @@ def api_collection_status():
         if job_id
     }
 
-    runs = {}
-    if configured:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(configured)) as pool:
-            futures = {
-                pool.submit(_latest_run, workspace_client, job_id): kind
-                for kind, job_id in configured.items()
-            }
-            for future in concurrent.futures.as_completed(futures):
-                kind = futures[future]
-                try:
-                    runs[kind] = future.result()
-                except Exception:  # noqa: BLE001
-                    logger.info("latest run lookup failed for %s", kind, exc_info=True)
-                    runs[kind] = None
+    # Even fanned out, the run lookups cost one Jobs API round trip (~0.6s), which
+    # the page cannot render without. A short cache makes revisits and the
+    # poller's refreshes instant while keeping the data current enough to be
+    # trusted: the TTL is deliberately shorter than the poller's fastest interval,
+    # and any run in flight bypasses the cache so progress is never stale.
+    refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+    runs, _cached_age = _cached_collection_runs(
+        workspace_client, configured, force=refresh)
 
     host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
     workspace_id = (os.getenv('WORKSPACE_ID') or '').strip()
@@ -11577,7 +11766,7 @@ def api_collection_status():
                 f"installer to manage it here, or start it from Workflows."
             )
         jobs.append(entry)
-    return jsonify({'jobs': jobs, 'groups': list(COLLECTION_GROUPS)})
+    return jsonify({'jobs': jobs, 'groups': list(COLLECTION_GROUPS), 'cached_age': _cached_age})
 
 
 @app.route('/api/collection/run', methods=['POST'])
@@ -11621,6 +11810,7 @@ def api_collection_run():
         }), 500
 
     run_id = getattr(started, 'run_id', None)
+    _invalidate_collection_cache()
     logger.info("started %s collection job=%s run_id=%s", kind, job_id, run_id)
     return jsonify({'kind': kind, 'job_id': job_id, 'run_id': run_id, 'started': True})
 
@@ -11693,6 +11883,7 @@ def api_collection_cancel():
                       f"CAN_MANAGE_RUN on this job.")
         }), 500
 
+    _invalidate_collection_cache()
     logger.info("cancelled collection run kind=%s run_id=%s by %s",
                 kind or '<by run_id>', run_id, _assistant_user())
     return jsonify({'cancelled': True, 'kind': kind or None, 'run_id': run_id})
