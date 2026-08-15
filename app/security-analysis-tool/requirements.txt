@@ -1,9 +1,14 @@
 # Pins use compatible-release (`~=`) to allow patch updates within
-# tested minor versions but pin out unintended major bumps. Verified
-# at SAT 0.8.0 release on databricks-sdk 0.33.x and Flask 3.0.x.
+# tested minor versions but pin out unintended major bumps.
+#
+# databricks-sdk requires >= 0.51: the alerts/v2 API backing the secret-scanning
+# alerts (WorkspaceClient.alerts_v2 and the sql.AlertV2* models) does not exist
+# before that release. Every other SDK surface this app uses -- jobs, serving
+# endpoints, statement execution, notification destinations, genie -- was
+# confirmed present at 0.51 before raising the floor.
 flask~=3.0
 werkzeug~=3.0
-databricks-sdk~=0.33.0
+databricks-sdk>=0.51,<1.0
 
 # Security assistant — calls the workspace's model serving endpoint via the
 # OpenAI-compatible API that Databricks Foundation Model serving exposes.

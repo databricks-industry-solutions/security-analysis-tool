@@ -1953,6 +1953,209 @@ def get_main_html():
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
         }
 
+        /* --- Secret-scanning alerts --- */
+        .alert-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .alert-toolbar-note {
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+        .alert-list { display: flex; flex-direction: column; gap: 12px; }
+        .alert-card {
+            display: grid;
+            grid-template-columns: 4px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0 18px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .alert-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.14);
+        }
+        /* Severity rail, so the list scans by urgency without relying on colour
+           alone for meaning -- the state pill carries the text. */
+        .alert-rail { align-self: stretch; background: var(--text-muted); }
+        .alert-rail.critical { background: #ef4444; }
+        .alert-rail.high { background: #f59e0b; }
+        .alert-rail.medium { background: #3b82f6; }
+        .alert-card.is-paused { opacity: 0.62; }
+        .alert-body { padding: 15px 0; min-width: 0; }
+        .alert-name {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            flex-wrap: wrap;
+        }
+        .alert-meta {
+            margin-top: 5px;
+            font-size: 0.84em;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .alert-meta .sep { opacity: 0.4; }
+        .alert-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-right: 16px;
+            flex-shrink: 0;
+        }
+        .alert-pill {
+            font-size: 0.7em;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 3px 9px;
+            border-radius: 20px;
+            white-space: nowrap;
+        }
+        .alert-pill.triggered { background: rgba(239,68,68,.16); color: #fca5a5; }
+        .alert-pill.ok { background: rgba(34,197,94,.14); color: #86efac; }
+        .alert-pill.unknown { background: rgba(148,163,184,.14); color: #cbd5e1; }
+        .alert-pill.error { background: rgba(245,158,11,.16); color: #fcd34d; }
+        .alert-pill.paused { background: rgba(148,163,184,.14); color: #94a3b8; }
+
+        /* Editor */
+        .alert-form {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 20px 22px;
+            margin-bottom: 18px;
+        }
+        .alert-form-title { font-weight: 600; font-size: 1.05em; margin-bottom: 4px; }
+        .alert-form-sub {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            margin-bottom: 18px;
+        }
+        .alert-type-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .alert-type {
+            text-align: left;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: 10px;
+            padding: 13px 14px;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            color: inherit;
+            font: inherit;
+        }
+        .alert-type:hover { background: rgba(255, 255, 255, 0.05); }
+        .alert-type.selected {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.1);
+        }
+        .alert-type-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+        .alert-type-label { font-weight: 600; font-size: 0.92em; }
+        .alert-type-desc {
+            font-size: 0.82em;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+        .alert-field-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 14px 16px;
+            margin-bottom: 16px;
+        }
+        .alert-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+        .alert-field.wide { grid-column: 1 / -1; }
+        .alert-field label {
+            font-size: 0.75em;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .alert-field input,
+        .alert-field select {
+            background: var(--bg-input);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 9px 11px;
+            color: var(--text-primary);
+            font-size: 0.92em;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .alert-field input:focus,
+        .alert-field select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .alert-field-hint { font-size: 0.78em; color: var(--text-muted); }
+        .alert-check {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 0.88em;
+            color: var(--text-secondary);
+        }
+        .alert-check input { width: auto; }
+        .alert-form-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-top: 16px;
+            margin-top: 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .alert-form-error {
+            color: #fca5a5;
+            font-size: 0.86em;
+            margin-right: auto;
+        }
+        .alert-sql {
+            margin-top: 14px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.8em;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 8px;
+            padding: 12px 14px;
+            white-space: pre-wrap;
+            max-height: 190px;
+            overflow: auto;
+        }
+        .alert-empty {
+            text-align: center;
+            padding: 40px 24px;
+            border: 1px dashed rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+        }
+        .alert-empty-title { font-weight: 600; margin-bottom: 5px; }
+        .alert-empty-sub {
+            font-size: 0.88em;
+            color: var(--text-muted);
+            max-width: 460px;
+            margin: 0 auto 16px;
+            line-height: 1.5;
+        }
         /* Secret-scanning summary. Six figures sat in a bare grid with no
            separation, so the numbers read as one run of digits; each now gets a
            bounded cell, and the grid wraps instead of crushing columns. */
@@ -2441,6 +2644,10 @@ def get_main_html():
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                             Secret Findings
                         </div>
+                        <div class="nav-item" data-page="secretsalerts">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                            Alerts
+                        </div>
                     </div>
                 </div>
 
@@ -2483,7 +2690,8 @@ def get_main_html():
                             // bar before the main script hides it.
                             const noStatsBar = ['home', 'sharedtoaccount', 'privilegednonidp',
                                                 'denylistbuilder', 'collection',
-                                                'secretsoverview', 'secretsfindings'];
+                                                'secretsoverview', 'secretsfindings',
+                                                'secretsalerts'];
                             const bar = document.getElementById('stats-header-bar');
                             if (bar && noStatsBar.includes(hash)) bar.style.display = 'none';
                         });
@@ -2959,6 +3167,15 @@ def get_main_html():
             </div>
 
             <!-- Secret Findings (detail table) -->
+            <!-- Secret Scanning Alerts Page -->
+            <div class="page" id="page-secretsalerts">
+                <div class="page-header">
+                    <h1 class="page-title">Alerts</h1>
+                    <p class="page-desc">Get notified when the scanner finds exposed credentials. These are standard Databricks SQL alerts &mdash; the schedule, notifications and history work exactly as they do elsewhere, and each one stays editable in the workspace.</p>
+                </div>
+                <div id="secretsalerts-results"></div>
+            </div>
+
             <div class="page" id="page-secretsfindings">
                 <div class="page-header">
                     <h1 class="page-title">Secret Findings</h1>
@@ -3107,7 +3324,8 @@ def get_main_html():
             // secret scanning pages (different dataset entirely), and Data
             // Collection, which reports freshness for every job itself.
             const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder',
-                                       'collection', 'secretsoverview', 'secretsfindings'];
+                                       'collection', 'secretsoverview', 'secretsfindings',
+                                       'secretsalerts'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
@@ -3123,6 +3341,7 @@ def get_main_html():
             else if (page === 'collection') loadCollectionPanel();
             else if (page === 'secretsoverview') loadSecretsOverview();
             else if (page === 'secretsfindings') loadSecretsFindings();
+            else if (page === 'secretsalerts') loadSecretsAlerts();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
                 loadSourcePrincipals();
@@ -5370,6 +5589,362 @@ def get_main_html():
         }
 
         let secretsFiltersLoaded = false;
+
+        // --- Secret-scanning alerts ------------------------------------------
+        // These wrap Databricks SQL alerts; the app supplies the query and
+        // defaults so nobody has to write SQL against the scan tables.
+        const alertState = { options: null, alerts: [], editing: null, selectedTemplate: null };
+
+        function alertCronLabel(cron) {
+            if (!cron) return 'No schedule';
+            const preset = (alertState.options && alertState.options.schedule_presets || [])
+                .find(p => p.cron === cron);
+            return preset ? preset.label : cron;
+        }
+
+        function alertStatePill(a) {
+            if (a.paused) return '<span class="alert-pill paused">Paused</span>';
+            const st = String(a.state || 'UNKNOWN').toUpperCase();
+            const tone = st === 'TRIGGERED' ? 'triggered'
+                : st === 'OK' ? 'ok'
+                : st === 'ERROR' ? 'error' : 'unknown';
+            const text = st === 'TRIGGERED' ? 'Triggered'
+                : st === 'OK' ? 'OK'
+                : st === 'ERROR' ? 'Error' : 'Not yet run';
+            return `<span class="alert-pill ${tone}">${text}</span>`;
+        }
+
+        function alertConditionText(a) {
+            const opText = {
+                GREATER_THAN: '>', GREATER_THAN_OR_EQUAL: '>=', LESS_THAN: '<',
+                LESS_THAN_OR_EQUAL: '<=', EQUAL: '=', NOT_EQUAL: '!=',
+            }[a.operator] || a.operator || '?';
+            const t = a.threshold === null || a.threshold === undefined ? '?' : a.threshold;
+            return `${a.column || 'value'} ${opText} ${t}`;
+        }
+
+        async function loadSecretsAlerts() {
+            const container = document.getElementById('secretsalerts-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading alerts...</div>';
+            try {
+                const [options, list] = await Promise.all([
+                    fetch('/api/secrets/alerts/options').then(r => r.json()),
+                    fetch('/api/secrets/alerts').then(r => r.json()),
+                ]);
+                if (options.error) { showEmpty('secretsalerts-results', options.error); return; }
+                if (list.error) { showEmpty('secretsalerts-results', list.error); return; }
+                alertState.options = options;
+                alertState.alerts = list.alerts || [];
+                renderSecretsAlerts();
+            } catch (e) {
+                showEmpty('secretsalerts-results', 'Failed to load alerts: ' + e.message);
+            }
+        }
+
+        function renderSecretsAlerts() {
+            const container = document.getElementById('secretsalerts-results');
+            const alerts = alertState.alerts;
+            const options = alertState.options || {};
+
+            if (!options.warehouse_configured) {
+                container.innerHTML = `
+                    <div class="alert-empty">
+                        <div class="alert-empty-title">No SQL warehouse configured</div>
+                        <div class="alert-empty-sub">Alerts run their query on a SQL warehouse. Re-run the SAT installer to bind one to this app.</div>
+                    </div>`;
+                return;
+            }
+
+            let html = `
+                <div class="alert-toolbar">
+                    <div class="alert-toolbar-note">
+                        ${alerts.length
+                            ? alerts.length + ' alert' + (alerts.length === 1 ? '' : 's') + ' configured'
+                            : 'No alerts configured yet'}
+                    </div>
+                    <button class="btn btn-sm" onclick="openAlertEditor()">New alert</button>
+                </div>
+                <div id="alert-editor-slot"></div>`;
+
+            if (!alerts.length) {
+                html += `
+                    <div class="alert-empty">
+                        <div class="alert-empty-title">Nobody is being notified yet</div>
+                        <div class="alert-empty-sub">
+                            Create an alert to be emailed when the scanner finds exposed credentials.
+                            Alerts are standard Databricks SQL alerts, so they also appear under
+                            Alerts in the workspace and keep working if this app is removed.
+                        </div>
+                        <button class="btn btn-sm" onclick="openAlertEditor()">Create your first alert</button>
+                    </div>`;
+            } else {
+                html += '<div class="alert-list">';
+                alerts.forEach(a => {
+                    const subs = (a.subscribers || []).length;
+                    const dests = (a.destination_ids || []).length;
+                    let recipients = [];
+                    if (subs) recipients.push(subs + (subs === 1 ? ' recipient' : ' recipients'));
+                    if (dests) recipients.push(dests + (dests === 1 ? ' destination' : ' destinations'));
+                    html += `
+                        <div class="alert-card${a.paused ? ' is-paused' : ''}">
+                            <div class="alert-rail ${escapeHtml(a.severity || '')}"></div>
+                            <div class="alert-body">
+                                <div class="alert-name">
+                                    ${escapeHtml(a.display_name || 'Untitled alert')}
+                                    ${alertStatePill(a)}
+                                </div>
+                                <div class="alert-meta">
+                                    <span>${escapeHtml(alertConditionText(a))}</span>
+                                    <span class="sep">&middot;</span>
+                                    <span>${escapeHtml(alertCronLabel(a.cron))}</span>
+                                    ${recipients.length ? '<span class="sep">&middot;</span><span>' + escapeHtml(recipients.join(', ')) + '</span>' : ''}
+                                    ${a.last_evaluated_at ? '<span class="sep">&middot;</span><span>checked ' + escapeHtml(String(a.last_evaluated_at).slice(0, 16).replace('T', ' ')) + '</span>' : ''}
+                                </div>
+                            </div>
+                            <div class="alert-actions">
+                                ${a.url ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">Open</a>` : ''}
+                                <button class="btn btn-sm btn-ghost" onclick="toggleAlertPause('${escapeHtml(a.id)}', ${a.paused ? 'false' : 'true'})">
+                                    ${a.paused ? 'Resume' : 'Pause'}
+                                </button>
+                                <button class="btn btn-sm btn-ghost" onclick="openAlertEditor('${escapeHtml(a.id)}')">Edit</button>
+                                <button class="btn btn-sm btn-stop" onclick="deleteAlert('${escapeHtml(a.id)}')">Delete</button>
+                            </div>
+                        </div>`;
+                });
+                html += '</div>';
+            }
+            container.innerHTML = html;
+            if (alertState.editing !== null) renderAlertEditor();
+        }
+
+        function openAlertEditor(alertId) {
+            const existing = alertId
+                ? alertState.alerts.find(a => a.id === alertId) : null;
+            alertState.editing = existing || {};
+            alertState.selectedTemplate = existing
+                ? existing.template_id
+                : ((alertState.options.templates || [])[0] || {}).id;
+            renderAlertEditor();
+            const slot = document.getElementById('alert-editor-slot');
+            if (slot) slot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function closeAlertEditor() {
+            alertState.editing = null;
+            alertState.selectedTemplate = null;
+            renderSecretsAlerts();
+        }
+
+        function selectAlertTemplate(id) {
+            alertState.selectedTemplate = id;
+            renderAlertEditor();
+        }
+
+        function renderAlertEditor() {
+            const slot = document.getElementById('alert-editor-slot');
+            if (!slot) return;
+            const e = alertState.editing || {};
+            const isEdit = !!e.id;
+            const options = alertState.options || {};
+            const templates = options.templates || [];
+            const tpl = templates.find(t => t.id === alertState.selectedTemplate) || templates[0] || {};
+
+            const threshold = e.threshold !== undefined && e.threshold !== null && e.template_id === tpl.id
+                ? e.threshold : tpl.default_threshold;
+            const operator = (e.operator && e.template_id === tpl.id) ? e.operator : tpl.default_operator;
+            const subscribers = (e.subscribers || []).join(', ')
+                || (isEdit ? '' : (options.current_user || ''));
+            const cron = e.cron || '0 0 8 * * ?';
+            const retrigger = e.retrigger_seconds === undefined || e.retrigger_seconds === null
+                ? 3600 : e.retrigger_seconds;
+
+            const presets = options.schedule_presets || [];
+            const cronKnown = presets.some(p => p.cron === cron);
+            const destinations = options.destinations || [];
+
+            slot.innerHTML = `
+                <div class="alert-form">
+                    <div class="alert-form-title">${isEdit ? 'Edit alert' : 'New alert'}</div>
+                    <div class="alert-form-sub">
+                        Creates a Databricks SQL alert. The query below is generated for you and runs on this app's warehouse.
+                    </div>
+
+                    <div class="alert-type-grid">
+                        ${templates.map(t => `
+                            <button type="button" class="alert-type${t.id === tpl.id ? ' selected' : ''}"
+                                    onclick="selectAlertTemplate('${escapeHtml(t.id)}')">
+                                <div class="alert-type-head">
+                                    <span class="alert-type-label">${escapeHtml(t.label)}</span>
+                                    <span class="alert-pill ${t.severity === 'critical' ? 'triggered' : t.severity === 'high' ? 'error' : 'unknown'}">${escapeHtml(t.severity)}</span>
+                                </div>
+                                <div class="alert-type-desc">${escapeHtml(t.description)}</div>
+                            </button>`).join('')}
+                    </div>
+
+                    <div class="alert-field-grid">
+                        <div class="alert-field wide">
+                            <label for="al-name">Alert name</label>
+                            <input id="al-name" type="text" value="${escapeHtml(e.display_name || ('SAT Secrets: ' + (tpl.label || '')))}" placeholder="Alert name">
+                        </div>
+                        <div class="alert-field">
+                            <label for="al-operator">Trigger when</label>
+                            <select id="al-operator">
+                                <option value="GREATER_THAN"${operator === 'GREATER_THAN' ? ' selected' : ''}>is greater than</option>
+                                <option value="GREATER_THAN_OR_EQUAL"${operator === 'GREATER_THAN_OR_EQUAL' ? ' selected' : ''}>is greater than or equal to</option>
+                                <option value="EQUAL"${operator === 'EQUAL' ? ' selected' : ''}>equals</option>
+                                <option value="LESS_THAN"${operator === 'LESS_THAN' ? ' selected' : ''}>is less than</option>
+                                <option value="NOT_EQUAL"${operator === 'NOT_EQUAL' ? ' selected' : ''}>does not equal</option>
+                            </select>
+                            <div class="alert-field-hint">${escapeHtml(tpl.column || '')}</div>
+                        </div>
+                        <div class="alert-field">
+                            <label for="al-threshold">Threshold</label>
+                            <input id="al-threshold" type="number" step="any" value="${escapeHtml(String(threshold === undefined ? 0 : threshold))}">
+                            <div class="alert-field-hint">${tpl.id === 'stale_scan' ? 'Hours since the last scan' : 'Number of findings'}</div>
+                        </div>
+                        <div class="alert-field">
+                            <label for="al-schedule">Check</label>
+                            <select id="al-schedule" onchange="onAlertScheduleChange()">
+                                ${presets.map(p => `<option value="${escapeHtml(p.cron)}"${p.cron === cron ? ' selected' : ''}>${escapeHtml(p.label)}</option>`).join('')}
+                                <option value="__custom"${cronKnown ? '' : ' selected'}>Custom cron...</option>
+                            </select>
+                        </div>
+                        <div class="alert-field" id="al-cron-wrap" style="${cronKnown ? 'display:none;' : ''}">
+                            <label for="al-cron">Quartz cron</label>
+                            <input id="al-cron" type="text" value="${escapeHtml(cron)}" placeholder="0 0 8 * * ?">
+                        </div>
+                        <div class="alert-field wide">
+                            <label for="al-subscribers">Email recipients</label>
+                            <input id="al-subscribers" type="text" value="${escapeHtml(subscribers)}" placeholder="you@company.com, security@company.com">
+                            <div class="alert-field-hint">Comma-separated.</div>
+                        </div>
+                        ${destinations.length ? `
+                        <div class="alert-field wide">
+                            <label for="al-destinations">Notification destinations</label>
+                            <select id="al-destinations" multiple size="${Math.min(destinations.length, 4)}">
+                                ${destinations.map(d => `<option value="${escapeHtml(d.id)}"${(e.destination_ids || []).includes(d.id) ? ' selected' : ''}>${escapeHtml(d.display_name)} (${escapeHtml(d.type)})</option>`).join('')}
+                            </select>
+                            <div class="alert-field-hint">Slack, PagerDuty or webhooks configured in this workspace.</div>
+                        </div>` : ''}
+                        <div class="alert-field">
+                            <label for="al-retrigger">Re-notify after</label>
+                            <select id="al-retrigger">
+                                <option value="0"${retrigger === 0 ? ' selected' : ''}>Every check</option>
+                                <option value="3600"${retrigger === 3600 ? ' selected' : ''}>1 hour</option>
+                                <option value="21600"${retrigger === 21600 ? ' selected' : ''}>6 hours</option>
+                                <option value="86400"${retrigger === 86400 ? ' selected' : ''}>24 hours</option>
+                            </select>
+                            <div class="alert-field-hint">Silences repeats while still triggered.</div>
+                        </div>
+                        <div class="alert-field" style="justify-content:flex-end;">
+                            <label class="alert-check">
+                                <input id="al-notify-ok" type="checkbox"${e.notify_on_ok ? ' checked' : ''}>
+                                Also notify when resolved
+                            </label>
+                        </div>
+                    </div>
+
+                    <details>
+                        <summary style="cursor:pointer;font-size:0.85em;color:var(--text-muted);">Query this alert runs</summary>
+                        <div class="alert-sql">${escapeHtml(tpl.query || '')}</div>
+                    </details>
+
+                    <div class="alert-form-actions">
+                        <span class="alert-form-error" id="al-error"></span>
+                        <button class="btn btn-sm btn-ghost" onclick="closeAlertEditor()">Cancel</button>
+                        <button class="btn btn-sm" id="al-save" onclick="saveAlert()">${isEdit ? 'Save changes' : 'Create alert'}</button>
+                    </div>
+                </div>`;
+        }
+
+        function onAlertScheduleChange() {
+            const sel = document.getElementById('al-schedule');
+            const wrap = document.getElementById('al-cron-wrap');
+            const cronInput = document.getElementById('al-cron');
+            if (!sel || !wrap) return;
+            if (sel.value === '__custom') {
+                wrap.style.display = '';
+            } else {
+                wrap.style.display = 'none';
+                if (cronInput) cronInput.value = sel.value;
+            }
+        }
+
+        function alertEditorPayload() {
+            const sel = document.getElementById('al-schedule');
+            const cronInput = document.getElementById('al-cron');
+            const cron = (sel && sel.value !== '__custom') ? sel.value
+                : (cronInput ? cronInput.value.trim() : '');
+            const destSel = document.getElementById('al-destinations');
+            return {
+                template_id: alertState.selectedTemplate,
+                display_name: document.getElementById('al-name').value.trim(),
+                operator: document.getElementById('al-operator').value,
+                threshold: document.getElementById('al-threshold').value,
+                cron: cron,
+                subscribers: document.getElementById('al-subscribers').value,
+                destination_ids: destSel
+                    ? Array.from(destSel.selectedOptions).map(o => o.value) : [],
+                retrigger_seconds: document.getElementById('al-retrigger').value,
+                notify_on_ok: document.getElementById('al-notify-ok').checked,
+                paused: !!(alertState.editing && alertState.editing.paused),
+            };
+        }
+
+        async function saveAlert() {
+            const err = document.getElementById('al-error');
+            const btn = document.getElementById('al-save');
+            const editing = alertState.editing || {};
+            const payload = alertEditorPayload();
+            if (err) err.textContent = '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+            try {
+                const url = editing.id
+                    ? '/api/secrets/alerts/' + encodeURIComponent(editing.id)
+                    : '/api/secrets/alerts';
+                const result = await fetch(url, {
+                    method: editing.id ? 'PATCH' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                }).then(r => r.json());
+                if (result.error) {
+                    if (err) err.textContent = result.error;
+                    if (btn) { btn.disabled = false; btn.textContent = editing.id ? 'Save changes' : 'Create alert'; }
+                    return;
+                }
+                alertState.editing = null;
+                alertState.selectedTemplate = null;
+                await loadSecretsAlerts();
+            } catch (e) {
+                if (err) err.textContent = e.message;
+                if (btn) { btn.disabled = false; btn.textContent = editing.id ? 'Save changes' : 'Create alert'; }
+            }
+        }
+
+        async function toggleAlertPause(alertId, paused) {
+            try {
+                const result = await fetch('/api/secrets/alerts/' + encodeURIComponent(alertId), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ paused: paused }),
+                }).then(r => r.json());
+                if (result.error) { alert(result.error); return; }
+                await loadSecretsAlerts();
+            } catch (e) { alert(e.message); }
+        }
+
+        async function deleteAlert(alertId) {
+            const found = alertState.alerts.find(a => a.id === alertId);
+            const name = found ? found.display_name : 'this alert';
+            if (!confirm('Delete "' + name + '"? It moves to trash and can be restored from the workspace.')) return;
+            try {
+                const result = await fetch('/api/secrets/alerts/' + encodeURIComponent(alertId), {
+                    method: 'DELETE',
+                }).then(r => r.json());
+                if (result.error) { alert(result.error); return; }
+                await loadSecretsAlerts();
+            } catch (e) { alert(e.message); }
+        }
 
         async function loadSecretsFindings() {
             if (!secretsFiltersLoaded) {
@@ -11156,6 +11731,474 @@ def _model_endpoint_available(endpoint_name):
         f"workspace has no serving endpoints available. Enable Foundation Model "
         f"APIs or point MODEL_ENDPOINT at an existing endpoint, then redeploy."
     )
+
+
+# ---------------------------------------------------------------------------
+# Secret-scanning alerts
+#
+# These are ordinary Databricks SQL alerts (the alerts/v2 API), created and
+# managed through the app rather than reimplemented in it. That means the
+# schedule, evaluation, notification destinations and history all behave exactly
+# as they do for any hand-built alert, and an alert made here remains fully
+# editable in the workspace UI. The app supplies the query and sensible defaults
+# so an operator does not have to write SQL against the scan tables.
+# ---------------------------------------------------------------------------
+
+# Marks alerts this app created, so the list view can show only SAT's own without
+# touching a user's unrelated alerts.
+ALERT_NAME_PREFIX = "SAT Secrets"
+
+
+def _alert_templates():
+    """Alert definitions offered in the UI, keyed by template id.
+
+    ``column`` must match the alias the query returns: the alerts API evaluates a
+    named column, not the first column by position.
+    """
+    return {
+        'verified_findings': {
+            'label': 'Confirmed active credentials',
+            'description': (
+                'Fires when the scanner confirms a credential is live by validating '
+                'it against the service. The highest-severity signal available.'
+            ),
+            'column': 'verified_findings',
+            'default_threshold': 0,
+            'default_operator': 'GREATER_THAN',
+            'severity': 'critical',
+            'query': f"""SELECT COUNT(*) AS verified_findings
+FROM {NOTEBOOK_SECRETS_TABLE}
+WHERE verified = true
+  AND secret_sha256 IS NOT NULL
+  AND run_id = (SELECT MAX(run_id) FROM {NOTEBOOK_SECRETS_TABLE})""",
+        },
+        'total_findings': {
+            'label': 'Any hardcoded secret found',
+            'description': (
+                'Fires when the most recent scan finds any hardcoded secret, '
+                'whether or not it was validated as live.'
+            ),
+            'column': 'total_findings',
+            'default_threshold': 0,
+            'default_operator': 'GREATER_THAN',
+            'severity': 'high',
+            'query': f"""SELECT COUNT(*) AS total_findings
+FROM {NOTEBOOK_SECRETS_TABLE}
+WHERE secret_sha256 IS NOT NULL
+  AND run_id = (SELECT MAX(run_id) FROM {NOTEBOOK_SECRETS_TABLE})""",
+        },
+        'new_findings': {
+            'label': 'Findings increased since previous scan',
+            'description': (
+                'Fires only when the newest scan found more secrets than the one '
+                'before it, so a known backlog does not alert every day.'
+            ),
+            'column': 'new_findings',
+            'default_threshold': 0,
+            'default_operator': 'GREATER_THAN',
+            'severity': 'high',
+            'query': f"""WITH runs AS (
+  SELECT run_id, ROW_NUMBER() OVER (ORDER BY run_id DESC) AS rn
+  FROM (SELECT DISTINCT run_id FROM {NOTEBOOK_SECRETS_TABLE})
+),
+counts AS (
+  SELECT r.rn, COUNT(*) AS findings
+  FROM {NOTEBOOK_SECRETS_TABLE} s
+  JOIN runs r ON r.run_id = s.run_id
+  WHERE s.secret_sha256 IS NOT NULL AND r.rn <= 2
+  GROUP BY r.rn
+)
+SELECT COALESCE(MAX(CASE WHEN rn = 1 THEN findings END), 0)
+     - COALESCE(MAX(CASE WHEN rn = 2 THEN findings END), 0) AS new_findings
+FROM counts""",
+        },
+        'stale_scan': {
+            'label': 'Scanner has not run recently',
+            'description': (
+                'Fires when the last completed scan is older than the threshold in '
+                'hours. Catches a silently broken schedule, where no findings is '
+                'indistinguishable from no scanning.'
+            ),
+            'column': 'hours_since_scan',
+            'default_threshold': 48,
+            'default_operator': 'GREATER_THAN',
+            'severity': 'medium',
+            'query': f"""SELECT COALESCE(
+         CAST((unix_timestamp(current_timestamp())
+               - unix_timestamp(MAX(scan_time))) / 3600 AS DOUBLE), 999999
+       ) AS hours_since_scan
+FROM {NOTEBOOK_SECRETS_TABLE}""",
+        },
+    }
+
+
+def _alert_schedule_presets():
+    return [
+        {'label': 'Every hour', 'cron': '0 0 * * * ?'},
+        {'label': 'Every 6 hours', 'cron': '0 0 0/6 * * ?'},
+        {'label': 'Daily at 08:00', 'cron': '0 0 8 * * ?'},
+        {'label': 'Daily at 18:00', 'cron': '0 0 18 * * ?'},
+        {'label': 'Weekly, Monday 08:00', 'cron': '0 0 8 ? * MON'},
+    ]
+
+
+def _serialise_alert(alert, templates=None):
+    """Flatten an AlertV2 into the shape the UI renders."""
+    templates = templates or _alert_templates()
+    evaluation = getattr(alert, 'evaluation', None)
+    notification = getattr(evaluation, 'notification', None) if evaluation else None
+    schedule = getattr(alert, 'schedule', None)
+
+    def enum_name(value):
+        return str(value).split('.')[-1] if value is not None else None
+
+    threshold = None
+    operand = getattr(evaluation, 'threshold', None) if evaluation else None
+    value = getattr(operand, 'value', None) if operand else None
+    if value is not None:
+        for attr in ('double_value', 'string_value', 'bool_value'):
+            got = getattr(value, attr, None)
+            if got is not None:
+                threshold = got
+                break
+
+    # The template is recovered from the evaluated column name, which is stable;
+    # the display name is user-editable and cannot be relied on.
+    column = getattr(getattr(evaluation, 'source', None), 'name', None)
+    template_id = next(
+        (tid for tid, spec in templates.items() if spec['column'] == column), None)
+
+    pause_status = enum_name(
+        getattr(schedule, 'pause_status', None)
+        or getattr(schedule, 'effective_pause_status', None))
+
+    return {
+        'id': alert.id,
+        'display_name': alert.display_name,
+        'template_id': template_id,
+        'severity': (templates.get(template_id) or {}).get('severity'),
+        'column': column,
+        'operator': enum_name(getattr(evaluation, 'comparison_operator', None)),
+        'threshold': threshold,
+        'state': enum_name(getattr(evaluation, 'state', None)),
+        'lifecycle_state': enum_name(getattr(alert, 'lifecycle_state', None)),
+        'last_evaluated_at': getattr(evaluation, 'last_evaluated_at', None),
+        'cron': getattr(schedule, 'quartz_cron_schedule', None),
+        'timezone_id': getattr(schedule, 'timezone_id', None),
+        'paused': pause_status == 'PAUSED',
+        'notify_on_ok': bool(getattr(notification, 'notify_on_ok', False)),
+        'retrigger_seconds': getattr(notification, 'retrigger_seconds', None),
+        'subscribers': [
+            s.user_email for s in (getattr(notification, 'subscriptions', None) or [])
+            if getattr(s, 'user_email', None)
+        ],
+        'destination_ids': [
+            s.destination_id for s in (getattr(notification, 'subscriptions', None) or [])
+            if getattr(s, 'destination_id', None)
+        ],
+        'owner': getattr(alert, 'owner_user_name', None),
+        'url': _alert_url(alert.id),
+    }
+
+
+def _alert_url(alert_id):
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    if not host or not alert_id:
+        return None
+    if not host.startswith('http'):
+        host = f"https://{host}"
+    return f"{host}/sql/alerts/{alert_id}"
+
+
+def _build_alert_object(payload, template, existing=None):
+    """Construct an AlertV2 from a UI payload.
+
+    Raises ValueError with a user-facing message on invalid input, so the caller
+    can return 400 rather than surfacing an SDK error.
+    """
+    from databricks.sdk.service import sql as sql_service
+
+    warehouse_id = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID')
+    if not warehouse_id:
+        raise ValueError('No SQL warehouse is configured for this app.')
+
+    name = (payload.get('display_name') or '').strip()
+    if not name:
+        name = f"{ALERT_NAME_PREFIX}: {template['label']}"
+    if len(name) > 200:
+        raise ValueError('Name is too long (200 character limit).')
+
+    operator = (payload.get('operator') or template['default_operator']).strip().upper()
+    valid_operators = {o.name for o in sql_service.ComparisonOperator}
+    if operator not in valid_operators:
+        raise ValueError(f"Unsupported comparison '{operator}'.")
+
+    raw_threshold = payload.get('threshold')
+    if raw_threshold is None or raw_threshold == '':
+        raw_threshold = template['default_threshold']
+    try:
+        threshold = float(raw_threshold)
+    except (TypeError, ValueError):
+        raise ValueError('Threshold must be a number.')
+
+    subscribers = payload.get('subscribers') or []
+    if isinstance(subscribers, str):
+        subscribers = re.split(r'[,;\s]+', subscribers)
+    emails = [e.strip() for e in subscribers if e and e.strip()]
+    for email in emails:
+        if '@' not in email or len(email) > 320:
+            raise ValueError(f"'{email}' is not a valid email address.")
+
+    destination_ids = [
+        d.strip() for d in (payload.get('destination_ids') or []) if d and d.strip()
+    ]
+    if not emails and not destination_ids:
+        raise ValueError(
+            'Add at least one email address or notification destination, '
+            'otherwise the alert has nobody to notify.')
+
+    subscriptions = [
+        sql_service.AlertV2Subscription(user_email=email) for email in emails
+    ] + [
+        sql_service.AlertV2Subscription(destination_id=d) for d in destination_ids
+    ]
+
+    cron = (payload.get('cron') or '0 0 8 * * ?').strip()
+    timezone_id = (payload.get('timezone_id') or 'UTC').strip()
+
+    try:
+        retrigger = int(payload.get('retrigger_seconds') or 3600)
+    except (TypeError, ValueError):
+        raise ValueError('Re-notify interval must be a whole number of seconds.')
+    retrigger = max(0, min(retrigger, 86400 * 7))
+
+    pause = bool(payload.get('paused'))
+
+    return sql_service.AlertV2(
+        display_name=name,
+        query_text=template['query'],
+        warehouse_id=warehouse_id,
+        custom_description=template['description'],
+        evaluation=sql_service.AlertV2Evaluation(
+            source=sql_service.AlertV2OperandColumn(name=template['column']),
+            comparison_operator=getattr(sql_service.ComparisonOperator, operator),
+            # An empty result means the scan tables hold no matching rows, which is
+            # the healthy case for every template here.
+            empty_result_state=sql_service.AlertEvaluationState.OK,
+            threshold=sql_service.AlertV2Operand(
+                value=sql_service.AlertV2OperandValue(double_value=threshold)),
+            notification=sql_service.AlertV2Notification(
+                notify_on_ok=bool(payload.get('notify_on_ok')),
+                retrigger_seconds=retrigger,
+                subscriptions=subscriptions,
+            ),
+        ),
+        schedule=sql_service.CronSchedule(
+            quartz_cron_schedule=cron,
+            timezone_id=timezone_id,
+            pause_status=(sql_service.SchedulePauseStatus.PAUSED if pause
+                          else sql_service.SchedulePauseStatus.UNPAUSED),
+        ),
+    )
+
+
+def _alert_error_message(exc):
+    """Turn an alerts API error into something a user can act on.
+
+    The API rejects a subscriber who is not a member of the workspace, but says
+    so as "Failed to get user id for email: ...", which reads like an internal
+    fault rather than the input problem it is.
+    """
+    raw = str(exc)
+    match = re.search(r'Failed to get user id for email:\s*([^\s]+)', raw)
+    if match:
+        return (f"{match.group(1)} is not a member of this workspace. Databricks "
+                f"alerts can only notify existing workspace users -- add them to "
+                f"the workspace first, or use a notification destination such as "
+                f"Slack or a webhook for external recipients.")
+    if 'PERMISSION_DENIED' in raw or 'does not have' in raw:
+        return (f"Not permitted to manage alerts in this workspace: {raw}")
+    return f"Could not save the alert: {raw}"
+
+
+@app.route('/api/secrets/alerts/options')
+def api_secrets_alert_options():
+    """Templates, schedule presets and destinations for the alert editor."""
+    templates = [
+        {
+            'id': tid,
+            'label': spec['label'],
+            'description': spec['description'],
+            'severity': spec['severity'],
+            'default_threshold': spec['default_threshold'],
+            'default_operator': spec['default_operator'],
+            'column': spec['column'],
+            'query': spec['query'],
+        }
+        for tid, spec in _alert_templates().items()
+    ]
+
+    # Notification destinations (Slack, PagerDuty, webhooks) are workspace-level
+    # objects. Listing them is best-effort: email subscriptions work regardless.
+    destinations = []
+    try:
+        client = _sp_workspace_client()
+        for dest in client.notification_destinations.list():
+            destinations.append({
+                'id': dest.id,
+                'display_name': dest.display_name,
+                'type': str(getattr(dest, 'destination_type', '') or '').split('.')[-1],
+            })
+    except Exception:  # noqa: BLE001
+        logger.info('could not list notification destinations', exc_info=True)
+
+    # Only a real address is offered as the default recipient. _assistant_user()
+    # falls back to a service principal id when no user identity is forwarded,
+    # and prefilling that would create an alert that notifies nobody.
+    user = _assistant_user()
+    default_recipient = user if user and '@' in user else ''
+
+    return jsonify({
+        'templates': templates,
+        'schedule_presets': _alert_schedule_presets(),
+        'destinations': destinations,
+        'current_user': default_recipient,
+        'warehouse_configured': bool(
+            os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID')),
+    })
+
+
+@app.route('/api/secrets/alerts')
+def api_secrets_alerts_list():
+    """Alerts this app manages, newest first."""
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    templates = _alert_templates()
+    known_columns = {spec['column'] for spec in templates.values()}
+    alerts = []
+    try:
+        for alert in client.alerts_v2.list_alerts():
+            lifecycle = str(getattr(alert, 'lifecycle_state', '') or '').split('.')[-1]
+            if lifecycle == 'DELETED':
+                continue
+            entry = _serialise_alert(alert, templates)
+            # Show only secret-scanning alerts: either created from a template
+            # (recognised by evaluated column) or named as one.
+            if entry['column'] in known_columns or (
+                    entry['display_name'] or '').startswith(ALERT_NAME_PREFIX):
+                alerts.append(entry)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('listing alerts failed')
+        return jsonify({'error': str(exc)}), 500
+
+    alerts.sort(key=lambda a: (a['paused'], a['display_name'] or ''))
+    return jsonify({'alerts': alerts, 'count': len(alerts)})
+
+
+@app.route('/api/secrets/alerts', methods=['POST'])
+def api_secrets_alerts_create():
+    """Create a Databricks SQL alert from one of the secret-scanning templates."""
+    payload = request.get_json(silent=True) or {}
+    template_id = (payload.get('template_id') or '').strip()
+    templates = _alert_templates()
+    if template_id not in templates:
+        return jsonify({'error': f"Unknown alert type '{template_id}'."}), 400
+
+    try:
+        alert = _build_alert_object(payload, templates[template_id])
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    try:
+        client = _sp_workspace_client()
+        created = client.alerts_v2.create_alert(alert=alert)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('alert creation failed')
+        return jsonify({'error': _alert_error_message(exc)}), 400
+
+    logger.info('created secrets alert %s (%s) by %s',
+                created.id, template_id, _assistant_user())
+    return jsonify({'alert': _serialise_alert(created, templates), 'created': True})
+
+
+@app.route('/api/secrets/alerts/<alert_id>', methods=['PATCH'])
+def api_secrets_alerts_update(alert_id):
+    """Update an alert, or pause/resume it.
+
+    A body of {"paused": true|false} alone toggles the schedule and leaves
+    everything else untouched, so the list view's switch does not have to
+    round-trip the whole definition.
+    """
+    payload = request.get_json(silent=True) or {}
+    try:
+        client = _sp_workspace_client()
+        current = client.alerts_v2.get_alert(id=alert_id)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    from databricks.sdk.service import sql as sql_service
+
+    pause_only = set(payload.keys()) <= {'paused'}
+    if pause_only:
+        if 'paused' not in payload:
+            return jsonify({'error': 'Nothing to update.'}), 400
+        if current.schedule is None:
+            return jsonify({'error': 'This alert has no schedule to pause.'}), 400
+        current.schedule.pause_status = (
+            sql_service.SchedulePauseStatus.PAUSED if payload['paused']
+            else sql_service.SchedulePauseStatus.UNPAUSED)
+        try:
+            updated = client.alerts_v2.update_alert(
+                id=alert_id, alert=current, update_mask='schedule')
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('alert pause toggle failed')
+            return jsonify({'error': str(exc)}), 500
+        return jsonify({'alert': _serialise_alert(updated), 'updated': True})
+
+    templates = _alert_templates()
+    template_id = (payload.get('template_id') or '').strip()
+    if template_id not in templates:
+        # Fall back to the template the alert was built from, so a partial edit
+        # does not need to restate its type.
+        template_id = _serialise_alert(current, templates).get('template_id')
+    if template_id not in templates:
+        return jsonify({'error': 'This alert is not managed by SAT.'}), 400
+
+    try:
+        rebuilt = _build_alert_object(payload, templates[template_id], existing=current)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    try:
+        updated = client.alerts_v2.update_alert(
+            id=alert_id, alert=rebuilt,
+            update_mask='display_name,query_text,evaluation,schedule,custom_description')
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('alert update failed')
+        return jsonify({'error': _alert_error_message(exc)}), 400
+
+    logger.info('updated secrets alert %s by %s', alert_id, _assistant_user())
+    return jsonify({'alert': _serialise_alert(updated, templates), 'updated': True})
+
+
+@app.route('/api/secrets/alerts/<alert_id>', methods=['DELETE'])
+def api_secrets_alerts_delete(alert_id):
+    """Move an alert to trash. Recoverable in the workspace UI."""
+    try:
+        client = _sp_workspace_client()
+        client.alerts_v2.trash_alert(id=alert_id)
+    except Exception as exc:  # noqa: BLE001
+        # Already trashed is the outcome the caller asked for, so it is reported as
+        # success rather than an error the user can do nothing about.
+        if 'already trashed' in str(exc).lower():
+            return jsonify({'deleted': True, 'id': alert_id, 'already_deleted': True})
+        logger.exception('alert delete failed')
+        return jsonify({'error': _alert_error_message(exc)}), 400
+    logger.info('trashed secrets alert %s by %s', alert_id, _assistant_user())
+    return jsonify({'deleted': True, 'id': alert_id})
 
 
 # ---------------------------------------------------------------------------
