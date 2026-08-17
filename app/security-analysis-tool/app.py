@@ -1953,6 +1953,128 @@ def get_main_html():
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
         }
 
+        /* --- Settings / health --- */
+        .settings-section {
+            padding: 0 12px 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 10px;
+        }
+        .settings-badge {
+            margin-left: auto;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            border-radius: 9px;
+            background: #ef4444;
+            color: #fff;
+            font-size: 0.7em;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .settings-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 18px;
+            font-size: 0.9em;
+        }
+        .settings-banner.ok {
+            background: rgba(34, 197, 94, 0.08);
+            border: 1px solid rgba(34, 197, 94, 0.28);
+        }
+        .settings-banner.bad {
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .settings-banner-title { font-weight: 600; margin-bottom: 3px; }
+        .settings-banner-sub { color: var(--text-secondary); font-size: 0.94em; }
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .settings-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 16px 0 6px;
+        }
+        .settings-card-title {
+            font-weight: 600;
+            font-size: 0.95em;
+            padding: 0 18px 12px;
+        }
+        .check-row {
+            display: grid;
+            grid-template-columns: 18px minmax(0, 1fr);
+            gap: 0 11px;
+            padding: 11px 18px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .check-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            margin-top: 6px;
+            justify-self: center;
+            flex-shrink: 0;
+        }
+        .check-dot.ok { background: #22c55e; }
+        .check-dot.bad { background: #ef4444; }
+        .check-dot.optional { background: var(--text-muted); }
+        .check-label { font-weight: 600; font-size: 0.9em; }
+        .check-detail {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            margin-top: 3px;
+            line-height: 1.5;
+        }
+        .check-remedy {
+            font-size: 0.84em;
+            color: #fcd34d;
+            margin-top: 6px;
+            line-height: 1.5;
+            padding-left: 10px;
+            border-left: 2px solid rgba(245, 158, 11, 0.4);
+        }
+        .config-row {
+            display: grid;
+            grid-template-columns: 150px minmax(0, 1fr);
+            gap: 0 14px;
+            padding: 9px 18px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.87em;
+        }
+        .config-key {
+            color: var(--text-muted);
+            font-size: 0.92em;
+        }
+        .config-val {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.92em;
+            overflow-wrap: anywhere;
+        }
+        .config-val.unset { font-family: inherit; color: var(--text-muted); font-style: italic; }
+        .settings-links {
+            display: flex;
+            gap: 9px;
+            flex-wrap: wrap;
+            padding: 14px 18px 4px;
+        }
+        .settings-note {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            line-height: 1.55;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 12px;
+            padding: 14px 18px;
+        }
         /* --- Secret-scanning alerts --- */
         .alert-toolbar {
             display: flex;
@@ -2653,6 +2775,16 @@ def get_main_html():
 
                 <!-- Spacer to push footer to bottom -->
                 <div class="sidebar-spacer"></div>
+
+                <!-- Settings, kept out of the grouped sections above: it reports
+                     on the app itself rather than on the estate. -->
+                <div class="nav-section settings-section">
+                    <div class="nav-item" data-page="settings" id="nav-settings">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        Settings
+                        <span class="settings-badge" id="settings-badge" hidden></span>
+                    </div>
+                </div>
                 
                 <!-- Optional footer info -->
                 <div style="padding: 20px; border-top: 1px solid rgba(255, 255, 255, 0.05); background: rgba(0, 0, 0, 0.1); font-size: 0.75em; color: rgba(255, 255, 255, 0.4); text-align: center;">
@@ -2691,7 +2823,7 @@ def get_main_html():
                             const noStatsBar = ['home', 'sharedtoaccount', 'privilegednonidp',
                                                 'denylistbuilder', 'collection',
                                                 'secretsoverview', 'secretsfindings',
-                                                'secretsalerts'];
+                                                'secretsalerts', 'settings'];
                             const bar = document.getElementById('stats-header-bar');
                             if (bar && noStatsBar.includes(hash)) bar.style.display = 'none';
                         });
@@ -3167,6 +3299,15 @@ def get_main_html():
             </div>
 
             <!-- Secret Findings (detail table) -->
+            <!-- Settings / Health Page -->
+            <div class="page" id="page-settings">
+                <div class="page-header">
+                    <h1 class="page-title">Settings</h1>
+                    <p class="page-desc">Current configuration and a live check of everything this app depends on. Each failing check names the fix and links to where to make it.</p>
+                </div>
+                <div id="settings-results"></div>
+            </div>
+
             <!-- Secret Scanning Alerts Page -->
             <div class="page" id="page-secretsalerts">
                 <div class="page-header">
@@ -3325,7 +3466,7 @@ def get_main_html():
             // Collection, which reports freshness for every job itself.
             const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder',
                                        'collection', 'secretsoverview', 'secretsfindings',
-                                       'secretsalerts'];
+                                       'secretsalerts', 'settings'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
@@ -3342,6 +3483,7 @@ def get_main_html():
             else if (page === 'secretsoverview') loadSecretsOverview();
             else if (page === 'secretsfindings') loadSecretsFindings();
             else if (page === 'secretsalerts') loadSecretsAlerts();
+            else if (page === 'settings') loadSettings();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
                 loadSourcePrincipals();
@@ -5589,6 +5731,140 @@ def get_main_html():
         }
 
         let secretsFiltersLoaded = false;
+
+        // --- Settings / health ------------------------------------------------
+        // Reports whether each dependency is reachable. Configuration is shown
+        // read-only: the values are bound to the app resource at deploy time, so
+        // editing them here could not take effect without a redeploy, and giving
+        // the app write access to its own credentials would turn it into a means
+        // of privilege escalation. Each failing check links to the right place.
+
+        async function loadSettings() {
+            const container = document.getElementById('settings-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Checking configuration...</div>';
+            try {
+                const d = await fetch('/api/settings').then(r => r.json());
+                if (d.error) { showEmpty('settings-results', d.error); return; }
+                renderSettings(d);
+                updateSettingsBadge(d.failing_count || 0);
+            } catch (e) {
+                showEmpty('settings-results', 'Could not load settings: ' + e.message);
+            }
+        }
+
+        function updateSettingsBadge(count) {
+            const badge = document.getElementById('settings-badge');
+            if (!badge) return;
+            if (count > 0) {
+                badge.textContent = count;
+                badge.hidden = false;
+            } else {
+                badge.hidden = true;
+            }
+        }
+
+        function renderSettings(d) {
+            const cfg = d.config || {};
+            const links = d.links || {};
+            const checks = d.checks || [];
+            const failing = checks.filter(c => !c.ok);
+
+            let html = '';
+            if (failing.length) {
+                html += `
+                    <div class="settings-banner bad">
+                        <div>
+                            <div class="settings-banner-title">${failing.length} ${failing.length === 1 ? 'problem needs' : 'problems need'} attention</div>
+                            <div class="settings-banner-sub">
+                                Parts of the app will not work until these are resolved. Each one below names the fix.
+                            </div>
+                        </div>
+                    </div>`;
+            } else {
+                html += `
+                    <div class="settings-banner ok">
+                        <div>
+                            <div class="settings-banner-title">Everything is configured</div>
+                            <div class="settings-banner-sub">All dependencies are reachable.</div>
+                        </div>
+                    </div>`;
+            }
+
+            html += '<div class="settings-grid">';
+
+            html += '<div class="settings-card"><div class="settings-card-title">Health</div>';
+            checks.forEach(c => {
+                const tone = c.optional && c.ok ? 'optional' : (c.ok ? 'ok' : 'bad');
+                html += `
+                    <div class="check-row">
+                        <span class="check-dot ${tone}"></span>
+                        <div>
+                            <div class="check-label">${escapeHtml(c.label)}</div>
+                            <div class="check-detail">${escapeHtml(c.detail || '')}</div>
+                            ${c.remedy ? '<div class="check-remedy">' + escapeHtml(c.remedy) + '</div>' : ''}
+                        </div>
+                    </div>`;
+            });
+            html += '</div>';
+
+            const row = (k, v, mono) => `
+                <div class="config-row">
+                    <div class="config-key">${escapeHtml(k)}</div>
+                    <div class="config-val${v ? '' : ' unset'}">${escapeHtml(v || 'not set')}</div>
+                </div>`;
+
+            html += '<div class="settings-card"><div class="settings-card-title">Configuration</div>';
+            html += row('Workspace', cfg.workspace_host);
+            html += row('Workspace ID', cfg.workspace_id);
+            html += row('SAT schema', cfg.schema);
+            html += row('SQL warehouse', cfg.warehouse_id);
+            html += row('Assistant model', cfg.model_endpoint);
+            html += row('Genie space', cfg.genie_space_id);
+            html += row('SP fallback', cfg.sp_fallback_allowed ? 'enabled (results not filtered per user)' : 'disabled (per-user filtering enforced)');
+            const jobs = cfg.jobs || {};
+            Object.keys(jobs).forEach(k => {
+                html += row(jobs[k].label, jobs[k].connected ? 'connected' : 'not connected');
+            });
+            html += `
+                <div class="settings-links">
+                    ${links.app_settings ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.app_settings)}" target="_blank" rel="noopener">App settings</a>` : ''}
+                    ${links.warehouse ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.warehouse)}" target="_blank" rel="noopener">Warehouse</a>` : ''}
+                    ${links.alerts ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.alerts)}" target="_blank" rel="noopener">Alerts</a>` : ''}
+                    <button class="btn btn-sm btn-ghost" onclick="loadSettings()">Re-check</button>
+                </div>`;
+            html += '</div>';
+            html += '</div>';
+
+            html += `
+                <div class="settings-note">
+                    <strong>Why these are read-only.</strong>
+                    The warehouse, schema, job ids and OAuth scopes are bound to the app
+                    when it is deployed, so changing them here would not take effect until
+                    the next deploy. Granting the app permission to rewrite its own
+                    credentials would also let anyone who can open it escalate their access.
+                    Use the installer or the workspace UI to change configuration, then
+                    re-check here. Credentials for the app's own identity are managed by the
+                    platform and are replaced by redeploying &mdash; there is nothing to paste in.
+                </div>`;
+
+            document.getElementById('settings-results').innerHTML = html;
+        }
+
+        // Surface a badge on the gear as soon as the app loads, so a broken
+        // dependency is visible without opening the page first.
+        (function checkSettingsOnLoad() {
+            function probe() {
+                fetch('/api/settings')
+                    .then(r => r.json())
+                    .then(d => updateSettingsBadge(d.failing_count || 0))
+                    .catch(() => {});
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', probe);
+            } else {
+                probe();
+            }
+        })();
 
         // --- Secret-scanning alerts ------------------------------------------
         // These wrap Databricks SQL alerts; the app supplies the query and
@@ -11731,6 +12007,221 @@ def _model_endpoint_available(endpoint_name):
         f"workspace has no serving endpoints available. Enable Foundation Model "
         f"APIs or point MODEL_ENDPOINT at an existing endpoint, then redeploy."
     )
+
+
+# ---------------------------------------------------------------------------
+# Settings and health
+#
+# Reports whether every dependency the app needs is actually reachable, and where
+# to fix each one that is not. This exists because the failure modes are hard to
+# tell apart from a normal page: an expired service principal secret, a revoked
+# UC grant and an empty scan table all render as "no data".
+#
+# Configuration is READ here, never written. The app's secret bindings are
+# READ-only by design, and the values it depends on -- warehouse, schema, job
+# ids, OAuth scopes -- are bound to the app resource at deploy time. Editing them
+# from inside the app would either not take effect until a redeploy or require
+# granting the app write access to its own credentials, which would make the app
+# a means of privilege escalation. So this page diagnoses precisely and links out
+# to the right place to fix.
+# ---------------------------------------------------------------------------
+
+def _settings_probe(label, fn, remedy):
+    """Run one dependency check, capturing failure rather than raising.
+
+    Each probe returns (ok, detail). A probe that raises is reported as failing
+    with its error text, so one broken dependency cannot hide the state of the
+    others.
+    """
+    try:
+        ok, detail = fn()
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, str(exc)[:400]
+    entry = {'label': label, 'ok': bool(ok), 'detail': detail}
+    if not ok:
+        entry['remedy'] = remedy
+    return entry
+
+
+@app.route('/api/settings')
+def api_settings():
+    """Configuration and a live health check of every dependency."""
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    if host and not host.startswith('http'):
+        host = f'https://{host}'
+    warehouse_id = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or ''
+    schema = os.getenv('SAT_SCHEMA') or os.getenv('BRICKHOUND_SCHEMA') or ''
+
+    checks = []
+
+    # 1. User identity / OBO. Checked from the request itself rather than config,
+    # because an app can advertise a scope its forwarded token does not carry.
+    def check_obo():
+        token = request.headers.get('x-forwarded-access-token')
+        if not token:
+            return False, ('No user token is being forwarded, so queries cannot run '
+                           'as the signed-in user.')
+        if not _token_has_sql_scope(token):
+            return False, ("The forwarded token is missing the 'sql' scope, which "
+                           "the Statement Execution API requires.")
+        return True, 'Queries run as the signed-in user; Unity Catalog enforces their grants.'
+
+    checks.append(_settings_probe(
+        'User authorization (OBO)', check_obo,
+        ("Scopes bind when the app is created, so they cannot be added to a running "
+         "app. Redeploy with user_api_scopes: [sql, serving.serving-endpoints] "
+         "declared on the app resource.")))
+
+    # 2. The app's own identity. This is what fails when a service principal
+    # secret is rotated or the principal is deleted.
+    def check_sp():
+        me = _sp_workspace_client().current_user.me()
+        name = getattr(me, 'user_name', None) or getattr(me, 'display_name', None)
+        return True, f'Authenticated as {name}.'
+
+    checks.append(_settings_probe(
+        'App service principal', check_sp,
+        ('The app cannot authenticate as itself. Its service principal may have been '
+         'deleted or had its secret rotated. Redeploy the app so the platform issues '
+         'fresh credentials.')))
+
+    # 3. Warehouse reachability, which every read and every alert depends on.
+    def check_warehouse():
+        if not warehouse_id:
+            return False, 'No warehouse is configured.'
+        wh = _sp_workspace_client().warehouses.get(id=warehouse_id)
+        state = str(getattr(wh, 'state', '') or '').split('.')[-1]
+        return True, f'{getattr(wh, "name", warehouse_id)} ({state}).'
+
+    checks.append(_settings_probe(
+        'SQL warehouse', check_warehouse,
+        ('Bind a warehouse to the app with CAN_USE. Re-run the installer if the '
+         'binding is missing.')))
+
+    # 4. Can the configured schema actually be read, as the calling user?
+    def check_schema():
+        if not schema:
+            return False, 'No SAT schema is configured.'
+        # SELECT 1 must return exactly one row when the warehouse and grants are
+        # working. An empty result therefore means the query did not run, which is
+        # not distinguishable from "no data" if the probe counts rows in a table.
+        probe = exec_query_df('SELECT 1 AS ok')
+        if not probe:
+            return False, ('The warehouse did not return a result, so the schema '
+                           'could not be read. This is a connectivity or grants '
+                           'problem, not an absence of data.')
+        rows = exec_query_df(f'SELECT COUNT(*) AS n FROM {VERTICES_TABLE}')
+        if not rows:
+            return False, (f'Connected, but {schema} could not be read. Check '
+                           f'USE SCHEMA and SELECT on that schema.')
+        n = rows[0].get('n') or 0
+        return True, (f'{schema} is readable ({n} rows in the permissions graph).'
+                      if n else
+                      f'{schema} is readable, but the permissions graph is empty. '
+                      f'Run the Permissions Graph collection.')
+
+    checks.append(_settings_probe(
+        'Unity Catalog access', check_schema,
+        (f'Grant the signed-in user USE CATALOG on the catalog, plus USE SCHEMA and '
+         f'SELECT on {schema or "the SAT schema"}. The app service principal needs '
+         f'the same, plus CREATE TABLE and MODIFY for its own audit tables.')))
+
+    # 5. Collection jobs: bound, and startable.
+    def check_jobs():
+        configured = {k: _collection_job_id(k) for k in COLLECTION_JOBS}
+        missing = [k for k, v in configured.items() if not v]
+        if missing:
+            return False, ('Not connected: ' + ', '.join(
+                COLLECTION_JOBS[k]['label'] for k in missing))
+        return True, f'All {len(configured)} collection jobs are connected.'
+
+    checks.append(_settings_probe(
+        'Collection jobs', check_jobs,
+        ('Job ids reach the app as secrets written by the installer. Re-run the '
+         'installer to record ids for any job showing as not connected.')))
+
+    # 6. The assistant's model endpoint on the AI Gateway.
+    def check_model():
+        endpoint = _active_model()
+        if not endpoint:
+            return False, 'No model endpoint is configured.'
+        # _model_endpoint_available deliberately fails open so a failed check does
+        # not block the assistant, which means it cannot prove reachability. List
+        # the endpoints here so an auth failure is reported rather than hidden.
+        client, _ = get_connection()
+        names = {e.name for e in client.serving_endpoints.list() if e.name}
+        if endpoint not in names:
+            return False, (f"'{endpoint}' is not a serving endpoint in this "
+                           f"workspace ({len(names)} available).")
+        return True, f'{endpoint} is serving.'
+
+    checks.append(_settings_probe(
+        'Security assistant model', check_model,
+        ('Set MODEL_ENDPOINT to a chat-capable serving endpoint, or pick a different '
+         'model from the assistant panel.')))
+
+    # 7. Alerts, which need both a recent SDK and permission to manage alerts.
+    def check_alerts():
+        client = _sp_workspace_client()
+        if not hasattr(client, 'alerts_v2'):
+            return False, ('This deployment ships a databricks-sdk older than 0.51, '
+                           'which has no alerts API.')
+        managed = 0
+        known = {spec['column'] for spec in _alert_templates().values()}
+        for alert in client.alerts_v2.list_alerts():
+            if str(getattr(alert, 'lifecycle_state', '') or '').split('.')[-1] == 'DELETED':
+                continue
+            entry = _serialise_alert(alert)
+            if entry['column'] in known or (entry['display_name'] or '').startswith(
+                    ALERT_NAME_PREFIX):
+                managed += 1
+        return True, (f'{managed} secret-scanning alert(s) configured.' if managed
+                      else 'Alerts API reachable; none configured yet.')
+
+    checks.append(_settings_probe(
+        'Secret-scanning alerts', check_alerts,
+        ('The app service principal needs permission to manage SQL alerts in this '
+         'workspace, and databricks-sdk 0.51 or newer.')))
+
+    # 8. Genie, which is optional by design.
+    genie_space = (os.getenv('GENIE_SPACE_ID') or '').strip()
+    checks.append({
+        'label': 'Genie space (optional)',
+        'ok': True,
+        'detail': (f'Configured ({genie_space}).' if genie_space
+                   else 'Not configured. The assistant reports that tool as '
+                        'unavailable and keeps working.'),
+        'optional': True,
+    })
+
+    failing = [c for c in checks if not c['ok']]
+    return jsonify({
+        'healthy': not failing,
+        'failing_count': len(failing),
+        'checks': checks,
+        'config': {
+            'workspace_host': host,
+            'workspace_id': (os.getenv('WORKSPACE_ID') or '').strip(),
+            'schema': schema,
+            'warehouse_id': warehouse_id,
+            'model_endpoint': _active_model(),
+            'genie_space_id': genie_space,
+            'sp_fallback_allowed': (
+                os.getenv('ALLOW_SERVICE_PRINCIPAL_FALLBACK', 'false').strip().lower()
+                == 'true'),
+            'jobs': {
+                kind: {'label': spec['label'], 'connected': bool(_collection_job_id(kind))}
+                for kind, spec in COLLECTION_JOBS.items()
+            },
+        },
+        'links': {
+            'app_settings': f'{host}/apps' if host else None,
+            'warehouse': (f'{host}/sql/warehouses/{warehouse_id}'
+                          if host and warehouse_id else None),
+            'alerts': f'{host}/sql/alerts' if host else None,
+            'secret_scope': f'{host}/#secrets' if host else None,
+        },
+    })
 
 
 # ---------------------------------------------------------------------------

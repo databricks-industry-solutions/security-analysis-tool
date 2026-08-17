@@ -190,6 +190,63 @@ def cloud_specific_questions(client: WorkspaceClient):
     return aws + azure + gcp
 
 
+# Collection jobs, mapping the bundle's resource key to the secret the app reads.
+# The app resolves job ids from these secrets because Databricks Apps binds job
+# permissions but does not inject job ids.
+JOB_ID_SECRET_KEYS = {
+    "brickhound_data_collection": "permissions-job-id",
+    "sat_secrets": "secrets-job-id",
+    "brickhound_share_to_account": "shared-to-account-job-id",
+    "brickhound_privileged_non_idp": "privileged-non-idp-job-id",
+    "brickhound_denylist_candidates": "denylist-job-id",
+}
+
+# Job names as deployed, used to resolve ids when the bundle summary is
+# unavailable. Kept beside the resource keys so the two cannot drift apart.
+JOB_NAME_PATTERNS = {
+    "brickhound_data_collection": "Data Collection",
+    "sat_secrets": "Secrets Scanner",
+    "brickhound_share_to_account": "Shared to Account Users",
+    "brickhound_privileged_non_idp": "Privileged Non-IdP",
+    "brickhound_denylist_candidates": "Denylist Candidates",
+}
+
+
+def record_job_ids(client, scope_name="sat_scope"):
+    """Write the deployed collection jobs' ids into the secret scope.
+
+    Called after the bundle deploy, when the jobs exist. The app reads these to
+    enable its in-app run controls; without them every collection shows as "not
+    connected" even though the jobs were created.
+
+    Matching is by job name because the bundle's own resource keys are not
+    exposed through the Jobs API. Returns the keys it could not resolve so the
+    installer can report them rather than failing silently.
+    """
+    unresolved = []
+    try:
+        jobs = list(client.jobs.list())
+    except Exception:  # noqa: BLE001
+        return list(JOB_ID_SECRET_KEYS.values())
+
+    for resource_key, secret_key in JOB_ID_SECRET_KEYS.items():
+        pattern = JOB_NAME_PATTERNS[resource_key]
+        match = next(
+            (j for j in jobs
+             if pattern.lower() in ((j.settings.name if j.settings else "") or "").lower()),
+            None,
+        )
+        if match is None or match.job_id is None:
+            unresolved.append(secret_key)
+            continue
+        try:
+            client.secrets.put_secret(
+                scope=scope_name, key=secret_key, string_value=str(match.job_id))
+        except Exception:  # noqa: BLE001
+            unresolved.append(secret_key)
+    return unresolved
+
+
 def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
 
     scope_name = "sat_scope"
@@ -226,6 +283,14 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
     except Exception:  # noqa: BLE001
         # Non-fatal: the app falls back to resolving this at runtime.
         pass
+
+    # Job-id placeholders. The app binds these secrets as resources, and a
+    # binding fails to deploy if the key does not exist -- but the ids are not
+    # known until the bundle has created the jobs. They are seeded empty here and
+    # filled in by record_job_ids() after the deploy. An empty value reads as
+    # "not connected" in the app, which is accurate until then.
+    for key in JOB_ID_SECRET_KEYS.values():
+        client.secrets.put_secret(scope=scope_name, key=key, string_value="")
 
     if answers.get("enable_app", False):
         client.secrets.put_secret(

@@ -3,7 +3,7 @@ import os
 import subprocess
 
 from databricks.sdk import WorkspaceClient
-from sat.config import form, generate_secrets
+from sat.config import form, generate_secrets, record_job_ids
 from sat.genie import create_or_update_space
 from sat.utils import cloud_type
 
@@ -71,6 +71,18 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
 
     os.system("clear")
     subprocess.call(f"sh ./setup.sh tmp {profile} {config_file}".split(" "))
+
+    # The bundle has now created the jobs, so their ids can be recorded. The app
+    # reads these to enable its in-app run controls; the secrets were seeded empty
+    # before the deploy because the app's resource bindings require the keys to
+    # exist, and the ids were not known until now.
+    unresolved = record_job_ids(client)
+    if unresolved:
+        print(
+            "Note: could not record job ids for: " + ", ".join(unresolved) + ". "
+            "Those collections will show as not connected in the app; re-running "
+            "the installer will retry."
+        )
 
     print("Installation complete.")
     print(f"Review workspace -> {client.config.host}")
