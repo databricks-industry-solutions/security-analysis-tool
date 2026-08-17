@@ -37,4 +37,12 @@ echo "Virtual environment activated"
 
 cd $folder
 pip install -r requirements.txt
-python main.py
+
+# --repair restores an existing installation instead of prompting for a fresh
+# install. Used when the app's service principal has been deleted, which the
+# platform gives no way to fix in place.
+if [[ "$1" == "--repair" ]]; then
+    python main.py --repair "${@:2}"
+else
+    python main.py "$@"
+fi

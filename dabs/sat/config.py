@@ -6,6 +6,9 @@ import subprocess
 from databricks.sdk import WorkspaceClient
 from inquirer import Confirm, List, Password, Text, list_input, prompt
 from rich.progress import Progress, SpinnerColumn, TextColumn
+# Job-id handling lives in sat.repair so the repair path does not need the
+# interactive prompt dependencies. Re-exported here for the installer.
+from sat.repair import JOB_ID_SECRET_KEYS, JOB_NAME_PATTERNS, record_job_ids
 from sat.utils import (
     cloud_validation,
     get_catalogs,
@@ -188,63 +191,6 @@ def cloud_specific_questions(client: WorkspaceClient):
         ),
     ]
     return aws + azure + gcp
-
-
-# Collection jobs, mapping the bundle's resource key to the secret the app reads.
-# The app resolves job ids from these secrets because Databricks Apps binds job
-# permissions but does not inject job ids.
-JOB_ID_SECRET_KEYS = {
-    "brickhound_data_collection": "permissions-job-id",
-    "sat_secrets": "secrets-job-id",
-    "brickhound_share_to_account": "shared-to-account-job-id",
-    "brickhound_privileged_non_idp": "privileged-non-idp-job-id",
-    "brickhound_denylist_candidates": "denylist-job-id",
-}
-
-# Job names as deployed, used to resolve ids when the bundle summary is
-# unavailable. Kept beside the resource keys so the two cannot drift apart.
-JOB_NAME_PATTERNS = {
-    "brickhound_data_collection": "Data Collection",
-    "sat_secrets": "Secrets Scanner",
-    "brickhound_share_to_account": "Shared to Account Users",
-    "brickhound_privileged_non_idp": "Privileged Non-IdP",
-    "brickhound_denylist_candidates": "Denylist Candidates",
-}
-
-
-def record_job_ids(client, scope_name="sat_scope"):
-    """Write the deployed collection jobs' ids into the secret scope.
-
-    Called after the bundle deploy, when the jobs exist. The app reads these to
-    enable its in-app run controls; without them every collection shows as "not
-    connected" even though the jobs were created.
-
-    Matching is by job name because the bundle's own resource keys are not
-    exposed through the Jobs API. Returns the keys it could not resolve so the
-    installer can report them rather than failing silently.
-    """
-    unresolved = []
-    try:
-        jobs = list(client.jobs.list())
-    except Exception:  # noqa: BLE001
-        return list(JOB_ID_SECRET_KEYS.values())
-
-    for resource_key, secret_key in JOB_ID_SECRET_KEYS.items():
-        pattern = JOB_NAME_PATTERNS[resource_key]
-        match = next(
-            (j for j in jobs
-             if pattern.lower() in ((j.settings.name if j.settings else "") or "").lower()),
-            None,
-        )
-        if match is None or match.job_id is None:
-            unresolved.append(secret_key)
-            continue
-        try:
-            client.secrets.put_secret(
-                scope=scope_name, key=secret_key, string_value=str(match.job_id))
-        except Exception:  # noqa: BLE001
-            unresolved.append(secret_key)
-    return unresolved
 
 
 def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
