@@ -97,6 +97,14 @@ SHARED_TO_ACCOUNT_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_shared_to_account"
 PRIVILEGED_NON_IDP_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_privileged_non_idp"
 DENYLIST_CANDIDATES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_denylist_candidates"
 
+# Max rows any single report renders. Report queries fetch REPORT_ROW_CAP + 1 so
+# the endpoint can detect truncation; the extra row is trimmed before display.
+# This keeps the inline Statement Execution result well under its ~25 MB cap, so
+# a large account can never overflow the statement and surface as a false "no
+# findings" — instead the UI shows a "showing first N" banner. See exec_query_df,
+# which also follows result chunks so multi-chunk results aren't truncated.
+REPORT_ROW_CAP = 5000
+
 logger.info(f"[CONFIG FINAL] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")
 logger.info(f"[CONFIG FINAL] EDGES_TABLE={EDGES_TABLE}")
@@ -346,27 +354,46 @@ def exec_query_df(sql_query, params=None):
         if sdk_params:
             kwargs["parameters"] = sdk_params
         result = workspace_client.statement_execution.execute_statement(**kwargs)
-        if hasattr(result, 'result') and result.result:
-            if hasattr(result.result, 'data_array') and result.result.data_array:
-                columns = []
-                try:
-                    if hasattr(result, 'manifest') and result.manifest:
-                        if hasattr(result.manifest, 'schema') and result.manifest.schema:
-                            for col in result.manifest.schema.columns:
-                                if hasattr(col, 'name'):
-                                    columns.append(col.name)
-                                elif isinstance(col, dict) and 'name' in col:
-                                    columns.append(col['name'])
-                except Exception:
-                    pass
-                rows = []
-                for row in result.result.data_array:
-                    if columns and len(columns) == len(row):
-                        rows.append(dict(zip(columns, row)))
-                    else:
-                        rows.append({f"col{i}": val for i, val in enumerate(row)})
-                return rows
-        return []
+
+        # Resolve column names once from the result manifest schema.
+        columns = []
+        try:
+            if getattr(result, 'manifest', None) and getattr(result.manifest, 'schema', None):
+                for col in result.manifest.schema.columns:
+                    if hasattr(col, 'name'):
+                        columns.append(col.name)
+                    elif isinstance(col, dict) and 'name' in col:
+                        columns.append(col['name'])
+        except Exception:
+            pass
+
+        rows = []
+
+        def _emit(chunk):
+            data = getattr(chunk, 'data_array', None) if chunk else None
+            if not data:
+                return
+            for row in data:
+                if columns and len(columns) == len(row):
+                    rows.append(dict(zip(columns, row)))
+                else:
+                    rows.append({f"col{i}": val for i, val in enumerate(row)})
+
+        # Statement Execution returns results in chunks; the first arrives inline
+        # on `result.result`. Follow `next_chunk_index` so large (multi-chunk)
+        # results aren't silently truncated to the first chunk — that would show
+        # as partial or "no" data in a security report.
+        chunk = getattr(result, 'result', None)
+        _emit(chunk)
+        statement_id = getattr(result, 'statement_id', None)
+        next_idx = getattr(chunk, 'next_chunk_index', None) if chunk else None
+        while statement_id is not None and next_idx is not None:
+            chunk = workspace_client.statement_execution.get_statement_result_chunk_n(
+                statement_id, next_idx)
+            _emit(chunk)
+            next_idx = getattr(chunk, 'next_chunk_index', None) if chunk else None
+
+        return rows
     except NoAccessError:
         raise
     except Exception as e:
@@ -3769,6 +3796,7 @@ def get_main_html():
                     : 'Account-wide (all IdP groups)';
 
                 let html = `
+                    ${renderTruncationBanner(result)}
                     ${renderCoverageBlock({
                         dateTs: detTs,
                         scopeLabel: 'Accounts',
@@ -4030,6 +4058,17 @@ def get_main_html():
                 </div>`;
         }
 
+        // Warn when a report was capped at row_cap rows so a large result is
+        // never mistaken for the full picture (or a false "no findings").
+        function renderTruncationBanner(result) {
+            if (!result || !result.truncated) return '';
+            const cap = result.row_cap || 5000;
+            return `<div style="background: rgba(245, 158, 11, 0.12); border: 1px solid var(--warning);`
+                + ` border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.9em; color: var(--text-primary);">`
+                + `⚠️ Showing the first ${cap.toLocaleString()} rows — this detection run has more findings than that.`
+                + ` Query the findings table directly for the complete set.</div>`;
+        }
+
         async function loadPrivilegedNonIdp() {
             const container = document.getElementById('privilegednonidp-results');
             container.innerHTML = '<div class="loading">Loading privileged non-IdP identities...</div>';
@@ -4066,6 +4105,7 @@ def get_main_html():
                 });
 
                 let html = `
+                    ${renderTruncationBanner(result)}
                     ${renderCoverageBlock({
                         dateTs: detTs,
                         scopeLabel: 'Workspaces',
@@ -4208,6 +4248,7 @@ def get_main_html():
                 const metastores = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
 
                 let html = `
+                    ${renderTruncationBanner(result)}
                     ${renderCoverageBlock({
                         dateTs: detTs,
                         scopeLabel: 'Metastores',
@@ -8020,12 +8061,16 @@ def report_shared_to_account():
     FROM {SHARED_TO_ACCOUNT_TABLE} s
     JOIN latest l ON s.run_id = l.run_id
     ORDER BY s.event_time DESC
+    LIMIT {REPORT_ROW_CAP + 1}
     """
 
     try:
         results = exec_query_df(query)
+    except NoAccessError:
+        # No UC read grant on the findings table — let the access banner render.
+        raise
     except Exception as e:
-        # Table absent (job never run) or no read grant — surface a friendly hint.
+        # Table absent (job never run) — surface a friendly hint.
         logger.warning("shared-to-account report query failed: %s", e)
         return jsonify({
             'error': (
@@ -8034,6 +8079,10 @@ def report_shared_to_account():
                 'notebooks/brickhound/05_share_to_account.py notebook) to populate it.'
             )
         })
+
+    truncated = len(results) > REPORT_ROW_CAP
+    if truncated:
+        results = results[:REPORT_ROW_CAP]
 
     # Statement Execution returns booleans as strings ('true'/'false'); normalize.
     for r in results:
@@ -8068,6 +8117,8 @@ def report_shared_to_account():
         'metastores': metastores,
         'detection_timestamp': detection_timestamp,
         'workspaces': workspaces,
+        'truncated': truncated,
+        'row_cap': REPORT_ROW_CAP,
         'data': results,
     })
 
@@ -8101,10 +8152,14 @@ def report_privileged_non_idp():
     FROM {PRIVILEGED_NON_IDP_TABLE} p
     JOIN latest l ON p.run_id = l.run_id
     ORDER BY p.finding_type, p.is_idp_managed, p.principal_name
+    LIMIT {REPORT_ROW_CAP + 1}
     """
 
     try:
         results = exec_query_df(query)
+    except NoAccessError:
+        # No UC read grant on the findings table — let the access banner render.
+        raise
     except Exception as e:
         logger.warning("privileged-non-idp report query failed: %s", e)
         return jsonify({
@@ -8114,6 +8169,10 @@ def report_privileged_non_idp():
                 'notebooks/brickhound/06_privileged_non_idp_identities.py notebook) to populate it.'
             )
         })
+
+    truncated = len(results) > REPORT_ROW_CAP
+    if truncated:
+        results = results[:REPORT_ROW_CAP]
 
     # Normalize boolean-ish string cells to real bools for the JS layer too,
     # so client-side conditionals (item.is_idp_managed) behave correctly.
@@ -8173,6 +8232,8 @@ def report_privileged_non_idp():
         'workspaces_scanned': scanned,
         'workspaces_failed': failed,
         'workspaces_in_report': in_report,
+        'truncated': truncated,
+        'row_cap': REPORT_ROW_CAP,
         'data': results,
     })
 
@@ -8203,10 +8264,14 @@ def report_denylist_candidates():
     FROM {DENYLIST_CANDIDATES_TABLE} c
     JOIN latest l ON c.run_id = l.run_id
     ORDER BY c.inactive_members DESC, c.inactive_pct DESC
+    LIMIT {REPORT_ROW_CAP + 1}
     """
 
     try:
         results = exec_query_df(query)
+    except NoAccessError:
+        # No UC read grant on the findings table — let the access banner render.
+        raise
     except Exception as e:
         logger.warning("denylist-candidates report query failed: %s", e)
         return jsonify({
@@ -8216,6 +8281,10 @@ def report_denylist_candidates():
                 'notebooks/brickhound/07_denylist_candidates.py notebook) to populate it.'
             )
         })
+
+    truncated = len(results) > REPORT_ROW_CAP
+    if truncated:
+        results = results[:REPORT_ROW_CAP]
 
     # Statement Execution returns everything as strings; normalize for the JS layer.
     for r in results:
@@ -8254,6 +8323,8 @@ def report_denylist_candidates():
         'inactive_days': inactive_days,
         'metastores': metastores,
         'account_id': account_id,
+        'truncated': truncated,
+        'row_cap': REPORT_ROW_CAP,
         'data': results,
     })
 

@@ -21,6 +21,13 @@
 # MAGIC     IS available via SCIM (e.g. traditional SCIM-provisioned groups). For AIM accounts, use the
 # MAGIC     Entra ID dynamic-group rule helper in the app tab to build denylist groups instead.
 # MAGIC   </p>
+# MAGIC   <p style="margin: 8px 0 0 0; font-size: 0.8em; color: #d32f2f;">
+# MAGIC     <b>Zero-member groups are excluded by default.</b> Because AIM makes a populated external group
+# MAGIC     look empty via SCIM (identical to a genuinely empty group), reporting zero-member groups as
+# MAGIC     "safe to deny" would produce dangerous false positives on AIM accounts. Set the
+# MAGIC     <code>include_zero_member_groups</code> widget to <code>yes</code> only on accounts whose IdP
+# MAGIC     group membership is genuinely resolvable via SCIM.
+# MAGIC   </p>
 # MAGIC </div>
 # MAGIC
 # MAGIC ## What This Analysis Does
@@ -54,11 +61,20 @@
 # DBTITLE 1,Define Widgets
 dbutils.widgets.text("inactive_days", "90", "Inactive threshold (days without activity)")
 dbutils.widgets.text("min_inactive", "1", "Minimum inactive members to report a group")
+dbutils.widgets.dropdown("include_zero_member_groups", "no", ["no", "yes"],
+                         "Include zero-member IdP groups")
 
-INACTIVE_DAYS = int(dbutils.widgets.get("inactive_days"))
-MIN_INACTIVE  = int(dbutils.widgets.get("min_inactive"))
+INACTIVE_DAYS        = int(dbutils.widgets.get("inactive_days"))
+MIN_INACTIVE         = int(dbutils.widgets.get("min_inactive"))
+# Zero-member IdP groups are excluded by default: under Automatic Identity
+# Management, account SCIM returns members EMPTY for external groups even when
+# they are full of active users (see the AIM note at the top). Emitting those as
+# "safe to deny" is a dangerous false positive on AIM accounts. Enable this only
+# on accounts whose IdP group membership is genuinely resolvable via SCIM.
+INCLUDE_ZERO_MEMBER  = dbutils.widgets.get("include_zero_member_groups") == "yes"
 print(f"Inactive threshold: {INACTIVE_DAYS} days")
 print(f"Min inactive members to report: {MIN_INACTIVE}")
+print(f"Include zero-member IdP groups: {INCLUDE_ZERO_MEMBER}")
 
 # COMMAND ----------
 
@@ -189,6 +205,7 @@ def is_inactive(user: dict) -> bool:
 # the built-in 'account users' group and any local/system groups.
 rows = []
 skipped_local = 0
+skipped_zero_member = 0
 for g in groups:
     if not g.get("externalId"):
         skipped_local += 1
@@ -208,14 +225,22 @@ for g in groups:
         if is_inactive(u):
             inactive_members += 1
 
-    # An IdP group is a denylist candidate if it has inactive members OR has no
-    # user members at all. A zero-member group is a strong candidate: an IdP
-    # group with no active Databricks users is safe to deny. (Under AIM, SCIM
-    # returns members empty for external groups, so most land here — see the AIM
-    # note above.)
-    if inactive_members >= MIN_INACTIVE or total_members == 0:
+    is_zero_member = total_members == 0
+    # Zero-member groups are ambiguous: a genuinely empty IdP group is a strong
+    # denylist candidate, BUT under AIM a populated external group also returns
+    # zero members via SCIM (see the AIM note above). We cannot tell the two
+    # apart from SCIM alone, so we exclude zero-member groups unless the operator
+    # explicitly opts in — otherwise this report would flag active-user groups as
+    # "safe to deny" on AIM accounts.
+    if is_zero_member and not INCLUDE_ZERO_MEMBER:
+        skipped_zero_member += 1
+        continue
+
+    # An IdP group is a denylist candidate if it has enough inactive members, or
+    # (only when opted in) has no user members at all.
+    if inactive_members >= MIN_INACTIVE or is_zero_member:
         gid = str(g["id"])
-        reason = "no members via SCIM" if total_members == 0 else "has inactive members"
+        reason = "no members via SCIM" if is_zero_member else "has inactive members"
         rows.append({
             "group_id":         gid,
             "group_name":       g.get("displayName"),
@@ -234,7 +259,11 @@ candidates = pd.DataFrame(rows).sort_values(
     ["inactive_members", "inactive_pct"], ascending=False
 ) if rows else pd.DataFrame()
 print(f"Skipped {skipped_local} local/non-IdP group(s) (not denylist-eligible).")
-print(f"Candidate IdP groups (inactive members or zero members): {len(candidates)}")
+if not INCLUDE_ZERO_MEMBER and skipped_zero_member:
+    print(f"Skipped {skipped_zero_member} zero-member IdP group(s) "
+          f"(excluded by default — set include_zero_member_groups=yes to include; "
+          f"unreliable under AIM).")
+print(f"Candidate IdP groups: {len(candidates)}")
 
 # COMMAND ----------
 
