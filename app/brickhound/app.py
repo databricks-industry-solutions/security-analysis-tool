@@ -4129,6 +4129,16 @@ def get_main_html():
                     const nameHtml = item.console_url
                         ? `<a href="${escapeHtml(item.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${who}</a>`
                         : who;
+                    // Explicit principal-type chip so a flagged "Identity created"
+                    // (or any row) shows at a glance whether it's a user, group, or SP.
+                    const typeMeta = {
+                        User: {emoji: '👤', label: 'User'},
+                        Group: {emoji: '👥', label: 'Group'},
+                        ServicePrincipal: {emoji: '🤖', label: 'Service Principal'},
+                        Unknown: {emoji: '❔', label: 'Unknown type'}
+                    };
+                    const tm = typeMeta[item.principal_type] || typeMeta.Unknown;
+                    const typeChip = `<span style="display: inline-block; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; padding: 1px 8px; font-size: 0.72em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-secondary); margin-left: 8px; vertical-align: middle;">${tm.emoji} ${escapeHtml(tm.label)}</span>`;
                     const catLabel = catLabels[item.change_category] || item.change_category;
                     const idpBadge = item.principal_type === 'Unknown'
                         ? ' · <span style="color: var(--text-muted);">Unknown principal</span>'
@@ -4151,7 +4161,7 @@ def get_main_html():
                         <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
                             <span style="font-size: 16px;">${catEmoji[item.change_category] || '•'}</span>
                             <div style="flex: 1; min-width: 0;">
-                                <div style="font-weight: 500; word-break: break-word;">${nameHtml}</div>
+                                <div style="font-weight: 500; word-break: break-word;">${nameHtml}${typeChip}</div>
                                 <div style="font-size: 0.82em; color: var(--text-secondary); margin-top: 3px;">
                                     ${escapeHtml(catLabel)}${perm}${grp}${idpBadge}${aimBadge}${rem}
                                 </div>
