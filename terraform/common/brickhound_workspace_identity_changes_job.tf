@@ -1,10 +1,10 @@
-# SAT Permissions Analysis - Workspace & Identity Changes Detection Job
+# SAT Permissions Analysis - Workspace Identity Changes Detection Job
 # Detects (and optionally remediates) identities created/changed outside the AIM
 # sync, and non-IdP identities assigned to workspaces. Writes findings to
 # brickhound_workspace_identity_changes.
 
 resource "databricks_job" "brickhound_workspace_identity_changes" {
-  name = "SAT Permissions Analysis - Workspace & Identity Changes (Experimental)"
+  name = "SAT Permissions Analysis - Workspace Identity Changes (Experimental)"
 
   tags = {
     Application = "SAT"
@@ -77,6 +77,6 @@ resource "databricks_job" "brickhound_workspace_identity_changes" {
 }
 
 output "brickhound_workspace_identity_changes_job_id" {
-  description = "The ID of the SAT workspace & identity changes detection job"
+  description = "The ID of the SAT workspace identity changes detection job"
   value       = databricks_job.brickhound_workspace_identity_changes.id
 }

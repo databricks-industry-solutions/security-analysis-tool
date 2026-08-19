@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Workspace & Identity Changes — Detection & Remediation
+# MAGIC # Workspace Identity Changes — Detection & Remediation
 # MAGIC *Catch identities introduced outside your IdP, and non-IdP identities assigned to workspaces*
 # MAGIC
 # MAGIC <div style="background-color: #fff3e0; border-left: 4px solid #d32f2f; padding: 12px; margin: 16px 0;">
@@ -288,10 +288,14 @@ class WorkspaceIdentityChangeAuditor:
                 }
         return index
 
-    def _console_url(self, principal_type: Optional[str]) -> str:
+    def _console_url(self, principal_type: Optional[str], principal_id: Optional[str]) -> str:
+        """Deep link to the account-console detail page for a principal (mirrors 06/07)."""
         segment = {"Group": "groups", "User": "users",
                    "ServicePrincipal": "serviceprincipals"}.get(principal_type or "", "users")
-        return f"{self._accounts_host}/user-management/{segment}"
+        if not principal_id:
+            return f"{self._accounts_host}/user-management/{segment}"
+        return (f"{self._accounts_host}/user-management/{segment}/{principal_id}"
+                f"?account_id={self._account_id}")
 
     # ── Detection ──────────────────────────────────────────────────────────────
 
@@ -408,7 +412,7 @@ class WorkspaceIdentityChangeAuditor:
                 "principal_email": pemail,
                 "application_id":  app_id,
                 "is_idp_managed":  idp,
-                "console_url":     self._console_url(ptype),
+                "console_url":     self._console_url(ptype, row.get("principal_id")),
             })
 
         df = df.copy()

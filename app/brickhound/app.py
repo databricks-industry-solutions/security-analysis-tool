@@ -2231,11 +2231,11 @@ def get_main_html():
                 </div>
             </div>
 
-            <!-- Workspace & Identity Changes Report Page -->
+            <!-- Workspace Identity Changes Report Page -->
             <div class="page" id="page-workspaceidentity">
                 <div class="page-header">
-                    <h1 class="page-title">Workspace &amp; Identity Changes</h1>
-                    <p class="page-desc">Identities created or changed outside the Automatic Identity Management sync (human, not the IdP), and non-IdP-managed identities assigned to workspaces. Flagged rows need review; assignments of IdP-managed identities and AIM-sync events are recorded as the governed baseline. Detected by the SAT workspace &amp; identity changes job.</p>
+                    <h1 class="page-title">Workspace Identity Changes</h1>
+                    <p class="page-desc">Identities created or changed outside the Automatic Identity Management sync (human, not the IdP), and non-IdP-managed identities assigned to workspaces. Flagged rows need review; assignments of IdP-managed identities and AIM-sync events are recorded as the governed baseline. Detected by the SAT workspace identity changes job.</p>
                 </div>
                 <div id="workspaceidentity-results"></div>
             </div>
@@ -4086,7 +4086,7 @@ def get_main_html():
 
         async function loadWorkspaceIdentityChanges() {
             const container = document.getElementById('workspaceidentity-results');
-            container.innerHTML = '<div class="loading">Loading workspace &amp; identity changes...</div>';
+            container.innerHTML = '<div class="loading">Loading workspace identity changes...</div>';
 
             try {
                 const res = await fetch('/api/report/workspace-identity-changes');
@@ -4178,7 +4178,7 @@ def get_main_html():
                         note: 'Detection is account-wide over the audit log (system.access.audit) of the metastore above; the entities in this report are the workspaces where changes were found.'
                     })}
                     <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
-                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Workspace &amp; Identity Changes</div>
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Workspace Identity Changes</div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
                             <div><div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div></div>
                             <div><div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${summary.flagged || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Flagged</div></div>
@@ -8437,7 +8437,7 @@ def report_workspace_identity_changes():
         return jsonify({
             'error': (
                 'No workspace/identity-change data available yet. Run the '
-                '"SAT Permissions Analysis - Workspace & Identity Changes" job (or the '
+                '"SAT Permissions Analysis - Workspace Identity Changes" job (or the '
                 'notebooks/brickhound/08_workspace_identity_changes.py notebook) to populate it.'
             )
         })
