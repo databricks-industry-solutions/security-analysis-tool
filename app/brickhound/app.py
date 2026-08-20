@@ -96,6 +96,15 @@ METADATA_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata"
 SHARED_TO_ACCOUNT_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_shared_to_account"
 PRIVILEGED_NON_IDP_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_privileged_non_idp"
 DENYLIST_CANDIDATES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_denylist_candidates"
+WORKSPACE_IDENTITY_CHANGES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_workspace_identity_changes"
+
+# Max rows any single report renders. Report queries fetch REPORT_ROW_CAP + 1 so
+# the endpoint can detect truncation; the extra row is trimmed before display.
+# This keeps the inline Statement Execution result well under its ~25 MB cap, so
+# a large account can never overflow the statement and surface as a false "no
+# findings" — instead the UI shows a "showing first N" banner. See exec_query_df,
+# which also follows result chunks so multi-chunk results aren't truncated.
+REPORT_ROW_CAP = 5000
 
 logger.info(f"[CONFIG FINAL] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")
@@ -346,27 +355,46 @@ def exec_query_df(sql_query, params=None):
         if sdk_params:
             kwargs["parameters"] = sdk_params
         result = workspace_client.statement_execution.execute_statement(**kwargs)
-        if hasattr(result, 'result') and result.result:
-            if hasattr(result.result, 'data_array') and result.result.data_array:
-                columns = []
-                try:
-                    if hasattr(result, 'manifest') and result.manifest:
-                        if hasattr(result.manifest, 'schema') and result.manifest.schema:
-                            for col in result.manifest.schema.columns:
-                                if hasattr(col, 'name'):
-                                    columns.append(col.name)
-                                elif isinstance(col, dict) and 'name' in col:
-                                    columns.append(col['name'])
-                except Exception:
-                    pass
-                rows = []
-                for row in result.result.data_array:
-                    if columns and len(columns) == len(row):
-                        rows.append(dict(zip(columns, row)))
-                    else:
-                        rows.append({f"col{i}": val for i, val in enumerate(row)})
-                return rows
-        return []
+
+        # Resolve column names once from the result manifest schema.
+        columns = []
+        try:
+            if getattr(result, 'manifest', None) and getattr(result.manifest, 'schema', None):
+                for col in result.manifest.schema.columns:
+                    if hasattr(col, 'name'):
+                        columns.append(col.name)
+                    elif isinstance(col, dict) and 'name' in col:
+                        columns.append(col['name'])
+        except Exception:
+            pass
+
+        rows = []
+
+        def _emit(chunk):
+            data = getattr(chunk, 'data_array', None) if chunk else None
+            if not data:
+                return
+            for row in data:
+                if columns and len(columns) == len(row):
+                    rows.append(dict(zip(columns, row)))
+                else:
+                    rows.append({f"col{i}": val for i, val in enumerate(row)})
+
+        # Statement Execution returns results in chunks; the first arrives inline
+        # on `result.result`. Follow `next_chunk_index` so large (multi-chunk)
+        # results aren't silently truncated to the first chunk — that would show
+        # as partial or "no" data in a security report.
+        chunk = getattr(result, 'result', None)
+        _emit(chunk)
+        statement_id = getattr(result, 'statement_id', None)
+        next_idx = getattr(chunk, 'next_chunk_index', None) if chunk else None
+        while statement_id is not None and next_idx is not None:
+            chunk = workspace_client.statement_execution.get_statement_result_chunk_n(
+                statement_id, next_idx)
+            _emit(chunk)
+            next_idx = getattr(chunk, 'next_chunk_index', None) if chunk else None
+
+        return rows
     except NoAccessError:
         raise
     except Exception as e:
@@ -1710,6 +1738,10 @@ def get_main_html():
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
                             Privileged Non-IdP
                         </div>
+                        <div class="nav-item" data-page="workspaceidentity">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-1.5-1.5"/></svg>
+                            Workspace Identity Changes
+                        </div>
                     </div>
                 </div>
                 
@@ -2198,6 +2230,15 @@ def get_main_html():
                     <div id="entra-rule-builder"></div>
                 </div>
             </div>
+
+            <!-- Workspace Identity Changes Report Page -->
+            <div class="page" id="page-workspaceidentity">
+                <div class="page-header">
+                    <h1 class="page-title">Workspace Identity Changes</h1>
+                    <p class="page-desc">Identities created or changed outside the Automatic Identity Management sync (human, not the IdP), and non-IdP-managed identities assigned to workspaces. Flagged rows need review; assignments of IdP-managed identities and AIM-sync events are recorded as the governed baseline. Detected by the SAT workspace identity changes job.</p>
+                </div>
+                <div id="workspaceidentity-results"></div>
+            </div>
         </main>
     </div>
 
@@ -2255,7 +2296,7 @@ def get_main_html():
             // data context yet) and the account-level detection pages, which have
             // their own run_id and per-report coverage block — showing the global
             // bar there only causes two-coverage-widget confusion.
-            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder'];
+            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder', 'workspaceidentity'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
@@ -2267,6 +2308,7 @@ def get_main_html():
             else if (page === 'secretscopes') loadSecretScopeAccess();
             else if (page === 'sharedtoaccount') loadSharedToAccount();
             else if (page === 'privilegednonidp') loadPrivilegedNonIdp();
+            else if (page === 'workspaceidentity') loadWorkspaceIdentityChanges();
             else if (page === 'denylistbuilder') loadDenylistBuilder();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
@@ -3769,6 +3811,7 @@ def get_main_html():
                     : 'Account-wide (all IdP groups)';
 
                 let html = `
+                    ${renderTruncationBanner(result)}
                     ${renderCoverageBlock({
                         dateTs: detTs,
                         scopeLabel: 'Accounts',
@@ -4030,12 +4073,234 @@ def get_main_html():
                 </div>`;
         }
 
-        async function loadPrivilegedNonIdp() {
+        // Warn when a report was capped at row_cap rows so a large result is
+        // never mistaken for the full picture (or a false "no findings").
+        function renderTruncationBanner(result) {
+            if (!result || !result.truncated) return '';
+            const cap = result.row_cap || 5000;
+            return `<div style="background: rgba(245, 158, 11, 0.12); border: 1px solid var(--warning);`
+                + ` border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.9em; color: var(--text-primary);">`
+                + `⚠️ Showing the first ${cap.toLocaleString()} rows — this detection run has more findings than that.`
+                + ` Query the findings table directly for the complete set.</div>`;
+        }
+
+        // Controls bar for the account-level report tabs: a per-run selector
+        // (server-side re-fetch) + a remediated filter (client-side row toggle).
+        function renderReportControls(cfg) {
+            const runs = cfg.runs || [];
+            const sel = cfg.selectedRunId;
+            let runOpts = runs.map(r => {
+                const ts = r.detection_timestamp
+                    ? escapeHtml(String(r.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC'
+                    : escapeHtml(r.run_id);
+                return `<option value="${escapeHtml(r.run_id)}"${r.run_id === sel ? ' selected' : ''}>${ts}</option>`;
+            }).join('');
+            if (!runs.length) runOpts = '<option value="">(latest)</option>';
+            // Match the global stats-header filters: card sections with small
+            // uppercase labels, separated by a divider.
+            const selStyle = 'padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em; cursor: pointer; width: 100%;';
+            const runSection = `
+                <div class="stats-header-section" style="flex: 1; min-width: 240px;">
+                    <span class="stats-header-label">Detection Run</span>
+                    <select onchange="${cfg.runOnChange}" style="${selStyle} max-width: 340px;">${runOpts}</select>
+                </div>`;
+            let filterSection = '';
+            if (cfg.filterScopeId) {
+                filterSection = `
+                    <div class="stats-header-divider"></div>
+                    <div class="stats-header-section" style="flex: 0 0 auto; min-width: 180px;">
+                        <span class="stats-header-label">Show</span>
+                        <select onchange="applyRemFilter('${cfg.filterScopeId}', this.value)" style="${selStyle} max-width: 220px;">
+                            <option value="all">All</option>
+                            <option value="true">Remediated</option>
+                            <option value="false">Not remediated</option>
+                        </select>
+                    </div>`;
+            }
+            return `<div class="stats-header-row" style="flex-wrap: wrap; margin-bottom: 16px;">${runSection}${filterSection}</div>`;
+        }
+
+        // Client-side remediated filter: toggle leaf rows ([data-rem]) and hide any
+        // grouping wrapper (.rem-group) left with no visible rows.
+        function applyRemFilter(scopeId, val) {
+            const scope = document.getElementById(scopeId);
+            if (!scope) return;
+            scope.querySelectorAll('[data-rem]').forEach(el => {
+                const show = (val === 'all')
+                    || (val === 'true' && el.dataset.rem === 'true')
+                    || (val === 'false' && el.dataset.rem === 'false');
+                el.style.display = show ? '' : 'none';
+            });
+            scope.querySelectorAll('.rem-group').forEach(g => {
+                const anyVisible = Array.from(g.querySelectorAll('[data-rem]')).some(el => el.style.display !== 'none');
+                g.style.display = anyVisible ? '' : 'none';
+            });
+        }
+
+        async function loadWorkspaceIdentityChanges(runId) {
+            const container = document.getElementById('workspaceidentity-results');
+            container.innerHTML = '<div class="loading">Loading workspace identity changes...</div>';
+
+            try {
+                const url = '/api/report/workspace-identity-changes' + (runId ? ('?run_id=' + encodeURIComponent(runId)) : '');
+                const res = await fetch(url);
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('workspaceidentity-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                if (data.length === 0) {
+                    showEmpty('workspaceidentity-results', 'No workspace/identity changes were found in the latest detection run.');
+                    return;
+                }
+
+                const detTs = result.detection_timestamp
+                    ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC'
+                    : 'Unknown';
+                const metastores = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
+
+                const catLabels = {
+                    identity_created: 'Identity created',
+                    group_membership_add: 'Group membership added',
+                    admin_grant: 'Account admin granted',
+                    workspace_assignment_add: 'Workspace assignment',
+                    workspace_assignment_remove: 'Workspace assignment removed',
+                    account_workspace_access: 'Workspace access (account admin)'
+                };
+                const catEmoji = {
+                    identity_created: '🆕', group_membership_add: '👥', admin_grant: '🛡️',
+                    workspace_assignment_add: '🏢', workspace_assignment_remove: '🚪',
+                    account_workspace_access: '🏛️'
+                };
+
+                const renderRow = (item, isLast) => {
+                    const who = formatPrincipalName(item.principal_name, item.principal_email || item.application_id, null, item.principal_id);
+                    const nameHtml = item.console_url
+                        ? `<a href="${escapeHtml(item.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${who}</a>`
+                        : who;
+                    // Explicit principal-type chip so a flagged "Identity created"
+                    // (or any row) shows at a glance whether it's a user, group, or SP.
+                    const typeMeta = {
+                        User: {emoji: '👤', label: 'User'},
+                        Group: {emoji: '👥', label: 'Group'},
+                        ServicePrincipal: {emoji: '🤖', label: 'Service Principal'},
+                        Unknown: {emoji: '❔', label: 'Unknown type'}
+                    };
+                    const tm = typeMeta[item.principal_type] || typeMeta.Unknown;
+                    const typeChip = `<span style="display: inline-block; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; padding: 1px 8px; font-size: 0.72em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-secondary); margin-left: 8px; vertical-align: middle;">${tm.emoji} ${escapeHtml(tm.label)}</span>`;
+                    const catLabel = catLabels[item.change_category] || item.change_category;
+                    const idpBadge = item.principal_type === 'Unknown'
+                        ? ' · <span style="color: var(--text-muted);">Unknown principal</span>'
+                        : (item.is_idp_managed
+                            ? ' · <span style="color: #10b981;">IdP-managed</span>'
+                            : ' · <span style="color: #ef4444;">⚠ Non-IdP</span>');
+                    const aimBadge = item.is_aim_sync
+                        ? ' · <span style="color: var(--text-muted);">AIM sync</span>'
+                        : ' · <span style="color: var(--warning);">👤 Human</span>';
+                    const viaLabel = item.changed_via === 'workspace_admin' ? 'Workspace admin' : 'Account admin';
+                    const ws = (item.workspace_name || item.workspace_id)
+                        ? ` · 🏢 ${escapeHtml(item.workspace_name || item.workspace_id)}` : '';
+                    const grp = item.related_group ? ` · → ${escapeHtml(item.related_group)}` : '';
+                    const perm = item.permission ? ` · ${escapeHtml(item.permission)}` : '';
+                    const when = item.event_time ? escapeHtml(String(item.event_time).replace('T', ' ').slice(0, 19)) : '';
+                    let rem = '';
+                    if (item.remediation_action) {
+                        const acts = String(item.remediation_action).split(',').map(a =>
+                            a === 'assignment_removed' ? '✓ Assignment removed'
+                            : a === 'identity_disabled' ? '✓ Identity disabled' : a);
+                        rem = ' · <span style="color: #10b981;">' + escapeHtml(acts.join(', ')) + '</span>';
+                    } else if (item.auto_remediated) {
+                        rem = ' · <span style="color: #10b981;">✓ Remediated</span>';
+                    }
+                    const reason = item.flagged && item.flag_reason
+                        ? `<div style="font-size: 0.8em; color: #ef4444; margin-top: 4px;">⚠ ${escapeHtml(item.flag_reason.replace(/_/g, ' '))}</div>` : '';
+                    return `
+                        <div data-rem="${item.auto_remediated ? 'true' : 'false'}" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                            <span style="font-size: 16px;">${catEmoji[item.change_category] || '•'}</span>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 500; word-break: break-word;">${nameHtml}${typeChip}</div>
+                                <div style="font-size: 0.82em; color: var(--text-secondary); margin-top: 3px;">
+                                    ${escapeHtml(catLabel)}${perm}${grp}${idpBadge}${aimBadge}${rem}
+                                </div>
+                                <div style="font-size: 0.78em; color: var(--text-muted); margin-top: 3px;">
+                                    ${escapeHtml(viaLabel)}${ws} · by ${escapeHtml(item.actor_email || 'unknown')}${when ? ` · ${when} UTC` : ''}
+                                </div>
+                                ${reason}
+                            </div>
+                        </div>`;
+                };
+
+                const flaggedItems = data.filter(d => d.flagged);
+                const recordedItems = data.filter(d => !d.flagged);
+
+                let html = `
+                    ${renderTruncationBanner(result)}
+                    ${renderReportControls({runs: result.runs, selectedRunId: result.selected_run_id, runOnChange: 'loadWorkspaceIdentityChanges(this.value)', filterScopeId: 'workspaceidentity-results'})}
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Metastores',
+                        scopeIcon: '🗄️',
+                        scanned: metastores,
+                        failed: [],
+                        inReport: result.workspaces || [],
+                        note: 'Detection is account-wide over the audit log (system.access.audit) of the metastore above; the entities in this report are the workspaces where changes were found.'
+                    })}
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Workspace Identity Changes</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${summary.flagged || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Flagged</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${summary.remediated || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Remediated</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: var(--text-secondary);">${summary.aim_sync || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">AIM Sync</div></div>
+                        </div>
+                    </div>`;
+
+                if (flaggedItems.length) {
+                    html += `
+                        <div class="results-container rem-group" style="margin-bottom: 16px;">
+                            <div class="results-header">
+                                <span class="results-title" style="color: #ef4444;">⚠ Flagged — needs review</span>
+                                <span class="results-count">${flaggedItems.length}</span>
+                            </div>
+                            <div class="results-body" style="padding: 0;">
+                                ${flaggedItems.map((it, i) => renderRow(it, i === flaggedItems.length - 1)).join('')}
+                            </div>
+                        </div>`;
+                }
+                if (recordedItems.length) {
+                    html += `
+                        <div class="results-container rem-group">
+                            <div class="results-header">
+                                <span class="results-title">Recorded — review discretionary</span>
+                                <span class="results-count">${recordedItems.length}</span>
+                            </div>
+                            <div style="padding: 8px 24px; font-size: 0.78em; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+                                Non-flagged events kept for context — the governed baseline (assignments of IdP-managed identities, AIM-sync provisioning) and removal events, including assignment removals performed by this tool's own remediation. Review at your discretion.
+                            </div>
+                            <div class="results-body" style="padding: 0;">
+                                ${recordedItems.map((it, i) => renderRow(it, i === recordedItems.length - 1)).join('')}
+                            </div>
+                        </div>`;
+                }
+
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('workspaceidentity-results', 'Error: ' + e.message);
+            }
+        }
+
+        async function loadPrivilegedNonIdp(runId) {
             const container = document.getElementById('privilegednonidp-results');
             container.innerHTML = '<div class="loading">Loading privileged non-IdP identities...</div>';
 
             try {
-                const res = await fetch('/api/report/privileged-non-idp');
+                const url = '/api/report/privileged-non-idp' + (runId ? ('?run_id=' + encodeURIComponent(runId)) : '');
+                const res = await fetch(url);
                 const result = await res.json();
 
                 if (result.error) {
@@ -4066,6 +4331,8 @@ def get_main_html():
                 });
 
                 let html = `
+                    ${renderTruncationBanner(result)}
+                    ${renderReportControls({runs: result.runs, selectedRunId: result.selected_run_id, runOnChange: 'loadPrivilegedNonIdp(this.value)', filterScopeId: 'privilegednonidp-results'})}
                     ${renderCoverageBlock({
                         dateTs: detTs,
                         scopeLabel: 'Workspaces',
@@ -4106,7 +4373,7 @@ def get_main_html():
 
                     // Role header
                     html += `
-                        <div class="tree-type-group">
+                        <div class="tree-type-group rem-group">
                             <div style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--bg-input); border-bottom: 1px solid var(--border);">
                                 <span style="font-size: 20px;">🛡️</span>
                                 <span style="font-weight: 700; flex: 1;">${roleLabel} (${items.length})</span>
@@ -4146,7 +4413,7 @@ def get_main_html():
                                 ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(item.workspace_name || item.workspace_id)}</span>` : '';
 
                             html += `
-                                <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 64px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <div data-rem="${item.auto_remediated ? 'true' : 'false'}" class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 64px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
                                     <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
                                     <div style="flex: 1; min-width: 0;">
                                         <div style="font-weight: 500; word-break: break-all;">${categoryEmoji[cat]} ${nameHtml}</div>
@@ -4169,12 +4436,13 @@ def get_main_html():
         }
 
         // Load Orphaned Resources Report
-        async function loadSharedToAccount() {
+        async function loadSharedToAccount(runId) {
             const container = document.getElementById('sharedtoaccount-results');
             container.innerHTML = '<div class="loading">Loading shared-to-account-users findings...</div>';
 
             try {
-                const res = await fetch('/api/report/shared-to-account');
+                const url = '/api/report/shared-to-account' + (runId ? ('?run_id=' + encodeURIComponent(runId)) : '');
+                const res = await fetch(url);
                 const result = await res.json();
 
                 if (result.error) {
@@ -4208,6 +4476,8 @@ def get_main_html():
                 const metastores = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
 
                 let html = `
+                    ${renderTruncationBanner(result)}
+                    ${renderReportControls({runs: result.runs, selectedRunId: result.selected_run_id, runOnChange: 'loadSharedToAccount(this.value)', filterScopeId: 'sharedtoaccount-results'})}
                     ${renderCoverageBlock({
                         dateTs: detTs,
                         scopeLabel: 'Metastores',
@@ -4256,7 +4526,7 @@ def get_main_html():
                     const label = typeLabels[type] || type;
 
                     html += `
-                        <div class="tree-type-group">
+                        <div class="tree-type-group rem-group">
                             <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
                                 <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
                                 <span style="font-size: 20px;">${typeEmoji[type] || '📄'}</span>
@@ -4288,7 +4558,7 @@ def get_main_html():
                             ? `<span style="margin-left: 10px;">👥 Shared to: ${escapeHtml(item.group_name)}</span>` : '';
 
                         html += `
-                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                            <div data-rem="${item.auto_remediated ? 'true' : 'false'}" class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
                                 <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
                                 <div style="flex: 1; min-width: 0;">
                                     <div style="font-weight: 500; word-break: break-all;">${nameHtml}</div>
@@ -7988,21 +8258,42 @@ def report_orphaned_resources():
     })
 
 
+def _resolve_report_run(table):
+    """Resolve which detection run an account-level report should show.
+
+    Reads an optional ?run_id= (validated to a safe charset); defaults to the
+    latest. Returns (latest_cte, params, runs, selected_run_id) where latest_cte
+    is the body of the `WITH latest AS (...)` clause, and `runs` is the recent
+    distinct-run list that drives the per-tab run selector. NoAccessError from the
+    runs query propagates so the access banner renders.
+    """
+    sel = _validate_run_id(request.args.get('run_id'))
+    runs = exec_query_df(
+        f"SELECT DISTINCT run_id, CAST(detection_timestamp AS STRING) AS detection_timestamp "
+        f"FROM {table} ORDER BY run_id DESC LIMIT 20"
+    )
+    if sel:
+        return "SELECT :sel_run_id AS run_id", {"sel_run_id": sel}, runs, sel
+    selected = runs[0]['run_id'] if runs else None
+    return f"SELECT MAX(run_id) AS run_id FROM {table}", None, runs, selected
+
+
 @app.route('/api/report/shared-to-account')
 def report_shared_to_account():
     """Resources shared with the built-in 'account users' group.
 
-    Reads the latest snapshot from brickhound_shared_to_account, which is
-    populated by the SAT shared-to-account-users detection notebook/job
+    Reads a snapshot from brickhound_shared_to_account (latest run by default, or
+    ?run_id=), populated by the SAT shared-to-account-users detection notebook/job
     (notebooks/brickhound/05_share_to_account.py). This endpoint is read-only;
     remediation happens only in the notebook/job which holds SP credentials.
     """
     # This report has its own run_id (per detection run), independent of the
     # graph collection run_id. Query runs as the calling user (OBO), so Unity
     # Catalog enforces their grants on the findings table.
+    latest_cte, run_params, runs, selected_run_id = _resolve_report_run(SHARED_TO_ACCOUNT_TABLE)
     query = f"""
     WITH latest AS (
-        SELECT MAX(run_id) AS run_id FROM {SHARED_TO_ACCOUNT_TABLE}
+        {latest_cte}
     )
     SELECT
         s.resource_type,
@@ -8020,12 +8311,16 @@ def report_shared_to_account():
     FROM {SHARED_TO_ACCOUNT_TABLE} s
     JOIN latest l ON s.run_id = l.run_id
     ORDER BY s.event_time DESC
+    LIMIT {REPORT_ROW_CAP + 1}
     """
 
     try:
-        results = exec_query_df(query)
+        results = exec_query_df(query, params=run_params)
+    except NoAccessError:
+        # No UC read grant on the findings table — let the access banner render.
+        raise
     except Exception as e:
-        # Table absent (job never run) or no read grant — surface a friendly hint.
+        # Table absent (job never run) — surface a friendly hint.
         logger.warning("shared-to-account report query failed: %s", e)
         return jsonify({
             'error': (
@@ -8034,6 +8329,10 @@ def report_shared_to_account():
                 'notebooks/brickhound/05_share_to_account.py notebook) to populate it.'
             )
         })
+
+    truncated = len(results) > REPORT_ROW_CAP
+    if truncated:
+        results = results[:REPORT_ROW_CAP]
 
     # Statement Execution returns booleans as strings ('true'/'false'); normalize.
     for r in results:
@@ -8068,6 +8367,10 @@ def report_shared_to_account():
         'metastores': metastores,
         'detection_timestamp': detection_timestamp,
         'workspaces': workspaces,
+        'runs': runs,
+        'selected_run_id': selected_run_id,
+        'truncated': truncated,
+        'row_cap': REPORT_ROW_CAP,
         'data': results,
     })
 
@@ -8080,9 +8383,10 @@ def report_privileged_non_idp():
     notebooks/brickhound/06_privileged_non_idp_identities.py. Read-only;
     remediation happens in the notebook/job (which holds SP credentials).
     """
+    latest_cte, run_params, runs, selected_run_id = _resolve_report_run(PRIVILEGED_NON_IDP_TABLE)
     query = f"""
     WITH latest AS (
-        SELECT MAX(run_id) AS run_id FROM {PRIVILEGED_NON_IDP_TABLE}
+        {latest_cte}
     )
     SELECT
         p.finding_type,
@@ -8101,10 +8405,14 @@ def report_privileged_non_idp():
     FROM {PRIVILEGED_NON_IDP_TABLE} p
     JOIN latest l ON p.run_id = l.run_id
     ORDER BY p.finding_type, p.is_idp_managed, p.principal_name
+    LIMIT {REPORT_ROW_CAP + 1}
     """
 
     try:
-        results = exec_query_df(query)
+        results = exec_query_df(query, params=run_params)
+    except NoAccessError:
+        # No UC read grant on the findings table — let the access banner render.
+        raise
     except Exception as e:
         logger.warning("privileged-non-idp report query failed: %s", e)
         return jsonify({
@@ -8114,6 +8422,10 @@ def report_privileged_non_idp():
                 'notebooks/brickhound/06_privileged_non_idp_identities.py notebook) to populate it.'
             )
         })
+
+    truncated = len(results) > REPORT_ROW_CAP
+    if truncated:
+        results = results[:REPORT_ROW_CAP]
 
     # Normalize boolean-ish string cells to real bools for the JS layer too,
     # so client-side conditionals (item.is_idp_managed) behave correctly.
@@ -8135,13 +8447,13 @@ def report_privileged_non_idp():
     # inline result limit, which the endpoint would surface as a false "no data".
     cov_rows = exec_query_df(f"""
         WITH latest AS (
-            SELECT MAX(run_id) AS run_id FROM {PRIVILEGED_NON_IDP_TABLE}
+            {latest_cte}
         )
         SELECT p.workspaces_scanned, p.workspaces_failed
         FROM {PRIVILEGED_NON_IDP_TABLE} p
         JOIN latest l ON p.run_id = l.run_id
         LIMIT 1
-    """)
+    """, params=run_params)
 
     def _cov(col):
         if cov_rows and cov_rows[0].get(col):
@@ -8173,6 +8485,113 @@ def report_privileged_non_idp():
         'workspaces_scanned': scanned,
         'workspaces_failed': failed,
         'workspaces_in_report': in_report,
+        'runs': runs,
+        'selected_run_id': selected_run_id,
+        'truncated': truncated,
+        'row_cap': REPORT_ROW_CAP,
+        'data': results,
+    })
+
+
+@app.route('/api/report/workspace-identity-changes')
+def report_workspace_identity_changes():
+    """Workspace/identity changes from the audit log.
+
+    Reads the latest snapshot from brickhound_workspace_identity_changes, populated
+    by notebooks/brickhound/08_workspace_identity_changes.py. Read-only; remediation
+    happens in the notebook/job (which holds SP credentials).
+    """
+    latest_cte, run_params, runs, selected_run_id = _resolve_report_run(WORKSPACE_IDENTITY_CHANGES_TABLE)
+    query = f"""
+    WITH latest AS (
+        {latest_cte}
+    )
+    SELECT
+        c.change_category,
+        c.changed_via,
+        c.action_name,
+        c.is_aim_sync,
+        c.actor_email,
+        c.source_ip,
+        c.principal_id,
+        c.principal_type,
+        c.principal_name,
+        c.principal_email,
+        c.is_idp_managed,
+        c.related_group,
+        c.permission,
+        c.workspace_id,
+        c.workspace_name,
+        c.flagged,
+        c.flag_reason,
+        c.console_url,
+        CAST(c.event_time AS STRING)          AS event_time,
+        CAST(c.detection_timestamp AS STRING) AS detection_timestamp,
+        c.auto_remediated,
+        c.remediation_action
+    FROM {WORKSPACE_IDENTITY_CHANGES_TABLE} c
+    JOIN latest l ON c.run_id = l.run_id
+    ORDER BY c.flagged DESC, c.event_time DESC
+    LIMIT {REPORT_ROW_CAP + 1}
+    """
+
+    try:
+        results = exec_query_df(query, params=run_params)
+    except NoAccessError:
+        # No UC read grant on the findings table — let the access banner render.
+        raise
+    except Exception as e:
+        logger.warning("workspace-identity-changes report query failed: %s", e)
+        return jsonify({
+            'error': (
+                'No workspace/identity-change data available yet. Run the '
+                '"SAT Permissions Analysis - Workspace Identity Changes" job (or the '
+                'notebooks/brickhound/08_workspace_identity_changes.py notebook) to populate it.'
+            )
+        })
+
+    truncated = len(results) > REPORT_ROW_CAP
+    if truncated:
+        results = results[:REPORT_ROW_CAP]
+
+    # Statement Execution returns booleans as strings; normalize for the JS layer.
+    for r in results:
+        r['flagged'] = _truthy(r.get('flagged'))
+        r['is_idp_managed'] = _truthy(r.get('is_idp_managed'))
+        r['is_aim_sync'] = _truthy(r.get('is_aim_sync'))
+        r['auto_remediated'] = _truthy(r.get('auto_remediated'))
+
+    flagged = sum(1 for r in results if r['flagged'])
+    remediated = sum(1 for r in results if r['auto_remediated'])
+    aim_sync = sum(1 for r in results if r['is_aim_sync'])
+
+    detection_timestamp = results[0]['detection_timestamp'] if results else None
+    metastores = []
+    try:
+        rows = exec_query_df("SELECT current_metastore() AS m")
+        if rows and rows[0].get('m'):
+            metastores = [rows[0]['m']]
+    except Exception:
+        metastores = []
+
+    # Workspaces named in this report (assignment findings carry a workspace_name).
+    workspaces = sorted({r['workspace_name'] for r in results if r.get('workspace_name')})
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total': len(results),
+            'flagged': flagged,
+            'remediated': remediated,
+            'aim_sync': aim_sync,
+        },
+        'metastores': metastores,
+        'detection_timestamp': detection_timestamp,
+        'workspaces': workspaces,
+        'runs': runs,
+        'selected_run_id': selected_run_id,
+        'truncated': truncated,
+        'row_cap': REPORT_ROW_CAP,
         'data': results,
     })
 
@@ -8203,10 +8622,14 @@ def report_denylist_candidates():
     FROM {DENYLIST_CANDIDATES_TABLE} c
     JOIN latest l ON c.run_id = l.run_id
     ORDER BY c.inactive_members DESC, c.inactive_pct DESC
+    LIMIT {REPORT_ROW_CAP + 1}
     """
 
     try:
         results = exec_query_df(query)
+    except NoAccessError:
+        # No UC read grant on the findings table — let the access banner render.
+        raise
     except Exception as e:
         logger.warning("denylist-candidates report query failed: %s", e)
         return jsonify({
@@ -8216,6 +8639,10 @@ def report_denylist_candidates():
                 'notebooks/brickhound/07_denylist_candidates.py notebook) to populate it.'
             )
         })
+
+    truncated = len(results) > REPORT_ROW_CAP
+    if truncated:
+        results = results[:REPORT_ROW_CAP]
 
     # Statement Execution returns everything as strings; normalize for the JS layer.
     for r in results:
@@ -8254,6 +8681,8 @@ def report_denylist_candidates():
         'inactive_days': inactive_days,
         'metastores': metastores,
         'account_id': account_id,
+        'truncated': truncated,
+        'row_cap': REPORT_ROW_CAP,
         'data': results,
     })
 

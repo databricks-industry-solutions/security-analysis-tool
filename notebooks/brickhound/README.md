@@ -31,8 +31,9 @@ Use the interactive analysis notebooks:
 | `05_share_to_account.py` | Detect (and optionally remediate) resources shared with all account users |
 | `06_privileged_non_idp_identities.py` | Detect (and optionally remediate) privileged identities that are not IdP-managed |
 | `07_denylist_candidates.py` | Rank account groups by inactive members as account-denylist candidates |
+| `08_workspace_identity_changes.py` | Detect (and optionally remediate) identities changed outside the AIM sync, and non-IdP identities assigned to workspaces |
 
-> **Note:** `05`–`07` are **audit-log / account-SCIM based**, not graph based. They read
+> **Note:** `05`–`08` are **audit-log / account-SCIM based**, not graph based. They read
 > `system.access.audit`, `system.access.workspaces_latest`, and the account SCIM API
 > directly, so they do **not** require the data collection job to have run first. Each writes
 > its own `brickhound_*` table and has a scheduled job (in both `terraform/common/` and the
@@ -47,6 +48,14 @@ Use the interactive analysis notebooks:
 > - `07_denylist_candidates.py` → `brickhound_denylist_candidates`. Ranks account groups by
 >   inactive-member count (inactive = no `system.access.audit` activity in the window — a
 >   heuristic). Feeds the "Account Denylist Builder" tab.
+> - `08_workspace_identity_changes.py` → `brickhound_workspace_identity_changes`. Flags
+>   identities created/changed by a human outside the AIM sync (via the `autoUserCreation`
+>   tag), and non-IdP identities assigned to workspaces. Platform-managed Databricks App SPs
+>   (`endpoint=DatabricksApps`) are excluded. Two opt-in remediations, both default
+>   off: `remediate=yes` removes flagged non-IdP workspace assignments (account-scoped), and
+>   `disable_identities=yes` deactivates flagged users / service principals via account SCIM
+>   `active=false` (reversible; groups excluded). The `remediation_action` column records what
+>   was done. Feeds the "Workspace Identity Changes" tab (per-run selector + remediated filter).
 
 ### 3. Web UI (Optional)
 
@@ -60,7 +69,7 @@ https://<workspace-url>/apps/brickhound-sat
 BrickHound automatically uses SAT's configuration:
 - **Credentials**: From `sat_scope` secret scope
 - **Schema**: From SAT's `analysis_schema_name`
-- **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`, `brickhound_shared_to_account`
+- **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`, `brickhound_shared_to_account`, `brickhound_privileged_non_idp`, `brickhound_denylist_candidates`, `brickhound_workspace_identity_changes`
 
 No additional configuration needed if SAT is installed!
 
