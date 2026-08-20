@@ -41,6 +41,10 @@
 # MAGIC the expected, governed baseline. What SAT proves is *that an ungoverned-looking change happened, and
 # MAGIC who/when* — it cannot by itself prove whether an Entra entitlement-management approval backed it.
 # MAGIC
+# MAGIC **Platform-managed Databricks App service principals are excluded.** Deploying a Databricks App
+# MAGIC auto-creates an SP (audit `endpoint = DatabricksApps`); these are not ungoverned human onboarding, so
+# MAGIC they are dropped from detection entirely and are never flagged or disabled.
+# MAGIC
 # MAGIC ### Scope of the two admin paths
 # MAGIC
 # MAGIC - **Workspace admins** assigning identities via the workspace UI → `updatePermissionAssignment`
@@ -372,6 +376,11 @@ class WorkspaceIdentityChangeAuditor:
             FROM system.access.audit
             WHERE action_name = '{action}' AND service_name = '{service}'
               {extra}
+              -- Exclude platform-managed Databricks App service principals: deploying
+              -- an app auto-creates an SP via the DatabricksApps endpoint. These are
+              -- not ungoverned human onboarding, so they must never be flagged or
+              -- disabled (disabling one would take down a live app).
+              AND coalesce(request_params['endpoint'], '') <> 'DatabricksApps'
               AND event_time >= '{since}'
         """
 
