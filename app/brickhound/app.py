@@ -4096,15 +4096,28 @@ def get_main_html():
                 return `<option value="${escapeHtml(r.run_id)}"${r.run_id === sel ? ' selected' : ''}>${ts}</option>`;
             }).join('');
             if (!runs.length) runOpts = '<option value="">(latest)</option>';
-            const runSel = `<label style="font-size: 0.8em; color: var(--text-secondary);">Detection run</label>`
-                + `<select onchange="${cfg.runOnChange}" style="padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em; cursor: pointer; max-width: 340px;">${runOpts}</select>`;
-            let filterSel = '';
+            // Match the global stats-header filters: card sections with small
+            // uppercase labels, separated by a divider.
+            const selStyle = 'padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em; cursor: pointer; width: 100%;';
+            const runSection = `
+                <div class="stats-header-section" style="flex: 1; min-width: 240px;">
+                    <span class="stats-header-label">Detection Run</span>
+                    <select onchange="${cfg.runOnChange}" style="${selStyle} max-width: 340px;">${runOpts}</select>
+                </div>`;
+            let filterSection = '';
             if (cfg.filterScopeId) {
-                filterSel = `<label style="font-size: 0.8em; color: var(--text-secondary); margin-left: 16px;">Show</label>`
-                    + `<select onchange="applyRemFilter('${cfg.filterScopeId}', this.value)" style="padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em; cursor: pointer;">`
-                    + `<option value="all">All</option><option value="true">Remediated</option><option value="false">Not remediated</option></select>`;
+                filterSection = `
+                    <div class="stats-header-divider"></div>
+                    <div class="stats-header-section" style="flex: 0 0 auto; min-width: 180px;">
+                        <span class="stats-header-label">Show</span>
+                        <select onchange="applyRemFilter('${cfg.filterScopeId}', this.value)" style="${selStyle} max-width: 220px;">
+                            <option value="all">All</option>
+                            <option value="true">Remediated</option>
+                            <option value="false">Not remediated</option>
+                        </select>
+                    </div>`;
             }
-            return `<div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">${runSel}${filterSel}</div>`;
+            return `<div class="stats-header-row" style="flex-wrap: wrap; margin-bottom: 16px;">${runSection}${filterSection}</div>`;
         }
 
         // Client-side remediated filter: toggle leaf rows ([data-rem]) and hide any
