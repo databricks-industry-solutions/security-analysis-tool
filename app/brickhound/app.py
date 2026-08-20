@@ -2296,7 +2296,7 @@ def get_main_html():
             // data context yet) and the account-level detection pages, which have
             // their own run_id and per-report coverage block — showing the global
             // bar there only causes two-coverage-widget confusion.
-            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder'];
+            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder', 'workspaceidentity'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
