@@ -4276,8 +4276,11 @@ def get_main_html():
                     html += `
                         <div class="results-container rem-group">
                             <div class="results-header">
-                                <span class="results-title">Recorded — governed baseline</span>
+                                <span class="results-title">Recorded — review discretionary</span>
                                 <span class="results-count">${recordedItems.length}</span>
+                            </div>
+                            <div style="padding: 8px 24px; font-size: 0.78em; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+                                Non-flagged events kept for context — the governed baseline (assignments of IdP-managed identities, AIM-sync provisioning) and removal events, including assignment removals performed by this tool's own remediation. Review at your discretion.
                             </div>
                             <div class="results-body" style="padding: 0;">
                                 ${recordedItems.map((it, i) => renderRow(it, i === recordedItems.length - 1)).join('')}

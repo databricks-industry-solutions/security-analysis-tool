@@ -50,8 +50,11 @@ Use the interactive analysis notebooks:
 >   heuristic). Feeds the "Account Denylist Builder" tab.
 > - `08_workspace_identity_changes.py` → `brickhound_workspace_identity_changes`. Flags
 >   identities created/changed by a human outside the AIM sync (via the `autoUserCreation`
->   tag), and non-IdP identities assigned to workspaces. Opt-in remediation removes flagged
->   non-IdP workspace assignments (account-scoped). Feeds the "Workspace Identity Changes" tab.
+>   tag), and non-IdP identities assigned to workspaces. Two opt-in remediations, both default
+>   off: `remediate=yes` removes flagged non-IdP workspace assignments (account-scoped), and
+>   `disable_identities=yes` deactivates flagged users / service principals via account SCIM
+>   `active=false` (reversible; groups excluded). The `remediation_action` column records what
+>   was done. Feeds the "Workspace Identity Changes" tab (per-run selector + remediated filter).
 
 ### 3. Web UI (Optional)
 
@@ -65,7 +68,7 @@ https://<workspace-url>/apps/brickhound-sat
 BrickHound automatically uses SAT's configuration:
 - **Credentials**: From `sat_scope` secret scope
 - **Schema**: From SAT's `analysis_schema_name`
-- **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`, `brickhound_shared_to_account`
+- **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`, `brickhound_shared_to_account`, `brickhound_privileged_non_idp`, `brickhound_denylist_candidates`, `brickhound_workspace_identity_changes`
 
 No additional configuration needed if SAT is installed!
 

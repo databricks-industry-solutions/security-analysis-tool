@@ -400,6 +400,18 @@ class WorkspaceIdentityChangeAuditor:
         if df.empty:
             return df
 
+        # Drop events with a blank principal_id. Creating a service principal or
+        # group emits a secondary audit event whose id lands in a different field
+        # (a second scim `add` with empty targetUserId, or a createGroup with
+        # endpoint=permissionAssignment carrying the id in targetUserId), leaving
+        # our extracted principal_id empty. These are duplicates of the real
+        # creation event (which has the id and resolves) — dropping them removes
+        # spurious "Unknown" rows without losing any genuine finding.
+        df = df[df["principal_id"].map(
+            lambda v: v is not None and str(v).strip() not in ("", "None"))].copy()
+        if df.empty:
+            return df
+
         def enrich(row):
             info = index.get(str(row["principal_id"])) if row.get("principal_id") else None
             if info:

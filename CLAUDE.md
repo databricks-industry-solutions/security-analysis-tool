@@ -643,7 +643,8 @@ BrickHound provides graph-based permissions analysis within SAT, complementing S
 - `analysis_schema_name` → Unity Catalog schema (catalog.schema format)
 
 **Storage**: Same Unity Catalog schema as SAT
-- Tables: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`
+- Graph tables: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`
+- Account-level detection tables (notebooks 05–08, audit-log/SCIM based): `brickhound_shared_to_account`, `brickhound_privileged_non_idp`, `brickhound_denylist_candidates`, `brickhound_workspace_identity_changes` (each run_id-stamped)
 - Namespaced with `brickhound_` prefix to avoid conflicts
 
 **Job**: Separate weekly job (Sunday 2 AM)
