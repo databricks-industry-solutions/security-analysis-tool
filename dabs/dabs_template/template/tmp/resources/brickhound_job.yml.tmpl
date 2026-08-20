@@ -227,6 +227,7 @@ resources:
               last_n_days: "30"
               finding_scope: "workspace_assignment,account_workspace_access,identity_creation,group_membership,admin_grant"
               remediate: "no"
+              disable_identities: "no"
 
       {{- if eq .serverless false }}
       job_clusters:

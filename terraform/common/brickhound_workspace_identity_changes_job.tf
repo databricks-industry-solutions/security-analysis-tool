@@ -60,9 +60,10 @@ resource "databricks_job" "brickhound_workspace_identity_changes" {
       # Detection-only by default. Set remediate=yes deliberately to enable
       # continuous removal of non-IdP workspace assignments.
       base_parameters = {
-        last_n_days   = "30"
-        finding_scope = "workspace_assignment,account_workspace_access,identity_creation,group_membership,admin_grant"
-        remediate     = "no"
+        last_n_days        = "30"
+        finding_scope      = "workspace_assignment,account_workspace_access,identity_creation,group_membership,admin_grant"
+        remediate          = "no"
+        disable_identities = "no"
       }
     }
 

@@ -74,6 +74,7 @@
 # MAGIC | `last_n_days` | How far back to search the audit log (default 30). |
 # MAGIC | `finding_scope` | Comma-separated: `workspace_assignment`, `account_workspace_access`, `identity_creation`, `group_membership`, `admin_grant`. |
 # MAGIC | `remediate` | `yes` removes the workspace permission assignment for flagged non-IdP assignments. Default `no` (report-only). |
+# MAGIC | `disable_identities` | `yes` deactivates (SCIM `active=false`) flagged users / service principals added outside the AIM sync. **Destructive**; default `no`. |
 
 # COMMAND ----------
 
@@ -85,14 +86,17 @@ dbutils.widgets.text(
     "Finding scope (comma-separated)",
 )
 dbutils.widgets.dropdown("remediate", "no", ["no", "yes"], "Remove non-IdP workspace assignments")
+dbutils.widgets.dropdown("disable_identities", "no", ["no", "yes"], "Disable users/SPs added outside AIM")
 
-LAST_N_DAYS   = int(dbutils.widgets.get("last_n_days"))
-FINDING_SCOPE = [s.strip() for s in dbutils.widgets.get("finding_scope").split(",") if s.strip()]
-REMEDIATE     = dbutils.widgets.get("remediate") == "yes"
+LAST_N_DAYS        = int(dbutils.widgets.get("last_n_days"))
+FINDING_SCOPE      = [s.strip() for s in dbutils.widgets.get("finding_scope").split(",") if s.strip()]
+REMEDIATE          = dbutils.widgets.get("remediate") == "yes"
+DISABLE_IDENTITIES = dbutils.widgets.get("disable_identities") == "yes"
 
-print(f"Look-back window: {LAST_N_DAYS} days")
-print(f"Finding scope:    {FINDING_SCOPE}")
-print(f"Remediate:        {REMEDIATE}")
+print(f"Look-back window:   {LAST_N_DAYS} days")
+print(f"Finding scope:      {FINDING_SCOPE}")
+print(f"Remediate (assign): {REMEDIATE}")
+print(f"Disable identities: {DISABLE_IDENTITIES}")
 
 # COMMAND ----------
 
@@ -435,6 +439,7 @@ class WorkspaceIdentityChangeAuditor:
         flags = df.apply(flag, axis=1, result_type="expand")
         df["flagged"], df["flag_reason"] = flags[0].astype(bool), flags[1]
         df["auto_remediated"] = False
+        df["remediation_action"] = None
         return df
 
     # ── Remediation ────────────────────────────────────────────────────────────
@@ -492,6 +497,57 @@ class WorkspaceIdentityChangeAuditor:
             print(r)
         return results
 
+    def _disable_identity(self, principal_type: str, principal_id: str) -> tuple[str, str, bool, str]:
+        """Deactivate a user or service principal via account SCIM PATCH active=false.
+
+        Reversible (does not delete the identity); the principal simply can no
+        longer authenticate. Only Users / ServicePrincipals support `active` —
+        groups cannot be deactivated this way.
+        """
+        resource = {"User": "Users", "ServicePrincipal": "ServicePrincipals"}.get(principal_type)
+        if not resource:
+            return (principal_id, principal_type, False, "not a user/service principal")
+        url = f"{self._accounts_host}/api/2.0/accounts/{self._account_id}/scim/v2/{resource}/{principal_id}"
+        body = {
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [{"op": "replace", "path": "active", "value": False}],
+        }
+        try:
+            resp = requests.patch(url, headers={**self._acct_hdrs, "Content-Type": "application/scim+json"},
+                                  json=body, proxies=self._proxies, timeout=30)
+        except requests.RequestException as e:
+            return (principal_id, principal_type, False, f"{type(e).__name__}")
+        return (principal_id, principal_type, resp.ok,
+                "deactivated" if resp.ok else f"PATCH {resp.status_code}: {resp.text[:150]}")
+
+    def disable_identities(self, df: pd.DataFrame, max_workers: int = 8) -> list[tuple]:
+        """Deactivate FLAGGED users/SPs added outside the AIM sync — either created
+        in the account (`identity_created`) or assigned to a workspace as a non-IdP
+        identity. Groups are excluded (SCIM `active` applies only to users/SPs).
+        """
+        targets = df[
+            df["flagged"]
+            & df["principal_type"].isin(["User", "ServicePrincipal"])
+            & df["change_category"].isin(
+                ["identity_created", "workspace_assignment_add", "account_workspace_access"])
+            & df["principal_id"].notna()
+        ].drop_duplicates("principal_id")
+
+        if targets.empty:
+            print("  No flagged users/service principals to disable.")
+            return []
+
+        results: list[tuple] = []
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(self._disable_identity, row["principal_type"], str(row["principal_id"]))
+                       for _, row in targets.iterrows()]
+            for future in as_completed(futures):
+                results.append(future.result())
+
+        for pid, ptype, ok, msg in sorted(results, key=lambda r: (r[1], r[0])):
+            print(f"{'✓' if ok else '✗'} [{ptype}] {pid}: {msg}")
+        return results
+
 # COMMAND ----------
 
 # DBTITLE 1,Initialize Auditor & Build Identity Index
@@ -522,25 +578,42 @@ if not findings.empty:
 # COMMAND ----------
 
 # DBTITLE 1,Remediate (opt-in)
-if REMEDIATE and not findings.empty:
-    print("Remediating flagged non-IdP workspace assignments...\n")
-    results = auditor.remediate(findings)
-    ok = {(r.workspace_id, r.principal_id) for r in results if r.success}
-    findings["auto_remediated"] = findings.apply(
-        lambda x: (str(x["workspace_id"]), str(x["principal_id"])) in ok
-                  and x["change_category"] in ("workspace_assignment_add", "account_workspace_access")
-                  and bool(x["flagged"]),
-        axis=1,
-    )
-    other_flagged = int((findings["flagged"] & ~findings["change_category"].isin(
-        ["workspace_assignment_add", "account_workspace_access"])).sum())
-    if other_flagged:
-        print(f"\nℹ {other_flagged} flagged identity/membership/admin change(s) not auto-remediated "
-              "(review and remove the identity/role at the account level manually).")
-elif REMEDIATE:
-    print("Remediation enabled, but no findings to remediate.")
+ok_assign: set = set()   # (workspace_id, principal_id) whose assignment was removed
+ok_disable: set = set()  # principal_id that was deactivated
+
+if not findings.empty and (REMEDIATE or DISABLE_IDENTITIES):
+    if REMEDIATE:
+        print("Removing flagged non-IdP workspace assignments...\n")
+        results = auditor.remediate(findings)
+        ok_assign = {(r.workspace_id, r.principal_id) for r in results if r.success}
+    if DISABLE_IDENTITIES:
+        print("\nDisabling flagged users/service principals added outside AIM...\n")
+        disable_results = auditor.disable_identities(findings)
+        ok_disable = {pid for pid, ptype, success, msg in disable_results if success}
+
+    # Per-row remediation outcome. A principal can be both assignment-removed and
+    # disabled; record every action applied to that row.
+    def _action(row):
+        acts = []
+        if (row["change_category"] in ("workspace_assignment_add", "account_workspace_access")
+                and bool(row["flagged"])
+                and (str(row["workspace_id"]), str(row["principal_id"])) in ok_assign):
+            acts.append("assignment_removed")
+        if str(row["principal_id"]) in ok_disable:
+            acts.append("identity_disabled")
+        return ",".join(acts) if acts else None
+
+    findings["remediation_action"] = findings.apply(_action, axis=1)
+    findings["auto_remediated"] = findings["remediation_action"].notna()
+
+    manual = int((findings["flagged"] & findings["remediation_action"].isna()).sum())
+    if manual:
+        print(f"\nℹ {manual} flagged change(s) not auto-remediated (e.g. group creation, "
+              "membership, or admin grants — review/undo at the account level manually).")
+elif REMEDIATE or DISABLE_IDENTITIES:
+    print("Remediation enabled, but no findings to act on.")
 else:
-    print("Remediation not enabled — set the 'remediate' widget to 'yes' to take action.")
+    print("Remediation not enabled — set 'remediate' and/or 'disable_identities' to 'yes' to take action.")
 
 # COMMAND ----------
 
@@ -579,6 +652,7 @@ findings_schema = StructType([
     StructField("flag_reason",         StringType(),    True),
     StructField("console_url",         StringType(),    True),
     StructField("auto_remediated",     BooleanType(),   True),
+    StructField("remediation_action",  StringType(),    True),
 ])
 
 _cols = [
@@ -586,7 +660,7 @@ _cols = [
     "change_category", "changed_via", "is_aim_sync", "actor_email", "source_ip",
     "principal_id", "principal_type", "principal_name", "principal_email", "application_id",
     "is_idp_managed", "related_group", "permission", "workspace_id", "workspace_name",
-    "flagged", "flag_reason", "console_url", "auto_remediated",
+    "flagged", "flag_reason", "console_url", "auto_remediated", "remediation_action",
 ]
 
 if findings.empty:
@@ -637,7 +711,8 @@ for _col, _comment in {
     "flagged":             "True if this change needs review (ungoverned identity change, or non-IdP workspace assignment)",
     "flag_reason":         "Why the change was flagged, when flagged",
     "console_url":         "Deep link to the account-console section for this principal type",
-    "auto_remediated":     "True if the workspace assignment was removed in this run",
+    "auto_remediated":     "True if any remediation action was applied to this finding in this run",
+    "remediation_action":  "What was done: assignment_removed and/or identity_disabled (comma-separated), or null",
 }.items():
     spark.sql(f"ALTER TABLE {WORKSPACE_IDENTITY_CHANGES_TABLE} ALTER COLUMN `{_col}` COMMENT '{_comment.replace(chr(39), chr(39) * 2)}'")
 
@@ -671,10 +746,12 @@ else:
 # MAGIC
 # MAGIC ### Recommended workflow
 # MAGIC
-# MAGIC 1. Run **report-only** (`remediate = no`) and review flagged rows.
+# MAGIC 1. Run **report-only** (`remediate = no`, `disable_identities = no`) and review flagged rows.
 # MAGIC 2. Re-run with `remediate = yes` to remove flagged **non-IdP workspace assignments** (account-scoped;
 # MAGIC    removes workspace access only, leaves the account identity intact).
-# MAGIC 3. For flagged **identity creation / membership / admin** changes, remediate at the account level
-# MAGIC    manually (they are not auto-removed) and, ideally, re-provision the identity from your IdP.
-# MAGIC 4. Schedule this notebook (see `terraform/common/brickhound_workspace_identity_changes_job.tf`) to
-# MAGIC    keep detection fresh. Leave `remediate = no` in the job unless you intend continuous remediation.
+# MAGIC 3. Optionally set `disable_identities = yes` to **deactivate** (SCIM `active=false`) flagged users /
+# MAGIC    service principals added outside the AIM sync — reversible, and leaves the identity in place for
+# MAGIC    audit. Groups are not deactivated (SCIM `active` doesn't apply); undo those at the account level.
+# MAGIC 4. Both actions are recorded per row in `remediation_action` (`assignment_removed` / `identity_disabled`).
+# MAGIC 5. Schedule this notebook (see `terraform/common/brickhound_workspace_identity_changes_job.tf`) to
+# MAGIC    keep detection fresh. Leave both actions `no` in the job unless you intend continuous remediation.
