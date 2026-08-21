@@ -1711,9 +1711,32 @@ def get_main_html():
         }
 
         .sidebar-footer {
-            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-shrink: 0;
+            padding: 12px 16px 14px;
             border-top: 1px solid rgba(255, 255, 255, 0.05);
             background: rgba(0, 0, 0, 0.2);
+        }
+        .sidebar-footer-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.78em;
+            color: rgba(148, 163, 184, 0.85);
+            text-decoration: none;
+            white-space: nowrap;
+            transition: color 0.15s;
+        }
+        .sidebar-footer-link:hover { color: rgba(226, 232, 240, 0.95); }
+        /* Without an explicit size an inline SVG expands to fill its container,
+           which rendered this icon as a 300px shield. */
+        .sidebar-footer-link svg {
+            width: 13px;
+            height: 13px;
+            flex-shrink: 0;
         }
         .stats-grid {
             display: grid;
@@ -1988,6 +2011,9 @@ def get_main_html():
             box-shadow: 0 0 0 2px var(--bg-card);
         }
 
+        /* [hidden] sets display:none at a lower specificity than a class rule,
+           so both of these need an explicit override or the panel is always open. */
+        .drawer[hidden], .drawer-scrim[hidden] { display: none; }
         .drawer-scrim {
             position: fixed;
             inset: 0;
@@ -2822,16 +2848,16 @@ def get_main_html():
 
             <div class="sidebar-footer">
                 <a class="sidebar-footer-link" href="https://www.databricks.com/trust"
-                       target="_blank" rel="noopener noreferrer">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                        Trust Center
-                    </a>
-                    <button class="icon-btn" id="settings-gear" title="Settings"
-                            aria-label="Settings" onclick="openSettingsPanel()">
+                   target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Trust Center
+                </a>
+                <button class="icon-btn" id="settings-gear" title="Settings"
+                        aria-label="Settings" onclick="openSettingsPanel()">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                        <span class="status-dot" id="settings-dot" hidden></span>
-                    </button>
-                </div>
+                    <span class="status-dot" id="settings-dot" hidden></span>
+                </button>
+            </div>
         </aside>
 
         <!-- Main Content -->
