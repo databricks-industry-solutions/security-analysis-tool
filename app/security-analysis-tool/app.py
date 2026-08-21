@@ -2049,7 +2049,7 @@ def get_main_html():
         }
         .drawer-title { font-size: 1.05em; font-weight: 650; letter-spacing: -.01em; }
         .drawer-sub { font-size: .82em; color: var(--text-muted); margin-top: 2px; }
-        .drawer-body { padding: 18px 22px 26px; overflow-y: auto; }
+        .drawer-body { padding: 18px 22px 28px; overflow-y: auto; flex: 1; min-height: 0; }
 
         /* Problems, stated plainly. Healthy items are not listed: eight rows
            reading "Healthy" is noise, not information. */
@@ -2076,6 +2076,31 @@ def get_main_html():
         .issue-body { font-size: .85em; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
         .issue-fix { font-size: .83em; color: var(--text-muted); margin-top: 7px; line-height: 1.5; }
 
+        .drawer-section-label {
+            font-size: 0.72em;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 26px 0 14px;
+        }
+        .drawer-note {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-top: 18px;
+        }
+        .health-summary {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.88em;
+            padding: 11px 14px;
+            border-radius: 10px;
+            margin-bottom: 18px;
+        }
+        .health-summary.ok { background: rgba(34, 197, 94, 0.1); color: #86efac; }
+        .health-summary.bad { background: rgba(245, 158, 11, 0.1); color: #fcd34d; }
         .field { margin-bottom: 20px; }
         .field-label {
             display: block;
@@ -2116,13 +2141,14 @@ def get_main_html():
         }
         .switch-row input { margin-top: 3px; flex-shrink: 0; }
 
+        .drawer-savebar[hidden] { display: none; }
         .drawer-savebar {
             position: sticky;
             bottom: 0;
             display: flex;
             align-items: center;
             gap: 9px;
-            margin: 8px -22px -26px;
+            margin: 16px -22px 0;
             padding: 14px 22px;
             background: var(--bg-card);
             border-top: 1px solid rgba(255, 255, 255, .1);
