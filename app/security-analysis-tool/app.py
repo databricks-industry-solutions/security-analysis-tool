@@ -2141,6 +2141,12 @@ def get_main_html():
         }
         .switch-row input { margin-top: 3px; flex-shrink: 0; }
 
+        .cred-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: -6px;
+        }
         .drawer-savebar[hidden] { display: none; }
         .drawer-savebar {
             position: sticky;
@@ -3493,7 +3499,7 @@ def get_main_html():
         <div class="drawer-head">
             <div>
                 <div class="drawer-title">Settings</div>
-                <div class="drawer-sub">Dependency status and configuration</div>
+                <div class="drawer-sub">Configuration and connection health</div>
             </div>
             <button class="icon-btn" onclick="closeSettingsPanel()" aria-label="Close settings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -6151,9 +6157,10 @@ def get_main_html():
 
         async function loadSettings() {
             try {
-                const [data, choices] = await Promise.all([
+                const [data, choices, credentials] = await Promise.all([
                     fetch('/api/settings').then(r => r.json()),
                     fetch('/api/settings/choices').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/settings/credentials').then(r => r.json()).catch(() => ({})),
                 ]);
                 if (data.error) {
                     document.getElementById('settings-body').innerHTML =
@@ -6162,6 +6169,7 @@ def get_main_html():
                 }
                 settingsState.data = data;
                 settingsState.choices = choices || {};
+                settingsState.credentials = credentials || {};
                 settingsState.dirty = {};
                 renderSettings();
                 updateSettingsIndicator(data.failing_count || 0);
@@ -6221,23 +6229,23 @@ def get_main_html():
             html += '<div class="drawer-section-label">Configuration</div>';
 
             html += settingField('warehouse_id', 'SQL warehouse',
-                'Runs every query and every alert.',
+                'Compute used for every report, scan result, and alert.',
                 selectMarkup('warehouse_id', cfg.warehouse_id,
                     warehouses.map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` }))));
 
             html += settingField('schema', 'Results schema',
-                'Where collection results are stored, as catalog.schema.',
+                'Catalog and schema where analysis results are written.',
                 `<input class="field-input" id="set-schema" type="text"
                         value="${escapeHtml(cfg.schema || '')}"
                         onchange="markSettingDirty('schema', this.value)">`);
 
             html += settingField('model_endpoint', 'Assistant model',
-                'Answers questions in the security assistant.',
+                'Language model behind the security assistant.',
                 selectMarkup('model_endpoint', cfg.model_endpoint,
                     models.map(m => ({ value: m, label: m }))));
 
             html += settingField('genie_space_id', 'Genie space',
-                'Optional. Lets the assistant answer from your Genie space.',
+                'Optional. Lets the assistant answer from a Genie space you already use.',
                 selectMarkup('genie_space_id', cfg.genie_space_id,
                     spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None'));
 
@@ -6252,6 +6260,37 @@ def get_main_html():
                                onchange="markSettingDirty('per_user_filtering', this.checked)">
                     </label>
                 </div>`;
+
+            const creds = settingsState.credentials || {};
+            const present = creds.present || {};
+            const bothSet = present.client_id && present.client_secret;
+            html += '<div class="drawer-section-label">Account credentials</div>';
+            html += `
+                <div class="field-help" style="margin-bottom:12px;">
+                    Used by the analysis jobs to read account-level settings.
+                    ${bothSet ? 'Currently set.' : 'Not set yet.'}
+                    ${creds.writable === false
+                        ? 'This app has read-only access to the secret scope, so it cannot change them.'
+                        : 'Stored in the secret scope, so they survive a restart.'}
+                </div>`;
+            if (creds.writable !== false) {
+                html += `
+                    <div class="field">
+                        <span class="field-label">Client ID</span>
+                        <input class="field-input" id="cred-client-id" type="text"
+                               autocomplete="off" placeholder="${bothSet ? 'Set. Enter a new value to replace it.' : 'Service principal application ID'}">
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Client secret</span>
+                        <input class="field-input" id="cred-client-secret" type="password"
+                               autocomplete="new-password" placeholder="${bothSet ? 'Set. Enter a new value to replace it.' : 'OAuth secret'}">
+                        <span class="field-help">Both values are replaced together and are verified before being stored.</span>
+                    </div>
+                    <div class="cred-actions">
+                        <span class="savebar-text" id="cred-status"></span>
+                        <button class="btn btn-sm btn-ghost" id="cred-save" onclick="saveCredentials()">Update credentials</button>
+                    </div>`;
+            }
 
             const jobs = cfg.jobs || {};
             const missing = Object.keys(jobs).filter(k => !jobs[k].connected);
@@ -6268,8 +6307,9 @@ def get_main_html():
                     <button class="btn btn-sm" id="settings-save" onclick="saveSettings()">Save</button>
                 </div>
                 <div class="drawer-note">
-                    Changes apply immediately. If the app restarts, it returns to the values
-                    set when it was installed.
+                    Changes take effect right away. Credentials are stored in the
+                    <code>sat_scope</code> secret scope; everything else resets to its
+                    installed value if the app restarts.
                 </div>`;
 
             document.getElementById('settings-body').innerHTML = html;
@@ -6297,6 +6337,49 @@ def get_main_html():
                     ${extra}
                     ${options.map(o => `<option value="${escapeHtml(o.value)}"${o.value === current ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
                 </select>`;
+        }
+
+        async function saveCredentials() {
+            const idField = document.getElementById('cred-client-id');
+            const secretField = document.getElementById('cred-client-secret');
+            const status = document.getElementById('cred-status');
+            const button = document.getElementById('cred-save');
+            status.className = 'savebar-text';
+            status.textContent = '';
+
+            if (!idField.value.trim() || !secretField.value.trim()) {
+                status.textContent = 'Enter both values.';
+                status.className = 'savebar-text is-error';
+                return;
+            }
+            button.disabled = true;
+            button.textContent = 'Verifying\u2026';
+            try {
+                const result = await fetch('/api/settings/credentials', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        client_id: idField.value.trim(),
+                        client_secret: secretField.value.trim(),
+                    }),
+                }).then(r => r.json());
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'savebar-text is-error';
+                    button.disabled = false;
+                    button.textContent = 'Update credentials';
+                    return;
+                }
+                // Clear the fields so the secret does not linger in the DOM.
+                idField.value = '';
+                secretField.value = '';
+                await loadSettings();
+            } catch (e) {
+                status.textContent = e.message;
+                status.className = 'savebar-text is-error';
+                button.disabled = false;
+                button.textContent = 'Update credentials';
+            }
         }
 
         async function saveSettings() {
@@ -12727,6 +12810,30 @@ def api_code_findings():
 # to the right place to fix.
 # ---------------------------------------------------------------------------
 
+def _sql_rows(client, warehouse_id, statement):
+    """Run one statement and return its rows, or None if it did not succeed.
+
+    Used by the settings probes, which need an explicit client because they run
+    off the request thread.
+    """
+    from databricks.sdk.service.sql import StatementState
+
+    try:
+        result = client.statement_execution.execute_statement(
+            warehouse_id=warehouse_id,
+            catalog=CATALOG,
+            schema=SCHEMA,
+            statement=statement,
+            wait_timeout='30s',
+        )
+        state = result.status.state if result.status else None
+        if state != StatementState.SUCCEEDED:
+            return None
+        return (result.result.data_array or []) if result.result else []
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _settings_probe(label, fn, remedy):
     """Run one dependency check, capturing failure rather than raising.
 
@@ -12742,6 +12849,33 @@ def _settings_probe(label, fn, remedy):
     if not ok:
         entry['remedy'] = remedy
     return entry
+
+
+def _run_settings_probes(specs):
+    """Run every dependency check concurrently, preserving the declared order.
+
+    Each check is an independent network round trip. Run one after another they
+    added up to roughly two seconds, which is most of the time the panel took to
+    open. Flask's request context does not follow a worker thread, so anything a
+    check needs from the request is captured before the fan-out.
+    """
+    import concurrent.futures
+
+    results = [None] * len(specs)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(specs)) as pool:
+        futures = {
+            pool.submit(_settings_probe, label, fn, remedy): index
+            for index, (label, fn, remedy) in enumerate(specs)
+        }
+        for future in concurrent.futures.as_completed(futures):
+            index = futures[future]
+            label, _, remedy = specs[index]
+            try:
+                results[index] = future.result()
+            except Exception as exc:  # noqa: BLE001
+                results[index] = {'label': label, 'ok': False,
+                                  'detail': str(exc)[:400], 'remedy': remedy}
+    return results
 
 
 # Settings changed from the app. Held in memory and applied over the deployed
@@ -12885,6 +13019,140 @@ def api_settings_update():
     return jsonify({'saved': True, 'changed': sorted(payload)})
 
 
+# Account API credentials, held in the sat_scope secret scope and used by the
+# collection jobs to read account-level configuration. They are the one setting
+# that must outlive a restart, so unlike everything else in this panel they are
+# written back to the scope rather than kept in memory.
+#
+# Writing them requires WRITE on sat_scope. The app is granted READ at install, so
+# this endpoint reports what is missing rather than failing opaquely: an
+# administrator grants WRITE deliberately, having accepted that anyone who can open
+# the app can then rotate these credentials.
+SAT_SECRET_SCOPE = os.getenv('SAT_SECRET_SCOPE', 'sat_scope')
+
+CREDENTIAL_KEYS = {
+    'client_id': 'client-id',
+    'client_secret': 'client-secret',
+}
+
+
+def _credential_status():
+    """Whether each credential is set, and whether the app may change them.
+
+    Values are never returned. Presence and length are enough for the panel to
+    show that a credential exists without disclosing it.
+    """
+    client = _sp_workspace_client()
+    present = {}
+    for field, key in CREDENTIAL_KEYS.items():
+        try:
+            client.secrets.get_secret(scope=SAT_SECRET_SCOPE, key=key)
+            present[field] = True
+        except Exception:  # noqa: BLE001 - absent, or unreadable
+            present[field] = False
+
+    # Whether the app may write is established by writing, not by reading ACLs:
+    # list_acls needs secret-scopes.ruleSets/get, a permission separate from WRITE,
+    # so an app that can store secrets perfectly well still fails that lookup. A
+    # probe key is written and removed instead.
+    writable = False
+    detail = ''
+    probe_key = '_sat_write_probe'
+    try:
+        client.secrets.put_secret(
+            scope=SAT_SECRET_SCOPE, key=probe_key, string_value='probe')
+        writable = True
+        try:
+            client.secrets.delete_secret(scope=SAT_SECRET_SCOPE, key=probe_key)
+        except Exception:  # noqa: BLE001 - the probe value is inert if it lingers
+            logger.info('could not remove the write probe key', exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        detail = str(exc)[:200]
+
+    return {'present': present, 'writable': writable, 'permission': detail}
+
+
+@app.route('/api/settings/credentials')
+def api_settings_credentials():
+    try:
+        return jsonify(_credential_status())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('credential status failed')
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/settings/credentials', methods=['PUT'])
+def api_settings_credentials_update():
+    """Write account API credentials into the secret scope.
+
+    Both values are required together: a client id paired with a stale secret
+    fails at the next collection run, in a job log rather than here, so a partial
+    update is refused.
+    """
+    payload = request.get_json(silent=True) or {}
+    client_id = (payload.get('client_id') or '').strip()
+    client_secret = (payload.get('client_secret') or '').strip()
+
+    if not client_id or not client_secret:
+        return jsonify({
+            'error': 'Enter both the client ID and the client secret. Updating one '
+                     'without the other leaves the pair mismatched.'
+        }), 400
+    if len(client_id) > 256 or len(client_secret) > 1024:
+        return jsonify({'error': 'That value is longer than a Databricks credential.'}), 400
+
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    # Verify before storing. Credentials that do not work would otherwise be
+    # discovered by a collection job hours later.
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    if host and not host.startswith('http'):
+        host = f'https://{host}'
+    try:
+        import base64
+        import urllib.parse
+        import urllib.request
+
+        body = urllib.parse.urlencode({
+            'grant_type': 'client_credentials', 'scope': 'all-apis'}).encode()
+        credential = base64.b64encode(
+            f'{client_id}:{client_secret}'.encode()).decode()
+        probe = urllib.request.Request(
+            f'{host}/oidc/v1/token', data=body,
+            headers={'Authorization': f'Basic {credential}',
+                     'Content-Type': 'application/x-www-form-urlencoded'})
+        with urllib.request.urlopen(probe, timeout=30) as response:
+            if 'access_token' not in json.loads(response.read()):
+                return jsonify({'error': 'Those credentials did not return a token.'}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({
+            'error': 'Those credentials were rejected by the workspace. Check the '
+                     f'client ID and secret, then try again. ({str(exc)[:120]})'
+        }), 400
+
+    try:
+        for field, key in CREDENTIAL_KEYS.items():
+            value = client_id if field == 'client_id' else client_secret
+            client.secrets.put_secret(
+                scope=SAT_SECRET_SCOPE, key=key, string_value=value)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('writing credentials failed')
+        message = str(exc)
+        if 'PERMISSION_DENIED' in message or 'does not have' in message:
+            return jsonify({
+                'error': f'This app has read-only access to the {SAT_SECRET_SCOPE} '
+                         f'secret scope, so it cannot store credentials. An '
+                         f'administrator can grant it WRITE on that scope.'
+            }), 403
+        return jsonify({'error': f'Could not store the credentials: {message[:200]}'}), 500
+
+    logger.info('account credentials updated by %s', _assistant_user())
+    return jsonify({'saved': True})
+
+
 @app.route('/api/settings/choices')
 def api_settings_choices():
     """Values the settings panel offers in its selects."""
@@ -12933,12 +13201,14 @@ def api_settings():
     warehouse_id = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or ''
     schema = os.getenv('SAT_SCHEMA') or os.getenv('BRICKHOUND_SCHEMA') or ''
 
-    checks = []
+    probe_specs = []
 
     # 1. User identity / OBO. Checked from the request itself rather than config,
     # because an app can advertise a scope its forwarded token does not carry.
+    forwarded_token = request.headers.get('x-forwarded-access-token')
+
     def check_obo():
-        token = request.headers.get('x-forwarded-access-token')
+        token = forwarded_token
         if not token:
             return False, ('No user token is being forwarded, so queries cannot run '
                            'as the signed-in user.')
@@ -12947,7 +13217,7 @@ def api_settings():
                            "the Statement Execution API requires.")
         return True, 'Queries run as the signed-in user; Unity Catalog enforces their grants.'
 
-    checks.append(_settings_probe(
+    probe_specs.append((
         'User authorization (OBO)', check_obo,
         ("Scopes bind when the app is created, so they cannot be added to a running "
          "app. Redeploy with user_api_scopes: [sql, serving.serving-endpoints] "
@@ -12960,7 +13230,7 @@ def api_settings():
         name = getattr(me, 'user_name', None) or getattr(me, 'display_name', None)
         return True, f'Authenticated as {name}.'
 
-    checks.append(_settings_probe(
+    probe_specs.append((
         'App service principal', check_sp,
         ('The app cannot authenticate as itself. Its service principal may have been '
          'deleted or had its secret rotated. Redeploy the app so the platform issues '
@@ -12974,34 +13244,39 @@ def api_settings():
         state = str(getattr(wh, 'state', '') or '').split('.')[-1]
         return True, f'{getattr(wh, "name", warehouse_id)} ({state}).'
 
-    checks.append(_settings_probe(
+    probe_specs.append((
         'SQL warehouse', check_warehouse,
-        ('Bind a warehouse to the app with CAN_USE. Re-run the installer if the '
-         'binding is missing.')))
+        ('Choose a warehouse below, or grant this app CAN_USE on one in the '
+         'workspace.')))
 
     # 4. Can the configured schema actually be read, as the calling user?
+    # Resolved before the fan-out: exec_query_df reads the forwarded user token
+    # from the request, which a worker thread cannot see.
+    try:
+        query_client, query_warehouse = get_connection()
+    except Exception:  # noqa: BLE001
+        query_client, query_warehouse = None, None
+
     def check_schema():
         if not schema:
-            return False, 'No SAT schema is configured.'
-        # SELECT 1 must return exactly one row when the warehouse and grants are
-        # working. An empty result therefore means the query did not run, which is
-        # not distinguishable from "no data" if the probe counts rows in a table.
-        probe = exec_query_df('SELECT 1 AS ok')
-        if not probe:
-            return False, ('The warehouse did not return a result, so the schema '
-                           'could not be read. This is a connectivity or grants '
-                           'problem, not an absence of data.')
-        rows = exec_query_df(f'SELECT COUNT(*) AS n FROM {VERTICES_TABLE}')
-        if not rows:
-            return False, (f'Connected, but {schema} could not be read. Check '
-                           f'USE SCHEMA and SELECT on that schema.')
-        n = rows[0].get('n') or 0
-        return True, (f'{schema} is readable ({n} rows in the permissions graph).'
+            return False, 'No results schema is configured.'
+        if query_client is None:
+            return False, ('Could not connect to the warehouse as you, so the '
+                           'schema could not be read.')
+        # One statement, not two: a count over the graph both proves the warehouse
+        # answered and reports the row count. A separate SELECT 1 doubled the
+        # slowest probe in the panel for no extra information.
+        rows = _sql_rows(query_client, query_warehouse,
+                         f'SELECT COUNT(*) AS n FROM {VERTICES_TABLE}')
+        if rows is None:
+            return False, (f'Connected, but {schema} could not be read. Check that '
+                           f'you have USE SCHEMA and SELECT on it.')
+        n = rows[0][0] if rows and rows[0] else 0
+        return True, (f'{schema} is readable, holding {n} rows in the permissions graph.'
                       if n else
-                      f'{schema} is readable, but the permissions graph is empty. '
-                      f'Run the Permissions Graph collection.')
+                      f'{schema} is readable but empty. Run the Permissions Graph job.')
 
-    checks.append(_settings_probe(
+    probe_specs.append((
         'Unity Catalog access', check_schema,
         (f'Grant the signed-in user USE CATALOG on the catalog, plus USE SCHEMA and '
          f'SELECT on {schema or "the SAT schema"}. The app service principal needs '
@@ -13016,7 +13291,7 @@ def api_settings():
                 COLLECTION_JOBS[k]['label'] for k in missing))
         return True, f'All {len(configured)} collection jobs are connected.'
 
-    checks.append(_settings_probe(
+    probe_specs.append((
         'Collection jobs', check_jobs,
         ('These jobs are discovered by name in this workspace. Anything listed as '
          'not deployed has no matching job yet; deploy it with the installer and it '
@@ -13037,7 +13312,7 @@ def api_settings():
                            f"workspace ({len(names)} available).")
         return True, f'{endpoint} is serving.'
 
-    checks.append(_settings_probe(
+    probe_specs.append((
         'Security assistant model', check_model,
         ('Set MODEL_ENDPOINT to a chat-capable serving endpoint, or pick a different '
          'model from the assistant panel.')))
@@ -13060,22 +13335,22 @@ def api_settings():
         return True, (f'{managed} secret-scanning alert(s) configured.' if managed
                       else 'Alerts API reachable; none configured yet.')
 
-    checks.append(_settings_probe(
+    probe_specs.append((
         'Secret-scanning alerts', check_alerts,
         ('The app service principal needs permission to manage SQL alerts in this '
          'workspace, and databricks-sdk 0.51 or newer.')))
 
     # 8. Genie, which is optional by design.
     genie_space = (os.getenv('GENIE_SPACE_ID') or '').strip()
-    checks.append({
-        'label': 'Genie space (optional)',
+    genie_entry = {
+        'label': 'Genie space',
         'ok': True,
-        'detail': (f'Configured ({genie_space}).' if genie_space
-                   else 'Not configured. The assistant reports that tool as '
-                        'unavailable and keeps working.'),
+        'detail': (f'Connected to {genie_space}.' if genie_space
+                   else 'Not set. The assistant answers from its own tools instead.'),
         'optional': True,
-    })
+    }
 
+    checks = _run_settings_probes(probe_specs) + [genie_entry]
     failing = [c for c in checks if not c['ok']]
     return jsonify({
         'healthy': not failing,
