@@ -91,6 +91,7 @@ JOB_ID_SECRET_KEYS = {
     "brickhound_share_to_account": "shared-to-account-job-id",
     "brickhound_privileged_non_idp": "privileged-non-idp-job-id",
     "brickhound_denylist_candidates": "denylist-job-id",
+    "sat_code_scanner": "code-scanner-job-id",
 }
 
 # Job names as deployed, used to resolve ids when the bundle summary is
@@ -101,6 +102,7 @@ JOB_NAME_PATTERNS = {
     "brickhound_share_to_account": "Shared to Account Users",
     "brickhound_privileged_non_idp": "Privileged Non-IdP",
     "brickhound_denylist_candidates": "Denylist Candidates",
+    "sat_code_scanner": "Code Scanner",
 }
 
 
@@ -260,8 +262,7 @@ def verify(client, app_name: str, warehouse_id: str, uc_schema: str) -> list[dic
 
     def check_jobs():
         missing = []
-        for key in ("permissions-job-id", "secrets-job-id", "shared-to-account-job-id",
-                    "privileged-non-idp-job-id", "denylist-job-id"):
+        for key in JOB_ID_SECRET_KEYS.values():
             try:
                 value = client.secrets.get_secret(scope=SCOPE_NAME, key=key)
                 import base64

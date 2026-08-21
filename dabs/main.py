@@ -60,6 +60,7 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
         # Serverless still selects the compute the collection jobs run on.
         "serverless": answers.get("enable_serverless", True),
         "secrets_scanner_schedule": answers.get("secrets_scanner_schedule", "0 0 8 ? * *"),
+        "code_scanner_schedule": answers.get("code_scanner_schedule", "0 0 4 ? * *"),
         "job_timezone": answers.get("job_timezone", "UTC"),
         # Permissions analysis is core now; the flag stays for template compatibility.
         "enable_brickhound": True,

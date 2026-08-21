@@ -49,6 +49,8 @@ env:
     valueFrom: "privileged-non-idp-job-id"
   - name: "DENYLIST_JOB_ID"
     valueFrom: "denylist-job-id"
+  - name: "CODE_SCANNER_JOB_ID"
+    valueFrom: "code-scanner-job-id"
 
 resources:
   compute:

@@ -8,6 +8,10 @@ The **Security Analysis Tool (SAT)** analyzes your Databricks account and worksp
 
 Refer to the [SAT documentation](https://databricks-industry-solutions.github.io/security-analysis-tool/) for detailed information on how to use SAT, its features, and configuration options.
 
+Feature-specific notes live alongside the code:
+
+- [Code security scanning](notebooks/Includes/scan_code/README.md) — static analysis of notebook source and vulnerability scanning of declared dependencies, including the external hosts Trivy needs.
+
 ## Project Support
 
 The code in this project is provided **for exploration purposes only** and is **not formally supported** by Databricks under any Service Level Agreements (SLAs). It is provided **AS-IS**, without any warranties or guarantees.  

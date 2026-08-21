@@ -388,11 +388,13 @@ class Supervisor:
             kwargs: dict[str, Any] = {
                 "model": endpoint,
                 "messages": messages,
-                # Recorded by the gateway in system.serving.endpoint_usage.
-                "extra_body": {"usage_context": usage_context},
-                # Correlates a gateway row back to this turn and iteration.
-                "extra_headers": {
-                    "x-databricks-client-request-id": f"sat-{session_id}-{iteration}",
+                # Both fields are recorded by the gateway in
+                # system.serving.endpoint_usage. client_request_id must travel in
+                # the request body: sent as a header it is silently dropped, which
+                # left that column empty for every call the app had made.
+                "extra_body": {
+                    "usage_context": usage_context,
+                    "client_request_id": f"sat-{session_id}-{iteration}",
                 },
             }
             if self.registry.tools:

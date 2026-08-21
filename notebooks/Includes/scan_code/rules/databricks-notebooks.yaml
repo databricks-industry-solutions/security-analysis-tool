@@ -1,0 +1,126 @@
+# Semgrep rules for Databricks notebooks and workspace files.
+#
+# Scope is deliberately narrow. Community rule packs target web applications and
+# produce mostly irrelevant findings against notebook code, so this file covers
+# only patterns that are both specific to Databricks and materially risky.
+#
+# Injection rules use taint mode rather than syntactic matching: a rule that
+# flags every f-string passed to spark.sql also flags spark.sql(f"OPTIMIZE
+# {table}"), which is safe, and a scanner that cries wolf gets switched off.
+rules:
+  - id: databricks-widget-sql-injection
+    languages: [python]
+    severity: ERROR
+    mode: taint
+    message: >-
+      Widget or job-parameter input reaches spark.sql() unsanitised, allowing
+      SQL injection. Pass values with parameter markers instead:
+      spark.sql("... WHERE id = :id", args={"id": value}).
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      confidence: HIGH
+    pattern-sources:
+      - pattern: dbutils.widgets.get(...)
+      - pattern: dbutils.widgets.getArgument(...)
+    pattern-sinks:
+      - pattern: spark.sql(...)
+      - pattern: spark.read.jdbc(..., query=..., ...)
+    pattern-sanitizers:
+      - pattern: spark.sql($Q, args=...)
+
+  - id: databricks-secret-written-to-output
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Secret values printed or displayed are written to notebook cell output and
+      to job run logs, which have wider read access than the secret scope.
+    metadata:
+      category: security
+      cwe: "CWE-532: Insertion of Sensitive Information into Log File"
+      confidence: HIGH
+    pattern-either:
+      - pattern: print(..., dbutils.secrets.get(...), ...)
+      - pattern: display(dbutils.secrets.get(...))
+      - pattern: displayHTML(..., dbutils.secrets.get(...), ...)
+      - pattern: |
+          $V = dbutils.secrets.get(...)
+          ...
+          print(..., $V, ...)
+
+  - id: databricks-tls-verification-disabled
+    languages: [python]
+    severity: ERROR
+    message: >-
+      TLS certificate verification is disabled, so this request can be
+      intercepted. Remove verify=False, or pass a CA bundle path.
+    metadata:
+      category: security
+      cwe: "CWE-295: Improper Certificate Validation"
+      confidence: HIGH
+    pattern-either:
+      - pattern: requests.$M(..., verify=False, ...)
+      - pattern: httpx.$M(..., verify=False, ...)
+
+  - id: databricks-unsafe-deserialization-from-storage
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Deserialising from DBFS or a mount executes arbitrary code if the file is
+      writable by others. Load models through MLflow, or restrict the path to a
+      Unity Catalog volume with controlled write access.
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: pickle.load($F)
+      - pattern: pickle.loads(...)
+      - pattern: yaml.load($F)
+      - pattern: torch.load(...)
+    pattern-not:
+      - pattern: yaml.load($F, Loader=yaml.SafeLoader)
+      - pattern: yaml.load($F, $L)
+
+  - id: databricks-credential-in-spark-conf
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Credentials set through spark.conf are readable by anyone who can attach to
+      this cluster and appear in the Spark UI. Read them from a secret scope at
+      point of use instead.
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: spark.conf.set("=~/.*(secret|password|key|token|credential).*/i", "...")
+      - pattern: sc._jsc.hadoopConfiguration().set("=~/.*(secret|password|key).*/i", "...")
+
+  - id: databricks-governed-data-to-unmanaged-path
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Writing to /dbfs or /tmp moves data onto storage that Unity Catalog does
+      not govern, bypassing the access controls on the source table.
+    metadata:
+      category: security
+      cwe: "CWE-200: Exposure of Sensitive Information"
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: $D.to_csv("=~/^\/(dbfs|tmp)\/.*/")
+      - pattern: $D.to_parquet("=~/^\/(dbfs|tmp)\/.*/")
+      - pattern: $D.to_json("=~/^\/(dbfs|tmp)\/.*/")
+
+  - id: databricks-external-token-in-source
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A Databricks personal access token is hardcoded here. Move it to a secret
+      scope; tokens in notebook source are readable by everyone with access to
+      the notebook and persist in revision history.
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      confidence: HIGH
+    pattern-regex: (?i)\b(dapi[0-9a-f]{32}|dkea[0-9a-f]{32})\b

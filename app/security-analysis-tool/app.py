@@ -2771,6 +2771,18 @@ def get_main_html():
                             Alerts
                         </div>
                     </div>
+
+                    <div class="nav-section">
+                        <div class="nav-label">🧩 Code Security</div>
+                        <div class="nav-item" data-page="codeoverview">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                            Code Overview
+                        </div>
+                        <div class="nav-item" data-page="codefindings">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+                            Code Findings
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Spacer to push footer to bottom -->
@@ -2823,7 +2835,8 @@ def get_main_html():
                             const noStatsBar = ['home', 'sharedtoaccount', 'privilegednonidp',
                                                 'denylistbuilder', 'collection',
                                                 'secretsoverview', 'secretsfindings',
-                                                'secretsalerts', 'settings'];
+                                                'secretsalerts', 'codeoverview',
+                                                'codefindings', 'settings'];
                             const bar = document.getElementById('stats-header-bar');
                             if (bar && noStatsBar.includes(hash)) bar.style.display = 'none';
                         });
@@ -3299,6 +3312,53 @@ def get_main_html():
             </div>
 
             <!-- Secret Findings (detail table) -->
+            <!-- Code Security Overview Page -->
+            <div class="page" id="page-codeoverview">
+                <div class="page-header">
+                    <h1 class="page-title">Code Overview</h1>
+                    <p class="page-desc">Insecure patterns found in notebook and file source, and known vulnerabilities in the packages that code declares. Two independent scanners: one reads your code, the other checks your dependencies against published CVEs.</p>
+                </div>
+                <div id="codeoverview-results"></div>
+            </div>
+
+            <!-- Code Findings Page -->
+            <div class="page" id="page-codefindings">
+                <div class="page-header">
+                    <h1 class="page-title">Code Findings</h1>
+                    <p class="page-desc">Every finding from the most recent scan. Filter by scanner, severity, or search for a path, rule, or package.</p>
+                </div>
+                <div class="card" style="padding:16px 18px;margin-bottom:18px;">
+                    <div class="alert-field-grid">
+                        <div class="alert-field">
+                            <label for="cf-scanner">Scanner</label>
+                            <select id="cf-scanner">
+                                <option value="">All scanners</option>
+                                <option value="semgrep">Code patterns</option>
+                                <option value="trivy">Dependencies</option>
+                            </select>
+                        </div>
+                        <div class="alert-field">
+                            <label for="cf-severity">Severity</label>
+                            <select id="cf-severity">
+                                <option value="">All severities</option>
+                                <option value="CRITICAL">Critical</option>
+                                <option value="HIGH">High</option>
+                                <option value="MEDIUM">Medium</option>
+                                <option value="LOW">Low</option>
+                            </select>
+                        </div>
+                        <div class="alert-field wide">
+                            <label for="cf-search">Search</label>
+                            <input id="cf-search" type="text" placeholder="Path, rule, or package name">
+                        </div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;">
+                        <button class="btn btn-sm" onclick="runCodeFindings()">Apply</button>
+                    </div>
+                </div>
+                <div id="codefindings-results"></div>
+            </div>
+
             <!-- Settings / Health Page -->
             <div class="page" id="page-settings">
                 <div class="page-header">
@@ -3466,7 +3526,8 @@ def get_main_html():
             // Collection, which reports freshness for every job itself.
             const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder',
                                        'collection', 'secretsoverview', 'secretsfindings',
-                                       'secretsalerts', 'settings'];
+                                       'secretsalerts', 'codeoverview',
+                                       'codefindings', 'settings'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
@@ -3483,6 +3544,8 @@ def get_main_html():
             else if (page === 'secretsoverview') loadSecretsOverview();
             else if (page === 'secretsfindings') loadSecretsFindings();
             else if (page === 'secretsalerts') loadSecretsAlerts();
+            else if (page === 'codeoverview') loadCodeOverview();
+            else if (page === 'codefindings') loadCodeFindings();
             else if (page === 'settings') loadSettings();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
@@ -5731,6 +5794,249 @@ def get_main_html():
         }
 
         let secretsFiltersLoaded = false;
+
+        // --- Code security ----------------------------------------------------
+        const CODE_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+
+        function codeSeverityPill(severity) {
+            const s = String(severity || '').toUpperCase();
+            const tone = s === 'CRITICAL' ? 'triggered'
+                : s === 'HIGH' ? 'error'
+                : s === 'MEDIUM' ? 'unknown' : 'paused';
+            const label = s ? s.charAt(0) + s.slice(1).toLowerCase() : 'Unknown';
+            return `<span class="alert-pill ${tone}">${label}</span>`;
+        }
+
+        function codeScannerLabel(scanner) {
+            return scanner === 'trivy' ? 'Dependency' : 'Code pattern';
+        }
+
+        function showCodeNotReady(containerId, message) {
+            document.getElementById(containerId).innerHTML = `
+                <div class="alert-empty">
+                    <div class="alert-empty-title">No code scan yet</div>
+                    <div class="alert-empty-sub">${escapeHtml(message || 'Run the Code Scanner to analyse workspace code.')}</div>
+                    <button class="btn btn-sm" onclick="document.querySelector('[data-page=&quot;collection&quot;]').click()">Open Data Collection</button>
+                </div>`;
+        }
+
+        async function loadCodeOverview() {
+            const container = document.getElementById('codeoverview-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading code scan results…</div>';
+            try {
+                const [summary, rules, objects, packages] = await Promise.all([
+                    fetch('/api/code/summary').then(r => r.json()),
+                    fetch('/api/code/by-rule').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/code/top-objects').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/code/vulnerable-packages').then(r => r.json()).catch(() => ({})),
+                ]);
+                if (summary.ready === false) { showCodeNotReady('codeoverview-results', summary.message); return; }
+                if (summary.error) { showEmpty('codeoverview-results', summary.error); return; }
+                renderCodeOverview(summary, rules, objects, packages);
+            } catch (e) {
+                showEmpty('codeoverview-results', 'Failed to load code scan results: ' + e.message);
+            }
+        }
+
+        function renderCodeOverview(summary, rules, objects, packages) {
+            const s = summary.summary || {};
+            const run = summary.run || {};
+            const total = Number(s.total_findings || 0);
+            const critical = Number(s.critical || 0);
+            const high = Number(s.high || 0);
+
+            let html = '';
+
+            // A scanner that could not run makes a low finding count misleading,
+            // so its status is stated before any totals.
+            const degraded = [];
+            const semgrepStatus = String(run.semgrep_status || '');
+            const trivyStatus = String(run.trivy_status || '');
+            if (semgrepStatus && semgrepStatus !== 'ready') degraded.push('Code patterns: ' + semgrepStatus);
+            if (trivyStatus && trivyStatus !== 'ready') degraded.push('Dependencies: ' + trivyStatus);
+            if (degraded.length) {
+                html += `
+                    <div class="settings-banner bad">
+                        <div>
+                            <div class="settings-banner-title">Partial scan</div>
+                            <div class="settings-banner-sub">
+                                ${degraded.map(escapeHtml).join('<br>')}
+                            </div>
+                        </div>
+                    </div>`;
+            } else if (critical + high > 0) {
+                html += `
+                    <div class="settings-banner bad">
+                        <div>
+                            <div class="settings-banner-title">${critical + high} finding${critical + high === 1 ? '' : 's'} at high or critical severity</div>
+                            <div class="settings-banner-sub">Review these first: they are exploitable or have a published fix available.</div>
+                        </div>
+                    </div>`;
+            }
+
+            html += `
+                <div class="card secret-summary">
+                    <div class="secret-section-title">Scan Summary</div>
+                    <div class="secret-stat-grid">
+                        ${secretStatBlock('Critical', critical, critical > 0 ? '#ef4444' : '#22c55e')}
+                        ${secretStatBlock('High', high, high > 0 ? '#f59e0b' : '#22c55e')}
+                        ${secretStatBlock('Medium', Number(s.medium || 0), '#3b82f6')}
+                        ${secretStatBlock('Low', Number(s.low || 0), '#64748b')}
+                        ${secretStatBlock('Code patterns', Number(s.code_findings || 0), '#8b5cf6')}
+                        ${secretStatBlock('Vulnerable packages', Number(s.vulnerable_packages || 0), '#8b5cf6')}
+                    </div>
+                    <div class="secret-summary-foot">
+                        ${Number(run.objects_scanned || 0)} object${Number(run.objects_scanned) === 1 ? '' : 's'} scanned
+                        &middot; ${Number(run.pinned_packages || 0)} pinned package${Number(run.pinned_packages) === 1 ? '' : 's'} checked
+                        ${s.last_scan_time ? '&middot; last scan ' + escapeHtml(String(s.last_scan_time).slice(0, 16).replace('T', ' ')) : ''}
+                    </div>
+                </div>`;
+
+            if (run.notes) {
+                html += `
+                    <div class="settings-note" style="margin-bottom:16px;">
+                        ${escapeHtml(run.notes)}. Pin these to an exact version to include them in vulnerability checks.
+                    </div>`;
+            }
+
+            const ruleRows = (rules && rules.rows) || [];
+            const packageRows = (packages && packages.rows) || [];
+            html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:16px;">';
+
+            if (ruleRows.length) {
+                html += `
+                    <div class="card secret-table-card">
+                        <div class="secret-section-title">Findings by Rule</div>
+                        <table class="data-table">
+                            <thead><tr><th>Severity</th><th>Rule</th><th style="text-align:right;">Findings</th><th style="text-align:right;">Objects</th></tr></thead>
+                            <tbody>
+                                ${ruleRows.map(r => `
+                                    <tr>
+                                        <td>${codeSeverityPill(r.severity)}</td>
+                                        <td class="truncate" style="max-width:260px;">${escapeHtml(r.rule_id)}</td>
+                                        <td style="text-align:right;font-weight:600;">${r.findings}</td>
+                                        <td style="text-align:right;">${r.objects}</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            }
+
+            if (packageRows.length) {
+                html += `
+                    <div class="card secret-table-card">
+                        <div class="secret-section-title">Vulnerable Packages</div>
+                        <div class="secret-card-sub">Upgrade to the fixed version to clear every CVE listed for that package.</div>
+                        <table class="data-table">
+                            <thead><tr><th>Package</th><th>Installed</th><th>Fixed in</th><th style="text-align:right;">CVEs</th></tr></thead>
+                            <tbody>
+                                ${packageRows.map(r => `
+                                    <tr>
+                                        <td>${escapeHtml(r.package_name)}</td>
+                                        <td class="mono">${escapeHtml(r.installed_version)}</td>
+                                        <td class="mono">${escapeHtml(r.fixed_version || '—')}</td>
+                                        <td style="text-align:right;font-weight:600;">${r.cves}</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            }
+            html += '</div>';
+
+            const objectRows = (objects && objects.rows) || [];
+            if (objectRows.length) {
+                html += `
+                    <div class="card secret-table-card">
+                        <div class="secret-section-title">Most Affected Objects</div>
+                        <div class="secret-card-sub">Notebooks and files with the most code findings, highest severity first.</div>
+                        <table class="data-table">
+                            <thead><tr><th>Object</th><th style="text-align:right;">Findings</th><th style="text-align:right;">High or critical</th><th style="text-align:right;">Rules</th></tr></thead>
+                            <tbody>
+                                ${objectRows.map(r => `
+                                    <tr>
+                                        <td class="mono truncate">${escapeHtml(r.object_path)}</td>
+                                        <td style="text-align:right;font-weight:600;">${r.findings}</td>
+                                        <td style="text-align:right;">${Number(r.severe) > 0
+                                            ? `<span style="color:#fca5a5;font-weight:600;">${r.severe}</span>` : '—'}</td>
+                                        <td style="text-align:right;">${r.rules}</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            }
+
+            if (total === 0 && !degraded.length) {
+                html += `
+                    <div class="card" style="padding:22px;text-align:center;">
+                        <div style="font-weight:600;color:#22c55e;margin-bottom:4px;">No code security findings</div>
+                        <div style="font-size:.88em;color:var(--text-muted);">
+                            ${Number(run.objects_scanned || 0)} object${Number(run.objects_scanned) === 1 ? '' : 's'} and
+                            ${Number(run.pinned_packages || 0)} package${Number(run.pinned_packages) === 1 ? '' : 's'} scanned clean.
+                        </div>
+                    </div>`;
+            }
+
+            document.getElementById('codeoverview-results').innerHTML = html;
+        }
+
+        function loadCodeFindings() {
+            runCodeFindings();
+        }
+
+        async function runCodeFindings() {
+            const container = document.getElementById('codefindings-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading findings…</div>';
+
+            const params = new URLSearchParams();
+            const scanner = document.getElementById('cf-scanner').value;
+            const severity = document.getElementById('cf-severity').value;
+            const search = document.getElementById('cf-search').value.trim();
+            if (scanner) params.set('scanner', scanner);
+            if (severity) params.set('severity', severity);
+            if (search) params.set('q', search);
+
+            try {
+                const result = await fetch('/api/code/findings?' + params.toString()).then(r => r.json());
+                if (result.ready === false) { showCodeNotReady('codefindings-results', result.message); return; }
+                if (result.error) { showEmpty('codefindings-results', result.error); return; }
+
+                const rows = result.rows || [];
+                if (!rows.length) { showEmpty('codefindings-results', 'No findings match these filters.'); return; }
+
+                container.innerHTML = `
+                    <div class="results-container">
+                        <div class="results-header">
+                            <div class="results-title">${result.count} finding${result.count === 1 ? '' : 's'}${result.truncated ? ' (showing the first 500)' : ''}</div>
+                        </div>
+                        <table class="data-table data-table-padded">
+                            <thead><tr>
+                                <th>Severity</th><th>Type</th><th>Rule</th><th>Object</th>
+                                <th>Detail</th><th style="text-align:right;">Line</th>
+                            </tr></thead>
+                            <tbody>
+                                ${rows.map(r => `
+                                    <tr>
+                                        <td>${codeSeverityPill(r.severity)}</td>
+                                        <td style="white-space:nowrap;">${escapeHtml(codeScannerLabel(r.scanner))}</td>
+                                        <td class="truncate" style="max-width:230px;">
+                                            ${r.reference_url
+                                                ? `<a href="${escapeHtml(r.reference_url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">${escapeHtml(r.rule_id)}</a>`
+                                                : escapeHtml(r.rule_id)}
+                                        </td>
+                                        <td class="mono truncate" style="max-width:260px;">${escapeHtml(r.object_path)}</td>
+                                        <td class="truncate" style="max-width:340px;">${escapeHtml(
+                                            r.scanner === 'trivy'
+                                                ? `${r.package_name} ${r.installed_version}` + (r.fixed_version ? ` → ${r.fixed_version}` : '')
+                                                : (r.description || ''))}</td>
+                                        <td style="text-align:right;">${r.line_start === null || r.line_start === undefined ? '—' : r.line_start}</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            } catch (e) {
+                showEmpty('codefindings-results', 'Failed to load findings: ' + e.message);
+            }
+        }
 
         // --- Settings / health ------------------------------------------------
         // Reports whether each dependency is reachable. Configuration is shown
@@ -12009,6 +12315,223 @@ def _model_endpoint_available(endpoint_name):
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Code security
+#
+# Findings from the code scanner job: Semgrep for insecure patterns in notebook
+# and file source, Trivy for known vulnerabilities in the packages that code
+# declares. Each scan writes one row per finding plus a run record; these
+# endpoints read the newest run per workspace.
+# ---------------------------------------------------------------------------
+
+CODE_FINDINGS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.code_scan_findings"
+CODE_RUNS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.code_scan_runs"
+
+SEVERITY_ORDER = "CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END"
+
+
+def _code_scan_ready():
+    """(ready, message) for the code scanner's tables.
+
+    A missing table means the job has not run, which is reported as a state
+    rather than an error: the page explains how to start a scan instead of
+    showing a failure.
+    """
+    if not _secrets_table_present('code_scan_findings'):
+        return False, ('No code scan has run yet. Start the Code Scanner from '
+                       'Data Collection to analyse notebook source and declared '
+                       'dependencies.')
+    return True, None
+
+
+def _latest_code_runs():
+    return f"""latest AS (
+        SELECT workspace_id, MAX(run_id) AS run_id
+        FROM {CODE_FINDINGS_TABLE}
+        GROUP BY workspace_id
+    )"""
+
+
+@app.route('/api/code/summary')
+def api_code_summary():
+    ready, message = _code_scan_ready()
+    if not ready:
+        return jsonify({'ready': False, 'message': message})
+
+    try:
+        rows = exec_query_df(f"""
+            WITH {_latest_code_runs()}
+            SELECT
+              COUNT(*) AS total_findings,
+              COUNT(DISTINCT f.object_path) AS affected_objects,
+              SUM(CASE WHEN f.severity = 'CRITICAL' THEN 1 ELSE 0 END) AS critical,
+              SUM(CASE WHEN f.severity = 'HIGH' THEN 1 ELSE 0 END) AS high,
+              SUM(CASE WHEN f.severity = 'MEDIUM' THEN 1 ELSE 0 END) AS medium,
+              SUM(CASE WHEN f.severity = 'LOW' THEN 1 ELSE 0 END) AS low,
+              SUM(CASE WHEN f.scanner = 'semgrep' THEN 1 ELSE 0 END) AS code_findings,
+              SUM(CASE WHEN f.scanner = 'trivy' THEN 1 ELSE 0 END) AS dependency_findings,
+              COUNT(DISTINCT CASE WHEN f.scanner = 'trivy' THEN f.package_name END) AS vulnerable_packages,
+              MAX(f.scan_time) AS last_scan_time
+            FROM {CODE_FINDINGS_TABLE} f
+            JOIN latest l ON l.workspace_id = f.workspace_id AND l.run_id = f.run_id
+        """)
+    except NoAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('code summary failed')
+        return jsonify({'error': str(exc)}), 500
+
+    summary = rows[0] if rows else {}
+
+    # The run record carries scanner status, which is how a scan that completed
+    # without one of its tools is distinguished from a genuinely clean workspace.
+    run = {}
+    try:
+        run_rows = exec_query_df(f"""
+            SELECT semgrep_status, trivy_status, objects_scanned,
+                   pinned_packages, unpinned_packages, notes, finished_at
+            FROM {CODE_RUNS_TABLE}
+            ORDER BY run_id DESC
+            LIMIT 1
+        """)
+        run = run_rows[0] if run_rows else {}
+    except Exception:  # noqa: BLE001 - the run table is supplementary
+        logger.info('code scan run record unavailable', exc_info=True)
+
+    return jsonify({'ready': True, 'summary': summary, 'run': run})
+
+
+@app.route('/api/code/by-rule')
+def api_code_by_rule():
+    ready, message = _code_scan_ready()
+    if not ready:
+        return jsonify({'ready': False, 'message': message})
+    try:
+        rows = exec_query_df(f"""
+            WITH {_latest_code_runs()}
+            SELECT f.scanner, f.rule_id, f.severity, MAX(f.title) AS title,
+                   COUNT(*) AS findings,
+                   COUNT(DISTINCT f.object_path) AS objects
+            FROM {CODE_FINDINGS_TABLE} f
+            JOIN latest l ON l.workspace_id = f.workspace_id AND l.run_id = f.run_id
+            GROUP BY f.scanner, f.rule_id, f.severity
+            ORDER BY {SEVERITY_ORDER}, findings DESC
+            LIMIT 100
+        """)
+    except NoAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+    return jsonify({'ready': True, 'rows': rows})
+
+
+@app.route('/api/code/top-objects')
+def api_code_top_objects():
+    ready, message = _code_scan_ready()
+    if not ready:
+        return jsonify({'ready': False, 'message': message})
+    try:
+        rows = exec_query_df(f"""
+            WITH {_latest_code_runs()}
+            SELECT f.object_path,
+                   COUNT(*) AS findings,
+                   SUM(CASE WHEN f.severity IN ('CRITICAL', 'HIGH') THEN 1 ELSE 0 END) AS severe,
+                   COUNT(DISTINCT f.rule_id) AS rules
+            FROM {CODE_FINDINGS_TABLE} f
+            JOIN latest l ON l.workspace_id = f.workspace_id AND l.run_id = f.run_id
+            WHERE f.scanner = 'semgrep'
+            GROUP BY f.object_path
+            ORDER BY severe DESC, findings DESC
+            LIMIT 25
+        """)
+    except NoAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+    return jsonify({'ready': True, 'rows': rows})
+
+
+@app.route('/api/code/vulnerable-packages')
+def api_code_vulnerable_packages():
+    ready, message = _code_scan_ready()
+    if not ready:
+        return jsonify({'ready': False, 'message': message})
+    try:
+        rows = exec_query_df(f"""
+            WITH {_latest_code_runs()}
+            SELECT f.package_name, f.installed_version,
+                   MAX(f.fixed_version) AS fixed_version,
+                   COUNT(*) AS cves,
+                   SUM(CASE WHEN f.severity = 'CRITICAL' THEN 1 ELSE 0 END) AS critical,
+                   SUM(CASE WHEN f.severity = 'HIGH' THEN 1 ELSE 0 END) AS high
+            FROM {CODE_FINDINGS_TABLE} f
+            JOIN latest l ON l.workspace_id = f.workspace_id AND l.run_id = f.run_id
+            WHERE f.scanner = 'trivy' AND f.package_name <> ''
+            GROUP BY f.package_name, f.installed_version
+            ORDER BY critical DESC, high DESC, cves DESC
+            LIMIT 50
+        """)
+    except NoAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+    return jsonify({'ready': True, 'rows': rows})
+
+
+@app.route('/api/code/findings')
+def api_code_findings():
+    ready, message = _code_scan_ready()
+    if not ready:
+        return jsonify({'ready': False, 'message': message})
+
+    scanner = (request.args.get('scanner') or '').strip().lower()
+    severity = (request.args.get('severity') or '').strip().upper()
+    search = (request.args.get('q') or '').strip()
+
+    filters = []
+    if scanner in ('semgrep', 'trivy'):
+        filters.append(f"f.scanner = '{scanner}'")
+    if severity in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW'):
+        filters.append(f"f.severity = '{severity}'")
+    if search:
+        safe = search.replace("'", "''").replace('%', r'\%').replace('_', r'\_')
+        filters.append(
+            f"(lower(f.object_path) LIKE lower('%{safe}%') ESCAPE '\\' "
+            f"OR lower(f.rule_id) LIKE lower('%{safe}%') ESCAPE '\\' "
+            f"OR lower(f.package_name) LIKE lower('%{safe}%') ESCAPE '\\')"
+        )
+    where = ('AND ' + ' AND '.join(filters)) if filters else ''
+
+    limit = 500
+    try:
+        rows = exec_query_df(f"""
+            WITH {_latest_code_runs()}
+            SELECT f.scanner, f.rule_id, f.severity, f.title, f.description,
+                   f.object_path, f.line_start, f.package_name,
+                   f.installed_version, f.fixed_version, f.reference_url,
+                   f.scan_time
+            FROM {CODE_FINDINGS_TABLE} f
+            JOIN latest l ON l.workspace_id = f.workspace_id AND l.run_id = f.run_id
+            WHERE 1 = 1 {where}
+            ORDER BY {SEVERITY_ORDER}, f.object_path
+            LIMIT {limit + 1}
+        """)
+    except NoAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('code findings failed')
+        return jsonify({'error': str(exc)}), 500
+
+    truncated = len(rows) > limit
+    return jsonify({
+        'ready': True,
+        'rows': rows[:limit],
+        'count': min(len(rows), limit),
+        'truncated': truncated,
+    })
+
+
 # ---------------------------------------------------------------------------
 # Settings and health
 #
@@ -13077,10 +13600,17 @@ COLLECTION_JOBS = {
         'env': ('DENYLIST_JOB_ID',),
         'feeds': 'Denylist Builder',
     },
+    'code_scanner': {
+        'label': 'Code Scanner',
+        'group': 'Code',
+        'description': 'Analyses notebook and file source for insecure patterns, and declared packages for known vulnerabilities.',
+        'env': ('CODE_SCANNER_JOB_ID', 'DATABRICKS_JOB_ID_CODE_SCANNER_JOB'),
+        'feeds': 'Code security overview, code findings',
+    },
 }
 
 # Display order for the groups above.
-COLLECTION_GROUPS = ('Access', 'Identity', 'Secrets')
+COLLECTION_GROUPS = ('Access', 'Identity', 'Secrets', 'Code')
 
 # Run states that mean a collection is still in flight.
 _ACTIVE_RUN_STATES = {
