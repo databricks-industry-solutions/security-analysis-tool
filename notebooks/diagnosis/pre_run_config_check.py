@@ -58,47 +58,29 @@ cloud_type = getCloudType(hostname)
 
 # COMMAND ----------
 
+scope = json_["master_name_scope"]
+workspace_only = bool(json_.get("workspace_only"))
+required_secrets = ["sql-warehouse-id", "analysis_schema_name"]
+if not workspace_only:
+    required_secrets.append("account-console-id")
 
-if cloud_type == "aws":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration is has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
+if cloud_type in ("aws", "gcp"):
+    required_secrets.extend(["client-id", "client-secret", "use-sp-auth"])
+elif cloud_type == "azure":
+    # Workspace OAuth always needs the AAD app (tenant/client/secret).
+    # subscription-id is Azure Management (GOV-3) only.
+    required_secrets.extend(["tenant-id", "client-id", "client-secret"])
+    if (not workspace_only) or any_check_enabled("8", cloud_type=cloud_type):
+        required_secrets.append("subscription-id")
 
-# COMMAND ----------
-
-if cloud_type == "azure":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='subscription-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='tenant-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
-
-# COMMAND ----------
-
-if cloud_type == "gcp":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration is has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')
+try:
+    for key in required_secrets:
+        dbutils.secrets.get(scope=scope, key=key)
+    print("Your SAT configuration has required secret names")
+except Exception as e:
+    dbutils.notebook.exit(
+        f"Your SAT configuration is missing required secret, please review setup instructions {e}"
+    )
 
 # COMMAND ----------
 
