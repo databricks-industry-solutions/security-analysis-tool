@@ -54,6 +54,9 @@ loggr = LoggingUtils.get_logger()
 # COMMAND ----------
 
 spark.sql(f"USE {json_['intermediate_schema']}")
+acct_ws_exists = spark.catalog.tableExists("acctworkspaces")
+if not acct_ws_exists:
+    loggr.info("Skipping AS-* stats that read acctworkspaces; table was not collected")
 
 # COMMAND ----------
 
@@ -68,7 +71,8 @@ def getAccountId(df):
   else:
     return ('AS-1', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountId, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountId, True)
 
 # COMMAND ----------
 
@@ -85,7 +89,8 @@ def getAccountRegion(df):
   else:
     return ('AS-2', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountRegion, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountRegion, True)
 
 # COMMAND ----------
 
@@ -95,7 +100,8 @@ def getDeploymentName(df):
   else:
     return ('AS-3', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getDeploymentName, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getDeploymentName, True)
 
 # COMMAND ----------
 
@@ -105,7 +111,8 @@ def getPricingTier(df):
   else:
     return ('AS-4', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getPricingTier, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getPricingTier, True)
 
 # COMMAND ----------
 
@@ -122,7 +129,8 @@ def getWorkspaceStatus(df):
   else:
     return ('AS-6', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getWorkspaceStatus, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getWorkspaceStatus, True)
 
 # COMMAND ----------
 

@@ -47,6 +47,23 @@ loggr = LoggingUtils.get_logger()
 
 hostname = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
 cloud_type = getCloudType(hostname)
+json_.update({"cloud_type": cloud_type})
+
+# Account-level SAT checks that consume collectors in this notebook.
+# Azure GOV-3 (8) is collected in workspace_bootstrap, not here.
+_account_check_ids = ["3", "35", "36", "39", "103", "110", "111", "112", "119", "122", "124"]
+if cloud_type != "azure":
+    _account_check_ids.append("8")
+need_account_collectors = any_check_enabled(*_account_check_ids, cloud_type=cloud_type)
+
+# COMMAND ----------
+
+# Skip account APIs when the driver has no enabled account-level checks.
+# Setup initializer still needs a connection and the workspace list.
+if (originstr == "driver" or test) and not need_account_collectors:
+    loggr.info("Skipping account API collection; no enabled account-level checks")
+    print(f"Account Bootstrap skipped - {time.time() - start_time} seconds")
+    dbutils.notebook.exit("Account Bootstrap skipped; no enabled account-level checks")
 
 # COMMAND ----------
 
@@ -138,7 +155,10 @@ if originstr == 'initializer' and not test:
     bootstrap('acctworkspaces', acct_client.get_workspace_list)
     dbutils.notebook.exit('Account Initialization Complete')
 if originstr == 'driver' or test: # we need this during driver for workspace settings
-    bootstrap('acctworkspaces', acct_client.get_workspace_list)
+    if any_check_enabled("3", "35", "36", "39", "111", "122", cloud_type=cloud_type):
+        bootstrap('acctworkspaces', acct_client.get_workspace_list)
+    else:
+        loggr.info("Skipping acctworkspaces; related checks are disabled")
 
 
 # COMMAND ----------
@@ -148,7 +168,9 @@ if originstr == 'driver' or test: # we need this during driver for workspace set
 
 # COMMAND ----------
 
-bootstrap('acctcredentials', acct_client.get_credentials_list)
+# No SAT check reads this table. Left commented for reference.
+# bootstrap('acctcredentials', acct_client.get_credentials_list)
+loggr.info("Skipping acctcredentials; no SAT check uses this collector")
 
 # COMMAND ----------
 
@@ -157,7 +179,9 @@ bootstrap('acctcredentials', acct_client.get_credentials_list)
 
 # COMMAND ----------
 
-bootstrap('acctnetwork', acct_client.get_network_list)
+# No SAT check reads this table. Left commented for reference.
+# bootstrap('acctnetwork', acct_client.get_network_list)
+loggr.info("Skipping acctnetwork; no SAT check uses this collector")
 
 # COMMAND ----------
 
@@ -166,7 +190,9 @@ bootstrap('acctnetwork', acct_client.get_network_list)
 
 # COMMAND ----------
 
-bootstrap('acctstorage', acct_client.get_storage_list)
+# No SAT check reads this table. Left commented for reference.
+# bootstrap('acctstorage', acct_client.get_storage_list)
+loggr.info("Skipping acctstorage; no SAT check uses this collector")
 
 # COMMAND ----------
 
@@ -175,7 +201,9 @@ bootstrap('acctstorage', acct_client.get_storage_list)
 
 # COMMAND ----------
 
-bootstrap('acctcmk', acct_client.get_cmk_list)
+# No SAT check reads this table. Left commented for reference.
+# bootstrap('acctcmk', acct_client.get_cmk_list)
+loggr.info("Skipping acctcmk; no SAT check uses this collector")
 
 # COMMAND ----------
 
@@ -185,8 +213,10 @@ bootstrap('acctcmk', acct_client.get_cmk_list)
 # COMMAND ----------
 
 # only for azure. we go through the management api that does it on a workspace level
-if cloud_type !='azure':
+if cloud_type !='azure' and any_check_enabled("8", cloud_type=cloud_type):
     bootstrap('acctlogdelivery', acct_client.get_logdelivery_list)
+elif cloud_type !='azure':
+    loggr.info("Skipping acctlogdelivery; GOV-3 is disabled")
 
 # COMMAND ----------
 
@@ -195,7 +225,9 @@ if cloud_type !='azure':
 
 # COMMAND ----------
 
-bootstrap('acctpvtlink', acct_client.get_privatelink_info)
+# No SAT check reads this table. Left commented for reference.
+# bootstrap('acctpvtlink', acct_client.get_privatelink_info)
+loggr.info("Skipping acctpvtlink; no SAT check uses this collector")
 
 # COMMAND ----------
 
@@ -208,15 +240,23 @@ except Exception:
 
 # COMMAND ----------
 
-bootstrap('account_ipaccess_list', acct_settings.get_ipaccess_list)
+if any_check_enabled("110", "124", cloud_type=cloud_type):
+    bootstrap('account_ipaccess_list', acct_settings.get_ipaccess_list)
+else:
+    loggr.info("Skipping account_ipaccess_list; NS-8/NS-13 are disabled")
 
 # COMMAND ----------
 
-bootstrap('account_csp', acct_settings.get_compliancesecurityprofile)
+if any_check_enabled("103", cloud_type=cloud_type):
+    bootstrap('account_csp', acct_settings.get_compliancesecurityprofile)
+else:
+    loggr.info("Skipping account_csp; INFO-38 is disabled")
 
 # COMMAND ----------
 
-bootstrap('account_ncc', acct_settings.get_networkconnectivityconfigurations)
+# No SAT check reads this table. Left commented for reference.
+# bootstrap('account_ncc', acct_settings.get_networkconnectivityconfigurations)
+loggr.info("Skipping account_ncc; no SAT check uses this collector")
 
 # COMMAND ----------
 
@@ -265,25 +305,28 @@ network_policy_schema = StructType([
     ]), True)
 ])
 
-try:
-    # Get policies from API
-    policies_list = acct_settings.get_networkpolicies()
-    if policies_list:
-        # Convert to JSON strings
-        json_strings = [json.dumps(p) for p in policies_list]
-        # Create DataFrame with explicit schema
-        policies_df = spark.createDataFrame([(x,) for x in json_strings], ["json_string"])
-        policies_df = policies_df.select(from_json(col("json_string"), network_policy_schema).alias("data")).select("data.*")
-        # Save as table
-        policies_df.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('account_networkpolicies')
-        loggr.info(f"Table created: `account_networkpolicies` with explicit schema including dry_run_mode_product_filter")
-    else:
-        from pyspark.sql.types import StructType as EmptyStructType
-        apiDF = spark.createDataFrame([], EmptyStructType([]))
-        apiDF.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('account_networkpolicies')
-        loggr.info("No network policies found")
-except Exception:
-    loggr.exception("Exception encountered while bootstrapping network policies")
+if any_check_enabled("111", "122", cloud_type=cloud_type):
+    try:
+        # Get policies from API
+        policies_list = acct_settings.get_networkpolicies()
+        if policies_list:
+            # Convert to JSON strings
+            json_strings = [json.dumps(p) for p in policies_list]
+            # Create DataFrame with explicit schema
+            policies_df = spark.createDataFrame([(x,) for x in json_strings], ["json_string"])
+            policies_df = policies_df.select(from_json(col("json_string"), network_policy_schema).alias("data")).select("data.*")
+            # Save as table
+            policies_df.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('account_networkpolicies')
+            loggr.info(f"Table created: `account_networkpolicies` with explicit schema including dry_run_mode_product_filter")
+        else:
+            from pyspark.sql.types import StructType as EmptyStructType
+            apiDF = spark.createDataFrame([], EmptyStructType([]))
+            apiDF.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('account_networkpolicies')
+            loggr.info("No network policies found")
+    except Exception:
+        loggr.exception("Exception encountered while bootstrapping network policies")
+else:
+    loggr.info("Skipping account_networkpolicies; NS-9/NS-12 are disabled")
 
 # COMMAND ----------
 
@@ -292,26 +335,32 @@ except Exception:
 # Scope to SAT-enabled workspaces only (account_workspaces.analysis_enabled=true),
 # matching the driver's own workspace iteration at
 # security_analysis_driver.py:68 and avoiding N API calls for unused workspaces.
-try:
-    schema = json_['analysis_schema_name']
-    workspaces = spark.sql(
-        f"SELECT workspace_id FROM {schema}.account_workspaces "
-        f"WHERE analysis_enabled = true"
-    ).collect()
-    loggr.info(f"Collecting network configurations for {len(workspaces)} SAT-enabled workspaces")
-    for ws in workspaces:
-        workspace_id = str(ws.workspace_id)
-        try:
-            bootstrap(f'workspace_network_config_{workspace_id}',
-                      lambda wid=workspace_id: acct_settings.get_workspace_network_configuration(wid))
-        except Exception as e:
-            loggr.warning(f"Could not collect network config for workspace {workspace_id}: {e}")
-except Exception as e:
-    loggr.warning(f"Could not collect workspace network configurations: {e}")
+if any_check_enabled("111", "122", cloud_type=cloud_type):
+    try:
+        schema = json_['analysis_schema_name']
+        workspaces = spark.sql(
+            f"SELECT workspace_id FROM {schema}.account_workspaces "
+            f"WHERE analysis_enabled = true"
+        ).collect()
+        loggr.info(f"Collecting network configurations for {len(workspaces)} SAT-enabled workspaces")
+        for ws in workspaces:
+            workspace_id = str(ws.workspace_id)
+            try:
+                bootstrap(f'workspace_network_config_{workspace_id}',
+                          lambda wid=workspace_id: acct_settings.get_workspace_network_configuration(wid))
+            except Exception as e:
+                loggr.warning(f"Could not collect network config for workspace {workspace_id}: {e}")
+    except Exception as e:
+        loggr.warning(f"Could not collect workspace network configurations: {e}")
+else:
+    loggr.info("Skipping workspace_network_config; NS-9/NS-12 are disabled")
 
 # COMMAND ----------
 
-bootstrap('account_disable_legacy_features', acct_settings.get_disablelegacyfeatures)
+if any_check_enabled("112", cloud_type=cloud_type):
+    bootstrap('account_disable_legacy_features', acct_settings.get_disablelegacyfeatures)
+else:
+    loggr.info("Skipping account_disable_legacy_features; GOV-37 is disabled")
 
 # COMMAND ----------
 
@@ -324,34 +373,37 @@ bootstrap('account_disable_legacy_features', acct_settings.get_disablelegacyfeat
 
 from clientpkgs.accounts_oauth import AccountsOAuth
 
-try:
-    acct_oauth = AccountsOAuth(json_)
-    sp_list = acct_oauth.get_account_service_principals()
-    sp_secrets_all = []
-    for sp in sp_list:
-        sp_id = str(sp.get('id', ''))
-        sp_display_name = sp.get('displayName', '')
-        sp_app_id = str(sp.get('applicationId', ''))
-        try:
-            secrets = acct_oauth.get_service_principal_secrets(sp_id)
-            for secret in secrets:
-                secret['sp_id'] = sp_id
-                secret['sp_display_name'] = sp_display_name
-                secret['sp_app_id'] = sp_app_id
-                sp_secrets_all.append(secret)
-        except Exception as e:
-            loggr.warning(f"Could not fetch secrets for SP {sp_id} ({sp_display_name}): {e}")
-    if sp_secrets_all:
-        sp_secrets_json = [json.dumps(s) for s in sp_secrets_all]
-        sp_secrets_df = spark.read.json(spark.sparkContext.parallelize(sp_secrets_json))
-        sp_secrets_df.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('acctserviceprincipalssecrets')
-        loggr.info(f"Table created: `acctserviceprincipalssecrets` with {len(sp_secrets_all)} secret records")
-    else:
-        from pyspark.sql.types import StructType as EmptyStructType
-        spark.createDataFrame([], EmptyStructType([])).write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('acctserviceprincipalssecrets')
-        loggr.info("No service principal secrets found")
-except Exception:
-    loggr.exception("Exception encountered while bootstrapping SP secrets")
+if any_check_enabled("119", cloud_type=cloud_type):
+    try:
+        acct_oauth = AccountsOAuth(json_)
+        sp_list = acct_oauth.get_account_service_principals()
+        sp_secrets_all = []
+        for sp in sp_list:
+            sp_id = str(sp.get('id', ''))
+            sp_display_name = sp.get('displayName', '')
+            sp_app_id = str(sp.get('applicationId', ''))
+            try:
+                secrets = acct_oauth.get_service_principal_secrets(sp_id)
+                for secret in secrets:
+                    secret['sp_id'] = sp_id
+                    secret['sp_display_name'] = sp_display_name
+                    secret['sp_app_id'] = sp_app_id
+                    sp_secrets_all.append(secret)
+            except Exception as e:
+                loggr.warning(f"Could not fetch secrets for SP {sp_id} ({sp_display_name}): {e}")
+        if sp_secrets_all:
+            sp_secrets_json = [json.dumps(s) for s in sp_secrets_all]
+            sp_secrets_df = spark.read.json(spark.sparkContext.parallelize(sp_secrets_json))
+            sp_secrets_df.write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('acctserviceprincipalssecrets')
+            loggr.info(f"Table created: `acctserviceprincipalssecrets` with {len(sp_secrets_all)} secret records")
+        else:
+            from pyspark.sql.types import StructType as EmptyStructType
+            spark.createDataFrame([], EmptyStructType([])).write.option("delta.columnMapping.mode", "name").mode("overwrite").saveAsTable('acctserviceprincipalssecrets')
+            loggr.info("No service principal secrets found")
+    except Exception:
+        loggr.exception("Exception encountered while bootstrapping SP secrets")
+else:
+    loggr.info("Skipping acctserviceprincipalssecrets; IA-9 is disabled")
 
 # COMMAND ----------
 
