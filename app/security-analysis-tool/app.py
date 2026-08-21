@@ -1108,6 +1108,9 @@ def get_main_html():
         .assistant-fab:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(102,126,234,.55); }
         .assistant-fab svg { width: 23px; height: 23px; }
         .assistant-fab.hidden { display: none; }
+        /* The settings drawer sits above the assistant button, which would
+           otherwise float over the panel's content. */
+        body.drawer-open .assistant-fab { opacity: 0; pointer-events: none; }
 
         .assistant-panel {
             position: fixed;
@@ -1953,128 +1956,167 @@ def get_main_html():
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
         }
 
-        /* --- Settings / health --- */
-        .settings-section {
-            padding: 0 12px 8px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            padding-top: 10px;
+        /* --- Settings panel --- */
+        .sidebar-footer-actions {
+            display: flex;
+            justify-content: flex-end;
+            padding: 10px 16px 0;
         }
-        .settings-badge {
-            margin-left: auto;
-            min-width: 18px;
-            height: 18px;
-            padding: 0 5px;
-            border-radius: 9px;
-            background: #ef4444;
-            color: #fff;
-            font-size: 0.7em;
-            font-weight: 700;
+        .icon-btn {
+            position: relative;
+            width: 32px;
+            height: 32px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: color .15s, background .15s, border-color .15s;
         }
-        .settings-banner {
+        .icon-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, .06);
+            border-color: rgba(255, 255, 255, .1);
+        }
+        .icon-btn svg { width: 17px; height: 17px; }
+        .status-dot {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #f59e0b;
+            box-shadow: 0 0 0 2px var(--bg-card);
+        }
+
+        .drawer-scrim {
+            position: fixed;
+            inset: 0;
+            background: rgba(3, 6, 15, .55);
+            backdrop-filter: blur(2px);
+            z-index: 900;
+            animation: drawerFade .16s ease;
+        }
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 460px;
+            max-width: 92vw;
+            background: var(--bg-card, #12151f);
+            border-left: 1px solid rgba(255, 255, 255, .09);
+            box-shadow: -18px 0 48px rgba(0, 0, 0, .45);
+            z-index: 901;
+            display: flex;
+            flex-direction: column;
+            animation: drawerIn .2s cubic-bezier(.22, .61, .36, 1);
+        }
+        @keyframes drawerIn { from { transform: translateX(24px); opacity: .6; } }
+        @keyframes drawerFade { from { opacity: 0; } }
+        .drawer-head {
             display: flex;
             align-items: flex-start;
-            gap: 12px;
-            border-radius: 12px;
-            padding: 14px 18px;
-            margin-bottom: 18px;
-            font-size: 0.9em;
-        }
-        .settings-banner.ok {
-            background: rgba(34, 197, 94, 0.08);
-            border: 1px solid rgba(34, 197, 94, 0.28);
-        }
-        .settings-banner.bad {
-            background: rgba(239, 68, 68, 0.08);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-        }
-        .settings-banner-title { font-weight: 600; margin-bottom: 3px; }
-        .settings-banner-sub { color: var(--text-secondary); font-size: 0.94em; }
-        .settings-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+            justify-content: space-between;
             gap: 16px;
+            padding: 20px 22px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, .07);
+        }
+        .drawer-title { font-size: 1.05em; font-weight: 650; letter-spacing: -.01em; }
+        .drawer-sub { font-size: .82em; color: var(--text-muted); margin-top: 2px; }
+        .drawer-body { padding: 18px 22px 26px; overflow-y: auto; }
+
+        /* Status rows: a coloured rail and a label, no table borders. */
+        .health-summary {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: .88em;
+            padding: 11px 14px;
+            border-radius: 10px;
             margin-bottom: 18px;
         }
-        .settings-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 14px;
-            padding: 16px 0 6px;
+        .health-summary.ok { background: rgba(34, 197, 94, .1); color: #86efac; }
+        .health-summary.bad { background: rgba(245, 158, 11, .1); color: #fcd34d; }
+        .check {
+            display: grid;
+            grid-template-columns: 8px minmax(0, 1fr);
+            gap: 0 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, .05);
         }
-        .settings-card-title {
+        .check:last-of-type { border-bottom: none; }
+        .check-rail {
+            align-self: stretch;
+            border-radius: 3px;
+            background: #22c55e;
+        }
+        .check-rail.bad { background: #f59e0b; }
+        .check-rail.muted { background: rgba(148, 163, 184, .45); }
+        .check-name {
+            font-size: .9em;
             font-weight: 600;
-            font-size: 0.95em;
-            padding: 0 18px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
         }
-        .check-row {
-            display: grid;
-            grid-template-columns: 18px minmax(0, 1fr);
-            gap: 0 11px;
-            padding: 11px 18px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        .check-dot {
-            width: 9px;
-            height: 9px;
-            border-radius: 50%;
-            margin-top: 6px;
-            justify-self: center;
-            flex-shrink: 0;
-        }
-        .check-dot.ok { background: #22c55e; }
-        .check-dot.bad { background: #ef4444; }
-        .check-dot.optional { background: var(--text-muted); }
-        .check-label { font-weight: 600; font-size: 0.9em; }
-        .check-detail {
-            font-size: 0.85em;
-            color: var(--text-secondary);
-            margin-top: 3px;
-            line-height: 1.5;
-        }
-        .check-remedy {
-            font-size: 0.84em;
+        .check-state { font-size: .76em; font-weight: 600; color: var(--text-muted); }
+        .check-body { font-size: .84em; color: var(--text-secondary); margin-top: 3px; line-height: 1.5; }
+        .check-fix {
+            font-size: .82em;
             color: #fcd34d;
-            margin-top: 6px;
+            margin-top: 7px;
             line-height: 1.5;
-            padding-left: 10px;
-            border-left: 2px solid rgba(245, 158, 11, 0.4);
         }
-        .config-row {
-            display: grid;
-            grid-template-columns: 150px minmax(0, 1fr);
-            gap: 0 14px;
-            padding: 9px 18px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            font-size: 0.87em;
-        }
-        .config-key {
+
+        .drawer-section-label {
+            font-size: .72em;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
             color: var(--text-muted);
-            font-size: 0.92em;
+            margin: 24px 0 10px;
         }
-        .config-val {
+        .kv {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 8px 0;
+            font-size: .86em;
+            border-bottom: 1px solid rgba(255, 255, 255, .04);
+        }
+        .kv:last-of-type { border-bottom: none; }
+        .kv-key { color: var(--text-muted); flex-shrink: 0; }
+        .kv-val {
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-            font-size: 0.92em;
+            font-size: .92em;
+            text-align: right;
             overflow-wrap: anywhere;
         }
-        .config-val.unset { font-family: inherit; color: var(--text-muted); font-style: italic; }
-        .settings-links {
+        .kv-val.unset { font-family: inherit; color: var(--text-muted); font-style: italic; }
+        .kv-val.on { color: #86efac; font-family: inherit; }
+        .kv-val.off { color: var(--text-muted); font-family: inherit; }
+        .drawer-actions {
             display: flex;
-            gap: 9px;
+            gap: 8px;
             flex-wrap: wrap;
-            padding: 14px 18px 4px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, .07);
         }
-        .settings-note {
-            font-size: 0.85em;
+        .drawer-note {
+            font-size: .81em;
             color: var(--text-muted);
-            line-height: 1.55;
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid rgba(255, 255, 255, 0.07);
-            border-radius: 12px;
-            padding: 14px 18px;
+            line-height: 1.6;
+            margin-top: 16px;
         }
+
         /* --- Secret-scanning alerts --- */
         .alert-toolbar {
             display: flex;
@@ -2790,12 +2832,12 @@ def get_main_html():
 
                 <!-- Settings, kept out of the grouped sections above: it reports
                      on the app itself rather than on the estate. -->
-                <div class="nav-section settings-section">
-                    <div class="nav-item" data-page="settings" id="nav-settings">
+                <div class="sidebar-footer-actions">
+                    <button class="icon-btn" id="settings-gear" title="Settings and health"
+                            aria-label="Settings and health" onclick="openSettingsPanel()">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                        Settings
-                        <span class="settings-badge" id="settings-badge" hidden></span>
-                    </div>
+                        <span class="status-dot" id="settings-dot" hidden></span>
+                    </button>
                 </div>
                 
                 <!-- Optional footer info -->
@@ -2836,7 +2878,7 @@ def get_main_html():
                                                 'denylistbuilder', 'collection',
                                                 'secretsoverview', 'secretsfindings',
                                                 'secretsalerts', 'codeoverview',
-                                                'codefindings', 'settings'];
+                                                'codefindings'];
                             const bar = document.getElementById('stats-header-bar');
                             if (bar && noStatsBar.includes(hash)) bar.style.display = 'none';
                         });
@@ -2894,7 +2936,7 @@ def get_main_html():
             <div class="page" id="page-collection">
                 <div class="page-header">
                     <h1 class="page-title">Data Collection</h1>
-                    <p class="page-desc">Monitor collection health, run analyses on demand, and manage recurring schedules</p>
+                    <p class="page-desc">Collection health, on-demand runs, and recurring schedules for every analysis job.</p>
                 </div>
                 <div id="collection-panel"></div>
             </div>
@@ -2995,7 +3037,7 @@ def get_main_html():
             <div class="page" id="page-principal">
                 <div class="page-header">
                     <h1 class="page-title">Principal Analysis</h1>
-                    <p class="page-desc">Analyze what a user, group, or service principal can access</p>
+                    <p class="page-desc">Everything a user, group, or service principal can reach, directly or through group membership.</p>
                 </div>
 
                 <!-- Input Section: Search and Browse -->
@@ -3038,7 +3080,7 @@ def get_main_html():
             <div class="page" id="page-resource">
                 <div class="page-header">
                     <h1 class="page-title">Resource Analysis</h1>
-                    <p class="page-desc">Find all principals that have access to a specific resource</p>
+                    <p class="page-desc">Every principal that can reach a given resource, and the grant that allows it.</p>
                 </div>
 
                 <!-- Input Section: Search and Browse -->
@@ -3089,7 +3131,7 @@ def get_main_html():
             <div class="page" id="page-paths">
                 <div class="page-header">
                     <h1 class="page-title">Escalation Paths</h1>
-                    <p class="page-desc">Find paths from a principal to admin or privileged groups</p>
+                    <p class="page-desc">Routes by which a principal could obtain admin or otherwise privileged access.</p>
                 </div>
 
                 <div class="search-container">
@@ -3129,7 +3171,7 @@ def get_main_html():
             <div class="page" id="page-impersonation">
                 <div class="page-header">
                     <h1 class="page-title">Impersonation Analysis</h1>
-                    <p class="page-desc">Discover how one entity can impersonate another through various attack paths</p>
+                    <p class="page-desc">Principals that can act as another identity, and the permissions that make it possible.</p>
                 </div>
 
                 <div style="background: var(--bg-input); border-radius: 12px; padding: 20px; margin-bottom: 16px;">
@@ -3188,7 +3230,7 @@ def get_main_html():
             <div class="page" id="page-isolated">
                 <div class="page-header">
                     <h1 class="page-title">Isolated Principals</h1>
-                    <p class="page-desc">Principals with minimal connections - may be orphaned accounts or misconfigured users</p>
+                    <p class="page-desc">Identities with almost no group membership or grants. Often leftover or misconfigured accounts.</p>
                 </div>
                 <div id="isolated-results"></div>
             </div>
@@ -3197,7 +3239,7 @@ def get_main_html():
             <div class="page" id="page-orphaned">
                 <div class="page-header">
                     <h1 class="page-title">Orphaned Resources</h1>
-                    <p class="page-desc">Resources with no explicit permission grants - may need access controls</p>
+                    <p class="page-desc">Resources with no explicit grants. Access falls back to inherited or default permissions.</p>
                 </div>
                 <div id="orphaned-results"></div>
             </div>
@@ -3206,7 +3248,7 @@ def get_main_html():
             <div class="page" id="page-overprivileged">
                 <div class="page-header">
                     <h1 class="page-title">Over-Privileged Principals</h1>
-                    <p class="page-desc">Principals with excessive permissions across the environment</p>
+                    <p class="page-desc">Identities holding more access than their activity suggests they need.</p>
                 </div>
                 <div id="overprivileged-results"></div>
             </div>
@@ -3215,7 +3257,7 @@ def get_main_html():
             <div class="page" id="page-highprivilege">
                 <div class="page-header">
                     <h1 class="page-title">High Privilege Principals</h1>
-                    <p class="page-desc">Principals with admin-level privileges via direct or nested group membership</p>
+                    <p class="page-desc">Identities with administrative rights, whether granted directly or inherited through groups.</p>
                 </div>
                 <div id="highprivilege-results"></div>
             </div>
@@ -3224,7 +3266,7 @@ def get_main_html():
             <div class="page" id="page-secretscopes">
                 <div class="page-header">
                     <h1 class="page-title">Secret Scope Access</h1>
-                    <p class="page-desc">Principals with access to secret scopes - who can read, write, or manage secrets</p>
+                    <p class="page-desc">Who can read, write, or manage each secret scope.</p>
                 </div>
 
                 <!-- Filters -->
@@ -3255,7 +3297,7 @@ def get_main_html():
             <div class="page" id="page-sharedtoaccount">
                 <div class="page-header">
                     <h1 class="page-title">Shared to All Account Users</h1>
-                    <p class="page-desc">Dashboards, Genie Agents, and Apps shared with the built-in "account users" group — accessible to every user in the account. Detected from the audit log by the SAT shared-to-account-users job.</p>
+                    <p class="page-desc">Dashboards, Genie spaces, and apps shared with the built-in account users group, and therefore readable by everyone in the account.</p>
                 </div>
                 <div id="sharedtoaccount-results"></div>
             </div>
@@ -3264,7 +3306,7 @@ def get_main_html():
             <div class="page" id="page-privilegednonidp">
                 <div class="page-header">
                     <h1 class="page-title">Privileged Non-IdP Group Identities</h1>
-                    <p class="page-desc">Groups that are not IdP-managed (no externalId) holding Account Admin or Workspace Admin, plus users and service principals with those roles assigned directly. Detected by the SAT privileged-non-IdP job.</p>
+                    <p class="page-desc">Administrative rights held outside your identity provider. These accounts survive offboarding, because removing someone from the IdP does not revoke them.</p>
                 </div>
                 <div id="privilegednonidp-results"></div>
             </div>
@@ -3360,14 +3402,6 @@ def get_main_html():
             </div>
 
             <!-- Settings / Health Page -->
-            <div class="page" id="page-settings">
-                <div class="page-header">
-                    <h1 class="page-title">Settings</h1>
-                    <p class="page-desc">Current configuration and a live check of everything this app depends on. Each failing check names the fix and links to where to make it.</p>
-                </div>
-                <div id="settings-results"></div>
-            </div>
-
             <!-- Secret Scanning Alerts Page -->
             <div class="page" id="page-secretsalerts">
                 <div class="page-header">
@@ -3418,6 +3452,20 @@ def get_main_html():
 
     <!-- Security assistant: floating launcher + slide-over panel, available on
          every page rather than occupying a nav slot. -->
+    <div class="drawer-scrim" id="settings-scrim" hidden onclick="closeSettingsPanel()"></div>
+    <aside class="drawer" id="settings-drawer" hidden aria-label="Settings and health">
+        <div class="drawer-head">
+            <div>
+                <div class="drawer-title">Settings</div>
+                <div class="drawer-sub">Dependency status and configuration</div>
+            </div>
+            <button class="icon-btn" onclick="closeSettingsPanel()" aria-label="Close settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="drawer-body" id="settings-body"></div>
+    </aside>
+
     <button class="assistant-fab" id="assistant-fab" title="Ask the security assistant" aria-label="Open security assistant">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -3527,7 +3575,7 @@ def get_main_html():
             const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder',
                                        'collection', 'secretsoverview', 'secretsfindings',
                                        'secretsalerts', 'codeoverview',
-                                       'codefindings', 'settings'];
+                                       'codefindings'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
@@ -3546,7 +3594,6 @@ def get_main_html():
             else if (page === 'secretsalerts') loadSecretsAlerts();
             else if (page === 'codeoverview') loadCodeOverview();
             else if (page === 'codefindings') loadCodeFindings();
-            else if (page === 'settings') loadSettings();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
                 loadSourcePrincipals();
@@ -6038,137 +6085,144 @@ def get_main_html():
             }
         }
 
-        // --- Settings / health ------------------------------------------------
-        // Reports whether each dependency is reachable. Configuration is shown
-        // read-only: the values are bound to the app resource at deploy time, so
-        // editing them here could not take effect without a redeploy, and giving
-        // the app write access to its own credentials would turn it into a means
-        // of privilege escalation. Each failing check links to the right place.
+        // --- Settings panel -------------------------------------------------
+        // Opened from the gear in the sidebar. Configuration is read-only: the
+        // warehouse, schema and OAuth scopes bind to the app resource at deploy
+        // time, so editing them here could not take effect until the next deploy,
+        // and letting the app rewrite its own credentials would let anyone who can
+        // open it widen their access.
+
+        function openSettingsPanel() {
+            document.body.classList.add('drawer-open');
+            document.getElementById('settings-scrim').hidden = false;
+            document.getElementById('settings-drawer').hidden = false;
+            document.getElementById('settings-body').innerHTML =
+                '<div class="loading"><div class="spinner"></div>Checking dependencies\u2026</div>';
+            loadSettings();
+        }
+
+        function closeSettingsPanel() {
+            document.body.classList.remove('drawer-open');
+            document.getElementById('settings-scrim').hidden = true;
+            document.getElementById('settings-drawer').hidden = true;
+        }
+
+        document.addEventListener('keydown', ev => {
+            if (ev.key === 'Escape' && !document.getElementById('settings-drawer').hidden) {
+                closeSettingsPanel();
+            }
+        });
 
         async function loadSettings() {
-            const container = document.getElementById('settings-results');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div>Checking configuration...</div>';
             try {
-                const d = await fetch('/api/settings').then(r => r.json());
-                if (d.error) { showEmpty('settings-results', d.error); return; }
-                renderSettings(d);
-                updateSettingsBadge(d.failing_count || 0);
+                const data = await fetch('/api/settings').then(r => r.json());
+                if (data.error) {
+                    document.getElementById('settings-body').innerHTML =
+                        `<div class="health-summary bad">${escapeHtml(data.error)}</div>`;
+                    return;
+                }
+                renderSettings(data);
+                updateSettingsIndicator(data.failing_count || 0);
             } catch (e) {
-                showEmpty('settings-results', 'Could not load settings: ' + e.message);
+                document.getElementById('settings-body').innerHTML =
+                    `<div class="health-summary bad">Could not load settings: ${escapeHtml(e.message)}</div>`;
             }
         }
 
-        function updateSettingsBadge(count) {
-            const badge = document.getElementById('settings-badge');
-            if (!badge) return;
-            if (count > 0) {
-                badge.textContent = count;
-                badge.hidden = false;
-            } else {
-                badge.hidden = true;
+        function updateSettingsIndicator(failing) {
+            const dot = document.getElementById('settings-dot');
+            if (dot) dot.hidden = failing === 0;
+            const gear = document.getElementById('settings-gear');
+            if (gear) {
+                gear.title = failing
+                    ? `${failing} dependency ${failing === 1 ? 'needs' : 'need'} attention`
+                    : 'Settings and health';
             }
         }
 
-        function renderSettings(d) {
-            const cfg = d.config || {};
-            const links = d.links || {};
-            const checks = d.checks || [];
-            const failing = checks.filter(c => !c.ok);
+        function renderSettings(data) {
+            const cfg = data.config || {};
+            const links = data.links || {};
+            const checks = data.checks || [];
+            const failing = checks.filter(c => !c.ok).length;
 
-            let html = '';
-            if (failing.length) {
-                html += `
-                    <div class="settings-banner bad">
-                        <div>
-                            <div class="settings-banner-title">${failing.length} ${failing.length === 1 ? 'problem needs' : 'problems need'} attention</div>
-                            <div class="settings-banner-sub">
-                                Parts of the app will not work until these are resolved. Each one below names the fix.
-                            </div>
-                        </div>
-                    </div>`;
-            } else {
-                html += `
-                    <div class="settings-banner ok">
-                        <div>
-                            <div class="settings-banner-title">Everything is configured</div>
-                            <div class="settings-banner-sub">All dependencies are reachable.</div>
-                        </div>
-                    </div>`;
-            }
+            let html = failing
+                ? `<div class="health-summary bad">${failing} of ${checks.length} dependencies need attention</div>`
+                : `<div class="health-summary ok">All ${checks.length} dependencies are healthy</div>`;
 
-            html += '<div class="settings-grid">';
-
-            html += '<div class="settings-card"><div class="settings-card-title">Health</div>';
             checks.forEach(c => {
-                const tone = c.optional && c.ok ? 'optional' : (c.ok ? 'ok' : 'bad');
+                const tone = c.ok ? (c.optional ? 'muted' : '') : 'bad';
+                const state = c.ok ? (c.optional ? 'Optional' : 'Healthy') : 'Needs attention';
                 html += `
-                    <div class="check-row">
-                        <span class="check-dot ${tone}"></span>
+                    <div class="check">
+                        <span class="check-rail ${tone}"></span>
                         <div>
-                            <div class="check-label">${escapeHtml(c.label)}</div>
-                            <div class="check-detail">${escapeHtml(c.detail || '')}</div>
-                            ${c.remedy ? '<div class="check-remedy">' + escapeHtml(c.remedy) + '</div>' : ''}
+                            <div class="check-name">
+                                <span>${escapeHtml(c.label)}</span>
+                                <span class="check-state">${state}</span>
+                            </div>
+                            <div class="check-body">${escapeHtml(c.detail || '')}</div>
+                            ${c.remedy ? `<div class="check-fix">${escapeHtml(c.remedy)}</div>` : ''}
                         </div>
                     </div>`;
             });
-            html += '</div>';
 
-            const row = (k, v, mono) => `
-                <div class="config-row">
-                    <div class="config-key">${escapeHtml(k)}</div>
-                    <div class="config-val${v ? '' : ' unset'}">${escapeHtml(v || 'not set')}</div>
+            const row = (key, value, cls) => `
+                <div class="kv">
+                    <span class="kv-key">${escapeHtml(key)}</span>
+                    <span class="kv-val ${cls || (value ? '' : 'unset')}">${escapeHtml(value || 'Not set')}</span>
                 </div>`;
 
-            html += '<div class="settings-card"><div class="settings-card-title">Configuration</div>';
-            html += row('Workspace', cfg.workspace_host);
-            html += row('Workspace ID', cfg.workspace_id);
+            html += '<div class="drawer-section-label">Configuration</div>';
+            html += row('Workspace', (cfg.workspace_host || '').replace(/^https:\/\//, ''));
             html += row('SAT schema', cfg.schema);
             html += row('SQL warehouse', cfg.warehouse_id);
             html += row('Assistant model', cfg.model_endpoint);
             html += row('Genie space', cfg.genie_space_id);
-            html += row('SP fallback', cfg.sp_fallback_allowed ? 'enabled (results not filtered per user)' : 'disabled (per-user filtering enforced)');
+            html += row('Per-user filtering',
+                cfg.sp_fallback_allowed ? 'Disabled' : 'Enforced',
+                cfg.sp_fallback_allowed ? 'off' : 'on');
+
             const jobs = cfg.jobs || {};
-            Object.keys(jobs).forEach(k => {
-                html += row(jobs[k].label, jobs[k].connected ? 'connected' : 'not connected');
-            });
+            const jobKeys = Object.keys(jobs);
+            if (jobKeys.length) {
+                html += '<div class="drawer-section-label">Collection jobs</div>';
+                jobKeys.forEach(k => {
+                    html += row(jobs[k].label,
+                        jobs[k].connected ? 'Connected' : 'Not deployed',
+                        jobs[k].connected ? 'on' : 'off');
+                });
+            }
+
             html += `
-                <div class="settings-links">
-                    ${links.app_settings ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.app_settings)}" target="_blank" rel="noopener">App settings</a>` : ''}
+                <div class="drawer-actions">
+                    <button class="btn btn-sm btn-ghost" onclick="loadSettings()">Re-check</button>
                     ${links.warehouse ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.warehouse)}" target="_blank" rel="noopener">Warehouse</a>` : ''}
                     ${links.alerts ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.alerts)}" target="_blank" rel="noopener">Alerts</a>` : ''}
-                    <button class="btn btn-sm btn-ghost" onclick="loadSettings()">Re-check</button>
-                </div>`;
-            html += '</div>';
-            html += '</div>';
-
-            html += `
-                <div class="settings-note">
-                    <strong>Why these are read-only.</strong>
-                    The warehouse, schema, job ids and OAuth scopes are bound to the app
-                    when it is deployed, so changing them here would not take effect until
-                    the next deploy. Granting the app permission to rewrite its own
-                    credentials would also let anyone who can open it escalate their access.
-                    Use the installer or the workspace UI to change configuration, then
-                    re-check here. Credentials for the app's own identity are managed by the
-                    platform and are replaced by redeploying &mdash; there is nothing to paste in.
+                    ${links.app_settings ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.app_settings)}" target="_blank" rel="noopener">App settings</a>` : ''}
+                </div>
+                <div class="drawer-note">
+                    Configuration binds to the app when it is deployed, so these values are
+                    shown read-only. Change them with the installer or in the workspace, then
+                    re-check here.
                 </div>`;
 
-            document.getElementById('settings-results').innerHTML = html;
+            document.getElementById('settings-body').innerHTML = html;
         }
 
-        // Surface a badge on the gear as soon as the app loads, so a broken
-        // dependency is visible without opening the page first.
-        (function checkSettingsOnLoad() {
-            function probe() {
+        // Surface a dot on the gear at load, so a broken dependency is visible
+        // without opening the panel.
+        (function probeSettings() {
+            function run() {
                 fetch('/api/settings')
                     .then(r => r.json())
-                    .then(d => updateSettingsBadge(d.failing_count || 0))
+                    .then(d => updateSettingsIndicator(d.failing_count || 0))
                     .catch(() => {});
             }
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', probe);
+                document.addEventListener('DOMContentLoaded', run);
             } else {
-                probe();
+                run();
             }
         })();
 
@@ -12660,8 +12714,9 @@ def api_settings():
 
     checks.append(_settings_probe(
         'Collection jobs', check_jobs,
-        ('Job ids reach the app as secrets written by the installer. Re-run the '
-         'installer to record ids for any job showing as not connected.')))
+        ('These jobs are discovered by name in this workspace. Anything listed as '
+         'not deployed has no matching job yet; deploy it with the installer and it '
+         'appears here without restarting the app.')))
 
     # 6. The assistant's model endpoint on the AI Gateway.
     def check_model():
@@ -13571,6 +13626,7 @@ COLLECTION_JOBS = {
         'description': 'Collects identities, groups, and grants, then builds the access graph.',
         'env': ('PERMISSIONS_JOB_ID', 'DATABRICKS_JOB_ID_PERMISSIONS_JOB'),
         'feeds': 'Principal and resource analysis, escalation paths, high privilege',
+        'job_name_match': 'Data Collection',
     },
     'secrets': {
         'label': 'Secret Scanner',
@@ -13578,6 +13634,7 @@ COLLECTION_JOBS = {
         'description': 'Scans notebook source and cluster environment variables for credentials.',
         'env': ('SECRETS_JOB_ID', 'DATABRICKS_JOB_ID_SECRETS_JOB'),
         'feeds': 'Credential exposure, secret findings',
+        'job_name_match': 'Secrets Scanner',
     },
     'shared_to_account': {
         'label': 'Shared to All Users',
@@ -13585,6 +13642,7 @@ COLLECTION_JOBS = {
         'description': 'Finds dashboards, Genie spaces, and apps shared with every account user.',
         'env': ('SHARED_TO_ACCOUNT_JOB_ID',),
         'feeds': 'Shared to All Users',
+        'job_name_match': 'Shared to Account Users',
     },
     'privileged_non_idp': {
         'label': 'Privileged Non-IdP Identities',
@@ -13592,6 +13650,7 @@ COLLECTION_JOBS = {
         'description': 'Finds admin roles held outside identity-provider-managed groups.',
         'env': ('PRIVILEGED_NON_IDP_JOB_ID',),
         'feeds': 'Privileged Non-IdP',
+        'job_name_match': 'Privileged Non-IdP',
     },
     'denylist_candidates': {
         'label': 'Denylist Candidates',
@@ -13599,6 +13658,7 @@ COLLECTION_JOBS = {
         'description': 'Ranks IdP groups whose members show no recent Databricks activity.',
         'env': ('DENYLIST_JOB_ID',),
         'feeds': 'Denylist Builder',
+        'job_name_match': 'Denylist Candidates',
     },
     'code_scanner': {
         'label': 'Code Scanner',
@@ -13606,6 +13666,7 @@ COLLECTION_JOBS = {
         'description': 'Analyses notebook and file source for insecure patterns, and declared packages for known vulnerabilities.',
         'env': ('CODE_SCANNER_JOB_ID', 'DATABRICKS_JOB_ID_CODE_SCANNER_JOB'),
         'feeds': 'Code security overview, code findings',
+        'job_name_match': 'Code Scanner',
     },
 }
 
@@ -13618,13 +13679,57 @@ _ACTIVE_RUN_STATES = {
 }
 
 
-def _collection_job_id(kind):
-    """Resolve a job ID from the app's configuration, or None if unbound.
+# Job ids discovered from the workspace, keyed by collection. Populated on first
+# use and refreshed when a lookup misses, so a job deployed after the app started
+# is picked up without a restart.
+_discovered_jobs: dict[str, str] = {}
+_discovery_lock = threading.Lock()
+_discovery_checked_at = 0.0
+_DISCOVERY_TTL_SECONDS = 60.0
 
-    Checks the explicit names first, then scans for a Databricks Apps job binding
-    whose variable name mentions this collection. The platform derives that name
-    from the resource key and has changed its exact form between versions, so
-    matching on a substring is more durable than hardcoding one spelling.
+
+def _discover_collection_jobs(force=False):
+    """Map each collection to the id of its job in this workspace.
+
+    Jobs are matched on the names the installer deploys. Discovering them here
+    means a job added to the workspace works immediately: the app does not need a
+    reinstall to learn a new job id, and no secret has to be written to carry it.
+    """
+    global _discovery_checked_at
+
+    now = time.time()
+    with _discovery_lock:
+        fresh = now - _discovery_checked_at < _DISCOVERY_TTL_SECONDS
+        complete = len(_discovered_jobs) == len(COLLECTION_JOBS)
+        if _discovered_jobs and (complete or fresh) and not force:
+            return dict(_discovered_jobs)
+
+    found: dict[str, str] = {}
+    try:
+        jobs = list(_sp_workspace_client().jobs.list())
+    except Exception:  # noqa: BLE001
+        logger.info("could not list jobs for discovery", exc_info=True)
+        jobs = []
+
+    for kind, spec in COLLECTION_JOBS.items():
+        pattern = spec['job_name_match'].lower()
+        for job in jobs:
+            name = ((job.settings.name if job.settings else "") or "").lower()
+            if pattern in name and job.job_id:
+                found[kind] = str(job.job_id)
+                break
+
+    with _discovery_lock:
+        _discovered_jobs.update(found)
+        _discovery_checked_at = now
+        return dict(_discovered_jobs)
+
+
+def _collection_job_id(kind):
+    """Resolve a job id for one collection, or None when its job is absent.
+
+    An explicitly configured id wins, so an operator can point the app at a
+    specific job; otherwise the id is discovered from the workspace.
     """
     spec = COLLECTION_JOBS.get(kind)
     if not spec:
@@ -13633,14 +13738,7 @@ def _collection_job_id(kind):
         value = (os.getenv(var) or '').strip()
         if value.isdigit():
             return value
-    for name, value in os.environ.items():
-        upper = name.upper()
-        if 'JOB' in upper and kind.upper()[:6] in upper:
-            value = (value or '').strip()
-            if value.isdigit():
-                logger.info("resolved %s job id from env var %s", kind, name)
-                return value
-    return None
+    return _discover_collection_jobs().get(kind)
 
 
 def _normalise_run(run):
