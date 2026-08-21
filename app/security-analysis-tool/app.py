@@ -2101,6 +2101,104 @@ def get_main_html():
         }
         .health-summary.ok { background: rgba(34, 197, 94, 0.1); color: #86efac; }
         .health-summary.bad { background: rgba(245, 158, 11, 0.1); color: #fcd34d; }
+        /* Collapsible sections. The panel was one long column, so reaching the
+           model setting meant scrolling past credentials and job status. */
+        .settings-section {
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, .015);
+        }
+        .section-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 13px 15px;
+            background: transparent;
+            border: none;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            transition: background .15s;
+        }
+        .section-head:hover { background: rgba(255, 255, 255, .035); }
+        .section-head.is-open { background: rgba(255, 255, 255, .03); }
+        .section-titles { flex: 1; min-width: 0; }
+        .section-title {
+            display: block;
+            font-size: .92em;
+            font-weight: 650;
+        }
+        .section-sub {
+            display: block;
+            font-size: .78em;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .section-badge {
+            font-size: .72em;
+            font-weight: 650;
+            padding: 3px 9px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, .07);
+            color: var(--text-secondary);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .section-chevron {
+            width: 15px;
+            height: 15px;
+            flex-shrink: 0;
+            color: var(--text-muted);
+            transition: transform .18s ease;
+            pointer-events: none;
+        }
+        .section-head.is-open .section-chevron { transform: rotate(180deg); }
+        .section-body {
+            padding: 4px 15px 16px;
+            border-top: 1px solid rgba(255, 255, 255, .05);
+        }
+        .section-body > .field:last-of-type { margin-bottom: 0; }
+
+        /* An input with a trailing control. The button is positioned inside the
+           field so the two align on one baseline rather than stacking. */
+        .input-group { position: relative; display: flex; align-items: center; }
+        .input-group .field-input { padding-right: 42px; }
+        .input-affix {
+            position: absolute;
+            right: 4px;
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 7px;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: color .15s, background .15s;
+        }
+        .input-affix:hover { color: var(--text-primary); background: rgba(255, 255, 255, .07); }
+        .input-affix svg { width: 15px; height: 15px; pointer-events: none; }
+
+        .job-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 0;
+            font-size: .86em;
+            border-bottom: 1px solid rgba(255, 255, 255, .04);
+        }
+        .job-row:last-child { border-bottom: none; }
+        .job-state { font-size: .88em; font-weight: 600; }
+        .job-state.on { color: #86efac; }
+        .job-state.off { color: var(--text-muted); }
+
         .field { margin-bottom: 20px; }
         .field-label {
             display: block;
@@ -6196,6 +6294,27 @@ def get_main_html():
             if (bar) bar.hidden = Object.keys(settingsState.dirty).length === 0;
         }
 
+        // Sections are collapsible and remember their state for the session, so
+        // an operator who only came to change the model is not scrolling past
+        // credentials and job status to reach it.
+        const SETTINGS_SECTIONS = [
+            { id: 'connection', title: 'Connection', sub: 'Where results are read from and written to' },
+            { id: 'assistant', title: 'Assistant', sub: 'Model and data sources behind the security assistant' },
+            { id: 'access', title: 'Access', sub: 'Who sees which results' },
+            { id: 'credentials', title: 'Account credentials', sub: 'Used by the analysis jobs' },
+            { id: 'jobs', title: 'Analysis jobs', sub: 'Deployment status in this workspace' },
+        ];
+        const settingsOpen = { connection: true, assistant: false, access: false,
+                               credentials: false, jobs: false };
+
+        function toggleSettingsSection(id) {
+            settingsOpen[id] = !settingsOpen[id];
+            const body = document.getElementById(`sec-${id}`);
+            const head = document.querySelector(`[data-section="${id}"]`);
+            if (body) body.hidden = !settingsOpen[id];
+            if (head) head.classList.toggle('is-open', settingsOpen[id]);
+        }
+
         function renderSettings() {
             const data = settingsState.data || {};
             const choices = settingsState.choices || {};
@@ -6205,8 +6324,6 @@ def get_main_html():
 
             let html = '';
 
-            // Problems first, in plain language, with the fix. Healthy items are not
-            // listed individually: a list of eight "Healthy" rows is noise.
             if (problems.length) {
                 html += problems.map(c => `
                     <div class="issue">
@@ -6218,39 +6335,41 @@ def get_main_html():
                 html += `
                     <div class="all-clear">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
-                        <span>Everything is working</span>
+                        <span>Everything is connected and working</span>
                     </div>`;
             }
 
             const warehouses = choices.warehouses || [];
             const models = choices.model_endpoints || [];
             const spaces = choices.genie_spaces || [];
+            const creds = settingsState.credentials || {};
+            const present = creds.present || {};
+            const bothSet = present.client_id && present.client_secret;
+            const jobs = cfg.jobs || {};
+            const jobKeys = Object.keys(jobs);
+            const connected = jobKeys.filter(k => jobs[k].connected);
 
-            html += '<div class="drawer-section-label">Configuration</div>';
-
-            html += settingField('warehouse_id', 'SQL warehouse',
-                'Compute used for every report, scan result, and alert.',
-                selectMarkup('warehouse_id', cfg.warehouse_id,
-                    warehouses.map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` }))));
-
-            html += settingField('schema', 'Results schema',
-                'Catalog and schema where analysis results are written.',
-                `<input class="field-input" id="set-schema" type="text"
-                        value="${escapeHtml(cfg.schema || '')}"
-                        onchange="markSettingDirty('schema', this.value)">`);
-
-            html += settingField('model_endpoint', 'Assistant model',
-                'Language model behind the security assistant.',
-                selectMarkup('model_endpoint', cfg.model_endpoint,
-                    models.map(m => ({ value: m, label: m }))));
-
-            html += settingField('genie_space_id', 'Genie space',
-                'Optional. Lets the assistant answer from a Genie space you already use.',
-                selectMarkup('genie_space_id', cfg.genie_space_id,
-                    spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None'));
-
-            html += `
-                <div class="field">
+            const bodies = {
+                connection:
+                    settingField('warehouse_id', 'SQL warehouse',
+                        'Compute used for every report, scan result, and alert.',
+                        selectMarkup('warehouse_id', cfg.warehouse_id,
+                            warehouses.map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` })))) +
+                    settingField('schema', 'Results schema',
+                        'Catalog and schema where analysis results are written.',
+                        `<input class="field-input" id="set-schema" type="text"
+                                value="${escapeHtml(cfg.schema || '')}"
+                                onchange="markSettingDirty('schema', this.value)">`),
+                assistant:
+                    settingField('model_endpoint', 'Model',
+                        'Language model behind the security assistant.',
+                        selectMarkup('model_endpoint', cfg.model_endpoint,
+                            models.map(m => ({ value: m, label: m })))) +
+                    settingField('genie_space_id', 'Genie space',
+                        'Optional. Lets the assistant answer from a Genie space you already use.',
+                        selectMarkup('genie_space_id', cfg.genie_space_id,
+                            spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None')),
+                access: `
                     <label class="switch-row" for="set-filtering">
                         <span>
                             <span class="field-label">Show each person only their own data</span>
@@ -6258,47 +6377,35 @@ def get_main_html():
                         </span>
                         <input id="set-filtering" type="checkbox" ${cfg.sp_fallback_allowed ? '' : 'checked'}
                                onchange="markSettingDirty('per_user_filtering', this.checked)">
-                    </label>
-                </div>`;
+                    </label>`,
+                credentials: credentialsMarkup(creds, bothSet),
+                jobs: jobKeys.map(k => `
+                    <div class="job-row">
+                        <span>${escapeHtml(jobs[k].label)}</span>
+                        <span class="job-state ${jobs[k].connected ? 'on' : 'off'}">${jobs[k].connected ? 'Deployed' : 'Not deployed'}</span>
+                    </div>`).join(''),
+            };
 
-            const creds = settingsState.credentials || {};
-            const present = creds.present || {};
-            const bothSet = present.client_id && present.client_secret;
-            html += '<div class="drawer-section-label">Account credentials</div>';
-            html += `
-                <div class="field-help" style="margin-bottom:12px;">
-                    Used by the analysis jobs to read account-level settings.
-                    ${bothSet ? 'Currently set.' : 'Not set yet.'}
-                    ${creds.writable === false
-                        ? 'This app has read-only access to the secret scope, so it cannot change them.'
-                        : 'Stored in the secret scope, so they survive a restart.'}
-                </div>`;
-            if (creds.writable !== false) {
-                html += `
-                    <div class="field">
-                        <span class="field-label">Client ID</span>
-                        <input class="field-input" id="cred-client-id" type="text"
-                               autocomplete="off" placeholder="${bothSet ? 'Set. Enter a new value to replace it.' : 'Service principal application ID'}">
-                    </div>
-                    <div class="field">
-                        <span class="field-label">Client secret</span>
-                        <input class="field-input" id="cred-client-secret" type="password"
-                               autocomplete="new-password" placeholder="${bothSet ? 'Set. Enter a new value to replace it.' : 'OAuth secret'}">
-                        <span class="field-help">Both values are replaced together and are verified before being stored.</span>
-                    </div>
-                    <div class="cred-actions">
-                        <span class="savebar-text" id="cred-status"></span>
-                        <button class="btn btn-sm btn-ghost" id="cred-save" onclick="saveCredentials()">Update credentials</button>
-                    </div>`;
-            }
+            const badges = {
+                credentials: bothSet ? 'Set' : 'Not set',
+                jobs: `${connected.length} of ${jobKeys.length}`,
+            };
 
-            const jobs = cfg.jobs || {};
-            const missing = Object.keys(jobs).filter(k => !jobs[k].connected);
-            html += '<div class="drawer-section-label">Analysis jobs</div>';
-            html += `<div class="field-help" style="margin-bottom:10px;">
-                ${Object.keys(jobs).length - missing.length} of ${Object.keys(jobs).length} deployed in this workspace.
-                ${missing.length ? 'Not yet deployed: ' + missing.map(k => escapeHtml(jobs[k].label)).join(', ') + '.' : ''}
-            </div>`;
+            html += SETTINGS_SECTIONS.map(section => `
+                <section class="settings-section">
+                    <button type="button" class="section-head${settingsOpen[section.id] ? ' is-open' : ''}"
+                            data-section="${section.id}" onclick="toggleSettingsSection('${section.id}')">
+                        <span class="section-titles">
+                            <span class="section-title">${escapeHtml(section.title)}</span>
+                            <span class="section-sub">${escapeHtml(section.sub)}</span>
+                        </span>
+                        ${badges[section.id] ? `<span class="section-badge">${escapeHtml(badges[section.id])}</span>` : ''}
+                        <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <div class="section-body" id="sec-${section.id}"${settingsOpen[section.id] ? '' : ' hidden'}>
+                        ${bodies[section.id]}
+                    </div>
+                </section>`).join('');
 
             html += `
                 <div class="drawer-savebar" id="settings-savebar" hidden>
@@ -6313,6 +6420,80 @@ def get_main_html():
                 </div>`;
 
             document.getElementById('settings-body').innerHTML = html;
+        }
+
+        function credentialsMarkup(creds, bothSet) {
+            if (creds.writable === false) {
+                return `
+                    <div class="field-help">
+                        This app has read-only access to the secret scope, so credentials
+                        cannot be changed here. An administrator can grant it WRITE on
+                        <code>sat_scope</code>.
+                    </div>`;
+            }
+            const hint = bothSet ? 'Set. Enter a new value to replace it.' : '';
+            return `
+                <div class="field">
+                    <span class="field-label">Client ID</span>
+                    <div class="input-group">
+                        <input class="field-input" id="cred-client-id" type="text"
+                               autocomplete="off" placeholder="${escapeHtml(hint || 'Service principal application ID')}">
+                        <button type="button" class="input-affix" onclick="revealStoredClientId()"
+                                title="Show the stored client ID" aria-label="Show the stored client ID">
+                            ${EYE_SVG}
+                        </button>
+                    </div>
+                </div>
+                <div class="field">
+                    <span class="field-label">Client secret</span>
+                    <div class="input-group">
+                        <input class="field-input" id="cred-client-secret" type="password"
+                               autocomplete="new-password" placeholder="${escapeHtml(hint || 'OAuth secret')}">
+                        <button type="button" class="input-affix" id="cred-eye"
+                                onclick="toggleSecretVisibility()"
+                                title="Show what you have typed" aria-label="Show what you have typed">
+                            ${EYE_SVG}
+                        </button>
+                    </div>
+                    <span class="field-help">Both values are replaced together and verified before being stored.</span>
+                </div>
+                <div class="cred-actions">
+                    <span class="savebar-text" id="cred-status"></span>
+                    <button class="btn btn-sm btn-ghost" id="cred-save" onclick="saveCredentials()">Update credentials</button>
+                </div>`;
+        }
+
+        const EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+        const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a18 18 0 0 1-2.2 3.1M6.1 6.1A18 18 0 0 0 2 11s3.6 7 10 7a9.1 9.1 0 0 0 3.5-.68"/><path d="M1 1l22 22"/></svg>';
+
+        function toggleSecretVisibility() {
+            const field = document.getElementById('cred-client-secret');
+            const button = document.getElementById('cred-eye');
+            const showing = field.type === 'text';
+            field.type = showing ? 'password' : 'text';
+            button.innerHTML = showing ? EYE_SVG : EYE_OFF_SVG;
+            button.title = showing ? 'Show what you have typed' : 'Hide';
+        }
+
+        async function revealStoredClientId() {
+            const field = document.getElementById('cred-client-id');
+            const status = document.getElementById('cred-status');
+            try {
+                const result = await fetch('/api/settings/credentials/reveal', { method: 'POST' })
+                    .then(r => r.json());
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'savebar-text is-error';
+                    return;
+                }
+                field.value = result.client_id || '';
+                field.type = 'text';
+                status.textContent = 'Showing the client ID currently stored.';
+                status.className = 'savebar-text';
+            } catch (e) {
+                status.textContent = e.message;
+                status.className = 'savebar-text is-error';
+            }
         }
 
         function settingField(key, label, help, control) {
@@ -13079,6 +13260,29 @@ def api_settings_credentials():
     except Exception as exc:  # noqa: BLE001
         logger.exception('credential status failed')
         return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/settings/credentials/reveal', methods=['POST'])
+def api_settings_credentials_reveal():
+    """Return the stored client ID, but never the secret.
+
+    The ID is an identifier and is useful for confirming which service principal
+    is configured. The secret is withheld: the panel is reachable by anyone who can
+    open the app, so returning it would make read access to the app equivalent to
+    read access to the credential. The eye control on the secret field reveals what
+    has been typed, which is what an operator actually needs when checking a paste.
+    """
+    try:
+        client = _sp_workspace_client()
+        stored = client.secrets.get_secret(
+            scope=SAT_SECRET_SCOPE, key=CREDENTIAL_KEYS['client_id'])
+        import base64
+        value = base64.b64decode(stored.value or '').decode('utf-8', errors='replace')
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': f'Could not read the stored client ID: {str(exc)[:180]}'}), 500
+
+    logger.info('stored client id revealed to %s', _assistant_user())
+    return jsonify({'client_id': value})
 
 
 @app.route('/api/settings/credentials', methods=['PUT'])
