@@ -1957,11 +1957,6 @@ def get_main_html():
         }
 
         /* --- Settings panel --- */
-        .sidebar-footer-actions {
-            display: flex;
-            justify-content: flex-end;
-            padding: 10px 16px 0;
-        }
         .icon-btn {
             position: relative;
             width: 32px;
@@ -1981,7 +1976,7 @@ def get_main_html():
             background: rgba(255, 255, 255, .06);
             border-color: rgba(255, 255, 255, .1);
         }
-        .icon-btn svg { width: 17px; height: 17px; }
+        .icon-btn svg { width: 17px; height: 17px; pointer-events: none; }
         .status-dot {
             position: absolute;
             top: 5px;
@@ -2030,92 +2025,88 @@ def get_main_html():
         .drawer-sub { font-size: .82em; color: var(--text-muted); margin-top: 2px; }
         .drawer-body { padding: 18px 22px 26px; overflow-y: auto; }
 
-        /* Status rows: a coloured rail and a label, no table borders. */
-        .health-summary {
+        /* Problems, stated plainly. Healthy items are not listed: eight rows
+           reading "Healthy" is noise, not information. */
+        .all-clear {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 9px;
             font-size: .88em;
-            padding: 11px 14px;
+            color: #86efac;
+            padding: 12px 14px;
             border-radius: 10px;
-            margin-bottom: 18px;
+            background: rgba(34, 197, 94, .09);
+            margin-bottom: 4px;
         }
-        .health-summary.ok { background: rgba(34, 197, 94, .1); color: #86efac; }
-        .health-summary.bad { background: rgba(245, 158, 11, .1); color: #fcd34d; }
-        .check {
-            display: grid;
-            grid-template-columns: 8px minmax(0, 1fr);
-            gap: 0 12px;
-            padding: 12px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, .05);
+        .all-clear svg { width: 15px; height: 15px; flex-shrink: 0; }
+        .issue {
+            padding: 13px 15px;
+            border-radius: 10px;
+            background: rgba(245, 158, 11, .08);
+            border: 1px solid rgba(245, 158, 11, .22);
+            margin-bottom: 10px;
         }
-        .check:last-of-type { border-bottom: none; }
-        .check-rail {
-            align-self: stretch;
-            border-radius: 3px;
-            background: #22c55e;
-        }
-        .check-rail.bad { background: #f59e0b; }
-        .check-rail.muted { background: rgba(148, 163, 184, .45); }
-        .check-name {
-            font-size: .9em;
+        .issue-head { font-size: .9em; font-weight: 650; color: #fcd34d; }
+        .issue-body { font-size: .85em; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
+        .issue-fix { font-size: .83em; color: var(--text-muted); margin-top: 7px; line-height: 1.5; }
+
+        .field { margin-bottom: 20px; }
+        .field-label {
+            display: block;
+            font-size: .88em;
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
+            margin-bottom: 7px;
         }
-        .check-state { font-size: .76em; font-weight: 600; color: var(--text-muted); }
-        .check-body { font-size: .84em; color: var(--text-secondary); margin-top: 3px; line-height: 1.5; }
-        .check-fix {
-            font-size: .82em;
-            color: #fcd34d;
-            margin-top: 7px;
+        .field-help {
+            display: block;
+            font-size: .8em;
+            color: var(--text-muted);
+            margin-top: 6px;
             line-height: 1.5;
         }
-
-        .drawer-section-label {
-            font-size: .72em;
-            font-weight: 700;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            margin: 24px 0 10px;
+        .field-input {
+            width: 100%;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, .04);
+            border: 1px solid rgba(255, 255, 255, .12);
+            border-radius: 9px;
+            padding: 9px 12px;
+            color: var(--text-primary);
+            font-size: .9em;
+            transition: border-color .15s, background .15s;
         }
-        .kv {
+        .field-input:hover { background: rgba(255, 255, 255, .06); }
+        .field-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, .06);
+        }
+        .switch-row {
             display: flex;
-            align-items: baseline;
+            align-items: flex-start;
             justify-content: space-between;
-            gap: 14px;
-            padding: 8px 0;
-            font-size: .86em;
-            border-bottom: 1px solid rgba(255, 255, 255, .04);
+            gap: 16px;
+            cursor: pointer;
         }
-        .kv:last-of-type { border-bottom: none; }
-        .kv-key { color: var(--text-muted); flex-shrink: 0; }
-        .kv-val {
-            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-            font-size: .92em;
-            text-align: right;
-            overflow-wrap: anywhere;
-        }
-        .kv-val.unset { font-family: inherit; color: var(--text-muted); font-style: italic; }
-        .kv-val.on { color: #86efac; font-family: inherit; }
-        .kv-val.off { color: var(--text-muted); font-family: inherit; }
-        .drawer-actions {
+        .switch-row input { margin-top: 3px; flex-shrink: 0; }
+
+        .drawer-savebar {
+            position: sticky;
+            bottom: 0;
             display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 20px;
-            padding-top: 16px;
-            border-top: 1px solid rgba(255, 255, 255, .07);
+            align-items: center;
+            gap: 9px;
+            margin: 8px -22px -26px;
+            padding: 14px 22px;
+            background: var(--bg-card);
+            border-top: 1px solid rgba(255, 255, 255, .1);
         }
-        .drawer-note {
-            font-size: .81em;
+        .savebar-text {
+            flex: 1;
+            font-size: .82em;
             color: var(--text-muted);
-            line-height: 1.6;
-            margin-top: 16px;
         }
+        .savebar-text.is-error { color: #fca5a5; }
 
         /* --- Secret-scanning alerts --- */
         .alert-toolbar {
@@ -2827,27 +2818,20 @@ def get_main_html():
                     </div>
                 </div>
 
-                <!-- Spacer to push footer to bottom -->
-                <div class="sidebar-spacer"></div>
+            </nav>
 
-                <!-- Settings, kept out of the grouped sections above: it reports
-                     on the app itself rather than on the estate. -->
-                <div class="sidebar-footer-actions">
-                    <button class="icon-btn" id="settings-gear" title="Settings and health"
-                            aria-label="Settings and health" onclick="openSettingsPanel()">
+            <div class="sidebar-footer">
+                <a class="sidebar-footer-link" href="https://www.databricks.com/trust"
+                       target="_blank" rel="noopener noreferrer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        Trust Center
+                    </a>
+                    <button class="icon-btn" id="settings-gear" title="Settings"
+                            aria-label="Settings" onclick="openSettingsPanel()">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                         <span class="status-dot" id="settings-dot" hidden></span>
                     </button>
                 </div>
-                
-                <!-- Optional footer info -->
-                <div style="padding: 20px; border-top: 1px solid rgba(255, 255, 255, 0.05); background: rgba(0, 0, 0, 0.1); font-size: 0.75em; color: rgba(255, 255, 255, 0.4); text-align: center;">
-                    <a href="https://www.databricks.com/trust" target="_blank" rel="noopener noreferrer" style="color: rgba(102, 126, 234, 0.8); text-decoration: none; font-size: 1em; transition: color 0.2s; white-space: nowrap; display: inline-block;" onmouseover="this.style.color='rgba(102, 126, 234, 1)'" onmouseout="this.style.color='rgba(102, 126, 234, 0.8)'">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                        Databricks Security & Trust Center
-                    </a>
-                </div>
-            </nav>
         </aside>
 
         <!-- Main Content -->
@@ -6086,18 +6070,18 @@ def get_main_html():
         }
 
         // --- Settings panel -------------------------------------------------
-        // Opened from the gear in the sidebar. Configuration is read-only: the
-        // warehouse, schema and OAuth scopes bind to the app resource at deploy
-        // time, so editing them here could not take effect until the next deploy,
-        // and letting the app rewrite its own credentials would let anyone who can
-        // open it widen their access.
+        // Values that the app reads per request are editable here and take effect
+        // immediately. Each is validated against the workspace before it is
+        // applied, so a mistyped warehouse cannot break every page.
+
+        const settingsState = { data: null, choices: null, dirty: {}, saving: false };
 
         function openSettingsPanel() {
             document.body.classList.add('drawer-open');
             document.getElementById('settings-scrim').hidden = false;
             document.getElementById('settings-drawer').hidden = false;
             document.getElementById('settings-body').innerHTML =
-                '<div class="loading"><div class="spinner"></div>Checking dependencies\u2026</div>';
+                '<div class="loading"><div class="spinner"></div>Checking your environment\u2026</div>';
             loadSettings();
         }
 
@@ -6105,23 +6089,29 @@ def get_main_html():
             document.body.classList.remove('drawer-open');
             document.getElementById('settings-scrim').hidden = true;
             document.getElementById('settings-drawer').hidden = true;
+            settingsState.dirty = {};
         }
 
         document.addEventListener('keydown', ev => {
-            if (ev.key === 'Escape' && !document.getElementById('settings-drawer').hidden) {
-                closeSettingsPanel();
-            }
+            const drawer = document.getElementById('settings-drawer');
+            if (ev.key === 'Escape' && drawer && !drawer.hidden) closeSettingsPanel();
         });
 
         async function loadSettings() {
             try {
-                const data = await fetch('/api/settings').then(r => r.json());
+                const [data, choices] = await Promise.all([
+                    fetch('/api/settings').then(r => r.json()),
+                    fetch('/api/settings/choices').then(r => r.json()).catch(() => ({})),
+                ]);
                 if (data.error) {
                     document.getElementById('settings-body').innerHTML =
                         `<div class="health-summary bad">${escapeHtml(data.error)}</div>`;
                     return;
                 }
-                renderSettings(data);
+                settingsState.data = data;
+                settingsState.choices = choices || {};
+                settingsState.dirty = {};
+                renderSettings();
                 updateSettingsIndicator(data.failing_count || 0);
             } catch (e) {
                 document.getElementById('settings-body').innerHTML =
@@ -6135,83 +6125,165 @@ def get_main_html():
             const gear = document.getElementById('settings-gear');
             if (gear) {
                 gear.title = failing
-                    ? `${failing} dependency ${failing === 1 ? 'needs' : 'need'} attention`
-                    : 'Settings and health';
+                    ? `${failing} item${failing === 1 ? '' : 's'} need attention`
+                    : 'Settings';
             }
         }
 
-        function renderSettings(data) {
+        function markSettingDirty(key, value) {
+            settingsState.dirty[key] = value;
+            const bar = document.getElementById('settings-savebar');
+            if (bar) bar.hidden = Object.keys(settingsState.dirty).length === 0;
+        }
+
+        function renderSettings() {
+            const data = settingsState.data || {};
+            const choices = settingsState.choices || {};
             const cfg = data.config || {};
-            const links = data.links || {};
             const checks = data.checks || [];
-            const failing = checks.filter(c => !c.ok).length;
+            const problems = checks.filter(c => !c.ok);
 
-            let html = failing
-                ? `<div class="health-summary bad">${failing} of ${checks.length} dependencies need attention</div>`
-                : `<div class="health-summary ok">All ${checks.length} dependencies are healthy</div>`;
+            let html = '';
 
-            checks.forEach(c => {
-                const tone = c.ok ? (c.optional ? 'muted' : '') : 'bad';
-                const state = c.ok ? (c.optional ? 'Optional' : 'Healthy') : 'Needs attention';
+            // Problems first, in plain language, with the fix. Healthy items are not
+            // listed individually: a list of eight "Healthy" rows is noise.
+            if (problems.length) {
+                html += problems.map(c => `
+                    <div class="issue">
+                        <div class="issue-head">${escapeHtml(c.label)}</div>
+                        <div class="issue-body">${escapeHtml(c.detail || '')}</div>
+                        ${c.remedy ? `<div class="issue-fix">${escapeHtml(c.remedy)}</div>` : ''}
+                    </div>`).join('');
+            } else {
                 html += `
-                    <div class="check">
-                        <span class="check-rail ${tone}"></span>
-                        <div>
-                            <div class="check-name">
-                                <span>${escapeHtml(c.label)}</span>
-                                <span class="check-state">${state}</span>
-                            </div>
-                            <div class="check-body">${escapeHtml(c.detail || '')}</div>
-                            ${c.remedy ? `<div class="check-fix">${escapeHtml(c.remedy)}</div>` : ''}
-                        </div>
+                    <div class="all-clear">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                        <span>Everything is working</span>
                     </div>`;
-            });
-
-            const row = (key, value, cls) => `
-                <div class="kv">
-                    <span class="kv-key">${escapeHtml(key)}</span>
-                    <span class="kv-val ${cls || (value ? '' : 'unset')}">${escapeHtml(value || 'Not set')}</span>
-                </div>`;
-
-            html += '<div class="drawer-section-label">Configuration</div>';
-            html += row('Workspace', (cfg.workspace_host || '').replace(/^https:\/\//, ''));
-            html += row('SAT schema', cfg.schema);
-            html += row('SQL warehouse', cfg.warehouse_id);
-            html += row('Assistant model', cfg.model_endpoint);
-            html += row('Genie space', cfg.genie_space_id);
-            html += row('Per-user filtering',
-                cfg.sp_fallback_allowed ? 'Disabled' : 'Enforced',
-                cfg.sp_fallback_allowed ? 'off' : 'on');
-
-            const jobs = cfg.jobs || {};
-            const jobKeys = Object.keys(jobs);
-            if (jobKeys.length) {
-                html += '<div class="drawer-section-label">Collection jobs</div>';
-                jobKeys.forEach(k => {
-                    html += row(jobs[k].label,
-                        jobs[k].connected ? 'Connected' : 'Not deployed',
-                        jobs[k].connected ? 'on' : 'off');
-                });
             }
 
+            const warehouses = choices.warehouses || [];
+            const models = choices.model_endpoints || [];
+            const spaces = choices.genie_spaces || [];
+
+            html += '<div class="drawer-section-label">Configuration</div>';
+
+            html += settingField('warehouse_id', 'SQL warehouse',
+                'Runs every query and every alert.',
+                selectMarkup('warehouse_id', cfg.warehouse_id,
+                    warehouses.map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` }))));
+
+            html += settingField('schema', 'Results schema',
+                'Where collection results are stored, as catalog.schema.',
+                `<input class="field-input" id="set-schema" type="text"
+                        value="${escapeHtml(cfg.schema || '')}"
+                        onchange="markSettingDirty('schema', this.value)">`);
+
+            html += settingField('model_endpoint', 'Assistant model',
+                'Answers questions in the security assistant.',
+                selectMarkup('model_endpoint', cfg.model_endpoint,
+                    models.map(m => ({ value: m, label: m }))));
+
+            html += settingField('genie_space_id', 'Genie space',
+                'Optional. Lets the assistant answer from your Genie space.',
+                selectMarkup('genie_space_id', cfg.genie_space_id,
+                    spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None'));
+
             html += `
-                <div class="drawer-actions">
-                    <button class="btn btn-sm btn-ghost" onclick="loadSettings()">Re-check</button>
-                    ${links.warehouse ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.warehouse)}" target="_blank" rel="noopener">Warehouse</a>` : ''}
-                    ${links.alerts ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.alerts)}" target="_blank" rel="noopener">Alerts</a>` : ''}
-                    ${links.app_settings ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(links.app_settings)}" target="_blank" rel="noopener">App settings</a>` : ''}
+                <div class="field">
+                    <label class="switch-row" for="set-filtering">
+                        <span>
+                            <span class="field-label">Show each person only their own data</span>
+                            <span class="field-help">Results are filtered by the viewer's own Unity Catalog permissions. Turning this off shows everyone the full dataset.</span>
+                        </span>
+                        <input id="set-filtering" type="checkbox" ${cfg.sp_fallback_allowed ? '' : 'checked'}
+                               onchange="markSettingDirty('per_user_filtering', this.checked)">
+                    </label>
+                </div>`;
+
+            const jobs = cfg.jobs || {};
+            const missing = Object.keys(jobs).filter(k => !jobs[k].connected);
+            html += '<div class="drawer-section-label">Analysis jobs</div>';
+            html += `<div class="field-help" style="margin-bottom:10px;">
+                ${Object.keys(jobs).length - missing.length} of ${Object.keys(jobs).length} deployed in this workspace.
+                ${missing.length ? 'Not yet deployed: ' + missing.map(k => escapeHtml(jobs[k].label)).join(', ') + '.' : ''}
+            </div>`;
+
+            html += `
+                <div class="drawer-savebar" id="settings-savebar" hidden>
+                    <span class="savebar-text" id="settings-saveerr"></span>
+                    <button class="btn btn-sm btn-ghost" onclick="loadSettings()">Discard</button>
+                    <button class="btn btn-sm" id="settings-save" onclick="saveSettings()">Save</button>
                 </div>
                 <div class="drawer-note">
-                    Configuration binds to the app when it is deployed, so these values are
-                    shown read-only. Change them with the installer or in the workspace, then
-                    re-check here.
+                    Changes apply immediately. If the app restarts, it returns to the values
+                    set when it was installed.
                 </div>`;
 
             document.getElementById('settings-body').innerHTML = html;
         }
 
-        // Surface a dot on the gear at load, so a broken dependency is visible
-        // without opening the panel.
+        function settingField(key, label, help, control) {
+            return `
+                <div class="field">
+                    <span class="field-label">${escapeHtml(label)}</span>
+                    ${control}
+                    <span class="field-help">${escapeHtml(help)}</span>
+                </div>`;
+        }
+
+        function selectMarkup(key, current, options, emptyLabel) {
+            // An unlisted current value is still offered, so opening the panel can
+            // never silently change a setting that the workspace no longer lists.
+            const known = options.some(o => o.value === current);
+            const extra = (!known && current)
+                ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>` : '';
+            return `
+                <select class="field-input" id="set-${escapeHtml(key)}"
+                        onchange="markSettingDirty('${escapeHtml(key)}', this.value)">
+                    ${emptyLabel ? `<option value=""${!current ? ' selected' : ''}>${escapeHtml(emptyLabel)}</option>` : ''}
+                    ${extra}
+                    ${options.map(o => `<option value="${escapeHtml(o.value)}"${o.value === current ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+                </select>`;
+        }
+
+        async function saveSettings() {
+            if (settingsState.saving) return;
+            const button = document.getElementById('settings-save');
+            const status = document.getElementById('settings-saveerr');
+            settingsState.saving = true;
+            button.disabled = true;
+            button.textContent = 'Saving\u2026';
+            status.textContent = '';
+            status.className = 'savebar-text';
+            try {
+                const result = await fetch('/api/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settingsState.dirty),
+                }).then(r => r.json());
+
+                if (result.errors || result.error) {
+                    const messages = result.errors
+                        ? Object.values(result.errors) : [result.error];
+                    status.textContent = messages.join(' ');
+                    status.className = 'savebar-text is-error';
+                    button.disabled = false;
+                    button.textContent = 'Save';
+                    settingsState.saving = false;
+                    return;
+                }
+                settingsState.saving = false;
+                await loadSettings();
+            } catch (e) {
+                status.textContent = e.message;
+                status.className = 'savebar-text is-error';
+                button.disabled = false;
+                button.textContent = 'Save';
+                settingsState.saving = false;
+            }
+        }
+
         (function probeSettings() {
             function run() {
                 fetch('/api/settings')
@@ -12618,6 +12690,186 @@ def _settings_probe(label, fn, remedy):
     if not ok:
         entry['remedy'] = remedy
     return entry
+
+
+# Settings changed from the app. Held in memory and applied over the deployed
+# configuration, so a change takes effect on the next request without a redeploy.
+# A restart falls back to the values the installer bound, which stay the source of
+# truth; every setting here is read per request rather than cached at import.
+_SETTING_SPECS = {
+    'warehouse_id': {
+        'env': 'WAREHOUSE_ID',
+        'label': 'SQL warehouse',
+        'help': 'Runs every query and every alert.',
+    },
+    'schema': {
+        'env': 'SAT_SCHEMA',
+        'label': 'Results schema',
+        'help': 'Unity Catalog schema holding collection results, as catalog.schema.',
+    },
+    'model_endpoint': {
+        'env': 'MODEL_ENDPOINT',
+        'label': 'Assistant model',
+        'help': 'Serving endpoint that answers questions in the assistant.',
+    },
+    'genie_space_id': {
+        'env': 'GENIE_SPACE_ID',
+        'label': 'Genie space',
+        'help': 'Optional. Leave empty to disable the Genie tool.',
+    },
+    'per_user_filtering': {
+        'env': 'ALLOW_SERVICE_PRINCIPAL_FALLBACK',
+        'label': 'Per-user data filtering',
+        'help': 'When on, each person sees only what their own Unity Catalog grants allow.',
+        'type': 'boolean',
+        'inverted': True,
+    },
+}
+
+
+def _apply_setting(key, value):
+    """Write one setting into the process environment.
+
+    Booleans are stored inverted where the underlying variable is a negative
+    (ALLOW_SERVICE_PRINCIPAL_FALLBACK disables filtering), so the UI can offer the
+    positive statement without the operator having to reason about the negation.
+    """
+    spec = _SETTING_SPECS[key]
+    if spec.get('type') == 'boolean':
+        enabled = bool(value)
+        # ALLOW_SERVICE_PRINCIPAL_FALLBACK disables filtering, so the stored value
+        # is the negation of what the panel offers.
+        stored = (not enabled) if spec.get('inverted') else enabled
+        os.environ[spec['env']] = 'true' if stored else 'false'
+        return
+    os.environ[spec['env']] = str(value or '').strip()
+
+
+def _validate_setting(key, value):
+    """Return an error string, or None when the value is usable.
+
+    Values are checked against the workspace before being applied: a mistyped
+    warehouse or schema would otherwise turn every page into an error, from a
+    panel whose whole purpose is telling the operator what is wrong.
+    """
+    if key == 'per_user_filtering':
+        return None
+
+    text = str(value or '').strip()
+
+    if key == 'schema':
+        parts = [p.strip().strip('`').strip('"') for p in text.split('.') if p.strip()]
+        if len(parts) != 2:
+            return "Enter the schema as catalog.schema."
+        try:
+            exec_query_df(f"SELECT 1 FROM `{parts[0]}`.`{parts[1]}`.brickhound_vertices LIMIT 1")
+        except NoAccessError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            return f"Could not read that schema: {str(exc)[:200]}"
+        return None
+
+    if key == 'warehouse_id':
+        if not text:
+            return "A SQL warehouse is required."
+        try:
+            _sp_workspace_client().warehouses.get(id=text)
+        except Exception as exc:  # noqa: BLE001
+            return f"No warehouse with that id: {str(exc)[:160]}"
+        return None
+
+    if key == 'model_endpoint':
+        if not text:
+            return "An assistant model is required."
+        try:
+            names = {e.name for e in _sp_workspace_client().serving_endpoints.list() if e.name}
+        except Exception as exc:  # noqa: BLE001
+            return f"Could not list serving endpoints: {str(exc)[:160]}"
+        if text not in names:
+            return f"'{text}' is not a serving endpoint in this workspace."
+        return None
+
+    if key == 'genie_space_id':
+        if not text:
+            return None
+        try:
+            _sp_workspace_client().genie.get_space(space_id=text)
+        except Exception as exc:  # noqa: BLE001
+            return f"Could not open that Genie space: {str(exc)[:160]}"
+        return None
+
+    return None
+
+
+@app.route('/api/settings', methods=['PATCH'])
+def api_settings_update():
+    """Change one or more settings, validating each against the workspace."""
+    payload = request.get_json(silent=True) or {}
+    unknown = [k for k in payload if k not in _SETTING_SPECS]
+    if unknown:
+        return jsonify({'error': f"Unknown setting: {', '.join(sorted(unknown))}"}), 400
+    if not payload:
+        return jsonify({'error': 'Nothing to change.'}), 400
+
+    errors = {}
+    for key, value in payload.items():
+        message = _validate_setting(key, value)
+        if message:
+            errors[key] = message
+    if errors:
+        return jsonify({'errors': errors}), 400
+
+    for key, value in payload.items():
+        _apply_setting(key, value)
+
+    # A new warehouse or schema invalidates cached run state and the selected
+    # model, so those caches are dropped rather than serving stale answers.
+    if 'warehouse_id' in payload or 'schema' in payload:
+        _invalidate_collection_cache()
+    if 'model_endpoint' in payload:
+        _selected_model['endpoint'] = None
+
+    logger.info("settings changed by %s: %s", _assistant_user(), sorted(payload))
+    return jsonify({'saved': True, 'changed': sorted(payload)})
+
+
+@app.route('/api/settings/choices')
+def api_settings_choices():
+    """Values the settings panel offers in its selects."""
+    warehouses, endpoints, spaces = [], [], []
+    client = None
+    try:
+        client = _sp_workspace_client()
+    except Exception:  # noqa: BLE001
+        logger.info('settings choices unavailable', exc_info=True)
+
+    if client is not None:
+        try:
+            warehouses = [
+                {'id': w.id, 'name': w.name,
+                 'state': str(getattr(w, 'state', '') or '').split('.')[-1]}
+                for w in client.warehouses.list() if w.id
+            ]
+        except Exception:  # noqa: BLE001
+            logger.info('could not list warehouses', exc_info=True)
+        try:
+            from agent.supervisor import list_chat_endpoints
+            endpoints = [e['name'] for e in list_chat_endpoints()]
+        except Exception:  # noqa: BLE001
+            logger.info('could not list chat endpoints', exc_info=True)
+        try:
+            spaces = [
+                {'id': sp.space_id, 'name': sp.title or sp.space_id}
+                for sp in client.genie.list_spaces().spaces or []
+            ]
+        except Exception:  # noqa: BLE001
+            logger.info('could not list genie spaces', exc_info=True)
+
+    return jsonify({
+        'warehouses': sorted(warehouses, key=lambda w: (w['name'] or '').lower()),
+        'model_endpoints': endpoints,
+        'genie_spaces': sorted(spaces, key=lambda s: (s['name'] or '').lower()),
+    })
 
 
 @app.route('/api/settings')
