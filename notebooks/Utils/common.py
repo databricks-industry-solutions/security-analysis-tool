@@ -401,6 +401,49 @@ def getSecurityBestPracticeRecord(id, cloud_type):
 # COMMAND ----------
 
 
+def any_check_enabled(*ids, cloud_type=None):
+    """True if any SAT check id is enabled for the current cloud.
+
+    Same rule as getSecurityBestPracticeRecord: enable = 1 and the cloud
+    column (aws / azure / gcp) = 1. Used to skip API collectors when no
+    enabled check needs that data.
+
+    If security_best_practices does not exist yet (setup before first load),
+    returns True so collection is not skipped accidentally.
+    """
+    if not ids:
+        return False
+    ct = cloud_type or (json_.get("cloud_type") if json_ else None)
+    if not ct or "none" in str(ct).lower():
+        return False
+    if ct not in ("aws", "azure", "gcp"):
+        return False
+    table = f"{json_['analysis_schema_name']}.security_best_practices"
+    if not spark.catalog.tableExists(table):
+        loggr.info(
+            f"{table} not found; treating checks {ids} as enabled for collection"
+        )
+        return True
+    id_vals = []
+    for check_id in ids:
+        try:
+            id_vals.append(str(int(check_id)))
+        except (TypeError, ValueError):
+            continue
+    if not id_vals:
+        return False
+    in_list = ",".join(id_vals)
+    df = spark.sql(
+        f"""SELECT 1 FROM {table}
+            WHERE id IN ({in_list}) AND enable = 1 AND `{ct}` = 1
+            LIMIT 1"""
+    )
+    return df.count() > 0
+
+
+# COMMAND ----------
+
+
 def getConfigPath():
     return f"{basePath()}/configs"
 
