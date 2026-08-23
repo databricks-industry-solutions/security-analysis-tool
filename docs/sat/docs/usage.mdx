@@ -12,13 +12,34 @@ Navigate to **Workspace -> Applications -> SAT -> files -> configs ->** `self_as
 
 </Admonition>
 
+## Workspace-only mode
+
+Use this when a **workspace admin** should analyze **this workspace only**, without Databricks account APIs or account-admin privileges.
+
+`./install.sh` does **not** set this flag. After install (or on an existing SAT), write the secret, then run the jobs in order:
+
+```sh
+databricks secrets put-secret sat_scope workspace-only-mode --string-value true
+```
+
+SAT also treats an empty or missing `account-console-id` as workspace-only. Prefer the explicit `workspace-only-mode` key so a leftover account id does not keep the account-admin path.
+
+Then:
+
+1. Run **SAT Initializer Notebook**. Confirm the log line `Workspace-only install: skip account listing and account connection tests`. The initializer registers the current workspace and sets account-level checks to `enable = 0`.
+2. Run **SAT Driver Notebook**.
+
+Azure still needs `tenant-id`, `client-id`, and `client-secret` for workspace OAuth. `subscription-id` is only required if GOV-3 stays enabled (the initializer leaves GOV-3 on when that secret is present).
+
+Re-running `./install.sh` overwrites `sat_scope` keys the installer knows about and does **not** recreate `workspace-only-mode`. Set the secret again after a reinstall.
+
 ## Running the SAT Jobs and Pipelines
 
 > **Note:** These jobs can take up to 10 minutes to run per workspace.
 
 Within the `Jobs and Pipelines` pane, there should now be two jobs available: **SAT Initializer Notebook** and **SAT Driver Notebook**.
 
-- Run the **SAT Initializer Notebook** first. It only needs to complete successfully once, though it can be re-run if needed.
+- Run the **SAT Initializer Notebook** first. It only needs to complete successfully once, though it can be re-run if needed. For workspace-only analysis, set `workspace-only-mode` **before** this job (see [Workspace-only mode](#workspace-only-mode)).
 - Once the initializer completes, run the **SAT Driver Notebook**, which can be executed on a recurring basis. By default, it is scheduled to run every Monday, Wednesday, and Friday.
 - Optionally, run the **SAT Secrets Scanner Notebook** to scan workspace notebooks for exposed secrets using TruffleHog. This can be run on-demand or scheduled separately based on your security requirements.
 
