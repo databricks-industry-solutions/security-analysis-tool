@@ -1494,8 +1494,13 @@ def main_scanning_workflow():
         raise
 
 # Execute the scanning workflow
+scan_results = None
+scan_error = None
 if __name__ == "__main__":
-    scan_results = main_scanning_workflow()
+    try:
+        scan_results = main_scanning_workflow()
+    except Exception as e:
+        scan_error = e
 
 # COMMAND ----------
 
@@ -1599,6 +1604,11 @@ if 'scan_results' in locals() and scan_results and scan_results.get("notebooks_w
     print("   Secrets were detected in your notebooks. Please address them promptly!")
 else:
     print("\n✅ No immediate action required - no secrets detected.")
+
+# COMMAND ----------
+
+if 'scan_error' in locals() and scan_error is not None:
+    raise scan_error
 
 # COMMAND ----------
 

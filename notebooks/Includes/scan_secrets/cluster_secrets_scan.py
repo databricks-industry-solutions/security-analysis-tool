@@ -904,40 +904,48 @@ def main_cluster_scanning_workflow():
 # COMMAND ----------
 
 # Execute the main workflow
-results = main_cluster_scanning_workflow()
+results = None
+scan_error = None
+try:
+    results = main_cluster_scanning_workflow()
+except Exception as e:
+    scan_error = e
 
 # COMMAND ----------
 
 # Display final summary and recommendations
-print("\n🎯 Cluster Secret Scanning - Final Summary")
-print("=" * 60)
-print(f"📊 Total clusters found: {results['total_clusters']}")
-print(f"🔍 Clusters scanned: {results['clusters_scanned']}")
-print(f"🚨 Clusters with secrets: {results['clusters_with_secrets']}")
-print(f"🔑 Total secrets detected: {results['total_secrets_found']}")
-print(f"🆔 Run ID: {results['run_id']}")
+if results:
+    print("\n🎯 Cluster Secret Scanning - Final Summary")
+    print("=" * 60)
+    print(f"📊 Total clusters found: {results['total_clusters']}")
+    print(f"🔍 Clusters scanned: {results['clusters_scanned']}")
+    print(f"🚨 Clusters with secrets: {results['clusters_with_secrets']}")
+    print(f"🔑 Total secrets detected: {results['total_secrets_found']}")
+    print(f"🆔 Run ID: {results['run_id']}")
 
-print("\n🎯 Next Steps and Recommendations")
-print("=" * 60)
+    print("\n🎯 Next Steps and Recommendations")
+    print("=" * 60)
 
-if results['clusters_with_secrets'] > 0:
-    print("⚠️  IMMEDIATE ACTION REQUIRED:")
-    print("   Secrets were detected in cluster configurations!")
-    print("\n📋 Recommended Actions:")
-    print("1. 🔍 Review the clusters_secret_scan_results table in the SAT dashboard")
-    print("2. 🔄 Rotate any exposed credentials immediately")
-    print("3. 📝 Update cluster configurations to remove hardcoded secrets")
-    print("4. 🔐 Use Databricks secrets scope instead of spark_env_vars")
-    print("5. 📅 Schedule regular cluster configuration scans")
-    print("6. 📋 Implement policy to prevent secrets in cluster configs")
+    if results['clusters_with_secrets'] > 0:
+        print("⚠️  IMMEDIATE ACTION REQUIRED:")
+        print("   Secrets were detected in cluster configurations!")
+        print("\n📋 Recommended Actions:")
+        print("1. 🔍 Review the clusters_secret_scan_results table in the SAT dashboard")
+        print("2. 🔄 Rotate any exposed credentials immediately")
+        print("3. 📝 Update cluster configurations to remove hardcoded secrets")
+        print("4. 🔐 Use Databricks secrets scope instead of spark_env_vars")
+        print("5. 📅 Schedule regular cluster configuration scans")
+        print("6. 📋 Implement policy to prevent secrets in cluster configs")
+    else:
+        print("✅ No immediate action required - no secrets detected in cluster configurations.")
+        print("\n📋 Best Practices:")
+        print("1. 🔐 Continue using Databricks secrets for sensitive values")
+        print("2. 📅 Schedule regular scans as part of security workflow")
+        print("3. 🎓 Educate team on secure configuration practices")
+
+    print("\n✅ Cluster Secret Scanning Completed Successfully!")
 else:
-    print("✅ No immediate action required - no secrets detected in cluster configurations.")
-    print("\n📋 Best Practices:")
-    print("1. 🔐 Continue using Databricks secrets for sensitive values")
-    print("2. 📅 Schedule regular scans as part of security workflow")
-    print("3. 🎓 Educate team on secure configuration practices")
-
-print("\n✅ Cluster Secret Scanning Completed Successfully!")
+    print(f"\n❌ Cluster Secret Scanning failed: {scan_error}")
 
 # COMMAND ----------
 
@@ -976,3 +984,8 @@ print("   - TruffleHog binary is shared with notebook scanning (/tmp/trufflehog)
 
 # Note: We don't use dbutils.notebook.exit() here to preserve the output above
 # The orchestrator doesn't need the return value - it just checks for completion
+
+# COMMAND ----------
+
+if scan_error is not None:
+    raise scan_error
