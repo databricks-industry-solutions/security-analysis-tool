@@ -765,8 +765,10 @@ insert_stats = {"attempted": 0, "written": 0, "failed": 0}
 # Why discovered notebooks were not scanned. "permission"/"notfound" are
 # expected (the SP legitimately can't read some users' notebooks, or a notebook
 # was deleted between discovery and scan) and must NOT fail the workspace run.
+# "empty" (export succeeded but the notebook has no content) is also expected:
+# there is nothing to scan, so it is not a coverage gap.
 # "error" (export/read/write failure, e.g. throttling) is a real coverage gap.
-materialize_stats = {"ok": 0, "permission": 0, "notfound": 0, "error": 0, "skip": 0}
+materialize_stats = {"ok": 0, "permission": 0, "notfound": 0, "error": 0, "skip": 0, "empty": 0}
 
 # Directories that could not be listed during workspace/list discovery (throttled
 # past retries or transport error). Each represents a silently-dropped subtree.
@@ -1099,6 +1101,7 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Dict[str, 
       {"outcome": "notfound"}   - 404, deleted between discovery and scan (expected)
       {"outcome": "error"}      - export/read/write failed, e.g. throttling (real gap)
       {"outcome": "skip"}       - malformed discovery entry (missing/unsafe id)
+      {"outcome": "empty"}      - exported fine but has no content (expected, nothing to scan)
     """
     notebook_id = notebook.get("id", "")
     notebook_name = notebook.get("name", "")
@@ -1135,7 +1138,7 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Dict[str, 
             content = export_response.get("content")
             if not content:
                 logger.warning(f"No content found in notebook: {temp_path}")
-                return {"outcome": "error"}
+                return {"outcome": "empty"}
             if not decode_and_write_content(content, scan_file):
                 logger.error(f"Failed to write notebook content to file: {scan_file}")
                 return {"outcome": "error"}
@@ -1336,7 +1339,7 @@ def main_scanning_workflow():
     notebooks_with_secrets = 0
 
     insert_stats.update({"attempted": 0, "written": 0, "failed": 0})
-    materialize_stats.update({"ok": 0, "permission": 0, "notfound": 0, "error": 0, "skip": 0})
+    materialize_stats.update({"ok": 0, "permission": 0, "notfound": 0, "error": 0, "skip": 0, "empty": 0})
     discovery_stats.update({"list_failures": 0})
 
     # Setup API request parameters
@@ -1482,13 +1485,15 @@ def main_scanning_workflow():
         # run — otherwise every large multi-tenant workspace fails permanently.
         expected_skips = (materialize_stats["permission"]
                           + materialize_stats["notfound"]
-                          + materialize_stats["skip"])
+                          + materialize_stats["skip"]
+                          + materialize_stats["empty"])
         if expected_skips > 0:
             print(
                 f"ℹ️  {expected_skips} discovered notebook(s) skipped as expected: "
                 f"{materialize_stats['permission']} access-denied, "
                 f"{materialize_stats['notfound']} not-found, "
-                f"{materialize_stats['skip']} malformed (not counted as failures)."
+                f"{materialize_stats['skip']} malformed, "
+                f"{materialize_stats['empty']} empty (not counted as failures)."
             )
 
         # A small residue of unreadable objects always exists on a real
