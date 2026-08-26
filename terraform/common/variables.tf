@@ -106,6 +106,12 @@ variable "sql_warehouse_enable_serverless" {
   default     = false
 }
 
+variable "install_trufflehog_via_init_script" {
+  type        = bool
+  description = "Install TruffleHog via a cluster init script at startup instead of per-notebook-run, avoiding install races when secret scans run concurrently on the same cluster."
+  default     = false
+}
+
 variable "sql_warehouse_auto_stop_mins" {
   type        = number
   description = "Time in minutes until an idle SQL warehouse terminates all clusters and stops. This field is optional. The default is 120, set to 0 to disable the auto stop."
