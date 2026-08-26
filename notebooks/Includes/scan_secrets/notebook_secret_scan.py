@@ -818,6 +818,33 @@ _results_table_ready = False
 insert_stats = {"attempted": 0, "written": 0, "failed": 0}
 
 
+def _is_concurrency_conflict(e: Exception) -> bool:
+    return any(
+        marker in str(e)
+        for marker in ("DELTA_METADATA_CHANGED", "ConcurrentAppendException", "ConcurrentWriteException", "MetadataChangedException")
+    )
+
+
+def _sql_with_retry(sql: str, what: str, max_attempts: int = 5):
+    """
+    Run a Spark SQL statement, retrying with backoff on a Delta concurrent-write
+    conflict (another job touching the same table mid-scan).
+    """
+    for attempt in range(max_attempts):
+        try:
+            return spark.sql(sql)
+        except Exception as e:
+            if _is_concurrency_conflict(e) and attempt < max_attempts - 1:
+                backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
+                logger.warning(
+                    f"Concurrent write conflict during {what}. Retrying in {backoff}s "
+                    f"(attempt {attempt + 1}/{max_attempts})"
+                )
+                time.sleep(backoff)
+                continue
+            raise
+
+
 def ensure_results_table() -> None:
     """Create and annotate the results table once per scan."""
     global _results_table_ready
@@ -897,13 +924,14 @@ def insert_secret_scan_results_batch(workspace_id: str,
     insert_stats["attempted"] += len(rows)
     try:
         ensure_results_table()
-        spark.sql(
+        _sql_with_retry(
             f"""
             INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
             (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
              secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
             VALUES {", ".join(rows)}
-            """
+            """,
+            what=f"inserting {len(rows)} secret finding(s)",
         )
         insert_stats["written"] += len(rows)
         logger.info(f"Persisted {len(rows)} secret finding(s)")
@@ -922,11 +950,14 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
         logger.info(f"Inserting no-secrets tracking row for workspace_id: {workspace_id}, run_id: {run_id}")
 
         # Check if a row already exists for this run_id
-        existing = spark.sql(f"""
+        existing = _sql_with_retry(
+            f"""
             SELECT COUNT(*) as cnt
             FROM {json_["analysis_schema_name"]}.notebooks_secret_scan_results
             WHERE run_id = {run_id}
-        """).collect()[0]["cnt"]
+            """,
+            what=f"checking for existing no-secrets row (run_id {run_id})",
+        ).collect()[0]["cnt"]
 
         if existing > 0:
             logger.info(f"No-secrets row already exists for run_id {run_id}, skipping insert")
@@ -936,12 +967,15 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
         workspace_id_escaped = workspace_id.replace("'", "''")
 
         # Insert placeholder row
-        spark.sql(f"""
+        _sql_with_retry(
+            f"""
             INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
             (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
              secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
             VALUES ('{workspace_id_escaped}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
-        """)
+            """,
+            what=f"inserting no-secrets tracking row (run_id {run_id})",
+        )
         logger.info(f"No-secrets tracking row inserted successfully for run_id: {run_id}")
 
     except Exception as e:
@@ -959,16 +993,22 @@ def get_current_run_id() -> int:
     try:
         # Insert new run into run_number_table (runID is auto-generated as IDENTITY column)
         # Only insert check_time, let the database auto-generate runID
-        spark.sql(f'''
+        _sql_with_retry(
+            f'''
             INSERT INTO {json_["analysis_schema_name"]}.run_number_table (check_time)
             VALUES (current_timestamp())
-        ''')
+            ''',
+            what="inserting new run_number_table row",
+        )
 
         # Retrieve the auto-generated runID (it will be the max value)
-        result = spark.sql(f'''
+        result = _sql_with_retry(
+            f'''
             SELECT max(runID) as new_run_id
             FROM {json_["analysis_schema_name"]}.run_number_table
-        ''').collect()
+            ''',
+            what="reading new run_id",
+        ).collect()
 
         new_run_id = result[0]["new_run_id"]
 

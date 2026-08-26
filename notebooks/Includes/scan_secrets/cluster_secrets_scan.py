@@ -644,6 +644,33 @@ print("✅ Scanning functions defined successfully!")
 
 # COMMAND ----------
 
+def _is_concurrency_conflict(e: Exception) -> bool:
+    return any(
+        marker in str(e)
+        for marker in ("DELTA_METADATA_CHANGED", "ConcurrentAppendException", "ConcurrentWriteException", "MetadataChangedException")
+    )
+
+
+def _sql_with_retry(sql: str, what: str, max_attempts: int = 5):
+    """
+    Run a Spark SQL statement, retrying with backoff on a Delta concurrent-write
+    conflict (another job touching the same table mid-scan).
+    """
+    for attempt in range(max_attempts):
+        try:
+            return spark.sql(sql)
+        except Exception as e:
+            if _is_concurrency_conflict(e) and attempt < max_attempts - 1:
+                backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
+                logger.warning(
+                    f"Concurrent write conflict during {what}. Retrying in {backoff}s "
+                    f"(attempt {attempt + 1}/{max_attempts})"
+                )
+                time.sleep(backoff)
+                continue
+            raise
+
+
 def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict[str, Any], run_id: int) -> None:
     """
     Insert cluster secret scan results into the clusters_secret_scan_results table.
@@ -699,7 +726,7 @@ def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict
                         {verified}, {secrets_found}, {run_id}, cast({scan_time} as timestamp))
                 """
 
-                spark.sql(sql)
+                _sql_with_retry(sql, what=f"inserting secret record for cluster {cluster_id}")
         else:
             # Don't insert anything for clean clusters to avoid database bloat
             logger.debug(f"No secrets found in cluster {cluster_id}, skipping database insert")
@@ -721,11 +748,14 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
         logger.info(f"Inserting no-secrets tracking row for workspace_id: {workspace_id}, run_id: {run_id}")
 
         # Check if a row already exists for this run_id
-        existing = spark.sql(f"""
+        existing = _sql_with_retry(
+            f"""
             SELECT COUNT(*) as cnt
             FROM {json_["analysis_schema_name"]}.clusters_secret_scan_results
             WHERE run_id = {run_id}
-        """).collect()[0]["cnt"]
+            """,
+            what=f"checking for existing no-secrets row (run_id {run_id})",
+        ).collect()[0]["cnt"]
 
         if existing > 0:
             logger.info(f"No-secrets row already exists for run_id {run_id}, skipping insert")
@@ -735,12 +765,15 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
         workspace_id_escaped = workspace_id.replace("'", "''")
 
         # Insert placeholder row
-        spark.sql(f"""
+        _sql_with_retry(
+            f"""
             INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
             (workspace_id, cluster_id, cluster_name, config_field, config_key, detector_name,
              secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
             VALUES ('{workspace_id_escaped}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
-        """)
+            """,
+            what=f"inserting no-secrets tracking row (run_id {run_id})",
+        )
         logger.info(f"No-secrets tracking row inserted successfully for run_id: {run_id}")
 
     except Exception as e:
