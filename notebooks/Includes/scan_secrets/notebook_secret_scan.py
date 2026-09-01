@@ -593,16 +593,20 @@ def export_notebook_content(notebook_path: str) -> Optional[Dict[str, Any]]:
 def decode_and_write_content(content: str, output_path: str) -> bool:
     """
     Decode base64 content and write to file.
-    
+
+    Non-UTF-8 content (binary files, other encodings) is decoded leniently
+    with invalid byte sequences replaced rather than aborting, so such
+    files still get written to disk for scanning instead of being dropped.
+
     Args:
         content (str): Base64 encoded content
         output_path (str): Path to write decoded content
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     try:
-        decoded_content = base64.b64decode(content).decode("utf-8")
+        decoded_content = base64.b64decode(content).decode("utf-8", errors="replace")
         with open(output_path, "w", encoding="utf-8") as file:
             file.write(decoded_content)
         return True
