@@ -648,16 +648,20 @@ def export_notebook_content(notebook_path: str) -> Optional[Dict[str, Any]]:
 def decode_and_write_content(content: str, output_path: str) -> bool:
     """
     Decode base64 content and write to file.
-    
+
+    Non-UTF-8 content (binary files, other encodings) is decoded leniently
+    with invalid byte sequences replaced rather than aborting, so such
+    files still get written to disk for scanning instead of being dropped.
+
     Args:
         content (str): Base64 encoded content
         output_path (str): Path to write decoded content
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     try:
-        decoded_content = base64.b64decode(content).decode("utf-8")
+        decoded_content = base64.b64decode(content).decode("utf-8", errors="replace")
         with open(output_path, "w", encoding="utf-8") as file:
             file.write(decoded_content)
         return True
@@ -816,6 +820,8 @@ _results_table_ready = False
 
 # Findings attempted vs. actually persisted, used to detect a partial write.
 insert_stats = {"attempted": 0, "written": 0, "failed": 0}
+
+content_stats = {"empty": 0}
 
 
 def ensure_results_table() -> None:
@@ -1119,6 +1125,7 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Optional[T
             content = export_response.get("content")
             if not content:
                 logger.warning(f"No content found in notebook: {temp_path}")
+                content_stats["empty"] += 1
                 return None
             if not decode_and_write_content(content, scan_file):
                 logger.error(f"Failed to write notebook content to file: {scan_file}")
@@ -1315,6 +1322,7 @@ def main_scanning_workflow():
     notebooks_with_secrets = 0
 
     insert_stats.update({"attempted": 0, "written": 0, "failed": 0})
+    content_stats.update({"empty": 0})
 
     # Setup API request parameters
     url = f"{base_url}/api/2.0/search-midtier/unified-search"
@@ -1439,6 +1447,8 @@ def main_scanning_workflow():
         print(f"🔍 Notebooks with secrets: {notebooks_with_secrets}")
         print(f"🚨 Total secrets detected: {total_secrets_found}")
         print(f"💾 Findings written to table: {insert_stats['written']} of {insert_stats['attempted']}")
+        if content_stats["empty"] > 0:
+            print(f"📄 Notebooks skipped as empty (nothing to scan): {content_stats['empty']}")
 
         if notebooks_with_secrets > 0:
             print(f"⚠️  Security Alert: {notebooks_with_secrets} notebook(s) contain potential secrets!")
@@ -1456,7 +1466,7 @@ def main_scanning_workflow():
 
         # Fail loudly on a partial scan: reported totals must not look clean
         # when notebooks went unscanned or findings failed to persist.
-        unscanned = total_notebooks_discovered - total_notebooks_processed
+        unscanned = total_notebooks_discovered - total_notebooks_processed - content_stats["empty"]
         unwritten = insert_stats["attempted"] - insert_stats["written"]
         if unscanned > 0 or unwritten > 0:
             problems = []
