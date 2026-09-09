@@ -110,6 +110,11 @@ def disable_account_level_checks():
     table = f"{json_['analysis_schema_name']}.security_best_practices"
     spark.sql(f"UPDATE {table} SET enable = 0 WHERE id IN ({in_list})")
     loggr.info(f"Disabled account-level SAT checks: {in_list}")
+    # A1 turns GOV-3 off. A2 (Entra present) must turn it back on; omitting 8
+    # from the disable list does not undo a previous enable=0.
+    if cloud_type == "azure" and "8" not in account_check_ids:
+        spark.sql(f"UPDATE {table} SET enable = 1 WHERE id = 8")
+        loggr.info("Workspace-only with Entra: enabled GOV-3 (id 8)")
 
 # COMMAND ----------
 

@@ -32,6 +32,7 @@ resource "databricks_secret" "user_email" {
 }
 
 resource "databricks_secret" "account_console_id" {
+  count        = var.account_console_id == "" ? 0 : 1
   key          = "account-console-id"
   string_value = var.account_console_id
   scope        = databricks_secret_scope.sat.id

@@ -185,6 +185,19 @@ def cloud_specific_questions(client: WorkspaceClient):
     return aws + azure + gcp
 
 
+def _put_or_clear_secret(client: WorkspaceClient, scope_name: str, key: str, value):
+    """Databricks rejects empty secret values. Missing keys are treated as empty by SAT."""
+    if value is None or value == "":
+        try:
+            client.secrets.delete_secret(scope=scope_name, key=key)
+        except Exception:
+            pass
+        return
+    client.secrets.put_secret(
+        scope=scope_name, key=key, string_value=str(value)
+    )
+
+
 def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
 
     scope_name = "sat_scope"
@@ -200,32 +213,34 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
         client.secrets.create_scope(scope_name)
 
     workspace_only = bool(answers.get("workspace_only", False))
-    client.secrets.put_secret(
-        scope=scope_name,
-        key="workspace-only-mode",
-        string_value="true" if workspace_only else "false",
+    _put_or_clear_secret(
+        client,
+        scope_name,
+        "workspace-only-mode",
+        "true" if workspace_only else "false",
     )
-    client.secrets.put_secret(
-        scope=scope_name,
-        key="account-console-id",
-        string_value=answers.get("account_id") or "",
+    _put_or_clear_secret(
+        client,
+        scope_name,
+        "account-console-id",
+        answers.get("account_id") or "",
     )
-    client.secrets.put_secret(
-        scope=scope_name,
-        key="sql-warehouse-id",
-        string_value=answers["warehouse"]["id"],
+    _put_or_clear_secret(
+        client, scope_name, "sql-warehouse-id", answers["warehouse"]["id"]
     )
-    client.secrets.put_secret(
-        scope=scope_name,
-        key="analysis_schema_name",
-        string_value=f'`{answers["catalog"]}`.{answers["security_analysis_schema"]}',
+    _put_or_clear_secret(
+        client,
+        scope_name,
+        "analysis_schema_name",
+        f'`{answers["catalog"]}`.{answers["security_analysis_schema"]}',
     )
 
     if answers["use_proxy"]:
-        client.secrets.put_secret(
-            scope=scope_name,
-            key="proxies",
-            string_value=json.dumps(
+        _put_or_clear_secret(
+            client,
+            scope_name,
+            "proxies",
+            json.dumps(
                 {
                     "http": answers["http"],
                     "https": answers["https"],
@@ -233,36 +248,25 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
             ),
         )
     else:
-        client.secrets.put_secret(
-            scope=scope_name,
-            key="proxies",
-            string_value="{}",
-        )
+        _put_or_clear_secret(client, scope_name, "proxies", "{}")
 
     if cloud_type == "aws" or cloud_type == "gcp":
-        client.secrets.put_secret(
-            scope=scope_name,
-            key="use-sp-auth",
-            string_value=True,
-        )
+        _put_or_clear_secret(client, scope_name, "use-sp-auth", "true")
 
     prefix = f"{cloud_type}-"
     for value in answers.keys():
         if value.startswith(prefix):
-            client.secrets.put_secret(
-                scope=scope_name,
-                key=value.replace(prefix, "", 1),
-                string_value=answers[value],
+            _put_or_clear_secret(
+                client,
+                scope_name,
+                value.replace(prefix, "", 1),
+                answers[value],
             )
 
-    # Workspace-only without Entra: clear leftover tenant/subscription so SAT
+    # Workspace-only without Entra: drop leftover tenant/subscription so SAT
     # uses a Databricks-managed SP instead of mixing with MSAL.
     if cloud_type == "azure" and workspace_only and not answers.get(
         "azure_use_entra", False
     ):
-        client.secrets.put_secret(
-            scope=scope_name, key="tenant-id", string_value=""
-        )
-        client.secrets.put_secret(
-            scope=scope_name, key="subscription-id", string_value=""
-        )
+        _put_or_clear_secret(client, scope_name, "tenant-id", "")
+        _put_or_clear_secret(client, scope_name, "subscription-id", "")

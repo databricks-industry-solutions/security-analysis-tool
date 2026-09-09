@@ -250,6 +250,10 @@ if cloud_type == "azure":
         table = f"{json_['analysis_schema_name']}.security_best_practices"
         spark.sql(f"UPDATE {table} SET enable = 0 WHERE id = 8")
         loggr.info("Workspace-only without Entra: disabled GOV-3 (id 8)")
+    elif workspace_only and _azure_entra_complete():
+        table = f"{json_['analysis_schema_name']}.security_best_practices"
+        spark.sql(f"UPDATE {table} SET enable = 1 WHERE id = 8")
+        loggr.info("Workspace-only with Entra: enabled GOV-3 (id 8)")
     elif any_check_enabled("8", cloud_type=cloud_type) and not _azure_entra_complete():
         raise Exception(
             "Azure GOV-3 is enabled; sat_scope must contain tenant-id and subscription-id"

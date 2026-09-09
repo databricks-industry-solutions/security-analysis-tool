@@ -4,12 +4,6 @@ resource "databricks_secret" "client_secret" {
   key          = "client-secret"
   string_value = var.client_secret
   scope        = module.common.secret_scope_id
-}
-
-resource "databricks_secret" "subscription_id" {
-  key          = "subscription-id"
-  string_value = var.subscription_id
-  scope        = module.common.secret_scope_id
 
   lifecycle {
     precondition {
@@ -23,7 +17,15 @@ resource "databricks_secret" "subscription_id" {
   }
 }
 
+resource "databricks_secret" "subscription_id" {
+  count        = var.subscription_id == "" ? 0 : 1
+  key          = "subscription-id"
+  string_value = var.subscription_id
+  scope        = module.common.secret_scope_id
+}
+
 resource "databricks_secret" "tenant_id" {
+  count        = var.tenant_id == "" ? 0 : 1
   key          = "tenant-id"
   string_value = var.tenant_id
   scope        = module.common.secret_scope_id
