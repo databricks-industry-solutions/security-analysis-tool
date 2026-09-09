@@ -53,6 +53,8 @@ class SatDBClient:
         #Azure pass in secret generated in azure portal
         self._client_id = configs['client_id'].strip()
         self._client_secret = configs['client_secret'].strip()
+        self._tenant_id = ''
+        self._subscription_id = ''
 
         # Check if accounts_console URL is explicitly provided
         # (required for staging, DoD, and other non-standard environments)
@@ -71,11 +73,15 @@ class SatDBClient:
             elif 'azure' in self._cloud_type:
                 self._ACCTURL = f"https://accounts.azuredatabricks.{domain}"
 
-        # Azure management URLs
+        # Azure management URLs. tenant_id empty = Databricks-managed SP (OIDC), not Entra/MSAL.
         if 'azure' in self._cloud_type:
             self._MGMTURL = "https://management.azure.com"
-            self._subscription_id = configs['subscription_id'].strip()
-            self._tenant_id = configs['tenant_id'].strip()   
+            self._subscription_id = configs.get('subscription_id', '').strip()
+            self._tenant_id = configs.get('tenant_id', '').strip()
+
+    def _azure_uses_entra(self):
+        '''True when Azure SAT uses Entra/MSAL (tenant-id present).'''
+        return 'azure' in self._cloud_type and bool(getattr(self, '_tenant_id', ''))
 
 
     def _update_token_master(self,endpoint=None):
@@ -92,11 +98,16 @@ class SatDBClient:
             } 
             #LOGGR.info(f'GCP self._token {oauth}')
         elif(self._cloud_type == 'azure'):
-            #azure is only oauth to accounts/msmgmt
-            self._url=self._ACCTURL
-            oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
-            if endpoint is None or "?api-version=" in endpoint:
-                self._url = self._MGMTURL
+            if self._azure_uses_entra():
+                # Entra SP: Databricks account APIs or Azure Management (ARM).
+                self._url=self._ACCTURL
+                oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
+                if endpoint is None or "?api-version=" in endpoint:
+                    self._url = self._MGMTURL
+            else:
+                # Databricks-managed SP: account OIDC only; no ARM.
+                self._url=self._ACCTURL
+                oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -154,7 +165,7 @@ class SatDBClient:
         '''test connection to workspace and master account'''
         if master_acct: #master acct may use a different credential
             
-            if (self._cloud_type == 'azure'):
+            if self._azure_uses_entra():
                 self._update_token_master(endpoint='workspaces?api-version=2018-04-01')
                 results = requests.get(f'{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
                             headers=self._token, timeout=60, proxies=self._proxies)
@@ -477,7 +488,7 @@ class SatDBClient:
         else:
             self._update_token(endpoint)
 
-        if self._cloud_type == 'azure' and master_acct and "?api-version=" in endpoint: #Azure accounts API format is different        
+        if self._azure_uses_entra() and master_acct and "?api-version=" in endpoint: #Azure ARM, Entra path only
             endpoint = endpoint[1:] if endpoint.startswith('/') else endpoint #remove leading /
             full_endpoint = f"{self._url}/{endpoint}"
         else: #all databricks apis
@@ -629,6 +640,14 @@ class SatDBClient:
 
     def getAzureToken(self, baccount, endpoint, client_id, client_secret):
         LOGGR.debug(f"getAzureToken {endpoint} {baccount}")
+        # Databricks-managed SP: same OIDC as AWS/GCP. Entra/MSAL when tenant-id is set.
+        if not self._azure_uses_entra():
+            if endpoint is not None and '?api-version=' in endpoint:
+                raise Exception(
+                    'Azure Management APIs require tenant-id (Entra SP). '
+                    'A Databricks-managed SP cannot call Azure Management.'
+                )
+            return self.getAWSTokenwithOAuth(baccount, client_id, client_secret)
         databrickstype=True
         #microsoft apis have the api-version string
         if endpoint is not None and '?api-version=' in endpoint:

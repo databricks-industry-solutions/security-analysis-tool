@@ -10,6 +10,17 @@ resource "databricks_secret" "subscription_id" {
   key          = "subscription-id"
   string_value = var.subscription_id
   scope        = module.common.secret_scope_id
+
+  lifecycle {
+    precondition {
+      condition     = (var.tenant_id == "") == (var.subscription_id == "")
+      error_message = "Set both tenant_id and subscription_id for Entra, or leave both empty for a Databricks-managed service principal."
+    }
+    precondition {
+      condition     = var.skip_account_apis || (var.tenant_id != "" && var.subscription_id != "" && var.account_console_id != "")
+      error_message = "Full Azure analysis requires account_console_id, tenant_id, and subscription_id. Set skip_account_apis = true to register this workspace only."
+    }
+  }
 }
 
 resource "databricks_secret" "tenant_id" {

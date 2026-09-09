@@ -100,7 +100,11 @@ def disable_account_level_checks():
     account_check_ids = [
         "3", "8", "35", "36", "39", "103", "110", "111", "112", "119", "122", "124",
     ]
-    if cloud_type == "azure" and str(json_.get("subscription_id", "")).strip():
+    if (
+        cloud_type == "azure"
+        and str(json_.get("tenant_id", "")).strip()
+        and str(json_.get("subscription_id", "")).strip()
+    ):
         account_check_ids = [i for i in account_check_ids if i != "8"]
     in_list = ",".join(account_check_ids)
     table = f"{json_['analysis_schema_name']}.security_best_practices"

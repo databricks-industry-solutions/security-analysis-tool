@@ -9,8 +9,15 @@ variable "workspace_id" {
 }
 
 variable "account_console_id" {
-  description = "Databricks Account Console ID"
+  description = "Databricks Account Console ID. Leave empty when skip_account_apis is true."
   type        = string
+  default     = ""
+}
+
+variable "skip_account_apis" {
+  type        = bool
+  description = "If true, SAT skips Databricks account APIs and registers this workspace only."
+  default     = false
 }
 
 variable "sqlw_id" {

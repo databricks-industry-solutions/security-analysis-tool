@@ -145,7 +145,8 @@ if cloud_type == "gcp":
 
 # DBTITLE 1,Azure configurations
 if cloud_type == "azure":
-    # Workspace OAuth always needs tenant/client. subscription-id is Management (GOV-3).
+    # Workspace-only: Databricks-managed SP (client-id/secret). tenant-id and
+    # subscription-id are Entra/ARM and are optional. Full Azure still needs Entra.
     json_.update(
         {
             "subscription_id": (
@@ -153,8 +154,10 @@ if cloud_type == "azure":
                 if workspace_only
                 else dbutils.secrets.get(scope=SECRETS_SCOPE, key="subscription-id")
             ),
-            "tenant_id": dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="tenant-id"
+            "tenant_id": (
+                _optional_secret("tenant-id")
+                if workspace_only
+                else dbutils.secrets.get(scope=SECRETS_SCOPE, key="tenant-id")
             ),
             "client_id": dbutils.secrets.get(
                 scope=SECRETS_SCOPE, key="client-id"
@@ -223,10 +226,32 @@ load_sat_dasf_mapping()
 
 # COMMAND ----------
 
-# Azure GOV-3 uses Management diagnostic APIs; subscription-id is required then.
-if cloud_type == "azure" and any_check_enabled("8", cloud_type=cloud_type):
-    if not str(json_.get("subscription_id", "")).strip():
+# COMMAND ----------
+
+def _azure_entra_complete():
+    return bool(str(json_.get("tenant_id", "")).strip()) and bool(
+        str(json_.get("subscription_id", "")).strip()
+    )
+
+# Workspace-only: Entra is both tenant-id and subscription-id, or neither
+# (Databricks-managed SP). Mixed secrets are a config error.
+# GOV-3 needs Entra. CSV defaults it on; turn it off when Entra is incomplete
+# so the first initializer run does not fail. If GOV-3 stays enabled without
+# Entra (full Azure, or re-enabled later), fail here instead of mid-bootstrap.
+if cloud_type == "azure":
+    tenant_set = bool(str(json_.get("tenant_id", "")).strip())
+    subscription_set = bool(str(json_.get("subscription_id", "")).strip())
+    if workspace_only and tenant_set != subscription_set:
         raise Exception(
-            "Azure GOV-3 is enabled; sat_scope must contain subscription-id"
+            "Workspace-only Azure Entra needs both tenant-id and subscription-id, "
+            "or neither for a Databricks-managed SP"
+        )
+    if workspace_only and not _azure_entra_complete():
+        table = f"{json_['analysis_schema_name']}.security_best_practices"
+        spark.sql(f"UPDATE {table} SET enable = 0 WHERE id = 8")
+        loggr.info("Workspace-only without Entra: disabled GOV-3 (id 8)")
+    elif any_check_enabled("8", cloud_type=cloud_type) and not _azure_entra_complete():
+        raise Exception(
+            "Azure GOV-3 is enabled; sat_scope must contain tenant-id and subscription-id"
         )
 

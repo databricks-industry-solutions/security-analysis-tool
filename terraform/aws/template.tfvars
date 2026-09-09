@@ -1,6 +1,8 @@
 databricks_url     = ""
 workspace_id       = ""
 account_console_id = ""
+# Skip Databricks account APIs and register this workspace only (omit account_console_id).
+skip_account_apis = false
 
 # Analysis Schema Name Should follow this format: YourUnityCatalogName.SchemaName
 # Catalog must exist, schema will be created by SAT

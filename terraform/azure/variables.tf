@@ -9,8 +9,15 @@ variable "workspace_id" {
 }
 
 variable "account_console_id" {
-  description = "Databricks Account Console ID"
+  description = "Databricks Account Console ID. Leave empty when skip_account_apis is true."
   type        = string
+  default     = ""
+}
+
+variable "skip_account_apis" {
+  type        = bool
+  description = "If true, SAT skips Databricks account APIs and registers this workspace only."
+  default     = false
 }
 
 variable "sqlw_id" {
@@ -54,13 +61,15 @@ variable "client_secret" {
 }
 
 variable "tenant_id" {
-  description = "The Directory (tenant) ID for the application registered in Azure AD"
+  description = "Entra tenant ID. Required for full Azure analysis and for GOV-3 in workspace-only mode. Leave empty with a Databricks-managed service principal."
   type        = string
+  default     = ""
 }
 
 variable "subscription_id" {
-  description = "Azure subscriptionId"
+  description = "Azure subscription ID. Required with tenant_id for Entra/MSAL and GOV-3. Leave empty with a Databricks-managed service principal."
   type        = string
+  default     = ""
 }
 
 variable "run_on_serverless" {

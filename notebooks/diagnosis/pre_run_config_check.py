@@ -67,11 +67,16 @@ if not workspace_only:
 if cloud_type in ("aws", "gcp"):
     required_secrets.extend(["client-id", "client-secret", "use-sp-auth"])
 elif cloud_type == "azure":
-    # Workspace OAuth always needs the AAD app (tenant/client/secret).
-    # subscription-id is Azure Management (GOV-3) only.
-    required_secrets.extend(["tenant-id", "client-id", "client-secret"])
-    if (not workspace_only) or any_check_enabled("8", cloud_type=cloud_type):
-        required_secrets.append("subscription-id")
+    # Databricks SP client-id/secret always. Entra (tenant-id + subscription-id)
+    # is required for full Azure, or for workspace-only when GOV-3 stays enabled.
+    required_secrets.extend(["client-id", "client-secret"])
+    azure_entra_complete = bool(str(json_.get("tenant_id", "")).strip()) and bool(
+        str(json_.get("subscription_id", "")).strip()
+    )
+    if (not workspace_only) or azure_entra_complete or any_check_enabled(
+        "8", cloud_type=cloud_type
+    ):
+        required_secrets.extend(["tenant-id", "subscription-id"])
 
 try:
     for key in required_secrets:

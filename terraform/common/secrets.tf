@@ -37,6 +37,12 @@ resource "databricks_secret" "account_console_id" {
   scope        = databricks_secret_scope.sat.id
 }
 
+resource "databricks_secret" "workspace_only_mode" {
+  key          = "workspace-only-mode"
+  string_value = var.skip_account_apis ? "true" : "false"
+  scope        = databricks_secret_scope.sat.id
+}
+
 resource "databricks_secret" "sql_warehouse_id" {
   key          = "sql-warehouse-id"
   string_value = var.sqlw_id == "new" ? databricks_sql_endpoint.new[0].id : data.databricks_sql_warehouse.old[0].id

@@ -23,9 +23,15 @@ def form():
     )
     client = WorkspaceClient(profile=profile)
     questions = [
+        Confirm(
+            name="workspace_only",
+            message="Skip Databricks account APIs? (registers this workspace)",
+            default=False,
+        ),
         Text(
             name="account_id",
             message="Databricks Account ID",
+            ignore=lambda x: x.get("workspace_only", False),
             validate=lambda _, x: re.match(
                 r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", x
             ),
@@ -110,26 +116,43 @@ def form():
 
 
 def cloud_specific_questions(client: WorkspaceClient):
+    skip_azure = cloud_validation(client, "azure")
+    skip_gcp = cloud_validation(client, "gcp")
+    skip_aws = cloud_validation(client, "aws")
     azure = [
+        Confirm(
+            name="azure_use_entra",
+            message="Use Entra ID (tenant + subscription) so Azure GOV-3 can run?",
+            default=False,
+            ignore=lambda x: skip_azure or not x.get("workspace_only", False),
+        ),
         Text(
             name="azure-tenant-id",
             message="Azure Tenant ID",
-            ignore=cloud_validation(client, "azure"),
+            ignore=lambda x: skip_azure
+            or (
+                x.get("workspace_only", False)
+                and not x.get("azure_use_entra", False)
+            ),
         ),
         Text(
             name="azure-subscription-id",
             message="Azure Subscription ID",
-            ignore=cloud_validation(client, "azure"),
+            ignore=lambda x: skip_azure
+            or (
+                x.get("workspace_only", False)
+                and not x.get("azure_use_entra", False)
+            ),
         ),
         Text(
             name="azure-client-id",
             message="Client ID",
-            ignore=cloud_validation(client, "azure"),
+            ignore=skip_azure,
         ),
         Password(
             name="azure-client-secret",
             message="Client Secret",
-            ignore=cloud_validation(client, "azure"),
+            ignore=skip_azure,
             echo="",
         ),
     ]
@@ -137,12 +160,12 @@ def cloud_specific_questions(client: WorkspaceClient):
         Text(
             name="gcp-client-id",
             message="Client ID",
-            ignore=cloud_validation(client, "gcp"),
+            ignore=skip_gcp,
         ),
         Password(
             name="gcp-client-secret",
             message="Client Secret",
-            ignore=cloud_validation(client, "gcp"),
+            ignore=skip_gcp,
             echo="",
         ),
     ]
@@ -150,12 +173,12 @@ def cloud_specific_questions(client: WorkspaceClient):
         Text(
             name="aws-client-id",
             message="Client ID",
-            ignore=cloud_validation(client, "aws"),
+            ignore=skip_aws,
         ),
         Password(
             name="aws-client-secret",
             message="Client Secret",
-            ignore=cloud_validation(client, "aws"),
+            ignore=skip_aws,
             echo="",
         ),
     ]
@@ -176,10 +199,16 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
     if scope_name not in existing:
         client.secrets.create_scope(scope_name)
 
+    workspace_only = bool(answers.get("workspace_only", False))
+    client.secrets.put_secret(
+        scope=scope_name,
+        key="workspace-only-mode",
+        string_value="true" if workspace_only else "false",
+    )
     client.secrets.put_secret(
         scope=scope_name,
         key="account-console-id",
-        string_value=answers["account_id"],
+        string_value=answers.get("account_id") or "",
     )
     client.secrets.put_secret(
         scope=scope_name,
@@ -217,10 +246,23 @@ def generate_secrets(client: WorkspaceClient, answers: dict, cloud_type: str):
             string_value=True,
         )
 
+    prefix = f"{cloud_type}-"
     for value in answers.keys():
-        if cloud_type in value:
+        if value.startswith(prefix):
             client.secrets.put_secret(
                 scope=scope_name,
-                key=value.replace(f"{cloud_type}-", ""),
+                key=value.replace(prefix, "", 1),
                 string_value=answers[value],
             )
+
+    # Workspace-only without Entra: clear leftover tenant/subscription so SAT
+    # uses a Databricks-managed SP instead of mixing with MSAL.
+    if cloud_type == "azure" and workspace_only and not answers.get(
+        "azure_use_entra", False
+    ):
+        client.secrets.put_secret(
+            scope=scope_name, key="tenant-id", string_value=""
+        )
+        client.secrets.put_secret(
+            scope=scope_name, key="subscription-id", string_value=""
+        )
