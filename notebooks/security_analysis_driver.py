@@ -45,6 +45,11 @@ use_parallel_runs = json_.get("use_parallel_runs", False)
 
 # COMMAND ----------
 
+# Load check enable flags before account collection so collectors can honor config.
+readBestPracticesConfigsFile()
+
+# COMMAND ----------
+
 import json
 
 out = dbutils.notebook.run(
@@ -53,10 +58,6 @@ out = dbutils.notebook.run(
     {"json_": json.dumps(json_), "origin": "driver"},
 )
 loggr.info(out)
-
-# COMMAND ----------
-
-readBestPracticesConfigsFile()
 
 # COMMAND ----------
 

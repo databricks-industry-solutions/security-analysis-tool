@@ -15,6 +15,7 @@ module "common" {
   source                          = "../common/"
   cloud_type                      = "azure"
   account_console_id              = var.account_console_id
+  skip_account_apis               = var.skip_account_apis
   workspace_id                    = var.workspace_id
   sqlw_id                         = var.sqlw_id
   analysis_schema_name            = var.analysis_schema_name

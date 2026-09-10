@@ -46,9 +46,15 @@ Before proceeding with the installation, make sure you have the following prereq
 
 - Python 3.9 or higher
 - Databricks CLI installed with a profile logged (See [here](https://docs.databricks.com/en/dev-tools/cli/install.html).)
-- Databricks Account ID
+- Databricks Account ID (not required if you [skip Databricks account APIs](../usage.mdx#skip-databricks-account-apis-workspace-only))
 - Databricks SQL Warehouse (To run the SQL dashboard)
 - PyPI access from your workspace (To install the SAT utility library)
+
+<Admonition type="note" title="Skip Databricks account APIs">
+
+`./install.sh` asks **Skip Databricks account APIs? (registers this workspace)**. Choose yes to analyze from a workspace admin identity without account-admin APIs. On Azure you can use a Databricks-managed service principal, and optionally Entra ID if you want GOV-3. See [Skip Databricks account APIs](../usage.mdx#skip-databricks-account-apis-workspace-only).
+
+</Admonition>
 
 
 

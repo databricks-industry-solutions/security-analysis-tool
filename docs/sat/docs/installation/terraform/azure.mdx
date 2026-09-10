@@ -40,11 +40,13 @@ cd security-analysis-tool/terraform/<cloud>/
 
 #### Azure-Specific Configuration
 * Follow the [Azure Setup Guide](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/docs/setup/azure.md) for variable setup.
+* Set `skip_account_apis = true` to skip Databricks account APIs and register this workspace only. Leave `account_console_id` empty. For a Databricks-managed service principal, also leave `tenant_id` and `subscription_id` empty. For Entra (GOV-3 on this workspace), set **both** tenant and subscription IDs.
+* Full Azure analysis (`skip_account_apis = false`) requires `account_console_id`, `tenant_id`, and `subscription_id`.
 
 #### Service Principal Role Requirements:
-* "Reader" role at the subscription level via Access control (IAM).
-* [Accounts Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--assign-account-admin-roles-to-a-service-principal)
-* [Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace**
+* Full Azure analysis: "Reader" role at the subscription level via Access control (IAM).
+* Full Azure analysis: [Accounts Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--assign-account-admin-roles-to-a-service-principal)
+* [Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace** (workspace-only: this workspace)
 * Member of the [metastore admin group](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges#who-has-metastore-admin-privileges)
 
 Refer to the documentation for [workspace_url](https://learn.microsoft.com/en-us/azure/databricks/workspace/workspace-details#workspace-instance-names-urls-and-ids), [workspace_id](https://learn.microsoft.com/en-us/azure/databricks/workspace/workspace-details#--workspace-instance-names-urls-and-ids), and [account_console_id](https://learn.microsoft.com/en-us/azure/databricks/administration-guide/account-settings/#locate-your-account-id)

@@ -54,6 +54,13 @@ loggr = LoggingUtils.get_logger()
 # COMMAND ----------
 
 spark.sql(f"USE {json_['intermediate_schema']}")
+acct_ws_exists = spark.catalog.tableExists("acctworkspaces")
+if not acct_ws_exists:
+    loggr.info("Skipping AS-* stats that read acctworkspaces; table was not collected")
+jobs_tbl = "jobs_" + workspace_id
+job_runs_tbl = "job_runs_" + workspace_id
+jobs_exists = spark.catalog.tableExists(jobs_tbl)
+job_runs_exists = spark.catalog.tableExists(job_runs_tbl)
 
 # COMMAND ----------
 
@@ -68,7 +75,8 @@ def getAccountId(df):
   else:
     return ('AS-1', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountId, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountId, True)
 
 # COMMAND ----------
 
@@ -85,7 +93,8 @@ def getAccountRegion(df):
   else:
     return ('AS-2', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountRegion, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getAccountRegion, True)
 
 # COMMAND ----------
 
@@ -95,7 +104,8 @@ def getDeploymentName(df):
   else:
     return ('AS-3', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getDeploymentName, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getDeploymentName, True)
 
 # COMMAND ----------
 
@@ -105,7 +115,8 @@ def getPricingTier(df):
   else:
     return ('AS-4', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getPricingTier, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getPricingTier, True)
 
 # COMMAND ----------
 
@@ -122,7 +133,8 @@ def getWorkspaceStatus(df):
   else:
     return ('AS-6', {'value': 0}, 'Account Stats')
 
-sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getWorkspaceStatus, True)
+if acct_ws_exists:
+    sqlctrl(workspace_id, f'''select * from `acctworkspaces` where workspace_id={workspace_id}''', getWorkspaceStatus, True)
 
 # COMMAND ----------
 
@@ -136,7 +148,10 @@ tbl_name = 'jobs' + '_' + workspace_id
 sql = f'''
     SELECT * FROM {tbl_name} 
 '''
-sqlctrl(workspace_id,sql, num_defined_jobs_rule, True)
+if jobs_exists:
+    sqlctrl(workspace_id,sql, num_defined_jobs_rule, True)
+else:
+    loggr.info("Skipping WST-1; jobs table was not collected")
 
 # COMMAND ----------
 
@@ -153,7 +168,10 @@ sql = f'''
     LEFT ANTI JOIN {tbl_name} b
     ON a.job_id==b.job_id
 '''
-sqlctrl(workspace_id, sql, num_external_jobs_rule, True)
+if jobs_exists and job_runs_exists:
+    sqlctrl(workspace_id, sql, num_external_jobs_rule, True)
+else:
+    loggr.info("Skipping WST-2; jobs or job_runs table was not collected")
 
 # COMMAND ----------
 

@@ -12,13 +12,58 @@ Navigate to **Workspace -> Applications -> SAT -> files -> configs ->** `self_as
 
 </Admonition>
 
+## Skip Databricks account APIs (workspace-only)
+
+Use this when SAT should **not** call Databricks account APIs (no account-admin role required). The installer registers **this workspace**. Account-level checks are turned off, except Azure **GOV-3** when you also provide Entra credentials.
+
+### Install
+
+In `./install.sh`, answer **Skip Databricks account APIs? (registers this workspace)** with yes. The installer writes `sat_scope` key `workspace-only-mode` to `true` and skips Databricks Account ID. Terraform: set `skip_account_apis = true` (writes the same secret).
+
+On an existing SAT install:
+
+```sh
+databricks secrets put-secret sat_scope workspace-only-mode --string-value true
+```
+
+SAT also treats an empty or missing `account-console-id` as workspace-only. Prefer the explicit `workspace-only-mode` key.
+
+Then:
+
+1. Run **SAT Initializer Notebook**. Confirm the log line `Workspace-only install: skip account listing and account connection tests`.
+2. Run **SAT Driver Notebook**.
+
+On Azure, SAT needs a Databricks-managed service principal (`client-id` and `client-secret`) that is a **workspace admin** here. Leave `tenant-id` and `subscription-id` empty unless you want GOV-3 (see below). Provide **both** Entra secrets or **neither** — one without the other is a configuration error.
+
+| Azure secrets | What runs |
+|---|---|
+| Databricks SP only | Workspace SAT checks. GOV-3, NS-3, NS-4, and NS-6 are off. |
+| Databricks SP plus Entra `tenant-id` and `subscription-id` (ARM Reader on the subscription) | Same workspace checks, plus **GOV-3** for this workspace. NS-3, NS-4, and NS-6 stay off. |
+| Full install (do not skip account APIs) plus Entra | All Azure checks, including NS-3, NS-4, and NS-6. |
+
+The installer can prompt **Use Entra ID (tenant + subscription) so Azure GOV-3 can run?** when you skip account APIs on Azure. If you decline, leftover `tenant-id` / `subscription-id` values are cleared so SAT does not mix Entra with a Databricks-managed SP.
+
+Re-running `./install.sh` overwrites `workspace-only-mode` according to the prompt (yes → `true`, no → `false`).
+
+### Add more workspaces (advanced)
+
+Skipping account APIs does **not** discover other workspaces. The usual approach is to install SAT in each workspace.
+
+To analyze extra workspaces from this hub instead:
+
+1. Add the same service principal as **workspace admin** on each extra workspace.
+2. Add a row to `workspace_configs.csv` and to `<catalog>.<schema>.account_workspaces` with that workspace’s `deployment_url` and `analysis_enabled = true`.
+3. Run the **SAT Driver** on **classic compute** (serverless still analyzes only the current workspace).
+
+This still does not enable account APIs. NS-3, NS-4, and NS-6 stay off. GOV-3 still needs Entra as in the table above.
+
 ## Running the SAT Jobs and Pipelines
 
 > **Note:** These jobs can take up to 10 minutes to run per workspace.
 
 Within the `Jobs and Pipelines` pane, there should now be two jobs available: **SAT Initializer Notebook** and **SAT Driver Notebook**.
 
-- Run the **SAT Initializer Notebook** first. It only needs to complete successfully once, though it can be re-run if needed.
+- Run the **SAT Initializer Notebook** first. It only needs to complete successfully once, though it can be re-run if needed. To skip account APIs, set that option in `./install.sh` or set `workspace-only-mode` **before** this job (see [Skip Databricks account APIs](#skip-databricks-account-apis-workspace-only)).
 - Once the initializer completes, run the **SAT Driver Notebook**, which can be executed on a recurring basis. By default, it is scheduled to run every Monday, Wednesday, and Friday.
 - Optionally, run the **SAT Secrets Scanner Notebook** to scan workspace notebooks for exposed secrets using TruffleHog. This can be run on-demand or scheduled separately based on your security requirements.
 

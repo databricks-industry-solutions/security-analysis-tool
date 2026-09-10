@@ -13,8 +13,10 @@ This guide will walk you through setting up the **Security Analysis Tool (SAT)**
 **SAT v0.5.0 and higher requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT.
 </Admonition>
 
-<Admonition type="info" title="Azure Subscription">
-SAT requires at least one SAT setup in a workspace per Azure **subscription**. One deployment can monitor all workspaces within the same subscription.
+<Admonition type="info" title="Two Azure auth paths">
+**Full account analysis (this guide):** Microsoft Entra app registration, subscription Reader, Databricks Account Admin, and Account ID. One SAT per Azure subscription can monitor all workspaces in that subscription.
+
+**Skip Databricks account APIs:** In `./install.sh`, choose **Skip Databricks account APIs? (registers this workspace)**. Use a **Databricks-managed** service principal (`client-id` / `client-secret`) that is a workspace admin here. You do not need an Entra app, tenant ID, subscription ID, or Account ID. Checks that need Azure Management (NS-3, NS-4, NS-6) stay off. Optionally provide Entra tenant + subscription so **GOV-3** can run for this workspace. Details: [Skip Databricks account APIs](../../usage.mdx#skip-databricks-account-apis-workspace-only).
 </Admonition>
 
 <Admonition type="tip" title="Best for Premium & Enterprise Tiers">
@@ -113,13 +115,15 @@ Now you'll connect your Azure App Registration to Databricks as a Service Princi
 ## Step 4: Run Installation
 
 <Admonition type="note" title="Credentials Required">
-Have these credentials ready before starting:
+**Full account analysis** — have these ready:
 
 - 🔑 **Databricks Account ID**
 - 🔑 **Azure Tenant ID**
 - 🔑 **Azure Subscription ID**
 - 🔑 **Azure App Client ID** (from Step 1)
 - 🔑 **Azure App Client Secret** (from Step 2)
+
+**Skip account APIs** — Databricks-managed service principal **Client ID** and **Client Secret** only. Skip Steps 1–2 (Entra app). Add that SP as workspace admin in this workspace (not Account Admin). If you want GOV-3, also provide tenant ID, subscription ID, and subscription Reader as in Steps 1–2.
 </Admonition>
 
 ### Installation Steps
