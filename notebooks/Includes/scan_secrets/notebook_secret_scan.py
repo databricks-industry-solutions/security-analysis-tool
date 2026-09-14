@@ -605,6 +605,15 @@ def discover_notebooks_via_workspace_list(time_filter_enabled: bool,
             with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
                 kept.extend(o for o in pool.map(_keep_if_recent, need_meta) if o is not None)
 
+    # Compiled Python caches are binary artifacts, not notebook/source files.
+    # They cannot be exported through the Workspace API and must not turn a
+    # source-code scan into an incomplete run.
+    kept = [
+        obj for obj in kept
+        if "/__pycache__/" not in obj.get("path", "")
+        and not obj.get("path", "").endswith((".pyc", ".pyo"))
+    ]
+
     # Normalize to the {id, name, workspace_path} shape the batch processor expects.
     return [{
         "id": str(obj.get("object_id", "")),
@@ -817,6 +826,10 @@ _results_table_ready = False
 # Findings attempted vs. actually persisted, used to detect a partial write.
 insert_stats = {"attempted": 0, "written": 0, "failed": 0}
 
+# Discovered objects that could not be materialized are persisted separately.
+# This preserves scan coverage evidence without storing notebook content.
+coverage_gaps: List[Dict[str, str]] = []
+
 
 def ensure_results_table() -> None:
     """Create and annotate the results table once per scan."""
@@ -947,6 +960,30 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     except Exception as e:
         logger.error(f"Failed to insert no-secrets tracking row: {str(e)}")
         # Do not raise to avoid stopping workflow
+
+
+def insert_coverage_gaps(workspace_id: str, run_id: int) -> None:
+    """Persist notebook paths that could not be read/exported for this scan."""
+    if not coverage_gaps:
+        return
+    try:
+        create_notebooks_secret_scan_coverage_gaps_table()
+        rows = [
+            "({}, {}, {}, {}, {}, current_timestamp())".format(
+                _sql_str(workspace_id), _sql_str(gap.get("notebook_id")),
+                _sql_str(gap.get("notebook_path")), _sql_str(gap.get("reason")),
+                int(run_id),
+            )
+            for gap in coverage_gaps
+        ]
+        spark.sql(f"""
+            INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_coverage_gaps
+            (workspace_id, notebook_id, notebook_path, reason, run_id, scan_time)
+            VALUES {", ".join(rows)}
+        """)
+        logger.warning(f"Recorded {len(coverage_gaps)} coverage gap(s) for run_id {run_id}")
+    except Exception as e:
+        logger.error(f"Failed to persist notebook scan coverage gaps: {str(e)}")
 
 def get_current_run_id() -> int:
     """
@@ -1155,8 +1192,15 @@ def _scan_and_record_chunk(chunk: List[Dict[str, Any]],
         # Phase 1: materialize notebook contents in parallel (I/O-bound).
         basename_to_meta: Dict[str, Dict[str, Any]] = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-            for res in pool.map(lambda nb: _materialize_notebook(nb, scan_dir), chunk):
+            for notebook, res in zip(chunk, pool.map(lambda nb: _materialize_notebook(nb, scan_dir), chunk)):
                 if res is None:
+                    parent_path = str(notebook.get("workspace_path", "")).rstrip("/")
+                    notebook_name = str(notebook.get("name", ""))
+                    coverage_gaps.append({
+                        "notebook_id": str(notebook.get("id", "")),
+                        "notebook_path": f"{parent_path}/{notebook_name}",
+                        "reason": "Unable to materialize for scanning (missing metadata, access denied, export failure, or local write failure)",
+                    })
                     continue
                 scan_file, metadata = res
                 basename_to_meta[os.path.basename(scan_file)] = metadata
@@ -1243,7 +1287,22 @@ def process_search_response(response: Dict[str, Any], results_list: List[Dict[st
         logger.warning("Empty response received")
         return None
 
-    _process_notebook_batch(response.get("results", []), results_list,
+    discovered = response.get("results", [])
+    scannable = []
+    skipped_binary = 0
+    for item in discovered:
+        path = str(item.get("path") or "")
+        if not path:
+            path = f"{str(item.get('workspace_path', '')).rstrip('/')}/{item.get('name', '')}"
+        if "/__pycache__/" in path or path.endswith((".pyc", ".pyo")):
+            skipped_binary += 1
+            continue
+        scannable.append(item)
+    if skipped_binary:
+        logger.info(f"Excluded {skipped_binary} compiled Python cache file(s) from secret scanning")
+    # Keep caller-side discovery counters aligned with the eligible scan set.
+    response["results"] = scannable
+    _process_notebook_batch(scannable, results_list,
                             output_filename, run_id, workspace_id)
     return response.get("next_page_token")
 
@@ -1453,6 +1512,8 @@ def main_scanning_workflow():
             print("✅ No secrets found in any notebooks. Inserting a single tracking row for this run.")
             logger.info("No secrets found in any notebooks. Inserting a single row to track this run.")
             insert_no_secrets_tracking_row(workspace_id, current_run_id)
+
+        insert_coverage_gaps(workspace_id, current_run_id)
 
         # Fail loudly on a partial scan: reported totals must not look clean
         # when notebooks went unscanned or findings failed to persist.
