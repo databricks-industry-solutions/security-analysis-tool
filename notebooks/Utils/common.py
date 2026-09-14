@@ -629,6 +629,35 @@ def create_notebooks_secret_scan_results_table():
     })
 
 
+def create_notebooks_secret_scan_coverage_gaps_table():
+    """Create the audit table for discovered objects that could not be scanned."""
+    schema = json_["analysis_schema_name"]
+    spark.sql(
+        f"""CREATE TABLE IF NOT EXISTS {schema}.notebooks_secret_scan_coverage_gaps (
+        workspace_id STRING,
+        notebook_id STRING,
+        notebook_path STRING,
+        reason STRING,
+        run_id BIGINT,
+        scan_time TIMESTAMP
+        ) USING DELTA
+        """
+    )
+    _set_table_comment(
+        schema, "notebooks_secret_scan_coverage_gaps",
+        "Audit log of workspace objects discovered by secret scanning but not materialized. "
+        "Rows identify a coverage gap without storing notebook content or secret values."
+    )
+    _set_column_comments(schema, "notebooks_secret_scan_coverage_gaps", {
+        "workspace_id": "Databricks workspace ID containing the object",
+        "notebook_id": "Workspace object ID that could not be scanned",
+        "notebook_path": "Full workspace path of the unscanned object",
+        "reason": "High-level reason the object could not be materialized",
+        "run_id": "SAT secret scan run ID",
+        "scan_time": "Timestamp when the coverage gap was recorded",
+    })
+
+
 def create_clusters_secret_scan_results_table():
     schema = json_["analysis_schema_name"]
     df = spark.sql(
@@ -709,14 +738,40 @@ def create_workspace_run_complete_table():
 
 
 def _set_table_comment(schema, table, comment):
-    safe = comment.replace("'", "''")
-    spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{safe}'")
+    # This function is called by every SAT job through Utils/initialize.  A
+    # COMMENT statement is a Delta metadata write even when the value is
+    # unchanged, which makes otherwise read-only jobs conflict when they run
+    # concurrently.  Only write when the comment actually needs updating.
+    try:
+        rows = spark.sql(f"DESCRIBE TABLE EXTENDED {schema}.`{table}`").collect()
+        current = next(
+            (row.data_type for row in rows if row.col_name == "Comment"), None
+        )
+        if current == comment:
+            return
+        safe = comment.replace("'", "''")
+        spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{safe}'")
+    except Exception as error:
+        # Comments are descriptive only; never fail a security scan because a
+        # concurrent job changed table metadata while this job was starting.
+        loggr.warning(f"Skipping table comment update for {schema}.{table}: {error}")
 
 
 def _set_column_comments(schema, table, col_comments):
-    for col, comment in col_comments.items():
-        safe = comment.replace("'", "''")
-        spark.sql(f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{safe}'")
+    # See _set_table_comment: avoid no-op Delta metadata writes from every
+    # scheduled SAT job and tolerate a concurrent descriptive update.
+    try:
+        rows = spark.sql(f"DESCRIBE TABLE {schema}.`{table}`").collect()
+        current_comments = {row.col_name: row.comment for row in rows}
+        for col, comment in col_comments.items():
+            if current_comments.get(col) == comment:
+                continue
+            safe = comment.replace("'", "''")
+            spark.sql(
+                f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{safe}'"
+            )
+    except Exception as error:
+        loggr.warning(f"Skipping column comment updates for {schema}.{table}: {error}")
 
 
 # COMMAND ----------

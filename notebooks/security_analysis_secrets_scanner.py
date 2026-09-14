@@ -254,10 +254,13 @@ def runTruffleHogScanForAllWorkspaces():
                 print(f"  ❌ Cluster scan failed for {ws.workspace_id}: {str(e)}")
                 local_failures.append(f"{ws.workspace_id}/clusters: {str(e)}")
 
-        # Notebook and cluster scans are independent — run them concurrently.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as inner:
-            for f in [inner.submit(notebook_scan), inner.submit(cluster_scan)]:
-                f.result()
+        # `dbutils.notebook.run()` is not a safe concurrency primitive on
+        # serverless.  Running the two child notebooks in parallel can leave
+        # one invocation reported as failed even after it has written its
+        # tracking row.  Keep the workspace-level fan-out, but execute the
+        # child notebook and cluster scans sequentially per workspace.
+        notebook_scan()
+        cluster_scan()
         if local_failures:
             print(f"⚠️  Scans finished WITH FAILURES for workspace: {ws.workspace_id}")
         else:
@@ -291,7 +294,7 @@ def runTruffleHogScanForAllWorkspaces():
         message = (
             f"Secret scanning failed for {len(failures)} workspace scan(s). "
             f"Results in the table are INCOMPLETE — do not treat the totals as a "
-            f"clean bill of health. See the failures listed above."
+            f"clean bill of health. Failure details: {' | '.join(failures)}"
         )
         loggr.error(message)
         raise RuntimeError(message)
