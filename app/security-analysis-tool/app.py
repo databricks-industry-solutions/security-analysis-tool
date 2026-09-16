@@ -39,56 +39,185 @@ app = Flask(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger(__name__)
 
-# Configuration - Read from environment variables (set in app.yaml)
-# These MUST be configured in app.yaml - no hardcoded defaults
-logger.info("[CONFIG] Environment variables check:")
-logger.info(f"  BRICKHOUND_SCHEMA = {os.getenv('BRICKHOUND_SCHEMA')}")
-logger.info(f"  WAREHOUSE_ID = {os.getenv('WAREHOUSE_ID')}")
+# --- Runtime configuration -------------------------------------------------
+# SAT resolves where it lives (catalog.schema, warehouse) at runtime rather than
+# only from deploy-time env, so the app can be deployed with nothing configured
+# and the customer completes setup from the in-app welcome screen. The order of
+# precedence is: the config file the setup flow writes, then the legacy
+# BRICKHOUND_SCHEMA env (so existing installs keep working). When neither is
+# present the app boots in setup mode instead of failing to start.
+#
+# The config file is a workspace file the app's own service principal reads and
+# writes; it needs no pre-existing schema, which is what breaks the chicken-and-egg
+# of storing the schema pointer inside the schema it points at.
+CONFIG_FILE_PATH = "/Applications/SAT/app_config.json"
 
-# Validate required environment variables
-BRICKHOUND_SCHEMA = os.getenv("BRICKHOUND_SCHEMA")
+CATALOG = None
+SCHEMA = None
+_app_config = {}
+# Table names, recomputed by _apply_runtime_config whenever the schema changes.
+VERTICES_TABLE = EDGES_TABLE = METADATA_TABLE = None
+SHARED_TO_ACCOUNT_TABLE = PRIVILEGED_NON_IDP_TABLE = DENYLIST_CANDIDATES_TABLE = None
+NOTEBOOK_SECRETS_TABLE = CLUSTER_SECRETS_TABLE = None
+CODE_FINDINGS_TABLE = CODE_RUNS_TABLE = None
 
-# Parse catalog.schema from environment variable.
-# The secret written by dabs/sat/config.py wraps the catalog in backticks
-# (`catalog`.schema) for SQL identifier quoting — necessary for catalog
-# names containing dashes. Strip the backticks here because the Statement
-# Execution API's `catalog`/`schema` bind params expect bare identifiers;
-# the SQL statements below re-quote explicitly.
-if BRICKHOUND_SCHEMA:
-    _clean = BRICKHOUND_SCHEMA.replace("`", "").strip()
-    parts = _clean.split(".")
-    if len(parts) == 2:
-        CATALOG, SCHEMA = parts
+
+def _config_client():
+    from databricks.sdk import WorkspaceClient
+    return WorkspaceClient()
+
+
+def read_persisted_config():
+    """Read the app's own config file, or {} if it has not been written yet."""
+    try:
+        raw = _config_client().workspace.download(CONFIG_FILE_PATH).read()
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001 - absent on first run, or unreadable
+        return {}
+
+
+def write_persisted_config(data):
+    """Persist the app config as a workspace file, readable on the next start."""
+    import io
+    from databricks.sdk.service.workspace import ImportFormat
+    client = _config_client()
+    client.workspace.mkdirs(CONFIG_FILE_PATH.rsplit("/", 1)[0])
+    client.workspace.upload(
+        CONFIG_FILE_PATH, io.BytesIO(json.dumps(data, indent=2).encode()),
+        format=ImportFormat.AUTO, overwrite=True)
+
+
+def _apply_runtime_config(data):
+    """Set CATALOG/SCHEMA and every derived table name from a config dict.
+
+    Called at import and again after the setup flow writes new config, so a
+    running app reconfigures without a restart. Table names are module globals
+    resolved at call time, so reassigning them here updates every caller.
+    """
+    global _app_config, CATALOG, SCHEMA
+    global VERTICES_TABLE, EDGES_TABLE, METADATA_TABLE
+    global SHARED_TO_ACCOUNT_TABLE, PRIVILEGED_NON_IDP_TABLE, DENYLIST_CANDIDATES_TABLE
+    global NOTEBOOK_SECRETS_TABLE, CLUSTER_SECRETS_TABLE, CODE_FINDINGS_TABLE, CODE_RUNS_TABLE
+
+    _app_config = data or {}
+    schema_ref = (_app_config.get("schema")
+                  or os.getenv("BRICKHOUND_SCHEMA") or os.getenv("SAT_SCHEMA") or "")
+    parts = [p for p in schema_ref.replace("`", "").strip().split(".") if p]
+    CATALOG, SCHEMA = (parts[0], parts[1]) if len(parts) == 2 else (None, None)
+
+    def t(name):
+        return f"`{CATALOG}`.`{SCHEMA}`.{name}" if CATALOG and SCHEMA else None
+
+    VERTICES_TABLE = t("brickhound_vertices")
+    EDGES_TABLE = t("brickhound_edges")
+    METADATA_TABLE = t("brickhound_collection_metadata")
+    SHARED_TO_ACCOUNT_TABLE = t("brickhound_shared_to_account")
+    PRIVILEGED_NON_IDP_TABLE = t("brickhound_privileged_non_idp")
+    DENYLIST_CANDIDATES_TABLE = t("brickhound_denylist_candidates")
+    NOTEBOOK_SECRETS_TABLE = t("notebooks_secret_scan_results")
+    CLUSTER_SECRETS_TABLE = t("clusters_secret_scan_results")
+    CODE_FINDINGS_TABLE = t("code_scan_findings")
+    CODE_RUNS_TABLE = t("code_scan_runs")
+
+    # Bridge persisted config to the environment variables the rest of the app
+    # already reads, so no other call site has to know about the config file.
+    for env_key, cfg_key in (("WAREHOUSE_ID", "warehouse_id"),
+                             ("MODEL_ENDPOINT", "model_endpoint"),
+                             ("GENIE_SPACE_ID", "genie_space_id"),
+                             ("WORKSPACE_ID", "workspace_id")):
+        if _app_config.get(cfg_key):
+            os.environ[env_key] = str(_app_config[cfg_key])
+
+
+def is_configured():
+    return bool(CATALOG and SCHEMA)
+
+
+# --- Unity Catalog secrets -------------------------------------------------
+# Secrets live as Unity Catalog securables (catalog.schema.name), governed by UC
+# grants rather than a workspace secret scope. The app reads and writes them as
+# its own service principal, which owns the schema it created during setup.
+def _uc_full_name(key):
+    # The UC secrets API addresses a secret by its bare dotted full name
+    # (catalog.schema.name); backticking the parts makes get/update miss.
+    return f"{CATALOG}.{SCHEMA}.{key}" if is_configured() else None
+
+
+def uc_secret_present(key, client=None):
+    from databricks.sdk.errors import NotFound
+    if not is_configured():
+        return False
+    client = client or _config_client()
+    try:
+        client.secrets_uc.get_secret(full_name=_uc_full_name(key))
+        return True
+    except NotFound:
+        return False
+    except Exception:  # noqa: BLE001 - unreadable counts as not usable
+        return False
+
+
+def uc_secret_value(key, client=None):
+    """The secret's plaintext, or None if absent. Read via the SDK, so it is not
+    subject to notebook-style redaction -- callers must not echo it."""
+    from databricks.sdk.errors import NotFound
+    if not is_configured():
+        return None
+    client = client or _config_client()
+    try:
+        got = client.secrets_uc.get_secret(full_name=_uc_full_name(key), include_value=True)
+        return got.effective_value if got.effective_value is not None else got.value
+    except NotFound:
+        return None
+
+
+def uc_secret_put(key, value, comment=None, client=None):
+    """Create or replace a UC secret. Requires the app SP to own the schema (or
+    hold CREATE SECRET), which it does by having created the schema at setup."""
+    from databricks.sdk.service.catalog import Secret
+    from google.protobuf.field_mask_pb2 import FieldMask
+    client = client or _config_client()
+    secret = Secret(name=key, catalog_name=CATALOG, schema_name=SCHEMA,
+                    value=str(value), comment=comment)
+    if uc_secret_present(key, client=client):
+        client.secrets_uc.update_secret(
+            full_name=_uc_full_name(key), secret=secret,
+            update_mask=FieldMask(paths=["value"]))
     else:
-        CATALOG = None
-        SCHEMA = None
-else:
-    CATALOG = None
-    SCHEMA = None
+        client.secrets_uc.create_secret(secret)
 
-if not BRICKHOUND_SCHEMA or not CATALOG or not SCHEMA:
-    error_msg = "FATAL: Missing or invalid BRICKHOUND_SCHEMA in app.yaml:\n"
-    if not BRICKHOUND_SCHEMA:
-        error_msg += "  - BRICKHOUND_SCHEMA is not set\n"
-    else:
-        error_msg += f"  - BRICKHOUND_SCHEMA must be in format 'catalog.schema', got: {BRICKHOUND_SCHEMA}\n"
-    error_msg += "\nPlease configure BRICKHOUND_SCHEMA in app.yaml before deploying."
-    logger.error(error_msg)
-    raise ValueError(error_msg)
 
-logger.info(f"[CONFIG] BRICKHOUND_SCHEMA={BRICKHOUND_SCHEMA} -> CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+# --- First-run setup -------------------------------------------------------
+# The app can be deployed with nothing configured. On first open the welcome
+# screen collects the catalog, schema, warehouse and account credentials; the
+# app then creates the schema, persists the config file, and writes the
+# credentials as UC secrets. Everything the customer needs to run SAT is entered
+# in the app -- no installer step in between.
+SETUP_CREDENTIAL_KEYS = {"client_id": "client-id", "client_secret": "client-secret"}
 
-# Define table names. Backtick-quote each identifier so catalog/schema
-# names containing special characters (dashes, reserved words) are safe
-# to interpolate into SQL.
-VERTICES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_vertices"
-EDGES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges"
-METADATA_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata"
-SHARED_TO_ACCOUNT_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_shared_to_account"
-PRIVILEGED_NON_IDP_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_privileged_non_idp"
-DENYLIST_CANDIDATES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_denylist_candidates"
 
-logger.info(f"[CONFIG FINAL] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+def _ensure_schema(catalog, schema, client=None):
+    """Create the schema if absent. The app SP becomes its owner, which is what
+    lets it manage UC secrets there afterwards."""
+    from databricks.sdk.errors import ResourceAlreadyExists, NotFound
+    client = client or _config_client()
+    try:
+        client.schemas.get(full_name=f"{catalog}.{schema}")
+        return "exists"
+    except NotFound:
+        pass
+    try:
+        client.schemas.create(name=schema, catalog_name=catalog)
+        return "created"
+    except ResourceAlreadyExists:
+        return "exists"
+
+
+# Resolve at import. An env-configured install applies immediately; a fresh
+# deploy reads its (absent) config file and boots in setup mode.
+_apply_runtime_config(read_persisted_config())
+logger.info("[CONFIG] catalog=%s schema=%s configured=%s", CATALOG, SCHEMA, is_configured())
 logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")
 logger.info(f"[CONFIG FINAL] EDGES_TABLE={EDGES_TABLE}")
 logger.info(f"[CONFIG FINAL] METADATA_TABLE={METADATA_TABLE}")
@@ -2199,6 +2328,59 @@ def get_main_html():
         .job-state.on { color: #86efac; }
         .job-state.off { color: var(--text-muted); }
 
+        /* --- First-run setup overlay --- */
+        .setup-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            overflow-y: auto;
+            padding: 48px 20px;
+            background: radial-gradient(1200px 600px at 50% -10%, rgba(99,102,241,.18), transparent),
+                        var(--bg-dark);
+        }
+        .setup-overlay[hidden] { display: none; }
+        .setup-card {
+            width: 100%;
+            max-width: 620px;
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 18px;
+            box-shadow: 0 24px 64px rgba(0,0,0,.45);
+            padding: 30px 32px 26px;
+        }
+        .setup-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
+        .setup-logo {
+            flex-shrink: 0;
+            width: 44px; height: 44px;
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+        }
+        .setup-logo svg { width: 22px; height: 22px; }
+        .setup-title { font-size: 1.3em; font-weight: 700; letter-spacing: -.01em; }
+        .setup-sub { font-size: .9em; color: var(--text-muted); margin-top: 5px; line-height: 1.55; }
+        .setup-body { min-height: 60px; }
+        .setup-group { margin-bottom: 22px; }
+        .setup-group-title {
+            font-size: .72em; font-weight: 700; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px;
+        }
+        .setup-optional {
+            font-size: .74em; font-weight: 600; color: var(--text-muted);
+            background: rgba(255,255,255,.06); border-radius: 20px; padding: 2px 8px; margin-left: 8px;
+        }
+        .setup-actions {
+            display: flex; align-items: center; gap: 12px;
+            margin-top: 8px; padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,.07);
+        }
+        .setup-error { flex: 1; font-size: .85em; color: #fca5a5; }
+        .setup-actions .btn { font-size: .95em; padding: 10px 20px; }
+
         .field { margin-bottom: 20px; }
         .field-label {
             display: block;
@@ -2862,6 +3044,25 @@ def get_main_html():
     </style>
 </head>
 <body>
+    <!-- First-run setup. Covers the app until the workspace is connected; the
+         init path reveals it only when /api/setup/status reports needs_setup. -->
+    <div class="setup-overlay" id="setup-overlay" hidden>
+        <div class="setup-card">
+            <div class="setup-head">
+                <div class="setup-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div>
+                    <div class="setup-title">Welcome to the Security Analysis Tool</div>
+                    <div class="setup-sub">Connect SAT to your workspace to get started. It takes a minute, and everything you enter is stored as Unity Catalog secrets.</div>
+                </div>
+            </div>
+            <div class="setup-body" id="setup-body">
+                <div class="loading"><div class="spinner"></div>Loading your workspace&hellip;</div>
+            </div>
+        </div>
+    </div>
+
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -3935,10 +4136,20 @@ def get_main_html():
 
         // Initialize - load runs first, then stats
         async function initApp() {
+            // First-run gate: until the workspace is connected, show the welcome
+            // screen and load nothing schema-dependent.
+            let status = { needs_setup: false };
+            try {
+                status = await fetch('/api/setup/status').then(r => r.json());
+            } catch (e) { /* if status is unreachable, fall through to the app */ }
+            if (status.needs_setup) {
+                showSetup();
+                return;
+            }
+
             await loadRuns();
             loadStats();
-            
-            // Restore page from URL hash, default to home
+
             const hash = window.location.hash.substring(1);
             if (hash && document.getElementById(`page-${hash}`)) {
                 navigateToPage(hash);
@@ -3947,6 +4158,142 @@ def get_main_html():
             }
         }
         initApp();
+
+        // --- First-run setup ------------------------------------------------
+        async function showSetup() {
+            const overlay = document.getElementById('setup-overlay');
+            overlay.hidden = false;
+            const body = document.getElementById('setup-body');
+            try {
+                const opts = await fetch('/api/setup/options').then(r => r.json());
+                if (opts.error) {
+                    body.innerHTML = `<div class="setup-error">${escapeHtml(opts.error)}</div>`;
+                    return;
+                }
+                renderSetupForm(opts);
+            } catch (e) {
+                body.innerHTML = `<div class="setup-error">Could not load your workspace: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function setupPicker(id, options, placeholder) {
+            // A select when the workspace listed values, a text box when it did not
+            // (e.g. the app SP cannot list catalogs) so setup is never a dead end.
+            if (options && options.length) {
+                return `<select class="field-input" id="${id}">
+                    <option value="">${escapeHtml(placeholder)}</option>
+                    ${options.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join('')}
+                </select>`;
+            }
+            return `<input class="field-input" id="${id}" type="text" placeholder="${escapeHtml(placeholder)}">`;
+        }
+
+        function renderSetupForm(opts) {
+            const catalogs = (opts.catalogs || []).map(c => ({ value: c, label: c }));
+            const warehouses = (opts.warehouses || []).map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` }));
+            const models = (opts.models || []).map(m => ({ value: m, label: m }));
+
+            document.getElementById('setup-body').innerHTML = `
+                <div class="setup-group">
+                    <div class="setup-group-title">Where SAT stores its results</div>
+                    <div class="field">
+                        <span class="field-label">Catalog</span>
+                        ${setupPicker('setup-catalog', catalogs, 'Choose a catalog')}
+                        <span class="field-help">SAT creates its schema inside this Unity Catalog catalog.</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Schema name</span>
+                        <input class="field-input" id="setup-schema" type="text" value="${escapeHtml(opts.default_schema || 'security_analysis')}">
+                        <span class="field-help">Created for you if it doesn't exist.</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">SQL warehouse</span>
+                        ${setupPicker('setup-warehouse', warehouses, 'Choose a warehouse')}
+                        <span class="field-help">Runs the analysis queries and alerts.</span>
+                    </div>
+                </div>
+
+                <div class="setup-group">
+                    <div class="setup-group-title">Account credentials <span class="setup-optional">optional</span></div>
+                    <div class="field">
+                        <span class="field-label">Client ID</span>
+                        <input class="field-input" id="setup-client-id" type="text" autocomplete="off" placeholder="Service principal application ID">
+                        <span class="field-help">A service principal SAT uses to read account-level configuration for the identity and sharing scans. You can add this later in Settings.</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Client secret</span>
+                        <div class="input-group">
+                            <input class="field-input" id="setup-client-secret" type="password" autocomplete="new-password" placeholder="OAuth secret">
+                            <button type="button" class="input-affix" onclick="setupToggleSecret()" aria-label="Show secret">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                        </div>
+                        <span class="field-help">Verified against your workspace before it's stored.</span>
+                    </div>
+                </div>
+
+                <div class="setup-group">
+                    <div class="setup-group-title">Security assistant <span class="setup-optional">optional</span></div>
+                    <div class="field">
+                        <span class="field-label">Model</span>
+                        ${setupPicker('setup-model', models, 'Default model')}
+                        <span class="field-help">Answers questions in the assistant. Change it any time in Settings.</span>
+                    </div>
+                </div>
+
+                <div class="setup-actions">
+                    <span class="setup-error" id="setup-error"></span>
+                    <button class="btn" id="setup-submit" onclick="submitSetup()">Complete setup</button>
+                </div>`;
+        }
+
+        function setupToggleSecret() {
+            const f = document.getElementById('setup-client-secret');
+            f.type = f.type === 'password' ? 'text' : 'password';
+        }
+
+        function fieldValue(id) {
+            const el = document.getElementById(id);
+            return el ? el.value.trim() : '';
+        }
+
+        async function submitSetup() {
+            const err = document.getElementById('setup-error');
+            const btn = document.getElementById('setup-submit');
+            err.textContent = '';
+            const payload = {
+                catalog: fieldValue('setup-catalog'),
+                schema: fieldValue('setup-schema'),
+                warehouse_id: fieldValue('setup-warehouse'),
+                model_endpoint: fieldValue('setup-model'),
+                client_id: fieldValue('setup-client-id'),
+                client_secret: fieldValue('setup-client-secret'),
+            };
+            if (!payload.catalog) { err.textContent = 'Choose a catalog.'; return; }
+            if (!payload.warehouse_id) { err.textContent = 'Choose a SQL warehouse.'; return; }
+
+            btn.disabled = true;
+            btn.textContent = 'Setting up…';
+            try {
+                const result = await fetch('/api/setup/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                }).then(r => r.json());
+                if (result.error) {
+                    err.textContent = result.error;
+                    btn.disabled = false;
+                    btn.textContent = 'Complete setup';
+                    return;
+                }
+                // Configured now — reload into the fully-initialised app.
+                window.location.reload();
+            } catch (e) {
+                err.textContent = e.message;
+                btn.disabled = false;
+                btn.textContent = 'Complete setup';
+            }
+        }
 
         // Icon helper
         function getIcon(type) {
@@ -12369,8 +12716,8 @@ def report_secret_scopes_filters():
 # every row for that object, so summing over-counts. Rows are counted instead.
 # ---------------------------------------------------------------------------
 
-NOTEBOOK_SECRETS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.notebooks_secret_scan_results"
-CLUSTER_SECRETS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.clusters_secret_scan_results"
+# NOTEBOOK_SECRETS_TABLE / CLUSTER_SECRETS_TABLE are set by _apply_runtime_config,
+# so they follow a schema change made through in-app setup.
 
 _SECRETS_NOT_READY = (
     'No secret scan results yet. The SAT Secrets Scanner job populates these '
@@ -12767,8 +13114,7 @@ def _model_endpoint_available(endpoint_name):
 # endpoints read the newest run per workspace.
 # ---------------------------------------------------------------------------
 
-CODE_FINDINGS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.code_scan_findings"
-CODE_RUNS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.code_scan_runs"
+# CODE_FINDINGS_TABLE / CODE_RUNS_TABLE are set by _apply_runtime_config.
 
 SEVERITY_ORDER = "CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END"
 
@@ -13200,57 +13546,55 @@ def api_settings_update():
     return jsonify({'saved': True, 'changed': sorted(payload)})
 
 
-# Account API credentials, held in the sat_scope secret scope and used by the
-# collection jobs to read account-level configuration. They are the one setting
-# that must outlive a restart, so unlike everything else in this panel they are
-# written back to the scope rather than kept in memory.
-#
-# Writing them requires WRITE on sat_scope. The app is granted READ at install, so
-# this endpoint reports what is missing rather than failing opaquely: an
-# administrator grants WRITE deliberately, having accepted that anyone who can open
-# the app can then rotate these credentials.
-SAT_SECRET_SCOPE = os.getenv('SAT_SECRET_SCOPE', 'sat_scope')
-
+# Account API credentials, stored as Unity Catalog secrets in the SAT schema and
+# used by the collection jobs to read account-level configuration. UC secrets are
+# governed by UC grants and survive a restart, so they are the durable store for
+# the one setting that genuinely cannot live in process memory.
 CREDENTIAL_KEYS = {
     'client_id': 'client-id',
     'client_secret': 'client-secret',
 }
 
 
-def _credential_status():
-    """Whether each credential is set, and whether the app may change them.
-
-    Values are never returned. Presence and length are enough for the panel to
-    show that a credential exists without disclosing it.
-    """
-    client = _sp_workspace_client()
-    present = {}
-    for field, key in CREDENTIAL_KEYS.items():
-        try:
-            client.secrets.get_secret(scope=SAT_SECRET_SCOPE, key=key)
-            present[field] = True
-        except Exception:  # noqa: BLE001 - absent, or unreadable
-            present[field] = False
-
-    # Whether the app may write is established by writing, not by reading ACLs:
-    # list_acls needs secret-scopes.ruleSets/get, a permission separate from WRITE,
-    # so an app that can store secrets perfectly well still fails that lookup. A
-    # probe key is written and removed instead.
-    writable = False
-    detail = ''
-    probe_key = '_sat_write_probe'
+def _verify_account_credentials(client_id, client_secret):
+    """Exchange the credentials for a token. Returns an error string, or None on
+    success -- so a mistyped secret is caught here rather than in a job log hours
+    later."""
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    if host and not host.startswith('http'):
+        host = f'https://{host}'
+    if not host:
+        return None  # cannot verify without a host; store and let the job surface it
     try:
-        client.secrets.put_secret(
-            scope=SAT_SECRET_SCOPE, key=probe_key, string_value='probe')
-        writable = True
-        try:
-            client.secrets.delete_secret(scope=SAT_SECRET_SCOPE, key=probe_key)
-        except Exception:  # noqa: BLE001 - the probe value is inert if it lingers
-            logger.info('could not remove the write probe key', exc_info=True)
-    except Exception as exc:  # noqa: BLE001
-        detail = str(exc)[:200]
+        import base64
+        import urllib.parse
+        import urllib.request
 
-    return {'present': present, 'writable': writable, 'permission': detail}
+        body = urllib.parse.urlencode({
+            'grant_type': 'client_credentials', 'scope': 'all-apis'}).encode()
+        credential = base64.b64encode(f'{client_id}:{client_secret}'.encode()).decode()
+        probe = urllib.request.Request(
+            f'{host}/oidc/v1/token', data=body,
+            headers={'Authorization': f'Basic {credential}',
+                     'Content-Type': 'application/x-www-form-urlencoded'})
+        with urllib.request.urlopen(probe, timeout=30) as response:
+            if 'access_token' not in json.loads(response.read()):
+                return 'Those credentials did not return a token.'
+    except Exception as exc:  # noqa: BLE001
+        return ('Those credentials were rejected by the workspace. Check the client '
+                f'ID and secret, then try again. ({str(exc)[:120]})')
+    return None
+
+
+def _credential_status():
+    """Whether each credential is stored. Values are never returned."""
+    if not is_configured():
+        return {'present': {'client_id': False, 'client_secret': False},
+                'writable': False, 'configured': False}
+    client = _config_client()
+    present = {field: uc_secret_present(key, client=client)
+               for field, key in CREDENTIAL_KEYS.items()}
+    return {'present': present, 'writable': True, 'configured': True}
 
 
 @app.route('/api/settings/credentials')
@@ -13266,33 +13610,32 @@ def api_settings_credentials():
 def api_settings_credentials_reveal():
     """Return the stored client ID, but never the secret.
 
-    The ID is an identifier and is useful for confirming which service principal
-    is configured. The secret is withheld: the panel is reachable by anyone who can
-    open the app, so returning it would make read access to the app equivalent to
-    read access to the credential. The eye control on the secret field reveals what
-    has been typed, which is what an operator actually needs when checking a paste.
+    The ID is an identifier, useful for confirming which service principal is
+    configured. The secret is withheld: the app is reachable by anyone who can open
+    it, so returning it would make app access equivalent to credential access. The
+    eye control on the secret field reveals only what the operator has just typed.
     """
+    if not is_configured():
+        return jsonify({'error': 'Finish setup before reading credentials.'}), 409
     try:
-        client = _sp_workspace_client()
-        stored = client.secrets.get_secret(
-            scope=SAT_SECRET_SCOPE, key=CREDENTIAL_KEYS['client_id'])
-        import base64
-        value = base64.b64decode(stored.value or '').decode('utf-8', errors='replace')
+        value = uc_secret_value(CREDENTIAL_KEYS['client_id'])
     except Exception as exc:  # noqa: BLE001
         return jsonify({'error': f'Could not read the stored client ID: {str(exc)[:180]}'}), 500
-
     logger.info('stored client id revealed to %s', _assistant_user())
-    return jsonify({'client_id': value})
+    return jsonify({'client_id': value or ''})
 
 
 @app.route('/api/settings/credentials', methods=['PUT'])
 def api_settings_credentials_update():
-    """Write account API credentials into the secret scope.
+    """Store account API credentials as UC secrets.
 
-    Both values are required together: a client id paired with a stale secret
-    fails at the next collection run, in a job log rather than here, so a partial
-    update is refused.
+    Both values are replaced together: a client id paired with a stale secret
+    fails at the next collection run, so a partial update is refused. The pair is
+    verified against the workspace before being written.
     """
+    if not is_configured():
+        return jsonify({'error': 'Finish setup before storing credentials.'}), 409
+
     payload = request.get_json(silent=True) or {}
     client_id = (payload.get('client_id') or '').strip()
     client_secret = (payload.get('client_secret') or '').strip()
@@ -13305,56 +13648,164 @@ def api_settings_credentials_update():
     if len(client_id) > 256 or len(client_secret) > 1024:
         return jsonify({'error': 'That value is longer than a Databricks credential.'}), 400
 
-    try:
-        client = _sp_workspace_client()
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({'error': str(exc)}), 500
-
-    # Verify before storing. Credentials that do not work would otherwise be
-    # discovered by a collection job hours later.
-    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
-    if host and not host.startswith('http'):
-        host = f'https://{host}'
-    try:
-        import base64
-        import urllib.parse
-        import urllib.request
-
-        body = urllib.parse.urlencode({
-            'grant_type': 'client_credentials', 'scope': 'all-apis'}).encode()
-        credential = base64.b64encode(
-            f'{client_id}:{client_secret}'.encode()).decode()
-        probe = urllib.request.Request(
-            f'{host}/oidc/v1/token', data=body,
-            headers={'Authorization': f'Basic {credential}',
-                     'Content-Type': 'application/x-www-form-urlencoded'})
-        with urllib.request.urlopen(probe, timeout=30) as response:
-            if 'access_token' not in json.loads(response.read()):
-                return jsonify({'error': 'Those credentials did not return a token.'}), 400
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({
-            'error': 'Those credentials were rejected by the workspace. Check the '
-                     f'client ID and secret, then try again. ({str(exc)[:120]})'
-        }), 400
+    verify_error = _verify_account_credentials(client_id, client_secret)
+    if verify_error:
+        return jsonify({'error': verify_error}), 400
 
     try:
-        for field, key in CREDENTIAL_KEYS.items():
-            value = client_id if field == 'client_id' else client_secret
-            client.secrets.put_secret(
-                scope=SAT_SECRET_SCOPE, key=key, string_value=value)
+        uc_secret_put('client-id', client_id, comment='SAT account API client id')
+        uc_secret_put('client-secret', client_secret, comment='SAT account API secret')
     except Exception as exc:  # noqa: BLE001
         logger.exception('writing credentials failed')
         message = str(exc)
-        if 'PERMISSION_DENIED' in message or 'does not have' in message:
+        if 'PERMISSION' in message.upper() or 'does not have' in message:
             return jsonify({
-                'error': f'This app has read-only access to the {SAT_SECRET_SCOPE} '
-                         f'secret scope, so it cannot store credentials. An '
-                         f'administrator can grant it WRITE on that scope.'
+                'error': f'This app cannot write secrets in {CATALOG}.{SCHEMA}. Its '
+                         f'service principal needs CREATE SECRET on the schema (it '
+                         f'gets this by owning the schema it created at setup).'
             }), 403
         return jsonify({'error': f'Could not store the credentials: {message[:200]}'}), 500
 
     logger.info('account credentials updated by %s', _assistant_user())
     return jsonify({'saved': True})
+
+
+# --- First-run setup endpoints ---------------------------------------------
+@app.route('/api/setup/status')
+def api_setup_status():
+    """Whether the app still needs first-run setup. Drives the welcome gate."""
+    configured = is_configured()
+    has_credentials = False
+    if configured:
+        try:
+            has_credentials = uc_secret_present('client-secret')
+        except Exception:  # noqa: BLE001
+            has_credentials = False
+    return jsonify({
+        'needs_setup': not configured,
+        'configured': configured,
+        'catalog': CATALOG,
+        'schema': SCHEMA,
+        'has_credentials': has_credentials,
+    })
+
+
+@app.route('/api/setup/options')
+def api_setup_options():
+    """Catalogs, warehouses and models the welcome form offers. Works before the
+    app is configured, so it uses only account/workspace listings."""
+    catalogs, warehouses, models = [], [], []
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+    try:
+        catalogs = [c.name for c in client.catalogs.list()
+                    if c.name not in ('system', 'samples', '__databricks_internal')]
+    except Exception:  # noqa: BLE001
+        logger.info('could not list catalogs', exc_info=True)
+    try:
+        warehouses = [{'id': w.id, 'name': w.name,
+                       'state': str(getattr(w, 'state', '') or '').split('.')[-1]}
+                      for w in client.warehouses.list() if w.id]
+    except Exception:  # noqa: BLE001
+        logger.info('could not list warehouses', exc_info=True)
+    try:
+        from agent.supervisor import list_chat_endpoints
+        models = [e['name'] for e in list_chat_endpoints()]
+    except Exception:  # noqa: BLE001
+        logger.info('could not list model endpoints', exc_info=True)
+    return jsonify({
+        'catalogs': sorted(catalogs),
+        'warehouses': sorted(warehouses, key=lambda w: (w['name'] or '').lower()),
+        'models': models,
+        'default_schema': 'security_analysis',
+    })
+
+
+@app.route('/api/setup/complete', methods=['POST'])
+def api_setup_complete():
+    """Complete first-run setup: create the schema, persist config, store creds.
+
+    Runs as the app's own service principal, which becomes the schema owner and so
+    can manage UC secrets there. Ordered so a failure leaves nothing half-applied
+    that would strand the app: the schema and config come first, credentials last.
+    """
+    payload = request.get_json(silent=True) or {}
+    catalog = (payload.get('catalog') or '').strip().strip('`')
+    schema = (payload.get('schema') or 'security_analysis').strip().strip('`')
+    warehouse_id = (payload.get('warehouse_id') or '').strip()
+    model_endpoint = (payload.get('model_endpoint') or '').strip()
+    genie_space_id = (payload.get('genie_space_id') or '').strip()
+    client_id = (payload.get('client_id') or '').strip()
+    client_secret = (payload.get('client_secret') or '').strip()
+
+    if not catalog:
+        return jsonify({'error': 'Choose a catalog for SAT to use.'}), 400
+    if not warehouse_id:
+        return jsonify({'error': 'Choose a SQL warehouse.'}), 400
+    if not re.match(r'^[A-Za-z0-9_]+$', schema):
+        return jsonify({'error': 'Schema name may use only letters, numbers and underscores.'}), 400
+    # Credentials are optional here (workspace-only installs skip them), but if one
+    # is given the other must be too, and the pair is verified before anything is
+    # written.
+    if bool(client_id) != bool(client_secret):
+        return jsonify({'error': 'Enter both the client ID and secret, or neither.'}), 400
+    if client_id and client_secret:
+        verify_error = _verify_account_credentials(client_id, client_secret)
+        if verify_error:
+            return jsonify({'error': verify_error}), 400
+
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    try:
+        schema_state = _ensure_schema(catalog, schema, client=client)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('setup schema creation failed')
+        message = str(exc)
+        if 'PERMISSION' in message.upper() or 'does not have' in message:
+            return jsonify({
+                'error': f'This app cannot create a schema in {catalog}. Its service '
+                         f'principal needs CREATE SCHEMA (and USE CATALOG) on {catalog}, '
+                         f'or point it at a catalog it owns.'
+            }), 403
+        return jsonify({'error': f'Could not create {catalog}.{schema}: {message[:200]}'}), 500
+
+    config = dict(_app_config)
+    config.update({
+        'schema': f'{catalog}.{schema}',
+        'warehouse_id': warehouse_id,
+        'model_endpoint': model_endpoint or config.get('model_endpoint'),
+        'genie_space_id': genie_space_id,
+    })
+    try:
+        write_persisted_config(config)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('setup config write failed')
+        return jsonify({'error': f'Could not save configuration: {str(exc)[:200]}'}), 500
+
+    # Apply immediately so the running process is configured without a restart.
+    _apply_runtime_config(config)
+
+    if client_id and client_secret:
+        try:
+            uc_secret_put('client-id', client_id, comment='SAT account API client id')
+            uc_secret_put('client-secret', client_secret, comment='SAT account API secret')
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('setup credential write failed')
+            return jsonify({
+                'error': f'Configuration saved, but storing credentials failed: '
+                         f'{str(exc)[:180]}. You can add them from Settings.'
+            }), 500
+
+    _invalidate_collection_cache()
+    logger.info('first-run setup completed by %s: %s.%s (schema %s)',
+                _assistant_user(), catalog, schema, schema_state)
+    return jsonify({'configured': True, 'catalog': catalog, 'schema': schema,
+                    'schema_state': schema_state})
 
 
 @app.route('/api/settings/choices')
