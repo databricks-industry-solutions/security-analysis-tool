@@ -712,12 +712,19 @@ class SatDBClient:
             full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
         response = requests.post(full_endpoint, headers=oidc_token,
-                                    auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)  
+                                    auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)
 
         if response is not None and response.status_code == 200:
             return response.json()['access_token']
-        #LOGGR.debug(json.dumps(response.json()))
-        return None
+        # Fail loudly instead of returning None. A None token becomes an
+        # "Authorization: Bearer None" header downstream, which the API rejects
+        # with a confusing 401 "Credential was not sent or was of an unsupported
+        # type for this API" that hides the real cause (e.g. a throttled or
+        # rejected token-mint call).
+        status = response.status_code if response is not None else 'no response'
+        body = response.text if response is not None else ''
+        LOGGR.error(f"AWS OAuth token mint failed (status {status}): {body}")
+        raise Exception(f"Failed to mint AWS OAuth token (status {status})--{body}")
 
     def getGCPTokenwithOAuth(self, baccount, client_id, client_secret):
         '''generates OAuth token for Service Principal authentication flow'''
@@ -739,12 +746,17 @@ class SatDBClient:
 
         LOGGR.debug(f"getGCPTokenwithOAuth {full_endpoint} {json_params} {oidc_token}")
         response = requests.post(full_endpoint, headers=oidc_token,
-                                    auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)  
+                                    auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)
 
         if response is not None and response.status_code == 200:
             return response.json()['access_token']
-        #LOGGR.debug(json.dumps(response.json()))
-        return None
+        # Fail loudly instead of returning None (see getAWSTokenwithOAuth): a None
+        # token becomes an "Authorization: Bearer None" header that the API rejects
+        # with a misleading 401, masking the real token-mint failure.
+        status = response.status_code if response is not None else 'no response'
+        body = response.text if response is not None else ''
+        LOGGR.error(f"GCP OAuth token mint failed (status {status}): {body}")
+        raise Exception(f"Failed to mint GCP OAuth token (status {status})--{body}")
 
 
 #----------------------------------------------------
