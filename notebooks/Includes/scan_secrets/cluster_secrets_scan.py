@@ -173,7 +173,9 @@ from datetime import datetime, timezone
 # Configure logging
 logger = loggr  # Use existing logger from common setup
 
-# Use db_client for direct API calls (already initialized in common setup)
+# db_client (initialized in common setup) is used only to mint a single OAuth
+# token; cluster API calls are issued directly (see get_all_clusters below) so
+# they are safe to run concurrently.
 # Extract workspace context
 workspace_id = json_["workspace_id"]
 base_url = json_["url"]
@@ -281,19 +283,85 @@ print(f"🔧 Config field to scan: {Config.CONFIG_FIELD}")
 
 # COMMAND ----------
 
+# Mint a single OAuth token up front and reuse it (read-only) across all worker
+# threads below.
+#
+# SatDBClient is NOT thread-safe: db_client.get() mutates shared instance state
+# (self._token / self._url) and re-mints an OAuth token via a network POST on
+# EVERY request. Sharing one client across the ThreadPoolExecutor in
+# main_cluster_scanning_workflow() therefore (a) races the auth header between
+# threads and (b) hammers the /oidc/v1/token endpoint, which throttles under the
+# burst and makes token minting return None -> an "Authorization: Bearer None"
+# header -> HTTP 401 "Credential was not sent or was of an unsupported type for
+# this API". Larger workspaces (more clusters -> more concurrent mints) failed
+# while smaller ones passed. We mint once here and issue plain requests.get with
+# a local, immutable header, mirroring notebook_secret_scan.py.
+_api_token = db_client.get_temporary_oauth_token()
+if not _api_token:
+    raise ValueError("Unable to obtain OAuth token for cluster scanning")
+_auth_headers = {"Authorization": f"Bearer {_api_token}", "User-Agent": "databricks-sat/0.1.0"}
+
+
+def _get_with_retry(url: str, params: Optional[Dict[str, Any]], what: str) -> Optional[requests.Response]:
+    """GET with exponential backoff on HTTP 429.
+
+    Cluster list/get calls are issued concurrently across MAX_WORKERS threads,
+    which can trip workspace rate limits. Retrying keeps a throttled cluster in
+    the scan instead of dropping it. Mirrors notebook_secret_scan._get_with_retry.
+    """
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        try:
+            response = requests.get(url, headers=_auth_headers, params=params, timeout=60)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error during {what}: {str(e)}")
+            return None
+
+        if response.status_code != 429:
+            return response
+
+        if attempt == max_attempts - 1:
+            logger.warning(f"Rate limit persisted after {max_attempts} attempts during {what}")
+            return response
+
+        backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
+        logger.warning(
+            f"Rate limit hit during {what}. Backing off {backoff}s "
+            f"(attempt {attempt + 1}/{max_attempts})"
+        )
+        time.sleep(backoff)
+
+    return None
+
+
 def get_all_clusters() -> List[Dict[str, Any]]:
     """
     Get list of all clusters in the workspace (including terminated).
-    Uses direct API call to /clusters/list endpoint.
+    Issues /api/2.1/clusters/list directly with the pre-minted token and follows
+    next_page_token pagination.
 
     Returns:
         List[Dict]: List of cluster objects with cluster_id, cluster_name, state
     """
     try:
         logger.info("Fetching list of all clusters via direct API call...")
-        # Direct API call to clusters/list endpoint
-        response = db_client.get('/clusters/list', json_params={}, version='2.1')
-        clusters = response.get('clusters', [])
+        url = f"{base_url}/api/2.1/clusters/list"
+        clusters: List[Dict[str, Any]] = []
+        params: Dict[str, Any] = {}
+        while True:
+            response = _get_with_retry(url, params, "clusters/list")
+            if response is None:
+                raise Exception("clusters/list request failed (no response)")
+            if response.status_code != 200:
+                raise Exception(
+                    f"clusters/list failed with code {response.status_code}--{response.text}"
+                )
+            body = response.json()
+            clusters.extend(body.get("clusters", []))
+            next_token = body.get("next_page_token")
+            if not next_token:
+                break
+            params = {"page_token": next_token}
         logger.info(f"Found {len(clusters)} clusters in workspace")
         return clusters
     except Exception as e:
@@ -304,7 +372,8 @@ def get_all_clusters() -> List[Dict[str, Any]]:
 def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
     """
     Get full cluster configuration including spark_env_vars.
-    Uses direct API call to /clusters/get endpoint.
+    Issues /api/2.1/clusters/get directly with the pre-minted token. Safe to call
+    concurrently: no shared client state is mutated.
 
     Args:
         cluster_id: Cluster ID
@@ -313,32 +382,18 @@ def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
         Dict: Full cluster configuration dict or None if error
     """
     try:
-        # Direct API call to clusters/get endpoint
-        json_params = {'cluster_id': cluster_id}
-        response = db_client.get('/clusters/get', json_params=json_params, version='2.1')
-
-        # The response has format: {'satelements': <data>, 'http_status_code': 200}
-        # Extract the actual cluster config from 'satelements' key
-        if isinstance(response, dict) and 'satelements' in response:
-            satelements = response['satelements']
-
-            # satelements can be either a list or dict depending on the endpoint
-            if isinstance(satelements, list):
-                # For single-item endpoints like /clusters/get, it's a list with one element
-                if len(satelements) > 0:
-                    return satelements[0]  # Return first (and only) item
-                else:
-                    logger.warning(f"Empty satelements list for cluster {cluster_id}")
-                    return None
-            elif isinstance(satelements, dict):
-                # Already a dict, return as-is
-                return satelements
-            else:
-                logger.warning(f"Unexpected satelements type: {type(satelements)}")
-                return None
-        else:
-            # Response doesn't have satelements wrapper, return as-is
-            return response
+        url = f"{base_url}/api/2.1/clusters/get"
+        response = _get_with_retry(url, {"cluster_id": cluster_id}, f"clusters/get for {cluster_id}")
+        if response is None:
+            logger.warning(f"No response getting config for cluster {cluster_id}")
+            return None
+        if response.status_code != 200:
+            logger.warning(
+                f"clusters/get for {cluster_id} returned {response.status_code}: {response.text}"
+            )
+            return None
+        # /clusters/get returns the cluster config dict directly.
+        return response.json()
     except Exception as e:
         logger.error(f"Failed to get cluster config for {cluster_id}: {str(e)}")
         return None
