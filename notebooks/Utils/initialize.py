@@ -97,6 +97,9 @@ json_.update(
         #   - GovCloud (FedRAMP): "https://accounts.cloud.databricks.us"
         #   - DoD (IL4/IL5): See https://docs.databricks.com/aws/en/security/privacy/gov-cloud
         "accounts_console": "",
+        # False: SAT never creates, comments on or drops schemas; the analysis and
+        # intermediate schemas must exist and the principal needs no CREATE SCHEMA.
+        "manage_schemas": True,
         "sat_version": "0.7.0",
     }
 )
