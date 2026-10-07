@@ -42,6 +42,13 @@ settings:
   excluded_detectors:
     - DatabricksToken  # Exclude built-in Databricks token detector to avoid false positives
 
+  # Findings confirmed NOT to be secrets, matched by detector name and the SHA-256
+  # of the raw value (detector_name and secret_sha256 in notebooks_secret_scan_results).
+  # The same value found by another detector, or any other value, is still reported.
+  ignored_findings: []
+  #  - detector: Atlassian
+  #    sha256: "<secret_sha256 of the finding>"
+
   scan_options:
     no_update: true
     json_output: true
