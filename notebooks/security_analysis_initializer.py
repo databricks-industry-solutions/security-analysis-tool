@@ -52,4 +52,4 @@ for notebook, timeout in notebooks:
 
 # COMMAND ----------
 
-spark.sql(f"DROP DATABASE IF EXISTS {json_['intermediate_schema']} CASCADE")
+drop_intermediate_schema()

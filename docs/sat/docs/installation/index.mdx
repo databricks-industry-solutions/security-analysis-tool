@@ -71,6 +71,15 @@ SAT can be deployed using Terraform. If your organization uses Terraform, it is 
 
 </Admonition>
 
+### Running Without CREATE SCHEMA Privileges (Optional)
+
+By default SAT creates its schemas and drops the intermediate schema after each run, so its principal needs `CREATE SCHEMA` on the catalog. To run SAT with less privilege, set `manage_schemas` to `False` in `notebooks/Utils/initialize.py`. SAT then never creates, comments on or drops a schema, and an admin creates them in advance:
+
+- the analysis schema (`analysis_schema_name`, for example `<catalog>.security_analysis`)
+- the intermediate schema `<catalog>.intermediate_schema`
+
+Grant the SAT principal `USE CATALOG` on the catalog, and `USE SCHEMA`, `CREATE TABLE`, `SELECT` and `MODIFY` on both schemas. After each run SAT drops only the tables in the intermediate schema. If a schema is missing, the run stops with a message naming it.
+
 
 
 ## Uninstalling SAT

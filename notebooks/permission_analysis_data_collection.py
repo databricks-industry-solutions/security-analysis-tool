@@ -154,7 +154,10 @@ try:
 
     # Create schema if needed (use original CATALOG/SCHEMA with backticks for SQL)
     spark.sql(f"USE CATALOG {CATALOG}")
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
+    if json_.get("manage_schemas", True):
+        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
+    else:
+        _require_schema(f"{CATALOG}.{SCHEMA}")
     print(f" Schema '{schema_name_clean}' ready")
 
     # Check existing tables

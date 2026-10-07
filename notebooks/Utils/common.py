@@ -422,16 +422,25 @@ def basePath():
 # COMMAND ----------
 
 
+def _require_schema(name):
+    if not spark.catalog.databaseExists(name):
+        raise Exception(f"Schema {name} does not exist. With manage_schemas set to False, create it before running SAT.")
+
+
 def create_schema():
     schema = json_["analysis_schema_name"]
-    df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {schema}')
-    df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {json_["intermediate_schema"]}')
-    spark.sql(
-        f"COMMENT ON SCHEMA {schema} IS "
-        f"'Databricks Security Analysis Tool (SAT) results. Contains security check findings, "
-        f"workspace configurations, secret scan results, and Permission Analysis graph data (BrickHound), "
-        f"all evaluated against Databricks best practices.'"
-    )
+    if json_.get("manage_schemas", True):
+        df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {schema}')
+        df = spark.sql(f'CREATE DATABASE IF NOT EXISTS {json_["intermediate_schema"]}')
+        spark.sql(
+            f"COMMENT ON SCHEMA {schema} IS "
+            f"'Databricks Security Analysis Tool (SAT) results. Contains security check findings, "
+            f"workspace configurations, secret scan results, and Permission Analysis graph data (BrickHound), "
+            f"all evaluated against Databricks best practices.'"
+        )
+    else:
+        _require_schema(schema)
+        _require_schema(json_["intermediate_schema"])
     df = spark.sql(
         f"""CREATE TABLE IF NOT EXISTS {schema}.run_number_table (
                         runID BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -449,6 +458,19 @@ def create_schema():
         "runID":      "Auto-incrementing unique identifier for each SAT analysis run",
         "check_time": "Timestamp when this SAT run was initiated",
     })
+
+
+def drop_intermediate_schema():
+    """Remove the staging data after a run: the whole schema, or only its tables when manage_schemas is False."""
+    staging = json_["intermediate_schema"]
+    if json_.get("manage_schemas", True):
+        spark.sql(f"DROP DATABASE IF EXISTS {staging} CASCADE")
+        return
+    for table in spark.catalog.listTables(staging):
+        if table.isTemporary:
+            continue
+        kind = "VIEW" if table.tableType == "VIEW" else "TABLE"
+        spark.sql(f"DROP {kind} IF EXISTS {staging}.`{table.name}`")
 
 
 # COMMAND ----------
