@@ -159,7 +159,7 @@ def combine(ws):
 
 if use_parallel_runs == True:
     loggr.info("Running in parallel")
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, int(json_.get("driver_max_parallel_workspaces", 4)))) as executor:
         try:
             result = executor.map(combine, workspaces)
             for r in result:

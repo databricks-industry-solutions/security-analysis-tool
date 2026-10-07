@@ -130,6 +130,10 @@ These settings are critical for running manual checks and ensuring accurate **SA
  <img src={useBaseUrl('/img/update_workspace_configuration.png')} alt="update_workspace_configuration" />
 </div>
 
+### Parallel Workspace Runs
+
+The SAT driver analyses up to 4 workspaces at the same time. To change this, set `driver_max_parallel_workspaces` in `notebooks/Utils/initialize.py`: higher for accounts with many workspaces, lower if runs hit API rate limits or SQL warehouse limits. It applies when `use_parallel_runs` is `True`.
+
 ## Configuring Secret Scanning (Optional)
 
 The **SAT Secrets Scanner** uses TruffleHog to detect exposed secrets in Databricks workspace notebooks. This includes detection of:
