@@ -648,8 +648,9 @@ def process_trufflehog_output(built_in_results: List[Dict], custom_results: List
     except:
         file_content_lines = []
 
-    # Combine all results
+    # --config doesn't disable built-in detectors, so both scans report them.
     all_results = built_in_results + custom_results
+    seen = {}
 
     for result in all_results:
         try:
@@ -661,6 +662,11 @@ def process_trufflehog_output(built_in_results: List[Dict], custom_results: List
             if raw_secret:
                 # Hash the secret (never store plaintext)
                 secret_hash = hash_secret(raw_secret)
+
+                key = (detector_name, secret_hash, source_file)
+                if key in seen:
+                    seen[key]["Verified"] = seen[key]["Verified"] or verified
+                    continue
 
                 # Extract which config key contains this secret
                 config_key = extract_config_key_from_finding(file_content_lines, raw_secret)
@@ -674,6 +680,7 @@ def process_trufflehog_output(built_in_results: List[Dict], custom_results: List
                 }
 
                 secrets_found.append(secret_metadata)
+                seen[key] = secret_metadata
                 logger.info(f"Secret detected - Type: {detector_name}, Key: {config_key}, SHA: {secret_hash[:16]}...")
 
         except Exception as e:

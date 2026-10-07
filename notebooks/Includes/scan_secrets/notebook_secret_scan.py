@@ -780,7 +780,12 @@ def process_trufflehog_output(trufflehog_output: str) -> List[Dict[str, str]]:
     if not trufflehog_output or not trufflehog_output.strip():
         return results
     
+    # --config doesn't disable built-in detectors, so both scans report them.
+    seen: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     for line in trufflehog_output.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
         try:
             data = json.loads(line)
             detector_name = (
@@ -800,6 +805,11 @@ def process_trufflehog_output(trufflehog_output: str) -> List[Dict[str, str]]:
                     "SourceFile": data.get("SourceMetadata", {}).get("Data", {}).get("Filesystem", {}).get("file", "Unknown"),
                     "Verified": data.get("Verified", False)
                 }
+                key = (detector_name, raw_sha, result["SourceFile"])
+                if key in seen:
+                    seen[key]["Verified"] = seen[key]["Verified"] or result["Verified"]
+                    continue
+                seen[key] = result
                 results.append(result)
                 
         except json.JSONDecodeError as e:
