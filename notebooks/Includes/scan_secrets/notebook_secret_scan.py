@@ -109,6 +109,11 @@ db_client = SatDBClient(json_)
 # MAGIC fi
 # MAGIC
 # MAGIC # Check if TruffleHog is already installed (idempotent installation)
+# MAGIC # Parallel scans on one driver share /tmp/trufflehog: serialise installs, move the binary in atomically.
+# MAGIC if command -v flock >/dev/null 2>&1; then
+# MAGIC     exec 9>/tmp/trufflehog.install.lock
+# MAGIC     flock -w 300 9 || echo "WARNING: timed out waiting for the TruffleHog install lock"
+# MAGIC fi
 # MAGIC if [ -f /tmp/trufflehog ]; then
 # MAGIC     echo "TruffleHog already installed at /tmp/trufflehog"
 # MAGIC     echo "Skipping installation (already exists)"
@@ -118,8 +123,11 @@ db_client = SatDBClient(json_)
 # MAGIC     # mutable main branch. Bump TRUFFLEHOG_VERSION to upgrade.
 # MAGIC     TRUFFLEHOG_VERSION=v3.94.3
 # MAGIC     echo "Installing TruffleHog ${TRUFFLEHOG_VERSION}..."
-# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b /tmp "${TRUFFLEHOG_VERSION}"; then
-# MAGIC         if [ -f /tmp/trufflehog ]; then
+# MAGIC     TH_TMPDIR=$(mktemp -d /tmp/trufflehog-install.XXXXXX)
+# MAGIC     trap 'rm -rf "${TH_TMPDIR}"' EXIT
+# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b "${TH_TMPDIR}" "${TRUFFLEHOG_VERSION}"; then
+# MAGIC         if [ -f "${TH_TMPDIR}/trufflehog" ]; then
+# MAGIC             mv -f "${TH_TMPDIR}/trufflehog" /tmp/trufflehog
 # MAGIC             echo "Setup completed successfully!"
 # MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
 # MAGIC             echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
