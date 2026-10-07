@@ -158,6 +158,14 @@ resource "databricks_job" "secrets_scanner" {
             google_service_account = var.gcp_impersonate_service_account
           }
         }
+        dynamic "init_scripts" {
+          for_each = var.install_trufflehog_via_init_script ? [1] : []
+          content {
+            workspace {
+              destination = "${databricks_repo.security_analysis_tool.path}/scripts/init/install_trufflehog.sh"
+            }
+          }
+        }
       }
     }
   }
