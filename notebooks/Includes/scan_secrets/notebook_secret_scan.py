@@ -207,7 +207,8 @@ def _merge_custom_detectors(config_data: Dict[str, Any], config_folder: str) -> 
 
     Looks for `custom_trufflehog_detectors.yaml` in the same configs/ folder.
     Its `detectors:` are merged into the shipped list (custom wins on a name
-    clash) and any `settings.excluded_detectors` are appended. The file is
+    clash) and any `settings.excluded_detectors` and `settings.ignored_findings`
+    are appended. The file is
     optional; if it's missing or invalid we keep the shipped config and carry
     on (logging the reason) rather than failing the scan. Lets customers add
     their own detectors without editing the file that ships with SAT.
@@ -242,6 +243,10 @@ def _merge_custom_detectors(config_data: Dict[str, Any], config_folder: str) -> 
         for x in custom_excluded:
             if x not in existing:
                 existing.append(x)
+
+    custom_ignored = (custom.get("settings") or {}).get("ignored_findings") or []
+    if custom_ignored:
+        config_data.setdefault("settings", {}).setdefault("ignored_findings", []).extend(custom_ignored)
 
     return config_data
 
@@ -310,6 +315,11 @@ class Config:
     
     # TruffleHog settings from config
     EXCLUDED_DETECTORS = config_data.get("settings", {}).get("excluded_detectors", ["DatabricksToken"])
+    IGNORED_FINDINGS = {
+        (str(f["detector"]), str(f["sha256"]).lower())
+        for f in config_data.get("settings", {}).get("ignored_findings") or []
+        if isinstance(f, dict) and f.get("detector") and f.get("sha256")
+    }
 
     # Concurrency: number of threads for I/O-bound work (workspace/list,
     # get-status, notebook export/FUSE copy). I/O-bound, so a pool well above
@@ -792,6 +802,9 @@ def process_trufflehog_output(trufflehog_output: str) -> List[Dict[str, str]]:
             if raw_value:
                 # Generate SHA-256 hash for security (don't log actual secrets)
                 raw_sha = generate_sha256_hash(raw_value)
+                if (detector_name, raw_sha) in Config.IGNORED_FINDINGS:
+                    logger.info(f"Ignoring known false positive - Type: {detector_name}, SHA: {raw_sha[:16]}...")
+                    continue
                 
                 # Add metadata about the detection
                 result = {
