@@ -177,6 +177,7 @@ import shutil
 import yaml
 import tempfile
 import random
+import threading
 import concurrent.futures
 from datetime import timedelta, datetime
 from urllib.parse import quote
@@ -334,6 +335,43 @@ except Exception as e:
     logger.error(f"Failed to extract Databricks context: {str(e)}")
     raise
 
+# The OAuth token expires after ~1h; long scans re-mint it.
+TOKEN_REFRESH_SECONDS = 30 * 60
+_token_lock = threading.Lock()
+_token_minted_at = time.time()
+
+
+def _auth_token(force_refresh: bool = False) -> str:
+    global token, _token_minted_at
+    with _token_lock:
+        age = time.time() - _token_minted_at
+        if force_refresh or age >= TOKEN_REFRESH_SECONDS:
+            try:
+                new_token = db_client.get_temporary_oauth_token()
+                if new_token:
+                    token = new_token
+                    _token_minted_at = time.time()
+                    logger.info(f"Refreshed workspace OAuth token after {int(age)}s")
+                else:
+                    logger.error("Token refresh returned no token; keeping the current one")
+            except Exception as e:
+                logger.error(f"Token refresh failed ({e}); keeping the current one")
+        return token
+
+
+def _is_token_expired_response(response: Optional[requests.Response]) -> bool:
+    if response is None or response.status_code not in (401, 403):
+        return False
+    try:
+        body = (response.text or "")[:500].lower()
+    except Exception:
+        return False
+    return "token expired" in body or "token is expiring" in body
+
+
+def _auth_headers() -> Dict[str, str]:
+    return {"Authorization": f"Bearer {_auth_token()}", "User-Agent": "databricks-sat/0.1.0"}
+
 # Create temporary directories if they don't exist
 os.makedirs(Config.TEMP_NOTEBOOKS_DIR, exist_ok=True)
 logger.info(f"Temporary directory created: {Config.TEMP_NOTEBOOKS_DIR}")
@@ -430,12 +468,20 @@ def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str,
     API actually throttles us — there is no unconditional inter-call sleep.
     """
     max_attempts = 5
+    token_refreshed = False
     for attempt in range(max_attempts):
         try:
-            response = requests.get(url, headers=headers, json=data, timeout=30)
+            request_headers = dict(headers)
+            request_headers["Authorization"] = f"Bearer {_auth_token()}"
+            response = requests.get(url, headers=request_headers, json=data, timeout=30)
 
             if response.status_code == 200:
                 return response.json(), 200
+            elif _is_token_expired_response(response) and not token_refreshed:
+                token_refreshed = True
+                logger.warning(f"Token expired during request to {url}; refreshing and retrying")
+                _auth_token(force_refresh=True)
+                continue
             elif response.status_code == 429:
                 if attempt == max_attempts - 1:
                     logger.warning(f"Rate limit persisted after {max_attempts} attempts for URL: {url}")
@@ -473,14 +519,20 @@ def _get_with_retry(url: str, what: str) -> Optional[requests.Response]:
         Optional[requests.Response]: Response, or None if the request never
             reached the server
     """
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
     max_attempts = 5
+    token_refreshed = False
     for attempt in range(max_attempts):
         try:
-            response = requests.get(url, headers=headers, timeout=30)
+            response = requests.get(url, headers=_auth_headers(), timeout=30)
         except requests.exceptions.RequestException as e:
             logger.error(f"Request error during {what}: {str(e)}")
             return None
+
+        if _is_token_expired_response(response) and not token_refreshed:
+            token_refreshed = True
+            logger.warning(f"Token expired during {what}; refreshing and retrying")
+            _auth_token(force_refresh=True)
+            continue
 
         if response.status_code != 429:
             return response
@@ -1405,7 +1457,7 @@ def main_scanning_workflow():
 
     # Setup API request parameters
     url = f"{base_url}/api/2.0/search-midtier/unified-search"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
+    headers = {"Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
     
     # Build filters - only include time filter if enabled
     filters = {"result_types": ["FILE", "NOTEBOOK"]}
