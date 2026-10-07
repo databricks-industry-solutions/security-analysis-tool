@@ -1182,7 +1182,7 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Dict[str, 
 
     try:
         # Try FUSE mount first (fast local copy), fall back to API export.
-        fuse_path = get_fuse_path(path)
+        fuse_path = get_fuse_path(temp_path)
         if fuse_path:
             try:
                 shutil.copy2(fuse_path, scan_file)
