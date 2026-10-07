@@ -211,6 +211,8 @@ def _merge_custom_detectors(config_data: Dict[str, Any], config_folder: str) -> 
     optional; if it's missing or invalid we keep the shipped config and carry
     on (logging the reason) rather than failing the scan. Lets customers add
     their own detectors without editing the file that ships with SAT.
+    Keys under `settings.rate_limiting` and `settings.performance` override
+    the shipped values.
     """
     custom_path = f"{config_folder}/custom_trufflehog_detectors.yaml"
     if not os.path.exists(custom_path):
@@ -226,6 +228,12 @@ def _merge_custom_detectors(config_data: Dict[str, Any], config_folder: str) -> 
     if not isinstance(custom, dict):
         logger.warning(f"Custom detector file {custom_path} is not a YAML mapping — ignoring it")
         return config_data
+
+    for section in ("rate_limiting", "performance"):
+        override = (custom.get("settings") or {}).get(section)
+        if isinstance(override, dict) and override:
+            config_data.setdefault("settings", {}).setdefault(section, {}).update(override)
+            logger.info(f"Applied settings.{section} from {custom_path}: {override}")
 
     custom_detectors = custom.get("detectors") or []
     if custom_detectors:
