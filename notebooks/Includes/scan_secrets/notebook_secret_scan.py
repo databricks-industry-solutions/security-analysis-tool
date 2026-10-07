@@ -1398,6 +1398,8 @@ def main_scanning_workflow():
     total_notebooks_discovered = 0  # notebooks discovery returned
     total_secrets_found = 0
     notebooks_with_secrets = 0
+    # The coverage counters can't detect a pagination failure; this can.
+    discovery_truncated_at_page = None
 
     insert_stats.update({"attempted": 0, "written": 0, "failed": 0})
     materialize_stats.update({"ok": 0, "permission": 0, "notfound": 0, "error": 0, "skip": 0})
@@ -1474,7 +1476,13 @@ def main_scanning_workflow():
                 break  # fallback is single-pass; leave the pagination loop
 
             if response is None:
-                logger.warning(f"Failed to get response for page {page_number}")
+                discovery_truncated_at_page = page_number
+                logger.error(
+                    f"Discovery stopped at page {page_number} (HTTP {status_code}); objects "
+                    f"on later pages were never enumerated and are not covered by this scan"
+                )
+                print(f"❌ Discovery failed at page {page_number} (HTTP {status_code}); "
+                      f"the notebook list is incomplete.")
                 break
             
             # Record the pre-page length so per-page counters cover exactly the
@@ -1563,8 +1571,14 @@ def main_scanning_workflow():
         unreadable = materialize_stats["error"]
         list_failures = discovery_stats["list_failures"]
         unwritten = insert_stats["attempted"] - insert_stats["written"]
-        if unreadable > 0 or list_failures > 0 or unwritten > 0:
+        if unreadable > 0 or list_failures > 0 or unwritten > 0 or discovery_truncated_at_page is not None:
             problems = []
+            if discovery_truncated_at_page is not None:
+                problems.append(
+                    f"discovery stopped at page {discovery_truncated_at_page}, so only the "
+                    f"{total_notebooks_discovered} notebook(s) listed before that were scanned; "
+                    f"the true total is unknown"
+                )
             if unreadable > 0:
                 problems.append(
                     f"{unreadable} discovered notebook(s) could not be read "
