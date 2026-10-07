@@ -643,7 +643,8 @@ def export_notebook_content(notebook_path: str) -> Optional[Dict[str, Any]]:
     Returns:
         Optional[Dict[str, Any]]: Notebook export response or None if error
     """
-    url = f"{base_url}/api/2.0/workspace/export?path={notebook_path}"
+    # AUTO also exports workspace files; the default (SOURCE) only exports notebooks.
+    url = f"{base_url}/api/2.0/workspace/export?path={notebook_path}&format=AUTO"
     response = _get_with_retry(url, f"export of {notebook_path}")
     if response is None:
         return None
@@ -665,9 +666,10 @@ def decode_and_write_content(content: str, output_path: str) -> bool:
     Returns:
         bool: True if successful, False otherwise
     """
+    # Raw bytes: binary and non-UTF-8 files must not fail to decode.
     try:
-        decoded_content = base64.b64decode(content).decode("utf-8")
-        with open(output_path, "w", encoding="utf-8") as file:
+        decoded_content = base64.b64decode(content)
+        with open(output_path, "wb") as file:
             file.write(decoded_content)
         return True
     except Exception as e:
