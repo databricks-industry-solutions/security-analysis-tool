@@ -64,6 +64,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
+from core.scan_http import AdaptiveRateLimiter, request_with_retry
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -301,37 +302,24 @@ if not _api_token:
     raise ValueError("Unable to obtain OAuth token for cluster scanning")
 _auth_headers = {"Authorization": f"Bearer {_api_token}", "User-Agent": "databricks-sat/0.1.0"}
 
+# Shared limiter for all cluster-API calls. Self-tunes to the workspace rate
+# limit; MAX_WORKERS is the ceiling.
+_rate_limiter = AdaptiveRateLimiter(
+    start=min(4, Config.MAX_WORKERS),
+    max_limit=Config.MAX_WORKERS,
+)
+
 
 def _get_with_retry(url: str, params: Optional[Dict[str, Any]], what: str) -> Optional[requests.Response]:
-    """GET with exponential backoff on HTTP 429.
+    """GET a cluster-API URL through the shared limiter.
 
-    Cluster list/get calls are issued concurrently across MAX_WORKERS threads,
-    which can trip workspace rate limits. Retrying keeps a throttled cluster in
-    the scan instead of dropping it. Mirrors notebook_secret_scan._get_with_retry.
+    Returns the response, or None if the request never reached the server.
     """
-    max_attempts = 5
-    for attempt in range(max_attempts):
-        try:
-            response = requests.get(url, headers=_auth_headers, params=params, timeout=60)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error during {what}: {str(e)}")
-            return None
-
-        if response.status_code != 429:
-            return response
-
-        if attempt == max_attempts - 1:
-            logger.warning(f"Rate limit persisted after {max_attempts} attempts during {what}")
-            return response
-
-        backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
-        logger.warning(
-            f"Rate limit hit during {what}. Backing off {backoff}s "
-            f"(attempt {attempt + 1}/{max_attempts})"
-        )
-        time.sleep(backoff)
-
-    return None
+    return request_with_retry(
+        lambda: requests.get(url, headers=_auth_headers, params=params, timeout=60),
+        limiter=_rate_limiter,
+        base_sleep=Config.API_SLEEP_SECONDS,
+    )
 
 
 def get_all_clusters() -> List[Dict[str, Any]]:

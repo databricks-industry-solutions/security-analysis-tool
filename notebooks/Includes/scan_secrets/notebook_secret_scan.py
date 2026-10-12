@@ -68,6 +68,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -417,91 +418,48 @@ def generate_sha256_hash(secret: str) -> str:
     sha.update(secret_bytes)
     return sha.hexdigest()
 
+# Shared limiter for all workspace-API calls. Self-tunes to the workspace rate
+# limit; MAX_WORKERS is the ceiling.
+_rate_limiter = AdaptiveRateLimiter(
+    start=min(4, Config.MAX_WORKERS),
+    max_limit=Config.MAX_WORKERS,
+)
+
+
 def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
     """
-    Make API request to Databricks with proper error handling.
+    Make a GET request to Databricks.
 
-    Returns a (json_or_none, status_or_none) tuple so callers can branch
-    on HTTP status. Status is None when the request never reached the
-    server (timeout / connection error).
-
-    Rate limits (429) are retried internally with exponential backoff so a
-    transient throttle no longer aborts pagination. We only sleep when the
-    API actually throttles us — there is no unconditional inter-call sleep.
+    Returns a (json_or_none, status_or_none) tuple so callers can branch on
+    HTTP status. Status is None when the request never reached the server.
     """
-    max_attempts = 5
-    for attempt in range(max_attempts):
+    resp = request_with_retry(
+        lambda: requests.get(url, headers=headers, json=data, timeout=30),
+        limiter=_rate_limiter,
+        base_sleep=Config.API_SLEEP_SECONDS,
+    )
+    if resp is None:
+        return None, None
+    if resp.status_code == 200:
         try:
-            response = requests.get(url, headers=headers, json=data, timeout=30)
-
-            if response.status_code == 200:
-                return response.json(), 200
-            elif response.status_code == 429:
-                if attempt == max_attempts - 1:
-                    logger.warning(f"Rate limit persisted after {max_attempts} attempts for URL: {url}")
-                    return None, 429
-                backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
-                logger.warning(f"Rate limit hit for URL: {url}. Backing off {backoff}s (attempt {attempt + 1}/{max_attempts})")
-                time.sleep(backoff)
-                continue
-            else:
-                logger.warning(f"API request failed. URL: {url}, Status: {response.status_code}")
-                return None, response.status_code
-
-        except requests.exceptions.Timeout:
-            logger.error(f"Request timeout for URL: {url}")
-            return None, None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error for URL: {url}. Error: {str(e)}")
-            return None, None
-
-    return None, 429
+            return resp.json(), 200
+        except ValueError:
+            logger.warning(f"Non-JSON 200 response for URL: {url}")
+            return None, 200
+    logger.warning(f"API request failed. URL: {url}, Status: {resp.status_code}")
+    return None, resp.status_code
 
 def _get_with_retry(url: str, what: str) -> Optional[requests.Response]:
-    """
-    Make a GET request, retrying with exponential backoff on HTTP 429.
+    """GET a workspace-API URL through the shared limiter.
 
-    Notebook export and get-status are issued concurrently across MAX_WORKERS
-    threads, which can trip workspace rate limits. Retrying keeps a throttled
-    notebook in the scan instead of dropping it.
-
-    Args:
-        url (str): URL to request
-        what (str): Short description of the operation, used in log messages
-
-    Returns:
-        Optional[requests.Response]: Response, or None if the request never
-            reached the server
+    Returns the response, or None if the request never reached the server.
     """
     headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
-    max_attempts = 5
-    for attempt in range(max_attempts):
-        try:
-            response = requests.get(url, headers=headers, timeout=30)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error during {what}: {str(e)}")
-            return None
-
-        if response.status_code != 429:
-            return response
-
-        if attempt == max_attempts - 1:
-            logger.warning(f"Rate limit persisted after {max_attempts} attempts during {what}")
-            return response
-
-        # Equal jitter: half the exponential base plus a random component. This
-        # de-synchronizes concurrent retriers (discovery/export run across
-        # MAX_WORKERS threads) so they don't stampede the endpoint in lockstep
-        # after each backoff and re-trigger the same 429 burst.
-        base = Config.API_SLEEP_SECONDS * (2 ** attempt)
-        backoff = base / 2 + random.uniform(0, base / 2)
-        logger.warning(
-            f"Rate limit hit during {what}. Backing off {backoff:.1f}s "
-            f"(attempt {attempt + 1}/{max_attempts})"
-        )
-        time.sleep(backoff)
-
-    return None
+    return request_with_retry(
+        lambda: requests.get(url, headers=headers, timeout=30),
+        limiter=_rate_limiter,
+        base_sleep=Config.API_SLEEP_SECONDS,
+    )
 
 
 def check_notebook_status(notebook_path: str) -> int:
@@ -560,44 +518,35 @@ def _list_dir(path: str) -> Tuple[List[Dict[str, Any]], bool]:
     return [], False
 
 
+def _list_children(path: str) -> Tuple[List[str], List[Dict[str, Any]], bool]:
+    """Classify one directory's entries into (dir_paths, leaf_objects, listed_ok)."""
+    objs, listed_ok = _list_dir(path)
+    dirs: List[str] = []
+    found: List[Dict[str, Any]] = []
+    for obj in objs:
+        obj_path = obj.get("path")
+        if not obj_path:
+            continue
+        obj_type = obj.get("object_type")
+        if obj_type in ("DIRECTORY", "REPO"):
+            dirs.append(obj_path)
+        elif obj_type in ("NOTEBOOK", "FILE"):
+            found.append(obj)
+    return dirs, found, listed_ok
+
+
 def discover_notebooks_via_workspace_list(time_filter_enabled: bool,
                                           last_edited_after: Optional[int]) -> List[Dict[str, Any]]:
-    """Fallback notebook discovery using /workspace/list (+ /get-status only when needed).
+    """Fallback discovery that walks the whole workspace tree via /workspace/list.
 
-    Used when /search-midtier/unified-search rejects token-based auth
-    (returns 403). See GitHub issue #330 for context. The standard
-    discoverable trees — /Users, /Shared, /Repos — cover the common cases;
-    missing roots are tolerated silently (404).
-
-    Performance: directory traversal is fanned out across a thread pool one
-    level at a time instead of recursing serially, and the per-leaf
-    /workspace/get-status call is skipped entirely when the list response
-    already carries `modified_at`. get-status is only issued (and then in
-    parallel) for the leaves that lack it — eliminating the O(notebooks)
-    serial round-trips that made this path time out on large workspaces.
+    Used when /search-midtier/unified-search rejects token-based auth. Traverses
+    from the workspace root so objects in any location are discovered.
     """
     cutoff_ms = last_edited_after if time_filter_enabled else None
 
-    # Phase 1: parallel breadth-first directory traversal.
-    leaves: List[Dict[str, Any]] = []
-    pending: List[str] = ["/Users", "/Shared", "/Repos"]
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        while pending:
-            next_dirs: List[str] = []
-            # pool.map results are consumed here on the main thread, so the
-            # shared counter increment below is safe without a lock.
-            for objs, listed_ok in pool.map(_list_dir, pending):
-                if not listed_ok:
-                    discovery_stats["list_failures"] += 1
-                for obj in objs:
-                    obj_type = obj.get("object_type")
-                    if not obj.get("path"):
-                        continue
-                    if obj_type in ("DIRECTORY", "REPO"):
-                        next_dirs.append(obj["path"])
-                    elif obj_type in ("NOTEBOOK", "FILE"):
-                        leaves.append(obj)
-            pending = next_dirs
+        leaves, failed = collect_tree(_list_children, ["/"], mapper=pool.map)
+    discovery_stats["list_failures"] += failed
 
     # Phase 2: time-window filter (only when enabled).
     if cutoff_ms is None:
