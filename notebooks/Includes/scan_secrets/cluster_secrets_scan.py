@@ -169,9 +169,7 @@ import logging
 import concurrent.futures
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
-
-# Configure logging
-logger = loggr  # Use existing logger from common setup
+from urllib.parse import urlparse
 
 # db_client (initialized in common setup) is used only to mint a single OAuth
 # token; cluster API calls are issued directly (see get_all_clusters below) so
@@ -179,6 +177,15 @@ logger = loggr  # Use existing logger from common setup
 # Extract workspace context
 workspace_id = json_["workspace_id"]
 base_url = json_["url"]
+
+
+class _WorkspaceLogAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[ws={self.extra['name']} id={self.extra['id']}] {msg}", kwargs
+
+
+_ws_name = json_.get("workspace_name") or urlparse(base_url).hostname or "unknown"
+logger = _WorkspaceLogAdapter(loggr, {"name": _ws_name, "id": workspace_id})
 
 # Get run_id from parent orchestrator (shared with notebook scan)
 run_id = json_.get("run_id")
@@ -865,7 +872,7 @@ def main_cluster_scanning_workflow():
     Returns:
         Dict: Summary statistics of the scan
     """
-    print("🔍 Starting Cluster Configuration Secret Scanning Workflow")
+    print(f"🔍 Starting Cluster Configuration Secret Scanning Workflow — workspace {_ws_name} (id={workspace_id})")
     print("=" * 60)
 
     # Get current run_id (passed from orchestrator or use fallback)

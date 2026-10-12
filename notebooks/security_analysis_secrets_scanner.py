@@ -137,6 +137,7 @@ def processTruffleHogScan(wsrow, run_id):
         {
             "url": hostname,
             "workspace_id": workspace_id,
+            "workspace_name": wsrow.workspace_name,
             "cloud_type": cloud_type,
             "clusterid": clusterid,
             "run_id": run_id,  # Add shared run_id
@@ -180,6 +181,7 @@ def processClusterScan(wsrow, run_id):
         {
             "url": hostname,
             "workspace_id": workspace_id,
+            "workspace_name": wsrow.workspace_name,
             "cloud_type": cloud_type,
             "clusterid": clusterid,
             "run_id": run_id,  # Add shared run_id
