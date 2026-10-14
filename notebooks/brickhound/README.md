@@ -58,8 +58,8 @@ https://<workspace-url>/apps/brickhound-sat
 ## Configuration
 
 BrickHound automatically uses SAT's configuration:
-- **Credentials**: From `sat_scope` secret scope
-- **Schema**: From SAT's `analysis_schema_name`
+- **Credentials**: From the configured SAT secret scope (default `sat_scope`; only `client_secret` must live there — all other values are passed as job parameters with scope fallback)
+- **Schema**: From SAT's `analysis_schema_name` (resolved by `initialize.py` via job parameter → scope → fail)
 - **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`, `brickhound_shared_to_account`
 
 No additional configuration needed if SAT is installed!
@@ -84,7 +84,7 @@ Both write to the same Unity Catalog schema for unified security analysis.
 - Check job logs for errors
 
 **Authentication failed?**
-- Verify SAT is installed (`sat_scope` exists)
+- Verify the configured SAT secret scope exists and contains the `client-secret` key (or the key name you configured)
 - Check service principal has Account Admin role
 
 **Tables not found?**
@@ -93,6 +93,5 @@ Both write to the same Unity Catalog schema for unified security analysis.
 
 ## Documentation
 
-- **Integration Guide**: `/docs/BRICKHOUND_INTEGRATION.md`
-- **Permissions Reference**: `/docs/brickhound_PERMISSIONS.md`
-- **Main README**: `/docs/brickhound_README.md`
+- **Secret Scope Reference**: [docs/sat/docs/installation/secret-scope.mdx](../docs/sat/docs/installation/secret-scope.mdx)
+- **Upgrade Notes**: [docs/sat/docs/upgrade.mdx](../docs/sat/docs/upgrade.mdx)

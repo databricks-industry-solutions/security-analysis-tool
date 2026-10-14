@@ -80,21 +80,29 @@ To find your app's service principal:
 ### Option 1: Databricks Apps (Recommended)
 
 1. **Configure app.yaml**:
+
+   The shipped `app.yaml` uses Databricks Apps resource bindings — no manual values to fill in:
    ```yaml
-   # Update these values in app.yaml
    env:
-     - name: BRICKHOUND_CATALOG
-       value: "your_catalog"  # e.g., "main", "arunuc"
      - name: BRICKHOUND_SCHEMA
-       value: "brickhound"
-     - name: DATABRICKS_WAREHOUSE_HTTP_PATH
-       value: "/sql/1.0/warehouses/abc123def456"
-   
+       valueFrom: "analysis_schema_name"  # bound to a secret resource
+     - name: WAREHOUSE_ID
+       valueFrom: "warehouse"             # bound to the sql_warehouse resource
+
    resources:
-     - name: default-sql-warehouse
+     - name: "analysis_schema_name"
+       secret:
+         permission: "READ"
+         scope: "<sat-scope>"
+         key: analysis_schema_name
+     - name: "warehouse"
        sql_warehouse:
-         id: "abc123def456"  # Your SQL warehouse ID
+         permission: "CAN_USE"
+         id: "<warehouse-id>"
    ```
+   These bindings are declared automatically by the SAT installer (DABS or Terraform).
+   For BYO scope installs, SAT can bind `analysis_schema_name` directly to your scope —
+   see the [Secret Scope Reference](../../docs/sat/docs/installation/secret-scope.mdx).
 
 2. **Deploy via Databricks CLI**:
    ```bash
@@ -214,24 +222,19 @@ Then open http://localhost:8000 in your browser.
 
 ### Environment Variables
 
-**Required:**
-* `DATABRICKS_HOST` - Workspace URL (auto-set in Databricks Apps)
-* `DATABRICKS_TOKEN` - Access token (auto-set in Databricks Apps)
-* `DATABRICKS_WAREHOUSE_HTTP_PATH` - SQL Warehouse HTTP path
+The following env vars are injected at runtime by the Databricks Apps resource bindings
+declared in `app.yaml` — you do not set them manually:
 
-**Optional:**
-* `BRICKHOUND_CATALOG` - Catalog name (default: "arunuc")
-* `BRICKHOUND_SCHEMA` - Schema name (default: "brickhound")
+* `BRICKHOUND_SCHEMA` - Full schema name (`catalog.schema`), from `analysis_schema_name` secret resource
+* `WAREHOUSE_ID` - SQL Warehouse ID, from the `warehouse` sql_warehouse resource
+* `DATABRICKS_HOST` - Workspace URL (auto-set by Databricks Apps runtime)
+* `DATABRICKS_TOKEN` - Access token (auto-set by Databricks Apps runtime)
 
 ### SQL Warehouse
 
-Update `app.yaml` with your SQL Warehouse ID:
-```yaml
-resources:
-  - name: default-sql-warehouse
-    sql_warehouse:
-      id: "<your-warehouse-id>"  # Find in SQL Warehouses → Details
-```
+The warehouse is declared as a resource in `app.yaml` (`name: "warehouse"`).
+The SAT installer sets this to the warehouse you selected during install.
+`WAREHOUSE_ID` resolves automatically from that resource — no hard-coded ID needed.
 
 ## 🔒 Security Notes
 

@@ -784,9 +784,130 @@ def process_json_schema(df):
 
 # COMMAND ----------
 
-# For testing
-JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll"}'
+# ==============================================================================
+# Secret scope / key-name constants
+# ==============================================================================
+#
+# DEFAULT_SECRET_KEYS maps a *logical* name (stable API used throughout the
+# codebase) to the *physical* key string written/read from the Databricks secret
+# scope.  Operators who bring their own scope with different key names pass a
+# partial map via the `secret_key_names` job parameter (JSON string); it is
+# merged over this dict in `notebooks/Utils/initialize.py` so only overridden
+# entries need to be specified.
+#
+# Only TWO values must live in a secret scope:
+#   - client_secret  (an actual credential)
+#   - workspace_pat  (PAT prefix; dormant when use_mastercreds=True)
+#
+# All other values (account_id, client_id, etc.) are passed as direct
+# job base_parameters for new installs, with a scope fallback for backward
+# compatibility with 0.8.x installs that still have them stored as secrets.
+
+DEFAULT_SECRET_KEYS = {
+    "client_secret":              "client-secret",
+    "workspace_pat_token_prefix": "sat-token",
+    # Legacy / optional scope-based fallback keys for non-secret config.
+    # New installs carry these as job base_parameters; older installs will
+    # still resolve them from the scope via resolve_sat_value().
+    "account_id":                 "account-console-id",
+    "sql_warehouse_id":           "sql-warehouse-id",
+    "analysis_schema_name":       "analysis_schema_name",
+    "proxies":                    "proxies",
+    "use_sp_auth":                "use-sp-auth",
+    "client_id":                  "client-id",
+    "tenant_id":                  "tenant-id",
+    "subscription_id":            "subscription-id",
+}
+
+# Keys required per cloud for pre-flight validation in pre_run_config_check.
+REQUIRED_SECRET_KEYS_BY_CLOUD = {
+    "aws":   ["client_secret"],
+    "gcp":   ["client_secret"],
+    "azure": ["client_secret"],
+}
+
+def resolve_sat_value(logical, param_value, scope, keys, default=None, required=True):
+    """Resolve a SAT configuration value using the following priority order:
+
+    1. ``param_value`` – non-empty string from a job base_parameter / widget.
+    2. Databricks secret at ``scope`` / ``keys[logical]`` – legacy path, keeps
+       pre-0.9 installs (where all values lived in the scope) working.
+    3. ``default`` – if provided, used as a last-resort safe default.
+    4. Hard failure – raises ``ValueError`` naming the scope and physical key.
+
+    Parameters
+    ----------
+    logical:     logical key name, e.g. ``"account_id"``
+    param_value: string from the job parameter (may be empty / None)
+    scope:       Databricks secret scope name
+    keys:        resolved key map (DEFAULT_SECRET_KEYS merged with overrides)
+    default:     safe default to return when neither param nor secret exists
+    required:    when True and nothing resolves, raise instead of returning None
+    """
+    import warnings
+    # Step 1: direct parameter
+    if param_value and str(param_value).strip():
+        return str(param_value).strip()
+    # Step 2: scope fallback (best-effort)
+    physical = keys.get(logical, logical)
+    try:
+        val = dbutils.secrets.get(scope=scope, key=physical)  # noqa: F821
+        if val:
+            return val
+    except Exception:
+        pass
+    # Step 3: safe default
+    if default is not None:
+        warnings.warn(
+            f"SAT: '{logical}' not found in params or scope '{scope}' key "
+            f"'{physical}'; using default: {default!r}",
+            stacklevel=2,
+        )
+        return default
+    # Step 4: fail clearly
+    if required:
+        raise ValueError(
+            f"SAT configuration missing required value '{logical}'. "
+            f"Expected as job parameter or secret scope '{scope}' key '{physical}'.\n"
+            f"If running a Setup notebook interactively, set the 'secret_scope' widget "
+            f"to your configured scope name (the scope you specified during install) "
+            f"before running the notebook."
+        )
+    return None
+
+
+def read_sat_secret(scope, keys, logical, required=True, default=None):
+    """Read a value that *must* come from the secret scope (e.g. client_secret).
+
+    Unlike ``resolve_sat_value``, this function never accepts a direct
+    parameter – credentials should not travel through job base_parameters.
+
+    Raises ``ValueError`` naming the physical key and scope on failure.
+    """
+    physical = keys.get(logical, logical)
+    try:
+        val = dbutils.secrets.get(scope=scope, key=physical)  # noqa: F821
+        if val:
+            return val
+    except Exception as exc:
+        if required:
+            raise ValueError(
+                f"SAT: cannot read required secret '{logical}' from scope "
+                f"'{scope}' key '{physical}': {exc}"
+            ) from exc
+        return default
+    if required:
+        raise ValueError(
+            f"SAT: secret '{logical}' (scope='{scope}', key='{physical}') "
+            f"resolved to an empty value."
+        )
+    return default
 
 # COMMAND ----------
 
-JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68",  "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "user", "master_pwd_scope": "sat_scope", "master_pwd_key": "pass", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat_token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "cloud_type":"azure"}'
+# For testing
+JSONLOCALTESTA = '{"account_id": "", "sql_warehouse_id": "", "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "client-secret", "master_pwd_scope": "sat_scope", "master_pwd_key": "client-secret", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat-token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "url": "https://satanalysis.cloud.databricks.com", "workspace_id": "2657683783405196", "cloud_type": "aws", "clusterid": "1115-184042-ntswg7ll", "secret_scope": "sat_scope", "secret_keys": {"client_secret": "client-secret", "workspace_pat_token_prefix": "sat-token"}}'
+
+# COMMAND ----------
+
+JSONLOCALTESTB = '{"account_id": "", "sql_warehouse_id": "4a936419ee9b9d68",  "verbosity": "info", "master_name_scope": "sat_scope", "master_name_key": "client-secret", "master_pwd_scope": "sat_scope", "master_pwd_key": "client-secret", "workspace_pat_scope": "sat_scope", "workspace_pat_token_prefix": "sat-token", "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217", "dashboard_folder": "../../dashboards/", "dashboard_tag": "SAT", "use_mastercreds": true, "subscription_id": "", "tenant_id": "", "client_id": "", "client_secret": "", "generate_pat_tokens": false, "url": "https://adb-83xxx7.17.azuredatabricks.net", "workspace_id": "83xxxx7", "clusterid": "0105-242242-ir40aiai", "cloud_type":"azure", "secret_scope": "sat_scope", "secret_keys": {"client_secret": "client-secret", "workspace_pat_token_prefix": "sat-token"}}'

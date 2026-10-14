@@ -111,3 +111,51 @@ variable "sql_warehouse_auto_stop_mins" {
   description = "Time in minutes until an idle SQL warehouse terminates all clusters and stops. This field is optional. The default is 120, set to 0 to disable the auto stop."
   default     = 120
 }
+
+variable "manage_secrets" {
+  type        = bool
+  description = "When true (default), SAT creates the secret scope and writes the client_secret. Set to false to bring a pre-existing scope — SAT will only validate that the required secret key is readable."
+  default     = true
+}
+
+variable "secret_key_names" {
+  type        = map(string)
+  description = "Override map from logical key name to physical secret key name (e.g. { client_secret = \"my-sp-secret\" }). Unspecified keys use SAT defaults."
+  default     = {}
+}
+
+variable "app_config_scope_name" {
+  type        = string
+  description = "Secret scope for BrickHound app valueFrom bindings (analysis_schema_name, sql-warehouse-id). Defaults to secret_scope_name. Only relevant when manage_secrets=false and you need to keep your credential scope pristine."
+  default     = ""
+}
+
+variable "client_id" {
+  type        = string
+  description = "Service Principal Application (client) ID"
+  default     = ""
+}
+
+variable "tenant_id" {
+  type        = string
+  description = "Azure Tenant ID (Azure only)"
+  default     = ""
+}
+
+variable "subscription_id" {
+  type        = string
+  description = "Azure Subscription ID (Azure only)"
+  default     = ""
+}
+
+variable "use_sp_auth" {
+  type        = bool
+  description = "Use Service Principal OAuth authentication (AWS and GCP only)"
+  default     = true
+}
+
+variable "scope_provided_keys" {
+  type        = list(string)
+  description = "Logical key names that are pre-populated in the user's existing scope and must not be written by SAT. Mirrors the scope_contains checkbox in the DABS installer. Supported values: client_secret, account_id, client_id, tenant_id, subscription_id, proxies, analysis_schema_name."
+  default     = []
+}

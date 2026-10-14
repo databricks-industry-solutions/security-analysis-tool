@@ -12,20 +12,20 @@ resource "databricks_app" "brickhound" {
     {
       name = "analysis_schema_name"
       secret = {
-        scope      = databricks_secret_scope.sat.id
-        key        = "analysis_schema_name"
+        # When the user pre-populated analysis_schema_name in their own scope
+        # (scope_provided_keys contains "analysis_schema_name"), bind directly
+        # to that scope so SAT never writes to it.  Otherwise use the app
+        # config scope SAT owns.
+        scope      = contains(var.scope_provided_keys, "analysis_schema_name") ? var.secret_scope_name : local.resolved_app_config_scope
+        key        = local.secret_keys["analysis_schema_name"]
         permission = "READ"
       }
     },
     {
-      name = "sql-warehouse-id"
-      secret = {
-        scope      = databricks_secret_scope.sat.id
-        key        = "sql-warehouse-id"
-        permission = "READ"
-      }
-    },
-    {
+      # WAREHOUSE_ID env var resolves from the sql_warehouse resource below.
+      # A secret is no longer needed — valueFrom: "warehouse" in app.yaml
+      # returns the warehouse ID directly from the sql_warehouse resource,
+      # so the granted warehouse and the queried warehouse are always the same.
       name = "warehouse"
       sql_warehouse = {
         id         = var.sqlw_id == "new" ? databricks_sql_endpoint.new[0].id : data.databricks_sql_warehouse.old[0].id
