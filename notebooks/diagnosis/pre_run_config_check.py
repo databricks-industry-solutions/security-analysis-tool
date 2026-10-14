@@ -27,15 +27,23 @@ secret_scopes = dbutils.secrets.listScopes()
 
 # COMMAND ----------
 
+# The SAT app supplies configuration as job parameters, so the classic sat_scope
+# checks in this notebook do not apply. Detect app mode from the schema parameter.
+try:
+   _app_configured = bool((dbutils.widgets.get("analysis_schema_name") or "").strip())
+except Exception:
+   _app_configured = False
+
 found = False
-for secret_scope in secret_scopes:
-   
-   if secret_scope.name == json_['master_name_scope']:
-      print('Your SAT configuration has the required scope name')
-      found=True
-      break
-if not found:
-   dbutils.notebook.exit(f'Your SAT configuration is missing required scope {json_["master_name_scope"]}, please review setup instructions')
+if not _app_configured:
+   for secret_scope in secret_scopes:
+
+      if secret_scope.name == json_['master_name_scope']:
+         print('Your SAT configuration has the required scope name')
+         found=True
+         break
+   if not found:
+      dbutils.notebook.exit(f'Your SAT configuration is missing required scope {json_["master_name_scope"]}, please review setup instructions')
 
       
 
@@ -59,7 +67,7 @@ cloud_type = getCloudType(hostname)
 # COMMAND ----------
 
 
-if cloud_type == "aws":
+if cloud_type == "aws" and not _app_configured:
    try:
       dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
@@ -73,7 +81,7 @@ if cloud_type == "aws":
 
 # COMMAND ----------
 
-if cloud_type == "azure":
+if cloud_type == "azure" and not _app_configured:
    try:
       dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
@@ -88,7 +96,7 @@ if cloud_type == "azure":
 
 # COMMAND ----------
 
-if cloud_type == "gcp":
+if cloud_type == "gcp" and not _app_configured:
    try:
       dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
       dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')

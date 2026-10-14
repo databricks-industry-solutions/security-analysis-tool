@@ -297,12 +297,18 @@ def _unusable_names(names: list[str], refresh: bool = False) -> frozenset[str]:
     return _unusable["names"]
 
 
-def list_chat_endpoints(refresh: bool = False):
+def list_chat_endpoints(refresh: bool = False, probe: bool = True):
     """Chat-capable endpoints on the gateway that actually serve a request.
 
     Backs the model picker, so an entry appearing here is a promise the model
     works: task and ready-state alone are not enough, since both stay unchanged
     after a model is retired.
+
+    ``probe`` gates the usability check that establishes that promise. It sends a
+    one-token chat completion to every candidate, which is worth its cost for the
+    assistant's own picker but adds many round-trips -- 10+ seconds on a large
+    gateway. Callers that only need to populate a dropdown (settings, first-run
+    setup) pass ``probe=False`` to list task/ready candidates without it.
     """
     from databricks.sdk import WorkspaceClient
 
@@ -320,6 +326,9 @@ def list_chat_endpoints(refresh: bool = False):
     except Exception:  # noqa: BLE001
         log.exception("could not list serving endpoints")
         return []
+
+    if not probe:
+        return sorted(candidates, key=lambda e: e["name"])
 
     dead = _unusable_names([c["name"] for c in candidates], refresh=refresh)
     return sorted(

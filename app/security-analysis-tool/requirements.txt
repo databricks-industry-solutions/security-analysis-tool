@@ -1,14 +1,17 @@
 # Pins use compatible-release (`~=`) to allow patch updates within
 # tested minor versions but pin out unintended major bumps.
 #
-# databricks-sdk requires >= 0.51: the alerts/v2 API backing the secret-scanning
-# alerts (WorkspaceClient.alerts_v2 and the sql.AlertV2* models) does not exist
-# before that release. Every other SDK surface this app uses -- jobs, serving
-# endpoints, statement execution, notification destinations, genie -- was
-# confirmed present at 0.51 before raising the floor.
+# databricks-sdk requires >= 0.105: the Unity Catalog secrets API backing
+# credential storage (WorkspaceClient.secrets_uc -- catalog.SecretsUcAPI, with
+# get_secret/create_secret/update_secret taking full_name) first ships in
+# 0.105.0. 0.104 and earlier lack the class entirely, so secrets_uc.* would raise
+# AttributeError at runtime. The alerts/v2 API (WorkspaceClient.alerts_v2, the
+# sql.AlertV2* models) needed for secret-scanning alerts arrived earlier at 0.51
+# and is comfortably covered by this higher floor, as are jobs, serving
+# endpoints, statement execution, notification destinations and genie.
 flask~=3.0
 werkzeug~=3.0
-databricks-sdk>=0.51,<1.0
+databricks-sdk>=0.105,<1.0
 
 # Security assistant — calls the workspace's model serving endpoint via the
 # OpenAI-compatible API that Databricks Foundation Model serving exposes.

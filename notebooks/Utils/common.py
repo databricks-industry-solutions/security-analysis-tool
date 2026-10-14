@@ -708,15 +708,26 @@ def create_workspace_run_complete_table():
 # COMMAND ----------
 
 
+# Comments are a metadata change on the table. Every notebook re-applies them at
+# startup, so when collection jobs run concurrently one job's comment change can
+# conflict with another job's write on the same shared table (e.g.
+# run_number_table), raising DELTA_METADATA_CHANGED. Comments are cosmetic, so a
+# failure here must never abort the run -- swallow it and move on.
 def _set_table_comment(schema, table, comment):
     safe = comment.replace("'", "''")
-    spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{safe}'")
+    try:
+        spark.sql(f"COMMENT ON TABLE {schema}.`{table}` IS '{safe}'")
+    except Exception:
+        pass
 
 
 def _set_column_comments(schema, table, col_comments):
     for col, comment in col_comments.items():
         safe = comment.replace("'", "''")
-        spark.sql(f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{safe}'")
+        try:
+            spark.sql(f"ALTER TABLE {schema}.`{table}` ALTER COLUMN `{col}` COMMENT '{safe}'")
+        except Exception:
+            pass
 
 
 # COMMAND ----------

@@ -50,7 +50,15 @@ logger = logging.getLogger(__name__)
 # The config file is a workspace file the app's own service principal reads and
 # writes; it needs no pre-existing schema, which is what breaks the chicken-and-egg
 # of storing the schema pointer inside the schema it points at.
-CONFIG_FILE_PATH = "/Applications/SAT/app_config.json"
+# The app persists its own configuration (chosen catalog/schema, warehouse,
+# model and other non-secret settings) as a JSON workspace file, read back on
+# the next start. It has to live somewhere the app's service principal reliably
+# owns: the deploy root under /Applications is owned by whoever deployed the
+# app, so the SP cannot create files there ("parent folder does not exist" on
+# save). Every principal -- users and service principals alike -- owns its own
+# /Users/<id> home, so the config goes there. Resolved once and cached.
+CONFIG_FILE_NAME = "app_config.json"
+_config_file_path_cache = None
 
 CATALOG = None
 SCHEMA = None
@@ -67,10 +75,31 @@ def _config_client():
     return WorkspaceClient()
 
 
+def _config_file_path():
+    """Absolute workspace path of the app's config file, in the running
+    principal's own home so it is always writable. Both the boot-time read and
+    the setup-time write resolve it through the same identity (the app SP), so
+    they agree on the path. Cached to avoid a current_user call per access."""
+    global _config_file_path_cache
+    if _config_file_path_cache:
+        return _config_file_path_cache
+    home_owner = None
+    try:
+        home_owner = _config_client().current_user.me().user_name
+    except Exception:  # noqa: BLE001 - unavailable at import if creds not ready
+        home_owner = os.environ.get("DATABRICKS_CLIENT_ID")
+    if home_owner:
+        _config_file_path_cache = f"/Users/{home_owner}/.sat/{CONFIG_FILE_NAME}"
+    else:
+        # Last-resort fallback; may not be writable, which surfaces on save.
+        _config_file_path_cache = f"/Applications/SAT/{CONFIG_FILE_NAME}"
+    return _config_file_path_cache
+
+
 def read_persisted_config():
     """Read the app's own config file, or {} if it has not been written yet."""
     try:
-        raw = _config_client().workspace.download(CONFIG_FILE_PATH).read()
+        raw = _config_client().workspace.download(_config_file_path()).read()
         data = json.loads(raw)
         return data if isinstance(data, dict) else {}
     except Exception:  # noqa: BLE001 - absent on first run, or unreadable
@@ -82,9 +111,10 @@ def write_persisted_config(data):
     import io
     from databricks.sdk.service.workspace import ImportFormat
     client = _config_client()
-    client.workspace.mkdirs(CONFIG_FILE_PATH.rsplit("/", 1)[0])
+    path = _config_file_path()
+    client.workspace.mkdirs(path.rsplit("/", 1)[0])
     client.workspace.upload(
-        CONFIG_FILE_PATH, io.BytesIO(json.dumps(data, indent=2).encode()),
+        path, io.BytesIO(json.dumps(data, indent=2).encode()),
         format=ImportFormat.AUTO, overwrite=True)
 
 
@@ -120,12 +150,20 @@ def _apply_runtime_config(data):
     CODE_FINDINGS_TABLE = t("code_scan_findings")
     CODE_RUNS_TABLE = t("code_scan_runs")
 
+    # Bridge the schema to the env vars the assistant's sql_client reads. Without
+    # this the agent tools raise "SAT_SCHEMA / BRICKHOUND_SCHEMA is not set" even
+    # though the app itself is configured -- the two read config by different means.
+    if CATALOG and SCHEMA:
+        os.environ["BRICKHOUND_SCHEMA"] = f"{CATALOG}.{SCHEMA}"
+        os.environ["SAT_SCHEMA"] = f"{CATALOG}.{SCHEMA}"
+
     # Bridge persisted config to the environment variables the rest of the app
     # already reads, so no other call site has to know about the config file.
     for env_key, cfg_key in (("WAREHOUSE_ID", "warehouse_id"),
                              ("MODEL_ENDPOINT", "model_endpoint"),
                              ("GENIE_SPACE_ID", "genie_space_id"),
-                             ("WORKSPACE_ID", "workspace_id")):
+                             ("WORKSPACE_ID", "workspace_id"),
+                             ("ACCOUNT_ID", "account_id")):
         if _app_config.get(cfg_key):
             os.environ[env_key] = str(_app_config[cfg_key])
 
@@ -450,12 +488,20 @@ def get_connection():
 
     warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
     if not warehouse_id:
-        error_msg = (
-            "FATAL: WAREHOUSE_ID environment variable is not set in app.yaml.\n"
-            "Please configure WAREHOUSE_ID with a valid SQL warehouse ID before deploying."
+        # No warehouse is selected until first-run setup completes, so this is the
+        # expected state while the welcome screen is up -- not a deploy fault.
+        # Kept at a single warning (not an ERROR/"FATAL") so an unconfigured app
+        # does not fill its logs with alarming output during normal onboarding.
+        if not getattr(get_connection, "_no_warehouse_logged", False):
+            logger.warning(
+                "No SQL warehouse configured yet; SAT queries are unavailable "
+                "until first-run setup selects one."
+            )
+            get_connection._no_warehouse_logged = True
+        raise ValueError(
+            "SAT is not configured yet: no SQL warehouse has been selected. "
+            "Complete the welcome setup to choose a warehouse."
         )
-        logger.error(error_msg)
-        raise ValueError(error_msg)
 
     if not hasattr(get_connection, "_warehouse_logged"):
         logger.info("Using SQL Warehouse: %s", warehouse_id)
@@ -1463,6 +1509,16 @@ def get_main_html():
             background: rgba(248, 113, 113, 0.12);
             border-color: rgba(248, 113, 113, 0.7);
         }
+        .btn-danger {
+            background: var(--bg-input);
+            color: #fca5a5;
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            box-shadow: none;
+        }
+        .btn-danger:hover:not(:disabled) {
+            background: rgba(248, 113, 113, 0.12);
+            border-color: rgba(248, 113, 113, 0.7);
+        }
         .btn-ghost {
             background: var(--bg-input);
             color: var(--text-secondary);
@@ -1482,7 +1538,65 @@ def get_main_html():
            cards: an operator scans a list of pipelines, checks freshness, and
            acts on one — the same shape an observability console uses.
            --------------------------------------------------------------- */
+        /* First-run prompt to create the collection jobs from the app. */
+        .collect-setup {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, .10), rgba(118, 75, 162, .06));
+            border: 1px solid rgba(102, 126, 234, .28);
+            border-radius: 12px;
+            padding: 16px 18px;
+            margin-bottom: 22px;
+        }
+        .collect-setup-text { flex: 1; min-width: 0; }
+        .collect-setup-title { font-weight: 650; font-size: .98em; }
+        .collect-setup-sub { font-size: .85em; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+        .collect-setup-err { font-size: .82em; color: #fca5a5; margin-top: 8px; }
+        .collect-setup .btn { flex-shrink: 0; }
         .collect-group { margin-bottom: 26px; }
+
+        /* Manage section: admin actions (redeploy, re-run initializer, remove). */
+        .collect-manage {
+            margin-top: 30px;
+            border-top: 1px solid rgba(255, 255, 255, .07);
+            padding-top: 4px;
+        }
+        .collect-manage-head {
+            display: flex; align-items: center; gap: 8px;
+            width: 100%; padding: 12px 2px;
+            background: none; border: none; color: var(--text-muted);
+            font: inherit; font-size: .74em; font-weight: 700;
+            letter-spacing: .08em; text-transform: uppercase;
+            cursor: pointer; text-align: left;
+        }
+        .collect-manage-head:hover { color: var(--text-secondary); }
+        .collect-manage-head svg { width: 14px; height: 14px; transition: transform .18s; }
+        .collect-manage-head.is-open svg { transform: rotate(180deg); }
+        .collect-manage-body { padding: 4px 2px; }
+        .manage-action {
+            display: flex; align-items: center; gap: 16px;
+            padding: 13px 0;
+            border-top: 1px solid rgba(255, 255, 255, .05);
+        }
+        .manage-action:first-child { border-top: none; }
+        .manage-action-text { flex: 1; min-width: 0; }
+        .manage-action-title { font-size: .92em; font-weight: 600; }
+        .manage-action-sub { font-size: .82em; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
+        .manage-action .btn { flex-shrink: 0; }
+        .manage-msg { font-size: .82em; margin-top: 8px; min-height: 1em; }
+        .manage-msg.is-error { color: #fca5a5; }
+        .manage-msg.is-warn { color: #fcd34d; }
+        .manage-msg.is-ok { color: #86efac; }
+        .manage-progress {
+            height: 3px; border-radius: 2px; background: var(--bg-input);
+            overflow: hidden; margin-bottom: 8px;
+        }
+        .manage-progress-fill {
+            height: 100%; width: 34%; border-radius: 2px;
+            background: linear-gradient(90deg, transparent, #667eea 45%, #8b5cf6 62%, transparent);
+            animation: collect-sweep 1.7s ease-in-out infinite;
+        }
         .collect-group-head {
             display: flex;
             align-items: baseline;
@@ -1843,29 +1957,44 @@ def get_main_html():
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
+            gap: 8px;
             flex-shrink: 0;
-            padding: 12px 16px 14px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            background: rgba(0, 0, 0, 0.2);
+            padding: 10px 12px 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(0, 0, 0, 0.15);
         }
-        .sidebar-footer-link {
+        /* Both footer controls share one pill style so Settings and Trust Center
+           read as a matched pair rather than a bare icon and a stray link. */
+        .footer-link {
+            position: relative;
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            font-size: 0.78em;
-            color: rgba(148, 163, 184, 0.85);
+            gap: 8px;
+            font: inherit;
+            font-size: 0.82em;
+            font-weight: 500;
+            color: rgba(148, 163, 184, 0.9);
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            padding: 7px 10px;
+            cursor: pointer;
             text-decoration: none;
             white-space: nowrap;
-            transition: color 0.15s;
+            transition: color 0.15s, background 0.15s, border-color 0.15s;
         }
-        .sidebar-footer-link:hover { color: rgba(226, 232, 240, 0.95); }
+        .footer-link:hover {
+            color: rgba(226, 232, 240, 0.98);
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.09);
+        }
         /* Without an explicit size an inline SVG expands to fill its container,
            which rendered this icon as a 300px shield. */
-        .sidebar-footer-link svg {
-            width: 13px;
-            height: 13px;
-            flex-shrink: 0;
+        .footer-link svg { width: 15px; height: 15px; flex-shrink: 0; opacity: 0.85; }
+        .footer-link .status-dot {
+            position: static;
+            box-shadow: none;
+            margin-left: 1px;
         }
         .stats-grid {
             display: grid;
@@ -2219,6 +2348,35 @@ def get_main_html():
             line-height: 1.6;
             margin-top: 18px;
         }
+        /* A one-shot action styled like the section cards above it, so it reads as
+           a deliberate control rather than a stray button. */
+        .settings-action {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            margin-top: 18px;
+            padding: 13px 15px;
+            background: rgba(255, 255, 255, .015);
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 12px;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+        }
+        .settings-action:hover {
+            background: rgba(255, 255, 255, .04);
+            border-color: rgba(255, 255, 255, .12);
+        }
+        .settings-action .section-titles { flex: 1; min-width: 0; }
+        .settings-action svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            color: var(--text-muted);
+        }
         .health-summary {
             display: flex;
             align-items: center;
@@ -2291,6 +2449,28 @@ def get_main_html():
             border-top: 1px solid rgba(255, 255, 255, .05);
         }
         .section-body > .field:last-of-type { margin-bottom: 0; }
+
+        /* Permissions checklist: one row per required grant, with its fix. */
+        .req-sp { font-size: .78em; color: var(--text-muted); margin: 2px 0 12px; }
+        .req-sp code { background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px; }
+        .req-item { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.05); }
+        .req-item:first-of-type { border-top: none; }
+        .req-icon { flex-shrink: 0; margin-top: 1px; }
+        .req-icon svg { width: 16px; height: 16px; }
+        .req-ok { color: #86efac; }
+        .req-bad { color: #fca5a5; }
+        .req-opt { color: #fcd34d; }
+        .req-text { flex: 1; min-width: 0; }
+        .req-label { font-size: .9em; font-weight: 600; }
+        .req-tag { font-size: .72em; font-weight: 600; color: var(--text-muted);
+                   background: rgba(255,255,255,.06); border-radius: 20px; padding: 1px 7px; margin-left: 6px; }
+        .req-detail { font-size: .82em; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
+        .req-fix {
+            font-size: .82em; color: var(--text-secondary); margin-top: 6px;
+            line-height: 1.5; padding: 8px 10px; border-radius: 8px;
+            background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07);
+            white-space: pre-wrap; word-break: break-word;
+        }
 
         /* An input with a trailing control. The button is positioned inside the
            field so the two align on one baseline rather than stacking. */
@@ -3054,7 +3234,7 @@ def get_main_html():
                 </div>
                 <div>
                     <div class="setup-title">Welcome to the Security Analysis Tool</div>
-                    <div class="setup-sub">Connect SAT to your workspace to get started. It takes a minute, and everything you enter is stored as Unity Catalog secrets.</div>
+                    <div class="setup-sub">Connect the tool to your workspace to get started.</div>
                 </div>
             </div>
             <div class="setup-body" id="setup-body">
@@ -3178,16 +3358,17 @@ def get_main_html():
             </nav>
 
             <div class="sidebar-footer">
-                <a class="sidebar-footer-link" href="https://www.databricks.com/trust"
-                   target="_blank" rel="noopener noreferrer">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    Trust Center
-                </a>
-                <button class="icon-btn" id="settings-gear" title="Settings"
+                <button class="footer-link" id="settings-gear" title="Settings"
                         aria-label="Settings" onclick="openSettingsPanel()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>Settings</span>
                     <span class="status-dot" id="settings-dot" hidden></span>
                 </button>
+                <a class="footer-link" href="https://www.databricks.com/trust"
+                   target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Trust Center</span>
+                </a>
             </div>
         </aside>
 
@@ -3277,7 +3458,7 @@ def get_main_html():
             <div class="page" id="page-collection">
                 <div class="page-header">
                     <h1 class="page-title">Data Collection</h1>
-                    <p class="page-desc">Collection health, on-demand runs, and recurring schedules for every analysis job.</p>
+                    <p class="page-desc">Run, schedule, and monitor the analysis collection jobs.</p>
                 </div>
                 <div id="collection-panel"></div>
             </div>
@@ -3807,7 +3988,9 @@ def get_main_html():
         <div class="drawer-body" id="settings-body"></div>
     </aside>
 
-    <button class="assistant-fab" id="assistant-fab" title="Ask the security assistant" aria-label="Open security assistant">
+    <!-- Hidden until initApp confirms the workspace is configured; the assistant
+         has nothing to answer against during first-run setup. -->
+    <button class="assistant-fab hidden" id="assistant-fab" title="Ask the security assistant" aria-label="Open security assistant">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
@@ -3825,6 +4008,9 @@ def get_main_html():
                 <div class="assistant-head-sub" id="assistant-model-label">Permissions, secrets, and audit activity</div>
             </div>
             <div class="assistant-head-actions">
+            <button class="assistant-icon-btn" id="assistant-new-btn" title="New chat" aria-label="Start a new chat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+            </button>
             <button class="assistant-icon-btn" id="assistant-model-btn" title="Change model" aria-label="Change model">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="3"/>
@@ -4147,6 +4333,10 @@ def get_main_html():
                 return;
             }
 
+            // Workspace is configured: the assistant has data to answer against,
+            // so reveal its launcher (hidden by default for the welcome screen).
+            document.getElementById('assistant-fab').classList.remove('hidden');
+
             await loadRuns();
             loadStats();
 
@@ -4160,65 +4350,105 @@ def get_main_html():
         initApp();
 
         // --- First-run setup ------------------------------------------------
-        async function showSetup() {
+        // `reconfigure` is true when opened from Settings on an already-configured
+        // app: the current values are pre-filled and a Cancel button is shown, so
+        // the screen can be dismissed without changing anything.
+        async function showSetup(reconfigure) {
             const overlay = document.getElementById('setup-overlay');
             overlay.hidden = false;
+            // Keep the assistant launcher from showing through the overlay.
+            document.getElementById('assistant-fab').classList.add('hidden');
             const body = document.getElementById('setup-body');
+            body.innerHTML = '<div class="loading"><div class="spinner"></div>Loading your workspace…</div>';
             try {
-                const opts = await fetch('/api/setup/options').then(r => r.json());
+                const [opts, status] = await Promise.all([
+                    fetch('/api/setup/options').then(r => r.json()),
+                    reconfigure ? fetch('/api/setup/status').then(r => r.json()) : Promise.resolve({}),
+                ]);
                 if (opts.error) {
                     body.innerHTML = `<div class="setup-error">${escapeHtml(opts.error)}</div>`;
                     return;
                 }
+                opts.reconfigure = !!reconfigure;
+                opts.current = reconfigure
+                    ? { catalog: status.catalog, schema: status.schema,
+                        warehouse_id: status.warehouse_id, model_endpoint: status.model_endpoint,
+                        account_id: status.account_id }
+                    : {};
                 renderSetupForm(opts);
             } catch (e) {
                 body.innerHTML = `<div class="setup-error">Could not load your workspace: ${escapeHtml(e.message)}</div>`;
             }
         }
 
-        function setupPicker(id, options, placeholder) {
+        function hideSetup() {
+            document.getElementById('setup-overlay').hidden = true;
+            // hideSetup only runs on Cancel (an already-configured app), so the
+            // launcher belongs back on screen.
+            document.getElementById('assistant-fab').classList.remove('hidden');
+        }
+
+        // Opened from Settings: close the drawer, then re-run setup with current
+        // values pre-filled.
+        function reopenSetup() {
+            closeSettingsPanel();
+            showSetup(true);
+        }
+
+        function setupPicker(id, options, placeholder, selected) {
             // A select when the workspace listed values, a text box when it did not
             // (e.g. the app SP cannot list catalogs) so setup is never a dead end.
+            // `selected` preselects the current value when re-running setup.
+            selected = selected || '';
             if (options && options.length) {
                 return `<select class="field-input" id="${id}">
                     <option value="">${escapeHtml(placeholder)}</option>
-                    ${options.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join('')}
+                    ${options.map(o => `<option value="${escapeHtml(o.value)}"${o.value === selected ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
                 </select>`;
             }
-            return `<input class="field-input" id="${id}" type="text" placeholder="${escapeHtml(placeholder)}">`;
+            return `<input class="field-input" id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(selected)}">`;
         }
 
         function renderSetupForm(opts) {
             const catalogs = (opts.catalogs || []).map(c => ({ value: c, label: c }));
             const warehouses = (opts.warehouses || []).map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` }));
             const models = (opts.models || []).map(m => ({ value: m, label: m }));
+            const cur = opts.current || {};
+            const credHelp = opts.reconfigure
+                ? 'Service principal for account-level scans. Leave blank to keep the stored value.'
+                : 'Service principal for account-level scans. You can add this later in Settings.';
 
             document.getElementById('setup-body').innerHTML = `
                 <div class="setup-group">
-                    <div class="setup-group-title">Where SAT stores its results</div>
+                    <div class="setup-group-title">Results storage</div>
                     <div class="field">
                         <span class="field-label">Catalog</span>
-                        ${setupPicker('setup-catalog', catalogs, 'Choose a catalog')}
-                        <span class="field-help">SAT creates its schema inside this Unity Catalog catalog.</span>
+                        ${setupPicker('setup-catalog', catalogs, 'Choose a catalog', cur.catalog)}
+                        <span class="field-help">The results schema is created in this catalog.</span>
                     </div>
                     <div class="field">
                         <span class="field-label">Schema name</span>
-                        <input class="field-input" id="setup-schema" type="text" value="${escapeHtml(opts.default_schema || 'security_analysis')}">
-                        <span class="field-help">Created for you if it doesn't exist.</span>
+                        <input class="field-input" id="setup-schema" type="text" value="${escapeHtml(cur.schema || opts.default_schema || 'security_analysis')}">
+                        <span class="field-help">Created if it doesn't exist.</span>
                     </div>
                     <div class="field">
                         <span class="field-label">SQL warehouse</span>
-                        ${setupPicker('setup-warehouse', warehouses, 'Choose a warehouse')}
-                        <span class="field-help">Runs the analysis queries and alerts.</span>
+                        ${setupPicker('setup-warehouse', warehouses, 'Choose a warehouse', cur.warehouse_id)}
+                        <span class="field-help">Runs analysis queries and alerts.</span>
                     </div>
                 </div>
 
                 <div class="setup-group">
                     <div class="setup-group-title">Account credentials <span class="setup-optional">optional</span></div>
                     <div class="field">
+                        <span class="field-label">Account ID</span>
+                        <input class="field-input" id="setup-account-id" type="text" autocomplete="off" placeholder="Account console UUID" value="${escapeHtml(cur.account_id || '')}">
+                        <span class="field-help">Required only for account-level scans (Shared to All Users, Privileged Non-IdP, Denylist). Find it in the account console.</span>
+                    </div>
+                    <div class="field">
                         <span class="field-label">Client ID</span>
                         <input class="field-input" id="setup-client-id" type="text" autocomplete="off" placeholder="Service principal application ID">
-                        <span class="field-help">A service principal SAT uses to read account-level configuration for the identity and sharing scans. You can add this later in Settings.</span>
+                        <span class="field-help">${escapeHtml(credHelp)}</span>
                     </div>
                     <div class="field">
                         <span class="field-label">Client secret</span>
@@ -4228,22 +4458,23 @@ def get_main_html():
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
                             </button>
                         </div>
-                        <span class="field-help">Verified against your workspace before it's stored.</span>
+                        <span class="field-help">Verified before it's stored.</span>
                     </div>
                 </div>
 
                 <div class="setup-group">
-                    <div class="setup-group-title">Security assistant <span class="setup-optional">optional</span></div>
+                    <div class="setup-group-title">Assistant <span class="setup-optional">optional</span></div>
                     <div class="field">
                         <span class="field-label">Model</span>
-                        ${setupPicker('setup-model', models, 'Default model')}
-                        <span class="field-help">Answers questions in the assistant. Change it any time in Settings.</span>
+                        ${setupPicker('setup-model', models, 'Default model', cur.model_endpoint)}
+                        <span class="field-help">Powers the assistant. Change it anytime in Settings.</span>
                     </div>
                 </div>
 
                 <div class="setup-actions">
                     <span class="setup-error" id="setup-error"></span>
-                    <button class="btn" id="setup-submit" onclick="submitSetup()">Complete setup</button>
+                    ${opts.reconfigure ? '<button class="btn btn-ghost" onclick="hideSetup()">Cancel</button>' : ''}
+                    <button class="btn" id="setup-submit" onclick="submitSetup()">${opts.reconfigure ? 'Save changes' : 'Complete setup'}</button>
                 </div>`;
         }
 
@@ -4260,12 +4491,14 @@ def get_main_html():
         async function submitSetup() {
             const err = document.getElementById('setup-error');
             const btn = document.getElementById('setup-submit');
+            const originalLabel = btn.textContent;
             err.textContent = '';
             const payload = {
                 catalog: fieldValue('setup-catalog'),
                 schema: fieldValue('setup-schema'),
                 warehouse_id: fieldValue('setup-warehouse'),
                 model_endpoint: fieldValue('setup-model'),
+                account_id: fieldValue('setup-account-id'),
                 client_id: fieldValue('setup-client-id'),
                 client_secret: fieldValue('setup-client-secret'),
             };
@@ -4283,7 +4516,7 @@ def get_main_html():
                 if (result.error) {
                     err.textContent = result.error;
                     btn.disabled = false;
-                    btn.textContent = 'Complete setup';
+                    btn.textContent = originalLabel;
                     return;
                 }
                 // Configured now — reload into the fully-initialised app.
@@ -4291,7 +4524,7 @@ def get_main_html():
             } catch (e) {
                 err.textContent = e.message;
                 btn.disabled = false;
-                btn.textContent = 'Complete setup';
+                btn.textContent = originalLabel;
             }
         }
 
@@ -5584,6 +5817,27 @@ def get_main_html():
             }
         }
 
+        // Start a fresh conversation: abandon any in-flight turn, drop the server
+        // session id so the next message begins with no prior history, and reset the
+        // panel to its suggestions.
+        function assistantNewSession() {
+            if (assistantState.busy && assistantState.controller) {
+                try { assistantState.controller.abort(); } catch (e) { /* already settled */ }
+            }
+            assistantState.session = null;
+            assistantState.busy = false;
+            assistantState.turnId = null;
+            const models = document.getElementById('assistant-models');
+            if (models) models.style.display = 'none';
+            const send = document.getElementById('assistant-send');
+            const stop = document.getElementById('assistant-stop');
+            if (send) send.hidden = false;
+            if (stop) stop.hidden = true;
+            assistantInit();
+            const input = document.getElementById('assistant-input');
+            if (input) { input.value = ''; input.focus(); }
+        }
+
         // Minimal markdown: bold, inline code, and bullet lines. The assistant is
         // instructed to keep formatting simple, so a full parser is unnecessary.
         function assistantMarkdown(text) {
@@ -5717,6 +5971,7 @@ def get_main_html():
                 const fab = document.getElementById('assistant-fab');
                 if (!fab) return;
                 fab.addEventListener('click', assistantOpen);
+                document.getElementById('assistant-new-btn').addEventListener('click', assistantNewSession);
                 document.getElementById('assistant-model-btn')
                         .addEventListener('click', assistantToggleModels);
                 document.getElementById('assistant-close').addEventListener('click', assistantClose);
@@ -5815,13 +6070,13 @@ def get_main_html():
                     <div class="collect-row is-unconfigured">
                         <div class="collect-state">
                             <span class="collect-dot idle"></span>
-                            <span>Not connected</span>
+                            <span>Not set up</span>
                         </div>
                         <div>
                             <div class="collect-name">${escapeHtml(job.label)}</div>
                             <div class="collect-desc">${escapeHtml(job.description)}</div>
                         </div>
-                        <div class="collect-fresh-sub">Re-run the installer to manage this here.</div>
+                        <div></div>
                         <div class="collect-actions"></div>
                     </div>`;
             }
@@ -5867,7 +6122,6 @@ def get_main_html():
                     <div>
                         <div class="collect-name">${nameCell}</div>
                         <div class="collect-desc">${escapeHtml(job.description)}</div>
-                        ${job.feeds ? `<div class="collect-feeds">Powers <span>${escapeHtml(job.feeds)}</span></div>` : ''}
                     </div>
                     <div>${freshness}</div>
                     <div class="collect-actions">
@@ -5924,14 +6178,26 @@ def get_main_html():
                 const groups = result.groups || [];
                 const stale = jobs.filter(j => j.configured && collectionHealth(j.latest_run).tone === 'stale').length;
                 const failed = jobs.filter(j => j.configured && collectionHealth(j.latest_run).tone === 'failed').length;
+                const unconfigured = jobs.filter(j => !j.configured).length;
 
                 let banner = '';
+                if (unconfigured > 0) {
+                    const allMissing = unconfigured === jobs.length;
+                    banner += `<div class="collect-setup">
+                        <div class="collect-setup-text">
+                            <div class="collect-setup-title">${allMissing ? 'Set up data collection' : 'Finish setup'}</div>
+                            <div class="collect-setup-sub">${unconfigured} of ${jobs.length} collection ${unconfigured === 1 ? 'job needs' : 'jobs need'} to be set up before ${unconfigured === 1 ? 'it' : 'they'} can run.</div>
+                            <div class="collect-setup-err" id="provision-err"></div>
+                        </div>
+                        <button class="btn" id="provision-btn" onclick="provisionCollection()">${allMissing ? 'Set up' : 'Finish setup'}</button>
+                    </div>`;
+                }
                 if (failed > 0) {
-                    banner = `<div class="alert" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 15px;margin-bottom:18px;font-size:.87em;color:#fca5a5;">
+                    banner += `<div class="alert" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 15px;margin-bottom:18px;font-size:.87em;color:#fca5a5;">
                         ${failed} collection${failed === 1 ? '' : 's'} failed on the last run. Views that depend on them may be showing older data.
                     </div>`;
                 } else if (stale > 0) {
-                    banner = `<div class="alert" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 15px;margin-bottom:18px;font-size:.87em;color:#fcd34d;">
+                    banner += `<div class="alert" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 15px;margin-bottom:18px;font-size:.87em;color:#fcd34d;">
                         ${stale} collection${stale === 1 ? '' : 's'} last ran more than ${COLLECT_STALE_HOURS} hours ago.
                     </div>`;
                 }
@@ -5949,7 +6215,42 @@ def get_main_html():
                         </div>`;
                 }).join('');
 
-                panel.innerHTML = banner + sections;
+                // Management actions, shown once collection is set up.
+                const manageOpen = document.getElementById('collect-manage-body') &&
+                    !document.getElementById('collect-manage-body').hidden;
+                const manage = jobs.some(j => j.configured) ? `
+                    <div class="collect-manage">
+                        <button class="collect-manage-head${manageOpen ? ' is-open' : ''}" onclick="toggleManage()">
+                            <span>Manage</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+                        <div class="collect-manage-body" id="collect-manage-body"${manageOpen ? '' : ' hidden'}>
+                            <div class="manage-action">
+                                <div class="manage-action-text">
+                                    <div class="manage-action-title">Redeploy jobs</div>
+                                    <div class="manage-action-sub">Re-import the notebooks and update every job definition.</div>
+                                </div>
+                                <button class="btn btn-sm btn-ghost" onclick="redeployCollection(this)">Redeploy</button>
+                            </div>
+                            <div class="manage-action">
+                                <div class="manage-action-text">
+                                    <div class="manage-action-title">Re-run initializer</div>
+                                    <div class="manage-action-sub">Rebuild the schema and result tables.</div>
+                                </div>
+                                <button class="btn btn-sm btn-ghost" onclick="rerunInitializer(this)">Run</button>
+                            </div>
+                            <div class="manage-action">
+                                <div class="manage-action-text">
+                                    <div class="manage-action-title">Remove all jobs</div>
+                                    <div class="manage-action-sub">Delete the collection jobs from this workspace. Collected data is kept.</div>
+                                </div>
+                                <button class="btn btn-sm btn-danger" onclick="teardownCollection(this)">Remove</button>
+                            </div>
+                            <div class="manage-msg" id="manage-msg"></div>
+                        </div>
+                    </div>` : '';
+
+                panel.innerHTML = banner + sections + manage;
                 if (jobs.some(j => j.latest_run && j.latest_run.active)) startElapsedTicker();
                 openDrawers.forEach(kind => toggleScheduleEditor(kind));
                 return jobs;
@@ -5957,6 +6258,144 @@ def get_main_html():
                 panel.innerHTML = `<div class="card" style="padding:16px;"><div style="color:#fca5a5;">${escapeHtml(e.message)}</div></div>`;
                 return null;
             }
+        }
+
+        async function provisionCollection() {
+            const btn = document.getElementById('provision-btn');
+            const err = document.getElementById('provision-err');
+            const label = btn ? btn.textContent : '';
+            if (err) err.textContent = '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Setting up…'; }
+            try {
+                const result = await fetch('/api/collection/provision', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ run_initializer: true }),
+                }).then(r => r.json());
+                if (result.error) {
+                    if (err) err.textContent = result.error;
+                    if (btn) { btn.disabled = false; btn.textContent = label; }
+                    return;
+                }
+                // Jobs now exist; reload so the rows switch to Run controls.
+                await loadCollectionPanel();
+            } catch (e) {
+                if (err) err.textContent = e.message;
+                if (btn) { btn.disabled = false; btn.textContent = label; }
+            }
+        }
+
+        function toggleManage() {
+            const body = document.getElementById('collect-manage-body');
+            const head = document.querySelector('.collect-manage-head');
+            if (!body) return;
+            body.hidden = !body.hidden;
+            if (head) head.classList.toggle('is-open', !body.hidden);
+        }
+
+        function manageMsg(text, tone, url) {
+            const el = document.getElementById('manage-msg');
+            if (!el) return;
+            el.className = 'manage-msg' + (tone ? ' is-' + tone : '');
+            if (url) {
+                el.innerHTML = `${escapeHtml(text || '')} <a href="${escapeHtml(url)}" target="_blank" rel="noopener">View run</a>`;
+            } else {
+                el.textContent = text || '';
+            }
+        }
+
+        // An indeterminate progress bar for in-flight actions (no incremental
+        // percentage to report), with an optional link to the underlying run.
+        function manageProgress(text, url) {
+            const el = document.getElementById('manage-msg');
+            if (!el) return;
+            el.className = 'manage-msg is-warn';
+            const link = url ? ` <a href="${escapeHtml(url)}" target="_blank" rel="noopener">View run</a>` : '';
+            el.innerHTML = '<div class="manage-progress"><div class="manage-progress-fill"></div></div>'
+                + `<span>${escapeHtml(text || '')}${link}</span>`;
+        }
+
+        async function redeployCollection(btn) {
+            const label = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Redeploying…';
+            manageProgress('Importing notebooks and updating job definitions…');
+            try {
+                const result = await fetch('/api/collection/provision', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ run_initializer: false }),
+                }).then(r => r.json());
+                if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = label; return; }
+                const jobs = result.jobs || {};
+                const ok = Object.keys(jobs).filter(k => jobs[k] && !jobs[k].error).length;
+                manageMsg(`Redeployed — ${ok} job${ok === 1 ? '' : 's'} updated with the latest notebooks.`, 'ok');
+                btn.disabled = false; btn.textContent = label;
+                await loadCollectionPanel({ quiet: true });
+            } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = label; }
+        }
+
+        async function rerunInitializer(btn) {
+            const label = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Starting…';
+            manageMsg('');
+            let runId;
+            try {
+                const result = await fetch('/api/collection/initializer', { method: 'POST' }).then(r => r.json());
+                if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = label; return; }
+                runId = result.run_id;
+            } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = label; return; }
+
+            // Follow the run so the user sees progress and a definite outcome,
+            // rather than a fire-and-forget "started" with no confirmation.
+            btn.textContent = 'Running…';
+            const started = Date.now();
+            let attempts = 0;
+            const done = (msg, tone, url) => { manageMsg(msg, tone, url); btn.disabled = false; btn.textContent = label; };
+            const tick = async () => {
+                attempts += 1;
+                const secs = Math.round((Date.now() - started) / 1000);
+                try {
+                    const run = await fetch(`/api/collection/run/${runId}`).then(r => r.json());
+                    if (run.error) { done(run.error, 'error'); return; }
+                    if (!run.active) {
+                        if (run.result === 'SUCCESS') {
+                            done(`Initializer finished in ${secs}s — schema and tables are ready.`, 'ok', run.run_page_url);
+                        } else {
+                            done(`Initializer ${(run.result || 'failed').toLowerCase().replace(/_/g,' ')} after ${secs}s.`, 'error', run.run_page_url);
+                        }
+                        return;
+                    }
+                    manageProgress(`Initializer running… ${secs}s elapsed`, run.run_page_url);
+                } catch (e) {
+                    manageProgress(`Initializer running… ${secs}s elapsed`);
+                }
+                const delay = attempts <= 6 ? 4000 : attempts <= 20 ? 10000 : 20000;
+                if (attempts < 200) setTimeout(tick, delay);
+                else done('Initializer is still running — check the run in Workflows.', 'warn');
+            };
+            manageProgress('Initializer running… 0s elapsed');
+            setTimeout(tick, 3000);
+        }
+
+        // Destructive: a two-step confirm rather than a browser dialog.
+        async function teardownCollection(btn) {
+            if (btn.dataset.armed !== '1') {
+                btn.dataset.armed = '1';
+                btn.textContent = 'Click again to remove';
+                manageMsg('This deletes all collection jobs. Collected data is kept.', 'warn');
+                clearTimeout(btn._armTimer);
+                btn._armTimer = setTimeout(() => {
+                    btn.dataset.armed = '0'; btn.textContent = 'Remove'; manageMsg('');
+                }, 4000);
+                return;
+            }
+            clearTimeout(btn._armTimer);
+            btn.dataset.armed = '0'; btn.disabled = true; btn.textContent = 'Removing…';
+            manageMsg('');
+            try {
+                const result = await fetch('/api/collection/teardown', { method: 'POST' }).then(r => r.json());
+                if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = 'Remove'; return; }
+                await loadCollectionPanel();
+            } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = 'Remove'; }
         }
 
         async function startCollection(kind) {
@@ -6615,12 +7054,35 @@ def get_main_html():
                 settingsState.data = data;
                 settingsState.choices = choices || {};
                 settingsState.credentials = credentials || {};
+                // The permissions checklist probes several grants (a few SQL calls),
+                // so it's loaded after the panel renders rather than blocking it.
+                settingsState.requirements = settingsState.requirements || { loading: true };
                 settingsState.dirty = {};
                 renderSettings();
                 updateSettingsIndicator(data.failing_count || 0);
+                loadRequirements();
             } catch (e) {
                 document.getElementById('settings-body').innerHTML =
                     `<div class="health-summary bad">Could not load settings: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        // Probe the permissions checklist after the panel is up, then refresh just
+        // that section's body and badge in place.
+        async function loadRequirements() {
+            try {
+                settingsState.requirements = await fetch('/api/setup/requirements').then(r => r.json());
+            } catch (e) {
+                settingsState.requirements = { error: e.message, checks: [] };
+            }
+            const body = document.getElementById('sec-requirements');
+            if (body) body.innerHTML = requirementsBody();
+            const checks = (settingsState.requirements || {}).checks || [];
+            const reqFail = checks.filter(c => !c.ok && !c.optional).length;
+            const optFail = checks.filter(c => !c.ok && c.optional).length;
+            const badge = document.querySelector('[data-section="requirements"] .section-badge');
+            if (badge && checks.length) {
+                badge.textContent = reqFail ? `${reqFail} to fix` : (optFail ? `${optFail} optional` : 'All set');
             }
         }
 
@@ -6645,14 +7107,44 @@ def get_main_html():
         // an operator who only came to change the model is not scrolling past
         // credentials and job status to reach it.
         const SETTINGS_SECTIONS = [
-            { id: 'connection', title: 'Connection', sub: 'Where results are read from and written to' },
-            { id: 'assistant', title: 'Assistant', sub: 'Model and data sources behind the security assistant' },
+            { id: 'requirements', title: 'Permissions', sub: 'Grants the app needs to run' },
+            { id: 'connection', title: 'Connection', sub: 'Where results are stored' },
+            { id: 'assistant', title: 'Assistant', sub: 'Model and data sources' },
             { id: 'access', title: 'Access', sub: 'Who sees which results' },
-            { id: 'credentials', title: 'Account credentials', sub: 'Used by the analysis jobs' },
-            { id: 'jobs', title: 'Analysis jobs', sub: 'Deployment status in this workspace' },
+            { id: 'credentials', title: 'Account credentials', sub: 'Account API service principal' },
+            { id: 'jobs', title: 'Analysis jobs', sub: 'Deployment status' },
         ];
-        const settingsOpen = { connection: true, assistant: false, access: false,
-                               credentials: false, jobs: false };
+        const settingsOpen = { requirements: true, connection: false, assistant: false,
+                               access: false, credentials: false, jobs: false };
+
+        function requirementsBody() {
+            const req = settingsState.requirements || {};
+            if (req.loading) {
+                return '<div class="loading"><div class="spinner"></div>Checking permissions…</div>';
+            }
+            const checks = req.checks || [];
+            if (!checks.length) {
+                return `<div class="field-help">${escapeHtml(req.message || req.error || 'Checklist unavailable.')}</div>`;
+            }
+            const sp = req.service_principal || 'the app service principal';
+            const rows = checks.map(c => {
+                const icon = c.ok
+                    ? '<svg class="req-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>'
+                    : (c.optional
+                        ? '<svg class="req-opt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/></svg>'
+                        : '<svg class="req-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>');
+                return `
+                    <div class="req-item">
+                        <span class="req-icon">${icon}</span>
+                        <div class="req-text">
+                            <div class="req-label">${escapeHtml(c.label)}${c.optional ? ' <span class="req-tag">optional</span>' : ''}</div>
+                            <div class="req-detail">${escapeHtml(c.detail || '')}</div>
+                            ${(!c.ok && c.fix) ? `<div class="req-fix">${escapeHtml(c.fix)}</div>` : ''}
+                        </div>
+                    </div>`;
+            }).join('');
+            return `<div class="req-sp">Checked as <code>${escapeHtml(sp)}</code></div>${rows}`;
+        }
 
         function toggleSettingsSection(id) {
             settingsOpen[id] = !settingsOpen[id];
@@ -6682,7 +7174,7 @@ def get_main_html():
                 html += `
                     <div class="all-clear">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
-                        <span>Everything is connected and working</span>
+                        <span>Everything is connected</span>
                     </div>`;
             }
 
@@ -6697,30 +7189,31 @@ def get_main_html():
             const connected = jobKeys.filter(k => jobs[k].connected);
 
             const bodies = {
+                requirements: requirementsBody(),
                 connection:
                     settingField('warehouse_id', 'SQL warehouse',
-                        'Compute used for every report, scan result, and alert.',
+                        'Compute for reports, scans, and alerts.',
                         selectMarkup('warehouse_id', cfg.warehouse_id,
                             warehouses.map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` })))) +
                     settingField('schema', 'Results schema',
-                        'Catalog and schema where analysis results are written.',
+                        'Where results are written.',
                         `<input class="field-input" id="set-schema" type="text"
                                 value="${escapeHtml(cfg.schema || '')}"
                                 onchange="markSettingDirty('schema', this.value)">`),
                 assistant:
                     settingField('model_endpoint', 'Model',
-                        'Language model behind the security assistant.',
+                        'Model that powers the assistant.',
                         selectMarkup('model_endpoint', cfg.model_endpoint,
                             models.map(m => ({ value: m, label: m })))) +
                     settingField('genie_space_id', 'Genie space',
-                        'Optional. Lets the assistant answer from a Genie space you already use.',
+                        'Optional. Lets the assistant use an existing Genie space.',
                         selectMarkup('genie_space_id', cfg.genie_space_id,
                             spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None')),
                 access: `
                     <label class="switch-row" for="set-filtering">
                         <span>
                             <span class="field-label">Show each person only their own data</span>
-                            <span class="field-help">Results are filtered by the viewer's own Unity Catalog permissions. Turning this off shows everyone the full dataset.</span>
+                            <span class="field-help">Results are filtered by each viewer's Unity Catalog permissions. Off shows everyone the full dataset.</span>
                         </span>
                         <input id="set-filtering" type="checkbox" ${cfg.sp_fallback_allowed ? '' : 'checked'}
                                onchange="markSettingDirty('per_user_filtering', this.checked)">
@@ -6733,7 +7226,15 @@ def get_main_html():
                     </div>`).join(''),
             };
 
+            const reqChecks = (settingsState.requirements || {}).checks || [];
+            const reqRequiredFail = reqChecks.filter(c => !c.ok && !c.optional).length;
+            const reqOptionalFail = reqChecks.filter(c => !c.ok && c.optional).length;
             const badges = {
+                requirements: (settingsState.requirements || {}).loading ? 'Checking…'
+                    : (reqChecks.length
+                        ? (reqRequiredFail ? `${reqRequiredFail} to fix`
+                            : (reqOptionalFail ? `${reqOptionalFail} optional` : 'All set'))
+                        : ''),
                 credentials: bothSet ? 'Set' : 'Not set',
                 jobs: `${connected.length} of ${jobKeys.length}`,
             };
@@ -6760,10 +7261,16 @@ def get_main_html():
                     <button class="btn btn-sm btn-ghost" onclick="loadSettings()">Discard</button>
                     <button class="btn btn-sm" id="settings-save" onclick="saveSettings()">Save</button>
                 </div>
+                <button type="button" class="settings-action" onclick="reopenSetup()">
+                    <span class="section-titles">
+                        <span class="section-title">Re-run setup</span>
+                        <span class="section-sub">Change catalog, warehouse, model, or credentials</span>
+                    </span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
                 <div class="drawer-note">
-                    Changes take effect right away. Credentials are stored in the
-                    <code>sat_scope</code> secret scope; everything else resets to its
-                    installed value if the app restarts.
+                    Changes take effect immediately. Account credentials are stored
+                    as Unity Catalog secrets.
                 </div>`;
 
             document.getElementById('settings-body').innerHTML = html;
@@ -6773,12 +7280,11 @@ def get_main_html():
             if (creds.writable === false) {
                 return `
                     <div class="field-help">
-                        This app has read-only access to the secret scope, so credentials
-                        cannot be changed here. An administrator can grant it WRITE on
-                        <code>sat_scope</code>.
+                        This app can't write secrets here. An administrator can grant its
+                        service principal <code>CREATE SECRET</code> on the schema.
                     </div>`;
             }
-            const hint = bothSet ? 'Set. Enter a new value to replace it.' : '';
+            const hint = bothSet ? 'Set — enter a new value to replace it.' : '';
             return `
                 <div class="field">
                     <span class="field-label">Client ID</span>
@@ -6802,7 +7308,7 @@ def get_main_html():
                             ${EYE_SVG}
                         </button>
                     </div>
-                    <span class="field-help">Both values are replaced together and verified before being stored.</span>
+                    <span class="field-help">Replaced together and verified before storing.</span>
                 </div>
                 <div class="cred-actions">
                     <span class="savebar-text" id="cred-status"></span>
@@ -6835,7 +7341,7 @@ def get_main_html():
                 }
                 field.value = result.client_id || '';
                 field.type = 'text';
-                status.textContent = 'Showing the client ID currently stored.';
+                status.textContent = 'Showing the stored client ID.';
                 status.className = 'savebar-text';
             } catch (e) {
                 status.textContent = e.message;
@@ -13686,8 +14192,104 @@ def api_setup_status():
         'configured': configured,
         'catalog': CATALOG,
         'schema': SCHEMA,
+        # Current selections, so re-running setup can pre-fill them.
+        'warehouse_id': os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '',
+        'model_endpoint': _app_config.get('model_endpoint') or '',
+        'account_id': _app_config.get('account_id') or '',
         'has_credentials': has_credentials,
     })
+
+
+@app.route('/api/setup/requirements')
+def api_setup_requirements():
+    """Live checklist of the grants and settings the app's service principal needs,
+    each with a concrete, copy-pasteable fix. Surfaces the permissions a customer
+    must configure, so they appear as actionable items rather than cryptic job
+    failures. Everything is probed as the app service principal -- the identity the
+    collection jobs run as."""
+    sp = (os.getenv('DATABRICKS_CLIENT_ID') or '').strip()
+    checks = []
+
+    def add(label, ok, detail, fix='', optional=False):
+        checks.append({'label': label, 'ok': bool(ok), 'detail': detail,
+                       'fix': fix, 'optional': optional})
+
+    if not is_configured():
+        return jsonify({'configured': False, 'checks': [],
+                        'message': 'Complete first-run setup to see the requirements checklist.'})
+
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'configured': True, 'checks': [], 'error': str(exc)[:200]})
+
+    wh = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or ''
+
+    # 1. SQL warehouse: the app and the assistant run every query here.
+    try:
+        client.statement_execution.execute_statement(
+            warehouse_id=wh, statement='SELECT 1', wait_timeout='30s')
+        add('SQL warehouse access', True, f'The app can run queries on warehouse {wh}.')
+    except Exception as exc:  # noqa: BLE001
+        add('SQL warehouse access', False,
+            f'Cannot run queries on the warehouse: {str(exc)[:160]}',
+            f'Grant the app service principal CAN USE on the SQL warehouse '
+            f'(SQL Warehouses -> your warehouse -> Permissions -> add {sp} as "Can use").')
+
+    # 2. Results schema: created and owned by the app SP; read a core table.
+    try:
+        _sql_rows(client, wh, f'SELECT 1 FROM {CATALOG}.{SCHEMA}.run_number_table LIMIT 1')
+        add('Results schema', True, f'{CATALOG}.{SCHEMA} is readable and initialised.')
+    except Exception as exc:  # noqa: BLE001
+        add('Results schema', False,
+            f'{CATALOG}.{SCHEMA} is not readable or not initialised: {str(exc)[:140]}',
+            'Run the initializer (Data Collection -> Manage -> Re-run initializer).')
+
+    # 3. System tables: account-level detections read system.access.
+    try:
+        _sql_rows(client, wh, 'SELECT 1 FROM system.access.audit LIMIT 1')
+        add('System tables (system.access)', True, 'The app can read system.access.')
+    except Exception as exc:  # noqa: BLE001
+        add('System tables (system.access)', False,
+            f'Cannot read system.access: {str(exc)[:140]}',
+            'Enable the system.access schema for the metastore, then grant the app '
+            f'service principal USE SCHEMA + SELECT on it: '
+            f'GRANT USE SCHEMA, SELECT ON SCHEMA system.access TO `{sp}`;', optional=True)
+
+    # 4. Account credentials for account-level scans.
+    acct_id = (_app_config.get('account_id') or '').strip()
+    has_creds = False
+    try:
+        has_creds = uc_secret_present('client-secret') and uc_secret_present('client-id')
+    except Exception:  # noqa: BLE001
+        has_creds = False
+    add('Account credentials', bool(acct_id and has_creds),
+        'Account ID and credentials are set.' if (acct_id and has_creds)
+        else 'Account ID and/or service principal credentials are not set.',
+        'Add them in Settings -> Re-run setup (Account credentials). Needed only for '
+        'the account-level scans: Shared to All Users, Privileged Non-IdP, Denylist.',
+        optional=True)
+
+    # 5. Account admin: verified against the stored credentials when present.
+    if acct_id and has_creds:
+        try:
+            cid = uc_secret_value('client-id')
+            csec = uc_secret_value('client-secret')
+            err = _verify_account_credentials(cid, csec)
+            add('Account admin role', not err,
+                'The service principal authenticates to the account.' if not err
+                else f'Account authentication failed: {err}',
+                'Grant the app service principal the Account Admin role '
+                '(Account console -> User management -> Service principals -> '
+                f'{sp} -> Roles -> Account admin).', optional=True)
+        except Exception as exc:  # noqa: BLE001
+            add('Account admin role', False, f'Could not verify: {str(exc)[:140]}',
+                'Grant the app service principal Account Admin in the account console.',
+                optional=True)
+
+    required_fail = [c for c in checks if not c['ok'] and not c['optional']]
+    return jsonify({'configured': True, 'service_principal': sp, 'checks': checks,
+                    'all_required_ok': not required_fail})
 
 
 @app.route('/api/setup/options')
@@ -13712,7 +14314,8 @@ def api_setup_options():
         logger.info('could not list warehouses', exc_info=True)
     try:
         from agent.supervisor import list_chat_endpoints
-        models = [e['name'] for e in list_chat_endpoints()]
+        # probe=False keeps first-run setup fast; the picker only needs names.
+        models = [e['name'] for e in list_chat_endpoints(probe=False)]
     except Exception:  # noqa: BLE001
         logger.info('could not list model endpoints', exc_info=True)
     return jsonify({
@@ -13737,6 +14340,7 @@ def api_setup_complete():
     warehouse_id = (payload.get('warehouse_id') or '').strip()
     model_endpoint = (payload.get('model_endpoint') or '').strip()
     genie_space_id = (payload.get('genie_space_id') or '').strip()
+    account_id = (payload.get('account_id') or '').strip()
     client_id = (payload.get('client_id') or '').strip()
     client_secret = (payload.get('client_secret') or '').strip()
 
@@ -13780,6 +14384,8 @@ def api_setup_complete():
         'warehouse_id': warehouse_id,
         'model_endpoint': model_endpoint or config.get('model_endpoint'),
         'genie_space_id': genie_space_id,
+        # Kept when blank so re-running setup without re-entering it is safe.
+        'account_id': account_id or config.get('account_id', ''),
     })
     try:
         write_persisted_config(config)
@@ -13829,7 +14435,9 @@ def api_settings_choices():
             logger.info('could not list warehouses', exc_info=True)
         try:
             from agent.supervisor import list_chat_endpoints
-            endpoints = [e['name'] for e in list_chat_endpoints()]
+            # probe=False: the dropdown only needs the candidate list, not the
+            # per-endpoint usability probe that makes this call take 10s+.
+            endpoints = [e['name'] for e in list_chat_endpoints(probe=False)]
         except Exception:  # noqa: BLE001
             logger.info('could not list chat endpoints', exc_info=True)
         try:
@@ -13874,9 +14482,8 @@ def api_settings():
 
     probe_specs.append((
         'User authorization (OBO)', check_obo,
-        ("Scopes bind when the app is created, so they cannot be added to a running "
-         "app. Redeploy with user_api_scopes: [sql, serving.serving-endpoints] "
-         "declared on the app resource.")))
+        ("User scopes are set when the app is created. Redeploy with "
+         "user_api_scopes [sql, serving.serving-endpoints] on the app to enable this.")))
 
     # 2. The app's own identity. This is what fails when a service principal
     # secret is rotated or the principal is deleted.
@@ -13933,9 +14540,9 @@ def api_settings():
 
     probe_specs.append((
         'Unity Catalog access', check_schema,
-        (f'Grant the signed-in user USE CATALOG on the catalog, plus USE SCHEMA and '
-         f'SELECT on {schema or "the SAT schema"}. The app service principal needs '
-         f'the same, plus CREATE TABLE and MODIFY for its own audit tables.')))
+        (f'Grant the signed-in user USE CATALOG, USE SCHEMA, and SELECT on '
+         f'{schema or "the schema"}. The app service principal needs the same, plus '
+         f'CREATE TABLE and MODIFY.')))
 
     # 5. Collection jobs: bound, and startable.
     def check_jobs():
@@ -13948,9 +14555,8 @@ def api_settings():
 
     probe_specs.append((
         'Collection jobs', check_jobs,
-        ('These jobs are discovered by name in this workspace. Anything listed as '
-         'not deployed has no matching job yet; deploy it with the installer and it '
-         'appears here without restarting the app.')))
+        ('Jobs are matched by name. Anything not deployed has no matching job yet — '
+         'deploy it with the installer and it appears here automatically.')))
 
     # 6. The assistant's model endpoint on the AI Gateway.
     def check_model():
@@ -14515,11 +15121,29 @@ def api_secrets_alerts_delete(alert_id):
 
 # Endpoint chosen in the UI, held in memory. A restart falls back to
 # MODEL_ENDPOINT, which is the installer-managed default.
-_selected_model = {'endpoint': None}
+_selected_model = {'endpoint': None, 'auto': None}
 
 
 def _active_model():
-    return _selected_model['endpoint'] or os.getenv('MODEL_ENDPOINT') or 'databricks-claude-opus-4-7'
+    """The model the assistant uses: an explicit choice, then the configured
+    MODEL_ENDPOINT, then an auto-picked available chat endpoint. Auto-picking
+    means the assistant works out of the box even when no model was selected
+    during setup (the model field there is optional)."""
+    if _selected_model['endpoint']:
+        return _selected_model['endpoint']
+    env = (os.getenv('MODEL_ENDPOINT') or '').strip()
+    if env:
+        return env
+    if not _selected_model['auto']:
+        try:
+            from agent.supervisor import list_chat_endpoints
+            # probe=False keeps this fast; we only need a name that exists.
+            endpoints = list_chat_endpoints(probe=False)
+            if endpoints:
+                _selected_model['auto'] = endpoints[0]['name']
+        except Exception:  # noqa: BLE001
+            logger.info('could not auto-select a model endpoint', exc_info=True)
+    return _selected_model['auto'] or 'databricks-claude-opus-4-7'
 
 
 @app.route('/api/assistant/models')
@@ -14671,7 +15295,7 @@ def api_assistant_config():
 @app.route('/api/assistant/chat', methods=['POST'])
 def api_assistant_chat():
     """Answer one conversational turn."""
-    if not os.getenv('MODEL_ENDPOINT'):
+    if not _active_model():
         return jsonify({'error': 'The security assistant is not configured.'}), 503
     ok, err = _ensure_agent_ready()
     if not ok:
@@ -14897,7 +15521,7 @@ COLLECTION_JOBS = {
     'code_scanner': {
         'label': 'Code Scanner',
         'group': 'Code',
-        'description': 'Analyses notebook and file source for insecure patterns, and declared packages for known vulnerabilities.',
+        'description': 'Scans code for insecure patterns and vulnerable dependencies.',
         'env': ('CODE_SCANNER_JOB_ID', 'DATABRICKS_JOB_ID_CODE_SCANNER_JOB'),
         'feeds': 'Code security overview, code findings',
         'job_name_match': 'Code Scanner',
@@ -14973,6 +15597,233 @@ def _collection_job_id(kind):
         if value.isdigit():
             return value
     return _discover_collection_jobs().get(kind)
+
+
+# --- In-app provisioning of the collection jobs ----------------------------
+# The app carries the collection notebooks and creates the jobs itself, so a
+# workspace can be set up entirely from the app with no separate installer.
+
+# Notebook (relative to the bundled notebooks/ tree, no extension) and any
+# notebook-specific parameters, per collection. The job name embeds the pattern
+# _discover_collection_jobs matches on, so a job created here is picked up by
+# discovery the moment it exists -- no restart, no id to record.
+PROVISION_SPECS = {
+    'permissions': {
+        'job_name': 'SAT Permissions Analysis - Data Collection',
+        'notebook': 'permission_analysis_data_collection',
+        'params': {},
+    },
+    'secrets': {
+        'job_name': 'SAT Secrets Scanner',
+        'notebook': 'security_analysis_secrets_scanner',
+        'params': {},
+    },
+    # The three account-level jobs read the account-admin credentials from Unity
+    # Catalog secrets, which serverless can only do on environment client >= 4
+    # (client 3 returns empty). The other jobs stay on 3, where they're verified.
+    'shared_to_account': {
+        'job_name': 'SAT Permissions Analysis - Shared to Account Users',
+        'notebook': 'brickhound/05_share_to_account',
+        'params': {'remediate': 'no'},
+        'client': '4',
+    },
+    'privileged_non_idp': {
+        'job_name': 'SAT Permissions Analysis - Privileged Non-IdP Identities',
+        'notebook': 'brickhound/06_privileged_non_idp_identities',
+        'params': {'finding_types': 'account_admin,workspace_admin',
+                   'include_idp_managed': 'no', 'remediate': 'no'},
+        'client': '4',
+    },
+    'denylist_candidates': {
+        'job_name': 'SAT Permissions Analysis - Denylist Candidates',
+        'notebook': 'brickhound/07_denylist_candidates',
+        'params': {},
+        'client': '4',
+    },
+    'code_scanner': {
+        'job_name': 'SAT Code Scanner',
+        'notebook': 'security_analysis_code_scanner',
+        'params': {},
+    },
+}
+_INITIALIZER_NOTEBOOK = 'security_analysis_initializer'
+_INITIALIZER_JOB_NAME = 'SAT Initializer Notebook'
+
+
+def _notebooks_workspace_dir():
+    """Where the app imports its notebooks: the app service principal's own home,
+    the one place it can both write and run jobs from. The app's deployed source
+    under /Applications is owned by the deployer, so the SP cannot read those
+    notebook objects in a job -- hence the copy into its home."""
+    base = _config_file_path().rsplit('/', 1)[0]  # /Users/<sp>/.sat
+    return f'{base}/notebooks'
+
+
+def _import_notebooks(client):
+    """Import the notebooks into the app SP's home and place the SAT SDK wheel +
+    reference configs beside them.
+
+    The whole asset tree (notebooks/, lib/, configs/) ships base64-encoded in the
+    ``assets_data`` Python module. The Apps build drops bare binary files from the
+    container, but always includes .py modules, so embedding the archive there is
+    the one reliable way to carry it. Notebooks are imported as SOURCE (so jobs can
+    run them as notebooks); the wheel and configs go in as raw files. Returns the
+    workspace directory the notebooks now live in.
+    """
+    import base64, io, zipfile
+    from databricks.sdk.service.workspace import ImportFormat, Language
+    import assets_data
+
+    dest_root = _notebooks_workspace_dir()          # /Users/<sp>/.sat/notebooks
+    base_dest = dest_root.rsplit('/', 1)[0]         # /Users/<sp>/.sat
+    archive = io.BytesIO(base64.b64decode(assets_data.ASSETS_ZIP_B64))
+
+    # Clear the tree first so each redeploy is a clean import. Without this, an
+    # object that changes kind between versions lingers in both forms -- e.g. a
+    # file wrongly imported as the notebook `dependencies` stays alongside the new
+    # `dependencies.py` file, and both resolve to the same path, so `import
+    # dependencies` still hits the stale notebook (NotebookImportException).
+    try:
+        client.workspace.delete(dest_root, recursive=True)
+    except Exception:  # noqa: BLE001 - absent on first provision
+        pass
+
+    notebooks = assets = 0
+    with zipfile.ZipFile(archive) as zf:
+        for name in zf.namelist():
+            if name.endswith('/'):
+                continue
+            data = zf.read(name)
+            if name.startswith('notebooks/'):
+                rel = name[len('notebooks/'):]
+                # A .py that starts with the notebook marker is a runnable notebook
+                # (import as SOURCE, no extension). Everything else under notebooks/
+                # -- plain Python modules (scan_code/runners.py, dependencies.py),
+                # YAML rulesets, CSVs -- is a file the notebooks read or import, so
+                # it must stay a workspace file with its extension (importing it as a
+                # notebook makes `import dependencies` fail with NotebookImportException).
+                is_notebook = name.endswith('.py') and data[:64].lstrip().startswith(
+                    b'# Databricks notebook source')
+                if is_notebook:
+                    ws_path = f'{dest_root}/{rel[:-3]}'
+                    client.workspace.mkdirs(ws_path.rsplit('/', 1)[0])
+                    client.workspace.import_(
+                        path=ws_path, content=base64.b64encode(data).decode(),
+                        format=ImportFormat.SOURCE, language=Language.PYTHON, overwrite=True)
+                    notebooks += 1
+                else:
+                    ws_path = f'{dest_root}/{rel}'
+                    client.workspace.mkdirs(ws_path.rsplit('/', 1)[0])
+                    client.workspace.upload(ws_path, io.BytesIO(data),
+                                            format=ImportFormat.RAW, overwrite=True)
+                    assets += 1
+            elif name.startswith('lib/') or name.startswith('configs/'):
+                # Kept beside the notebooks so they resolve as <parent>/lib and
+                # <parent>/configs, exactly where the notebooks look for them.
+                ws_path = f'{base_dest}/{name}'
+                client.workspace.mkdirs(ws_path.rsplit('/', 1)[0])
+                client.workspace.upload(ws_path, io.BytesIO(data),
+                                        format=ImportFormat.RAW, overwrite=True)
+                assets += 1
+    logger.info('imported %d notebooks and %d asset file(s) to %s', notebooks, assets, dest_root)
+    return dest_root
+
+
+def _job_base_parameters(extra=None):
+    """Config every collection notebook needs, passed as job parameters so the
+    notebooks read them without any secret scope (see notebooks/Utils/initialize)."""
+    params = {
+        'analysis_schema_name': f'{CATALOG}.{SCHEMA}' if CATALOG and SCHEMA else '',
+        'sql_warehouse_id': os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '',
+        'account_id': os.getenv('ACCOUNT_ID', ''),
+        'proxies': '{}',
+    }
+    if extra:
+        params.update(extra)
+    return params
+
+
+def _serverless_job_body(name, notebook_path, base_parameters, task_key, client='3'):
+    """A serverless single-task job in the shape the Jobs 2.1 API expects.
+
+    ``client`` is the serverless environment version; jobs that read Unity Catalog
+    secrets need >= 4 (3 cannot read them)."""
+    return {
+        'name': name,
+        'tags': {'Application': 'SAT'},
+        'tasks': [{
+            'task_key': task_key,
+            'notebook_task': {
+                'notebook_path': notebook_path,
+                'base_parameters': base_parameters,
+            },
+            'environment_key': 'default',
+            'timeout_seconds': 3600,
+        }],
+        'environments': [{
+            'environment_key': 'default',
+            'spec': {'client': client},
+        }],
+        'max_concurrent_runs': 1,
+    }
+
+
+def _find_job_id_by_name(client, name):
+    for job in client.jobs.list(name=name):
+        if job.settings and job.settings.name == name and job.job_id:
+            return job.job_id
+    return None
+
+
+def _upsert_job(client, body):
+    """Create the job, or reset an existing one of the same name. Returns id."""
+    existing = _find_job_id_by_name(client, body['name'])
+    if existing:
+        client.api_client.do('POST', '/api/2.1/jobs/reset',
+                             body={'job_id': existing, 'new_settings': body})
+        return existing
+    created = client.api_client.do('POST', '/api/2.1/jobs/create', body=body)
+    return created.get('job_id')
+
+
+def _provision_collection(run_initializer=True):
+    """Create every collection job, pointed at the notebooks deployed with the
+    app. Idempotent: existing jobs of the same name are updated in place. Returns
+    a per-collection result."""
+    client = _sp_workspace_client()
+    notebooks_dir = _import_notebooks(client)
+
+    results = {}
+    # Initializer first: it creates the schema and result tables the others fill.
+    # sat_init tells initialize.py to run the one-time schema/table setup. Only the
+    # initializer carries it, so concurrent collection jobs don't re-run that DDL.
+    init_body = _serverless_job_body(
+        _INITIALIZER_JOB_NAME, f'{notebooks_dir}/{_INITIALIZER_NOTEBOOK}',
+        _job_base_parameters({'sat_init': 'true'}), 'Initializer')
+    init_id = _upsert_job(client, init_body)
+    results['initializer'] = {'job_id': init_id}
+    init_run = None
+    if run_initializer and init_id:
+        started = client.api_client.do('POST', '/api/2.1/jobs/run-now',
+                                       body={'job_id': init_id})
+        init_run = started.get('run_id')
+        results['initializer']['run_id'] = init_run
+
+    for kind, spec in PROVISION_SPECS.items():
+        body = _serverless_job_body(
+            spec['job_name'], f"{notebooks_dir}/{spec['notebook']}",
+            _job_base_parameters(spec['params']), spec['notebook'].split('/')[-1],
+            client=spec.get('client', '3'))
+        try:
+            results[kind] = {'job_id': _upsert_job(client, body)}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('provisioning %s failed', kind)
+            results[kind] = {'error': str(exc)[:200]}
+
+    _invalidate_collection_cache()
+    _discover_collection_jobs(force=True)
+    return {'notebooks_dir': notebooks_dir, 'jobs': results,
+            'initializer_run_id': init_run}
 
 
 def _normalise_run(run):
@@ -15157,12 +16008,104 @@ def api_collection_status():
             else:
                 entry['job_url'] = None
         else:
-            entry['message'] = (
-                f"The {spec['label']} job is not connected to this app. Re-run the "
-                f"installer to manage it here, or start it from Workflows."
-            )
+            entry['message'] = f"{spec['label']} is not set up yet."
         jobs.append(entry)
     return jsonify({'jobs': jobs, 'groups': list(COLLECTION_GROUPS), 'cached_age': _cached_age})
+
+
+@app.route('/api/collection/provision', methods=['POST'])
+def api_collection_provision():
+    """Create the collection jobs in this workspace, entirely from the app.
+
+    Imports the bundled notebooks and creates a serverless job per collection,
+    then runs the initializer once. Idempotent -- safe to run again to repair or
+    update the jobs. Requires the app to be configured (catalog/schema set).
+    """
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup before provisioning jobs.'}), 409
+    run_initializer = (request.get_json(silent=True) or {}).get('run_initializer', True)
+    try:
+        result = _provision_collection(run_initializer=bool(run_initializer))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('collection provisioning failed')
+        message = str(exc)
+        if 'PERMISSION' in message.upper() or 'does not have' in message:
+            return jsonify({
+                'error': ('This app cannot create jobs. Its service principal needs '
+                          'CAN_MANAGE on jobs (and access to the results schema).')
+            }), 403
+        return jsonify({'error': f'Provisioning failed: {message[:300]}'}), 500
+    return jsonify({'provisioned': True, **result})
+
+
+def _provisioned_job_names():
+    """Every job name the app manages, so teardown only touches its own jobs."""
+    names = {spec['job_name'] for spec in PROVISION_SPECS.values()}
+    names.add(_INITIALIZER_JOB_NAME)
+    return names
+
+
+def _teardown_collection():
+    """Delete the collection jobs the app created. Leaves the schema and its data
+    intact -- this removes the jobs only, so it can be re-run to rebuild them."""
+    client = _sp_workspace_client()
+    names = _provisioned_job_names()
+    deleted = []
+    for job in list(client.jobs.list()):
+        name = (job.settings.name if job.settings else '') or ''
+        if name in names and job.job_id:
+            client.api_client.do('POST', '/api/2.1/jobs/delete',
+                                 body={'job_id': job.job_id})
+            deleted.append(name)
+    with _discovery_lock:
+        _discovered_jobs.clear()
+    _invalidate_collection_cache()
+    _discover_collection_jobs(force=True)
+    return deleted
+
+
+@app.route('/api/collection/teardown', methods=['POST'])
+def api_collection_teardown():
+    """Remove all collection jobs from the workspace. The results schema and any
+    collected data are untouched; the jobs can be recreated with Set up."""
+    try:
+        deleted = _teardown_collection()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('collection teardown failed')
+        return jsonify({'error': f'Could not remove jobs: {str(exc)[:200]}'}), 500
+    logger.info('collection teardown removed %d job(s)', len(deleted))
+    return jsonify({'removed': deleted, 'count': len(deleted)})
+
+
+@app.route('/api/collection/initializer', methods=['POST'])
+def api_collection_initializer():
+    """Run the initializer job on its own, to rebuild the schema and result tables
+    without recreating every collection job."""
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup first.'}), 409
+    try:
+        client = _sp_workspace_client()
+        job_id = _find_job_id_by_name(client, _INITIALIZER_JOB_NAME)
+        if not job_id:
+            return jsonify({
+                'error': 'The initializer is not set up yet. Use Set up data collection first.'
+            }), 409
+        # The job allows one run at a time. If one is already in flight, attach to
+        # it instead of starting a second (which the platform would reject with
+        # "max concurrent runs exceeded").
+        active = client.api_client.do(
+            'GET', '/api/2.1/jobs/runs/list',
+            query={'job_id': job_id, 'active_only': True, 'limit': 1})
+        running = (active.get('runs') or [])
+        if running:
+            return jsonify({'run_id': running[0].get('run_id'),
+                            'started': False, 'already_running': True})
+        started = client.api_client.do('POST', '/api/2.1/jobs/run-now',
+                                       body={'job_id': job_id})
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('initializer run failed')
+        return jsonify({'error': f'Could not start the initializer: {str(exc)[:200]}'}), 500
+    return jsonify({'run_id': started.get('run_id'), 'started': True})
 
 
 @app.route('/api/collection/run', methods=['POST'])
@@ -15180,8 +16123,8 @@ def api_collection_run():
     job_id = _collection_job_id(kind)
     if not job_id:
         return jsonify({
-            'error': (f"The {COLLECTION_JOBS[kind]['label']} job is not bound to this "
-                      f"app. Re-run the SAT installer to enable in-app collection.")
+            'error': (f"{COLLECTION_JOBS[kind]['label']} is not set up yet. "
+                      f"Use Set up data collection first.")
         }), 409
 
     try:

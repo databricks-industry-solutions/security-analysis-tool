@@ -45,16 +45,45 @@ SECRETS_SCOPE = "sat_scope"
 
 import json
 
+# Configuration resolves from job parameters first, then the legacy sat_scope
+# secret scope. The SAT app sets these as parameters when it provisions a
+# collection job (so no secret scope is required); a classic installer
+# deployment sets none of them and the values come from sat_scope instead.
+# Reading parameters first and the scope second lets one notebook serve both.
+for _w in ("account_id", "sql_warehouse_id", "analysis_schema_name", "proxies"):
+    try:
+        dbutils.widgets.text(_w, "")
+    except Exception:
+        pass
+
+
+def _param(name):
+    try:
+        value = dbutils.widgets.get(name)
+        return value.strip() if value else ""
+    except Exception:
+        return ""
+
+
+def _secret(key):
+    try:
+        return dbutils.secrets.get(scope=SECRETS_SCOPE, key=key)
+    except Exception:
+        return ""
+
+
+def _conf(param_name, secret_key, default=""):
+    return _param(param_name) or _secret(secret_key) or default
+
+
 json_ = {
-    "account_id": dbutils.secrets.get(scope=SECRETS_SCOPE, key="account-console-id"),
-    "sql_warehouse_id": dbutils.secrets.get(scope=SECRETS_SCOPE, key="sql-warehouse-id"),
-    "analysis_schema_name": dbutils.secrets.get(
-        scope=SECRETS_SCOPE, key="analysis_schema_name"
-    ),
+    "account_id": _conf("account_id", "account-console-id"),
+    "sql_warehouse_id": _conf("sql_warehouse_id", "sql-warehouse-id"),
+    "analysis_schema_name": _conf("analysis_schema_name", "analysis_schema_name"),
     "verbosity": "info",
     "maxpages":10,
     "timebetweencalls":1,
-    "proxies": json.loads(dbutils.secrets.get(scope=SECRETS_SCOPE, key="proxies")),
+    "proxies": json.loads(_conf("proxies", "proxies", "{}") or "{}"),
 }
 
 # COMMAND ----------
@@ -183,21 +212,28 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-create_schema()
-create_security_checks_table()
-create_account_info_table()
-create_account_workspaces_table()
-create_notebooks_secret_scan_results_table()
-create_clusters_secret_scan_results_table()
-create_workspace_run_complete_table()
+# Creating the schema/tables and loading reference data is one-time setup owned by
+# the initializer job. Re-running it in every collection notebook causes Delta
+# metadata-change conflicts on shared tables (e.g. run_number_table) when jobs run
+# concurrently. In app mode (config comes from job parameters) this runs only when
+# the initializer asks for it via the sat_init parameter; a classic installer
+# deployment passes no parameters and always runs it (its driver is sequential, so
+# there is no concurrency to conflict with).
+_app_mode = bool(_param("analysis_schema_name"))
+_run_setup = (not _app_mode) or (_param("sat_init").lower() == "true")
 
-# COMMAND ----------
+if _run_setup:
+    create_schema()
+    create_security_checks_table()
+    create_account_info_table()
+    create_account_workspaces_table()
+    create_notebooks_secret_scan_results_table()
+    create_clusters_secret_scan_results_table()
+    create_workspace_run_complete_table()
 
-# Initialize best practices
-readBestPracticesConfigsFile()
+    # Initialize best practices
+    readBestPracticesConfigsFile()
 
-# COMMAND ----------
-
-# Initialize sat dasf mapping
-load_sat_dasf_mapping()
+    # Initialize sat dasf mapping
+    load_sat_dasf_mapping()
 

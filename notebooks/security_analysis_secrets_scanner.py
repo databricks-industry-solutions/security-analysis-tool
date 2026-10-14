@@ -322,10 +322,11 @@ def runTruffleHogScanForAllWorkspaces():
         print(f"❌ Secret scanning completed with {len(failures)} failure(s):")
         for failure in failures:
             print(f"   • {failure}")
+        detail = "; ".join(failures)
         message = (
             f"Secret scanning failed for {len(failures)} workspace scan(s). "
             f"Results in the table are INCOMPLETE — do not treat the totals as a "
-            f"clean bill of health. See the failures listed above."
+            f"clean bill of health. Failures: {detail}"
         )
         loggr.error(message)
         raise RuntimeError(message)

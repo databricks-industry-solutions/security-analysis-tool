@@ -109,13 +109,27 @@ WORKSPACE_URL = (
 )
 ACCOUNTS_HOST = resolve_accounts_host(cloud_type, WORKSPACE_URL, json_.get("accounts_console", ""))
 ACCOUNT_ID    = json_["account_id"]
-CLIENT_ID     = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-id")
-CLIENT_SECRET = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-secret")
+
+# Account API credentials. The SAT app stores these as Unity Catalog secrets in
+# the results schema; a classic install keeps them in the sat_scope secret scope.
+# Try UC first, then the scope, and stay non-fatal so the job still runs when
+# they are absent (account-level detection is simply skipped).
+def _sat_cred(key):
+    try:
+        return dbutils.secrets.get(catalog=CATALOG, schema=SCHEMA, key=key)
+    except Exception:
+        pass
+    try:
+        return dbutils.secrets.get(scope=SECRETS_SCOPE, key=key)
+    except Exception:
+        return ""
+CLIENT_ID     = _sat_cred("client-id")
+CLIENT_SECRET = _sat_cred("client-secret")
 
 # tenant-id is required for Azure (Entra/MSAL auth); absent on AWS/GCP.
 TENANT_ID = None
 if cloud_type == "azure":
-    TENANT_ID = json_.get("tenant_id") or dbutils.secrets.get(scope=SECRETS_SCOPE, key="tenant-id")
+    TENANT_ID = json_.get("tenant_id") or _sat_cred("tenant-id")
 
 PRIVILEGED_NON_IDP_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_privileged_non_idp"
 
@@ -188,6 +202,12 @@ class PrivilegedIdentityAuditor:
         return token["access_token"]
 
     def _mint_account_token(self) -> str:
+        # Account-level scans need an Account ID and account-admin SP credentials;
+        # fail with a clear message rather than a cryptic error in the auth call.
+        if not self._account_id or not self._client_id or not self._client_secret:
+            raise Exception("Account-level scan requires an Account ID and account-admin "
+                            "service principal credentials. Add them in the app: "
+                            "Settings -> Re-run setup.")
         if self._cloud_type == "azure":
             return self._mint_azure_msal_token()
         resp = requests.post(
@@ -201,8 +221,15 @@ class PrivilegedIdentityAuditor:
             },
             proxies=self._proxies,
         )
-        resp.raise_for_status()
-        return resp.json()["access_token"]
+        if resp.status_code != 200:
+            raise Exception(f"Account token request failed ({resp.status_code}). Check the "
+                            f"Account ID and that the service principal is an account admin. "
+                            f"Response: {resp.text[:200]}")
+        try:
+            return resp.json()["access_token"]
+        except Exception:
+            raise Exception(f"Account token response was not valid JSON "
+                            f"(status {resp.status_code}): {resp.text[:200]}")
 
     @staticmethod
     def _explain_http_error(resp) -> str:
