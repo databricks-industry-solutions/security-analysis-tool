@@ -221,6 +221,10 @@ def runTruffleHogScanForAllWorkspaces():
 
     loggr.info(f"Running secret scans on {len(scan_workspaces)} workspace(s)")
 
+    # Ensure the completion table exists so the dashboard's join never hits a
+    # missing table before the first run completes.
+    create_secrets_run_complete_table()
+
     # Pre-allocate a shared run_id per workspace sequentially on the main thread.
     # generate_shared_run_id() does INSERT + SELECT max(runID), which would race
     # under concurrency (two workspaces could read the same max), so it must run
@@ -261,6 +265,9 @@ def runTruffleHogScanForAllWorkspaces():
         if local_failures:
             print(f"⚠️  Scans finished WITH FAILURES for workspace: {ws.workspace_id}")
         else:
+            # Mark the run complete only on full success so the dashboard scopes
+            # to the latest completed run, not an in-progress or partial one.
+            notifySecretsWorkspaceCompleted(ws.workspace_id, shared_run_id, True)
             print(f"✅ All scans completed for workspace: {ws.workspace_id}")
         return local_failures
 
