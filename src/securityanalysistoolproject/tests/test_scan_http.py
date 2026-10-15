@@ -7,6 +7,7 @@ from core.scan_http import (
     request_with_retry,
     collect_tree,
     completeness_verdict,
+    TokenProvider,
 )
 
 
@@ -128,6 +129,56 @@ def test_request_with_retry_transport_error_exhausts_to_none():
 
     resp = request_with_retry(do, max_attempts=3, sleep=lambda s: None, rand=lambda: 0.0)
     assert resp is None
+
+
+def test_token_provider_caches_within_ttl():
+    mints = {"n": 0}
+    clock = {"t": 0.0}
+
+    def mint():
+        mints["n"] += 1
+        return f"tok{mints['n']}"
+
+    tp = TokenProvider(mint, refresh_after=1800, clock=lambda: clock["t"])
+    assert tp.header()["Authorization"] == "Bearer tok1"
+    clock["t"] = 1799
+    tp.header()
+    assert mints["n"] == 1  # still cached
+
+
+def test_token_provider_refreshes_after_ttl():
+    mints = {"n": 0}
+    clock = {"t": 0.0}
+    tp = TokenProvider(lambda: f"tok{mints.__setitem__('n', mints['n']+1) or mints['n']}",
+                       refresh_after=1800, clock=lambda: clock["t"])
+    tp.header()
+    clock["t"] = 1800
+    assert tp.header()["Authorization"] == "Bearer tok2"
+
+
+def test_token_provider_force_refresh():
+    mints = {"n": 0}
+    tp = TokenProvider(lambda: f"tok{mints.__setitem__('n', mints['n']+1) or mints['n']}")
+    tp.header()
+    tp.refresh()
+    assert mints["n"] == 2
+
+
+def test_request_with_retry_refreshes_on_401():
+    calls = {"n": 0}
+    refreshed = {"n": 0}
+
+    class TP:
+        def refresh(self):
+            refreshed["n"] += 1
+
+    def do():
+        calls["n"] += 1
+        return FakeResponse(401) if calls["n"] == 1 else FakeResponse(200)
+
+    resp = request_with_retry(do, token_provider=TP(), sleep=lambda s: None, rand=lambda: 0.0)
+    assert resp.status_code == 200
+    assert refreshed["n"] == 1
 
 
 def test_collect_tree_walks_entire_tree():

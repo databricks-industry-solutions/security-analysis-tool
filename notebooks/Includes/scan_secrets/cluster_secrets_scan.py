@@ -64,7 +64,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
-from core.scan_http import AdaptiveRateLimiter, request_with_retry
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, TokenProvider
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -284,23 +284,12 @@ print(f"🔧 Config field to scan: {Config.CONFIG_FIELD}")
 
 # COMMAND ----------
 
-# Mint a single OAuth token up front and reuse it (read-only) across all worker
-# threads below.
-#
-# SatDBClient is NOT thread-safe: db_client.get() mutates shared instance state
-# (self._token / self._url) and re-mints an OAuth token via a network POST on
-# EVERY request. Sharing one client across the ThreadPoolExecutor in
-# main_cluster_scanning_workflow() therefore (a) races the auth header between
-# threads and (b) hammers the /oidc/v1/token endpoint, which throttles under the
-# burst and makes token minting return None -> an "Authorization: Bearer None"
-# header -> HTTP 401 "Credential was not sent or was of an unsupported type for
-# this API". Larger workspaces (more clusters -> more concurrent mints) failed
-# while smaller ones passed. We mint once here and issue plain requests.get with
-# a local, immutable header, mirroring notebook_secret_scan.py.
-_api_token = db_client.get_temporary_oauth_token()
-if not _api_token:
+# Thread-safe token provider shared across all worker threads. SatDBClient is
+# not thread-safe, so cluster API calls are issued directly with a header from
+# the provider, which re-mints the token before it expires on long scans.
+_token_provider = TokenProvider(lambda: db_client.get_temporary_oauth_token())
+if not _token_provider.refresh():
     raise ValueError("Unable to obtain OAuth token for cluster scanning")
-_auth_headers = {"Authorization": f"Bearer {_api_token}", "User-Agent": "databricks-sat/0.1.0"}
 
 # Shared limiter for all cluster-API calls. Self-tunes to the workspace rate
 # limit; MAX_WORKERS is the ceiling.
@@ -316,9 +305,10 @@ def _get_with_retry(url: str, params: Optional[Dict[str, Any]], what: str) -> Op
     Returns the response, or None if the request never reached the server.
     """
     return request_with_retry(
-        lambda: requests.get(url, headers=_auth_headers, params=params, timeout=60),
+        lambda: requests.get(url, headers=_token_provider.header(), params=params, timeout=60),
         limiter=_rate_limiter,
         base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
     )
 
 

@@ -68,7 +68,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
-from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree, completeness_verdict
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree, completeness_verdict, TokenProvider
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -326,12 +326,12 @@ class Config:
 # Extract Databricks authentication context
 # These are automatically available in Databricks notebooks
 try:
-    token = db_client.get_temporary_oauth_token() 
-    base_url = json_["url"] 
-    
-    if not token or not base_url:
+    _token_provider = TokenProvider(lambda: db_client.get_temporary_oauth_token())
+    base_url = json_["url"]
+
+    if not _token_provider.refresh() or not base_url:
         raise ValueError("Unable to extract Databricks authentication context")
-        
+
     logger.info(f"Successfully extracted Databricks context. Base URL: {base_url}")
     
 except Exception as e:
@@ -429,17 +429,19 @@ _rate_limiter = AdaptiveRateLimiter(
 )
 
 
-def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
+def make_api_request(url: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
     """
     Make a GET request to Databricks.
 
     Returns a (json_or_none, status_or_none) tuple so callers can branch on
     HTTP status. Status is None when the request never reached the server.
     """
+    def _do():
+        headers = {**_token_provider.header(), "Content-Type": "application/json"}
+        return requests.get(url, headers=headers, json=data, timeout=30)
     resp = request_with_retry(
-        lambda: requests.get(url, headers=headers, json=data, timeout=30),
-        limiter=_rate_limiter,
-        base_sleep=Config.API_SLEEP_SECONDS,
+        _do, limiter=_rate_limiter, base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
     )
     if resp is None:
         return None, None
@@ -457,11 +459,11 @@ def _get_with_retry(url: str, what: str) -> Optional[requests.Response]:
 
     Returns the response, or None if the request never reached the server.
     """
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
     return request_with_retry(
-        lambda: requests.get(url, headers=headers, timeout=30),
+        lambda: requests.get(url, headers=_token_provider.header(), timeout=30),
         limiter=_rate_limiter,
         base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
     )
 
 
@@ -1357,8 +1359,7 @@ def main_scanning_workflow():
 
     # Setup API request parameters
     url = f"{base_url}/api/2.0/search-midtier/unified-search"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
-    
+
     # Build filters - only include time filter if enabled
     filters = {"result_types": ["FILE", "NOTEBOOK"]}
     if time_filter_enabled:
@@ -1392,7 +1393,7 @@ def main_scanning_workflow():
                 del data["page_token"]  # Remove token for first request
 
             # Make API request
-            response, status_code = make_api_request(url, headers, data)
+            response, status_code = make_api_request(url, data)
 
             # /search-midtier/unified-search rejects token-based auth on
             # workspaces where the endpoint is browser-only. See GitHub

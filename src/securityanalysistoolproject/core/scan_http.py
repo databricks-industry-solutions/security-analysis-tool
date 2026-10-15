@@ -7,6 +7,39 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 
+class TokenProvider:
+    """Supplies an auth header, re-minting the token before it expires.
+
+    ``mint`` returns a fresh token string. ``header()`` returns the auth header,
+    re-minting when the cached token is older than ``refresh_after`` seconds so a
+    long scan never sends an expired token. Thread-safe.
+    """
+
+    def __init__(self, mint, refresh_after=1800,
+                 user_agent="databricks-sat/0.1.0", clock=time.monotonic):
+        self._mint = mint
+        self._refresh_after = refresh_after
+        self._ua = user_agent
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._token = None
+        self._minted_at = 0.0
+
+    def _current(self, force=False):
+        with self._lock:
+            age = self._clock() - self._minted_at
+            if force or self._token is None or age >= self._refresh_after:
+                self._token = self._mint()
+                self._minted_at = self._clock()
+            return self._token
+
+    def header(self):
+        return {"Authorization": f"Bearer {self._current()}", "User-Agent": self._ua}
+
+    def refresh(self):
+        return self._current(force=True)
+
+
 class AdaptiveRateLimiter:
     """Bounds concurrent requests and self-tunes to the workspace rate limit.
 
@@ -96,13 +129,14 @@ def parse_retry_after(headers, now=None):
 def request_with_retry(do_request, limiter=None, max_attempts=8,
                        base_sleep=1.0, max_sleep=60.0,
                        sleep=time.sleep, rand=random.random, now=None,
-                       on_retry=None):
+                       on_retry=None, token_provider=None):
     """Call ``do_request`` with adaptive pacing and 429/transport retries.
 
     ``do_request`` returns a response exposing ``status_code`` and ``headers``,
     or raises for transport errors. Honors Retry-After when present, otherwise
-    uses equal-jitter backoff. Returns the response, or None if every attempt
-    failed to reach the server.
+    uses equal-jitter backoff. When ``token_provider`` is given, a 401 refreshes
+    the token and retries (handles mid-scan token expiry). Returns the response,
+    or None if every attempt failed to reach the server.
     """
     last = None
     for attempt in range(max_attempts):
@@ -117,7 +151,13 @@ def request_with_retry(do_request, limiter=None, max_attempts=8,
             if limiter is not None:
                 limiter.release()
 
-        if err is None and resp is not None and getattr(resp, "status_code", None) != 429:
+        status = getattr(resp, "status_code", None) if (err is None and resp is not None) else None
+
+        if status == 401 and token_provider is not None and attempt < max_attempts - 1:
+            token_provider.refresh()
+            continue
+
+        if err is None and resp is not None and status != 429:
             if limiter is not None:
                 limiter.record_success()
             return resp
