@@ -105,50 +105,30 @@ db_client = SatDBClient(json_)
 # MAGIC     pip install requests==2.32.3 PyYAML==6.0.2
 # MAGIC fi
 # MAGIC
-# MAGIC # Check if TruffleHog is already installed (likely from notebook scanner)
-# MAGIC if [ -f /tmp/trufflehog ]; then
-# MAGIC     echo "TruffleHog already installed at /tmp/trufflehog"
-# MAGIC     echo "Skipping installation (reusing from notebook scanner)"
-# MAGIC else
-# MAGIC     # Download and install TruffleHog binary to /tmp directory
-# MAGIC     # Pinned to a tagged release to prevent supply-chain tampering via the
-# MAGIC     # mutable main branch. Bump TRUFFLEHOG_VERSION to upgrade.
-# MAGIC     TRUFFLEHOG_VERSION=v3.94.3
-# MAGIC     echo "Installing TruffleHog ${TRUFFLEHOG_VERSION}..."
-# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b /tmp "${TRUFFLEHOG_VERSION}"; then
-# MAGIC         if [ -f /tmp/trufflehog ]; then
-# MAGIC             echo "Setup completed successfully!"
-# MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
-# MAGIC         else
-# MAGIC             echo "ERROR: TruffleHog binary not found after installation!"
-# MAGIC             echo "Please verify network access and try again."
-# MAGIC             exit 1
-# MAGIC         fi
-# MAGIC     else
-# MAGIC         echo "=========================================="
-# MAGIC         echo "ERROR: Failed to download TruffleHog"
-# MAGIC         echo "=========================================="
-# MAGIC         echo ""
-# MAGIC         echo "The TruffleHog security scanner could not be downloaded from:"
-# MAGIC         echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
-# MAGIC         echo ""
-# MAGIC         echo "Possible causes:"
-# MAGIC         echo "  1. Network connectivity issues"
-# MAGIC         echo "  2. Firewall or proxy blocking external downloads"
-# MAGIC         echo "  3. GitHub.com access is restricted in your environment"
-# MAGIC         echo ""
-# MAGIC         echo "ACTION REQUIRED:"
-# MAGIC         echo "Please contact your IT/Security team to allowlist access to:"
-# MAGIC         echo "  - raw.githubusercontent.com"
-# MAGIC         echo "  - github.com/trufflesecurity"
-# MAGIC         echo ""
-# MAGIC         echo "Alternatively, you may need to configure a proxy or use an"
-# MAGIC         echo "internal mirror of the TruffleHog installation package."
-# MAGIC         echo "=========================================="
-# MAGIC         exit 1
-# MAGIC     fi
-# MAGIC fi
+# MAGIC # Install under a lock so concurrent scanners sharing /tmp don't race;
+# MAGIC # install to a temp dir and atomically move into place; retry on failure.
+# MAGIC TRUFFLEHOG_VERSION=v3.94.3
+# MAGIC (
+# MAGIC   flock 9 2>/dev/null || true
+# MAGIC   if [ ! -x /tmp/trufflehog ]; then
+# MAGIC     for attempt in 1 2 3; do
+# MAGIC       thdir=$(mktemp -d)
+# MAGIC       if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b "$thdir" "${TRUFFLEHOG_VERSION}" && [ -x "$thdir/trufflehog" ]; then
+# MAGIC         mv -f "$thdir/trufflehog" /tmp/trufflehog
+# MAGIC         rm -rf "$thdir"
+# MAGIC         break
+# MAGIC       fi
+# MAGIC       rm -rf "$thdir"
+# MAGIC       echo "TruffleHog install attempt ${attempt} failed; retrying..."
+# MAGIC       sleep $((attempt * 3))
+# MAGIC     done
+# MAGIC   fi
+# MAGIC ) 9>/tmp/trufflehog.lock
 # MAGIC
+# MAGIC if [ ! -x /tmp/trufflehog ]; then
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   exit 1
+# MAGIC fi
 # MAGIC echo "✅ TruffleHog setup verified!"
 
 # COMMAND ----------
