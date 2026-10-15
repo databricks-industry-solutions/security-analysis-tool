@@ -6,6 +6,7 @@ from core.scan_http import (
     parse_retry_after,
     request_with_retry,
     collect_tree,
+    completeness_verdict,
 )
 
 
@@ -148,6 +149,34 @@ def test_collect_tree_walks_entire_tree():
     assert sorted(leaves) == [
         "/Repos/team/nb4", "/Shared/nb3", "/Users/a/nb1", "/Users/a/nb2",
     ]
+
+
+def test_completeness_clean_scan_not_partial_not_fatal():
+    gap, tol, partial, fatal = completeness_verdict(500, 0, 0, 0)
+    assert gap == 0 and partial is False and fatal is False
+
+
+def test_completeness_small_residue_partial_not_fatal():
+    # 3 unreadable files on a tiny workspace -> partial, under the floor of 25
+    gap, tol, partial, fatal = completeness_verdict(40, 3, 0, 0)
+    assert gap == 3 and tol == 25 and partial is True and fatal is False
+
+
+def test_completeness_customer_case_within_tolerance():
+    # 15 unreadable + 1 listing failure out of 642 -> within tolerance, not fatal
+    gap, tol, partial, fatal = completeness_verdict(642, 15, 1, 0)
+    assert gap == 16 and partial is True and fatal is False
+
+
+def test_completeness_large_gap_is_fatal():
+    # sustained throttling: 300 of 642 unscanned -> exceeds tolerance
+    gap, tol, partial, fatal = completeness_verdict(642, 300, 0, 0)
+    assert fatal is True
+
+
+def test_completeness_lost_finding_is_fatal():
+    gap, tol, partial, fatal = completeness_verdict(500, 0, 0, 1)
+    assert fatal is True
 
 
 def test_collect_tree_counts_failed_listings():

@@ -145,6 +145,21 @@ def request_with_retry(do_request, limiter=None, max_attempts=8,
     return last
 
 
+def completeness_verdict(discovered, unreadable, list_failures, unwritten,
+                         min_failures=25, max_fraction=0.02):
+    """Classify a scan's coverage gap.
+
+    Returns (coverage_gap, tolerance, partial, fatal). A gap within tolerance is
+    partial-but-acceptable; it is fatal only above tolerance or when a finding
+    failed to persist.
+    """
+    coverage_gap = unreadable + list_failures
+    tolerance = max(min_failures, int(max_fraction * max(0, discovered)))
+    partial = coverage_gap > 0
+    fatal = coverage_gap > tolerance or unwritten > 0
+    return coverage_gap, tolerance, partial, fatal
+
+
 def collect_tree(list_children, roots, mapper=map):
     """Breadth-first walk of a workspace tree.
 

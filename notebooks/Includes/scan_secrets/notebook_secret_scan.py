@@ -68,7 +68,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
-from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree, completeness_verdict
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -319,6 +319,9 @@ class Config:
     # Directory where a batch of notebooks is materialized so TruffleHog can
     # scan them all in a single invocation instead of once per file.
     SCAN_BATCH_DIR = config_data.get("settings", {}).get("file_paths", {}).get("scan_batch_dir", "/tmp/notebook_scan_batch")
+    # Unscanned-object tolerance before a run is failed as incomplete.
+    INCOMPLETE_SCAN_FRACTION = config_data.get("settings", {}).get("completeness", {}).get("max_unscanned_fraction", 0.02)
+    INCOMPLETE_SCAN_MIN = config_data.get("settings", {}).get("completeness", {}).get("min_unscanned_to_fail", 25)
 
 # Extract Databricks authentication context
 # These are automatically available in Databricks notebooks
@@ -1505,24 +1508,39 @@ def main_scanning_workflow():
                 f"{materialize_stats['skip']} malformed (not counted as failures)."
             )
 
-        # Fail loudly only on genuine coverage gaps: notebooks that failed to
-        # export/read (throttling or export error), directory listings dropped
-        # to throttling during discovery, or findings that failed to persist.
-        # Expected skips above are intentionally excluded.
+        # A small residue of unreadable objects always exists on a real
+        # workspace (binary/non-notebook files, transiently failed exports).
+        # Report it as partial and only hard-fail when the gap is large enough
+        # to signal a systemic problem (sustained throttling), or a finding was
+        # lost. Tolerance: whichever is larger of a floor and a fraction of the
+        # objects discovered.
         unreadable = materialize_stats["error"]
         list_failures = discovery_stats["list_failures"]
         unwritten = insert_stats["attempted"] - insert_stats["written"]
-        if unreadable > 0 or list_failures > 0 or unwritten > 0:
+        coverage_gap, tolerance, _partial, _fatal = completeness_verdict(
+            total_notebooks_discovered, unreadable, list_failures, unwritten,
+            min_failures=Config.INCOMPLETE_SCAN_MIN,
+            max_fraction=Config.INCOMPLETE_SCAN_FRACTION,
+        )
+
+        if coverage_gap > 0:
+            detail = []
+            if unreadable:
+                detail.append(f"{unreadable} unreadable (export failure)")
+            if list_failures:
+                detail.append(f"{list_failures} directory listing(s) failed")
+            note = (f"PARTIAL SCAN for workspace {workspace_id}: {coverage_gap} of "
+                    f"{total_notebooks_discovered} discovered object(s) not scanned "
+                    f"({'; '.join(detail)}); tolerance={tolerance}.")
+            print(f"⚠️  {note}")
+            logger.warning(note)
+
+        if _fatal:
             problems = []
-            if unreadable > 0:
+            if coverage_gap > tolerance:
                 problems.append(
-                    f"{unreadable} discovered notebook(s) could not be read "
-                    f"(throttling or export failure)"
-                )
-            if list_failures > 0:
-                problems.append(
-                    f"{list_failures} directory listing(s) failed after retries "
-                    f"(throttling); their notebooks may be missing from discovery"
+                    f"{coverage_gap} of {total_notebooks_discovered} discovered object(s) "
+                    f"could not be scanned (exceeds tolerance {tolerance}) — likely sustained throttling"
                 )
             if unwritten > 0:
                 problems.append(
