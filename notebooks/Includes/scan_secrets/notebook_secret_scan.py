@@ -109,31 +109,23 @@ db_client = SatDBClient(json_)
 # MAGIC     pip install requests==2.32.3 PyYAML==6.0.2
 # MAGIC fi
 # MAGIC
-# MAGIC # Install under a lock so concurrent scanners sharing /tmp don't race;
-# MAGIC # install to a temp dir and atomically move into place; retry on failure.
+# MAGIC # Install to a private path with an atomic move; retry on failure.
 # MAGIC TRUFFLEHOG_VERSION=v3.94.3
-# MAGIC (
-# MAGIC   flock 9 2>/dev/null || true
-# MAGIC   if [ ! -x /tmp/trufflehog ]; then
-# MAGIC     for attempt in 1 2 3; do
-# MAGIC       thdir=$(mktemp -d)
-# MAGIC       if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b "$thdir" "${TRUFFLEHOG_VERSION}" && [ -x "$thdir/trufflehog" ]; then
-# MAGIC         mv -f "$thdir/trufflehog" /tmp/trufflehog
-# MAGIC         rm -rf "$thdir"
-# MAGIC         break
-# MAGIC       fi
-# MAGIC       rm -rf "$thdir"
-# MAGIC       echo "TruffleHog install attempt ${attempt} failed; retrying..."
-# MAGIC       sleep $((attempt * 3))
-# MAGIC     done
-# MAGIC   fi
-# MAGIC ) 9>/tmp/trufflehog.lock
-# MAGIC
-# MAGIC if [ ! -x /tmp/trufflehog ]; then
+# MAGIC THBIN=/tmp/trufflehog_notebook
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   for attempt in 1 2 3 4 5; do
+# MAGIC     thdir=$(mktemp -d)
+# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b "$thdir" "${TRUFFLEHOG_VERSION}" && [ -x "$thdir/trufflehog" ]; then
+# MAGIC       mv -f "$thdir/trufflehog" "$THBIN"; rm -rf "$thdir"; break
+# MAGIC     fi
+# MAGIC     rm -rf "$thdir"; echo "TruffleHog install attempt ${attempt} failed; retrying..."; sleep $((attempt * 3))
+# MAGIC   done
+# MAGIC fi
+# MAGIC if [ ! -x "$THBIN" ]; then
 # MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
 # MAGIC   exit 1
 # MAGIC fi
-# MAGIC echo "✅ TruffleHog setup verified!"
+# MAGIC echo "✅ TruffleHog setup verified at $THBIN!"
 
 # COMMAND ----------
 
@@ -278,7 +270,7 @@ class Config:
     """Configuration class for TruffleHog scanning parameters"""
     
     # File paths
-    TRUFFLEHOG_BINARY = "/tmp/trufflehog"
+    TRUFFLEHOG_BINARY = "/tmp/trufflehog_notebook"
     TRUFFLEHOG_CONFIG = create_trufflehog_config(config_data)
     TEMP_NOTEBOOKS_DIR = config_data.get("settings", {}).get("file_paths", {}).get("temp_notebooks", "/tmp/notebooks")
     RESULTS_LOG_FILE = config_data.get("settings", {}).get("file_paths", {}).get("results_log", "/tmp/trufflehog_scan_results.json")
