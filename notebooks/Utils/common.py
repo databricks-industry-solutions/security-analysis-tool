@@ -478,6 +478,16 @@ def notifyworkspaceCompleted(workspaceID, completed):
     )
 
 
+def notifySecretsWorkspaceCompleted(workspace_id, run_id, completed):
+    import time
+
+    ts = time.time()
+    create_secrets_run_complete_table()
+    spark.sql(
+        f"""INSERT INTO {json_["analysis_schema_name"]}.secrets_run_complete (`workspace_id`, `run_id`, `completed`, `check_time`) VALUES ('{workspace_id}', {int(run_id)}, {completed}, cast({ts} as timestamp))"""
+    )
+
+
 # COMMAND ----------
 
 
@@ -701,6 +711,32 @@ def create_workspace_run_complete_table():
         "run_id":       "SAT run ID — foreign key to run_number_table.runID",
         "completed":    "True if the workspace analysis completed successfully in this run",
         "check_time":   "Timestamp when the workspace analysis completed",
+        "chk_date":     "Date partition derived from check_time",
+    })
+
+
+def create_secrets_run_complete_table():
+    schema = json_["analysis_schema_name"]
+    spark.sql(
+        f"""CREATE TABLE IF NOT EXISTS {schema}.secrets_run_complete(
+                    workspace_id string,
+                    run_id bigint,
+                    completed boolean,
+                    check_time timestamp,
+                    chk_date date GENERATED ALWAYS AS (CAST(check_time AS DATE))
+                    )
+                    USING DELTA"""
+    )
+    _set_table_comment(
+        schema, "secrets_run_complete",
+        "Tracks per-workspace completion of each secret-scan run. The secrets dashboard scopes to the "
+        "latest completed run per workspace so an in-progress run does not blank the view."
+    )
+    _set_column_comments(schema, "secrets_run_complete", {
+        "workspace_id": "Databricks workspace ID",
+        "run_id":       "SAT run ID for the secret scan — foreign key to run_number_table.runID",
+        "completed":    "True if both the notebook and cluster secret scans completed successfully for this workspace in this run",
+        "check_time":   "Timestamp when completion was recorded",
         "chk_date":     "Date partition derived from check_time",
     })
 
