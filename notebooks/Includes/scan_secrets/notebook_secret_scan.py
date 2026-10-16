@@ -151,12 +151,23 @@ import tempfile
 import random
 import concurrent.futures
 from datetime import timedelta, datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from typing import Dict, List, Optional, Any, Tuple
 
 # Configure logging for better debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+
+
+class _WorkspaceLogAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[ws={self.extra['name']} id={self.extra['id']}] {msg}", kwargs
+
+
+_ws_name = json_.get("workspace_name") or urlparse(json_.get("url", "")).hostname or "unknown"
+logger = _WorkspaceLogAdapter(
+    logging.getLogger(__name__),
+    {"name": _ws_name, "id": json_.get("workspace_id", "unknown")},
+)
 
 def _default_config() -> Dict[str, Any]:
     """Built-in fallback used only when the shipped config can't be loaded."""
@@ -1274,7 +1285,7 @@ def main_scanning_workflow():
     """
     Main function to orchestrate the secret scanning process.
     """
-    print("🔍 Starting TruffleHog Secret Scanning Workflow")
+    print(f"🔍 Starting TruffleHog Secret Scanning Workflow — workspace {_ws_name} (id={json_.get('workspace_id', 'unknown')})")
     print("=" * 60)
 
     # Get current workspace ID and run ID for database storage
