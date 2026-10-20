@@ -68,6 +68,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree, completeness_verdict, TokenProvider
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -108,52 +109,23 @@ db_client = SatDBClient(json_)
 # MAGIC     pip install requests==2.32.3 PyYAML==6.0.2
 # MAGIC fi
 # MAGIC
-# MAGIC # Check if TruffleHog is already installed (idempotent installation)
-# MAGIC if [ -f /tmp/trufflehog ]; then
-# MAGIC     echo "TruffleHog already installed at /tmp/trufflehog"
-# MAGIC     echo "Skipping installation (already exists)"
-# MAGIC else
-# MAGIC     # Download and install TruffleHog binary to /tmp directory
-# MAGIC     # Pinned to a tagged release to prevent supply-chain tampering via the
-# MAGIC     # mutable main branch. Bump TRUFFLEHOG_VERSION to upgrade.
-# MAGIC     TRUFFLEHOG_VERSION=v3.94.3
-# MAGIC     echo "Installing TruffleHog ${TRUFFLEHOG_VERSION}..."
-# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b /tmp "${TRUFFLEHOG_VERSION}"; then
-# MAGIC         if [ -f /tmp/trufflehog ]; then
-# MAGIC             echo "Setup completed successfully!"
-# MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
-# MAGIC             echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
-# MAGIC         else
-# MAGIC             echo "ERROR: TruffleHog binary not found after installation!"
-# MAGIC             echo "Please verify network access and try again."
-# MAGIC             exit 1
-# MAGIC         fi
-# MAGIC     else
-# MAGIC         echo "=========================================="
-# MAGIC         echo "ERROR: Failed to download TruffleHog"
-# MAGIC         echo "=========================================="
-# MAGIC         echo ""
-# MAGIC         echo "The TruffleHog security scanner could not be downloaded from:"
-# MAGIC         echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
-# MAGIC         echo ""
-# MAGIC         echo "Possible causes:"
-# MAGIC         echo "  1. Network connectivity issues"
-# MAGIC         echo "  2. Firewall or proxy blocking external downloads"
-# MAGIC         echo "  3. GitHub.com access is restricted in your environment"
-# MAGIC         echo ""
-# MAGIC         echo "ACTION REQUIRED:"
-# MAGIC         echo "Please contact your IT/Security team to allowlist access to:"
-# MAGIC         echo "  - raw.githubusercontent.com"
-# MAGIC         echo "  - github.com/trufflesecurity"
-# MAGIC         echo ""
-# MAGIC         echo "Alternatively, you may need to configure a proxy or use an"
-# MAGIC         echo "internal mirror of the TruffleHog installation package."
-# MAGIC         echo "=========================================="
-# MAGIC         exit 1
+# MAGIC # Install to a private path with an atomic move; retry on failure.
+# MAGIC TRUFFLEHOG_VERSION=v3.94.3
+# MAGIC THBIN=/tmp/trufflehog_notebook
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   for attempt in 1 2 3 4 5; do
+# MAGIC     thdir=$(mktemp -d)
+# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b "$thdir" "${TRUFFLEHOG_VERSION}" && [ -x "$thdir/trufflehog" ]; then
+# MAGIC       mv -f "$thdir/trufflehog" "$THBIN"; rm -rf "$thdir"; break
 # MAGIC     fi
+# MAGIC     rm -rf "$thdir"; echo "TruffleHog install attempt ${attempt} failed; retrying..."; sleep $((attempt * 3))
+# MAGIC   done
 # MAGIC fi
-# MAGIC
-# MAGIC echo "✅ TruffleHog setup verified!"
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   exit 1
+# MAGIC fi
+# MAGIC echo "✅ TruffleHog setup verified at $THBIN!"
 
 # COMMAND ----------
 
@@ -179,12 +151,23 @@ import tempfile
 import random
 import concurrent.futures
 from datetime import timedelta, datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from typing import Dict, List, Optional, Any, Tuple
 
 # Configure logging for better debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+
+
+class _WorkspaceLogAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[ws={self.extra['name']} id={self.extra['id']}] {msg}", kwargs
+
+
+_ws_name = json_.get("workspace_name") or urlparse(json_.get("url", "")).hostname or "unknown"
+logger = _WorkspaceLogAdapter(
+    logging.getLogger(__name__),
+    {"name": _ws_name, "id": json_.get("workspace_id", "unknown")},
+)
 
 def _default_config() -> Dict[str, Any]:
     """Built-in fallback used only when the shipped config can't be loaded."""
@@ -298,7 +281,7 @@ class Config:
     """Configuration class for TruffleHog scanning parameters"""
     
     # File paths
-    TRUFFLEHOG_BINARY = "/tmp/trufflehog"
+    TRUFFLEHOG_BINARY = "/tmp/trufflehog_notebook"
     TRUFFLEHOG_CONFIG = create_trufflehog_config(config_data)
     TEMP_NOTEBOOKS_DIR = config_data.get("settings", {}).get("file_paths", {}).get("temp_notebooks", "/tmp/notebooks")
     RESULTS_LOG_FILE = config_data.get("settings", {}).get("file_paths", {}).get("results_log", "/tmp/trufflehog_scan_results.json")
@@ -318,16 +301,19 @@ class Config:
     # Directory where a batch of notebooks is materialized so TruffleHog can
     # scan them all in a single invocation instead of once per file.
     SCAN_BATCH_DIR = config_data.get("settings", {}).get("file_paths", {}).get("scan_batch_dir", "/tmp/notebook_scan_batch")
+    # Unscanned-object tolerance before a run is failed as incomplete.
+    INCOMPLETE_SCAN_FRACTION = config_data.get("settings", {}).get("completeness", {}).get("max_unscanned_fraction", 0.02)
+    INCOMPLETE_SCAN_MIN = config_data.get("settings", {}).get("completeness", {}).get("min_unscanned_to_fail", 25)
 
 # Extract Databricks authentication context
 # These are automatically available in Databricks notebooks
 try:
-    token = db_client.get_temporary_oauth_token() 
-    base_url = json_["url"] 
-    
-    if not token or not base_url:
+    _token_provider = TokenProvider(lambda: db_client.get_temporary_oauth_token())
+    base_url = json_["url"]
+
+    if not _token_provider.refresh() or not base_url:
         raise ValueError("Unable to extract Databricks authentication context")
-        
+
     logger.info(f"Successfully extracted Databricks context. Base URL: {base_url}")
     
 except Exception as e:
@@ -417,91 +403,50 @@ def generate_sha256_hash(secret: str) -> str:
     sha.update(secret_bytes)
     return sha.hexdigest()
 
-def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
-    """
-    Make API request to Databricks with proper error handling.
+# Shared limiter for all workspace-API calls. Self-tunes to the workspace rate
+# limit; MAX_WORKERS is the ceiling.
+_rate_limiter = AdaptiveRateLimiter(
+    start=min(4, Config.MAX_WORKERS),
+    max_limit=Config.MAX_WORKERS,
+)
 
-    Returns a (json_or_none, status_or_none) tuple so callers can branch
-    on HTTP status. Status is None when the request never reached the
-    server (timeout / connection error).
 
-    Rate limits (429) are retried internally with exponential backoff so a
-    transient throttle no longer aborts pagination. We only sleep when the
-    API actually throttles us — there is no unconditional inter-call sleep.
+def make_api_request(url: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
     """
-    max_attempts = 5
-    for attempt in range(max_attempts):
+    Make a GET request to Databricks.
+
+    Returns a (json_or_none, status_or_none) tuple so callers can branch on
+    HTTP status. Status is None when the request never reached the server.
+    """
+    def _do():
+        headers = {**_token_provider.header(), "Content-Type": "application/json"}
+        return requests.get(url, headers=headers, json=data, timeout=30)
+    resp = request_with_retry(
+        _do, limiter=_rate_limiter, base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
+    )
+    if resp is None:
+        return None, None
+    if resp.status_code == 200:
         try:
-            response = requests.get(url, headers=headers, json=data, timeout=30)
-
-            if response.status_code == 200:
-                return response.json(), 200
-            elif response.status_code == 429:
-                if attempt == max_attempts - 1:
-                    logger.warning(f"Rate limit persisted after {max_attempts} attempts for URL: {url}")
-                    return None, 429
-                backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
-                logger.warning(f"Rate limit hit for URL: {url}. Backing off {backoff}s (attempt {attempt + 1}/{max_attempts})")
-                time.sleep(backoff)
-                continue
-            else:
-                logger.warning(f"API request failed. URL: {url}, Status: {response.status_code}")
-                return None, response.status_code
-
-        except requests.exceptions.Timeout:
-            logger.error(f"Request timeout for URL: {url}")
-            return None, None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error for URL: {url}. Error: {str(e)}")
-            return None, None
-
-    return None, 429
+            return resp.json(), 200
+        except ValueError:
+            logger.warning(f"Non-JSON 200 response for URL: {url}")
+            return None, 200
+    logger.warning(f"API request failed. URL: {url}, Status: {resp.status_code}")
+    return None, resp.status_code
 
 def _get_with_retry(url: str, what: str) -> Optional[requests.Response]:
+    """GET a workspace-API URL through the shared limiter.
+
+    Returns the response, or None if the request never reached the server.
     """
-    Make a GET request, retrying with exponential backoff on HTTP 429.
-
-    Notebook export and get-status are issued concurrently across MAX_WORKERS
-    threads, which can trip workspace rate limits. Retrying keeps a throttled
-    notebook in the scan instead of dropping it.
-
-    Args:
-        url (str): URL to request
-        what (str): Short description of the operation, used in log messages
-
-    Returns:
-        Optional[requests.Response]: Response, or None if the request never
-            reached the server
-    """
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
-    max_attempts = 5
-    for attempt in range(max_attempts):
-        try:
-            response = requests.get(url, headers=headers, timeout=30)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error during {what}: {str(e)}")
-            return None
-
-        if response.status_code != 429:
-            return response
-
-        if attempt == max_attempts - 1:
-            logger.warning(f"Rate limit persisted after {max_attempts} attempts during {what}")
-            return response
-
-        # Equal jitter: half the exponential base plus a random component. This
-        # de-synchronizes concurrent retriers (discovery/export run across
-        # MAX_WORKERS threads) so they don't stampede the endpoint in lockstep
-        # after each backoff and re-trigger the same 429 burst.
-        base = Config.API_SLEEP_SECONDS * (2 ** attempt)
-        backoff = base / 2 + random.uniform(0, base / 2)
-        logger.warning(
-            f"Rate limit hit during {what}. Backing off {backoff:.1f}s "
-            f"(attempt {attempt + 1}/{max_attempts})"
-        )
-        time.sleep(backoff)
-
-    return None
+    return request_with_retry(
+        lambda: requests.get(url, headers=_token_provider.header(), timeout=30),
+        limiter=_rate_limiter,
+        base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
+    )
 
 
 def check_notebook_status(notebook_path: str) -> int:
@@ -560,44 +505,35 @@ def _list_dir(path: str) -> Tuple[List[Dict[str, Any]], bool]:
     return [], False
 
 
+def _list_children(path: str) -> Tuple[List[str], List[Dict[str, Any]], bool]:
+    """Classify one directory's entries into (dir_paths, leaf_objects, listed_ok)."""
+    objs, listed_ok = _list_dir(path)
+    dirs: List[str] = []
+    found: List[Dict[str, Any]] = []
+    for obj in objs:
+        obj_path = obj.get("path")
+        if not obj_path:
+            continue
+        obj_type = obj.get("object_type")
+        if obj_type in ("DIRECTORY", "REPO"):
+            dirs.append(obj_path)
+        elif obj_type in ("NOTEBOOK", "FILE"):
+            found.append(obj)
+    return dirs, found, listed_ok
+
+
 def discover_notebooks_via_workspace_list(time_filter_enabled: bool,
                                           last_edited_after: Optional[int]) -> List[Dict[str, Any]]:
-    """Fallback notebook discovery using /workspace/list (+ /get-status only when needed).
+    """Fallback discovery that walks the whole workspace tree via /workspace/list.
 
-    Used when /search-midtier/unified-search rejects token-based auth
-    (returns 403). See GitHub issue #330 for context. The standard
-    discoverable trees — /Users, /Shared, /Repos — cover the common cases;
-    missing roots are tolerated silently (404).
-
-    Performance: directory traversal is fanned out across a thread pool one
-    level at a time instead of recursing serially, and the per-leaf
-    /workspace/get-status call is skipped entirely when the list response
-    already carries `modified_at`. get-status is only issued (and then in
-    parallel) for the leaves that lack it — eliminating the O(notebooks)
-    serial round-trips that made this path time out on large workspaces.
+    Used when /search-midtier/unified-search rejects token-based auth. Traverses
+    from the workspace root so objects in any location are discovered.
     """
     cutoff_ms = last_edited_after if time_filter_enabled else None
 
-    # Phase 1: parallel breadth-first directory traversal.
-    leaves: List[Dict[str, Any]] = []
-    pending: List[str] = ["/Users", "/Shared", "/Repos"]
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        while pending:
-            next_dirs: List[str] = []
-            # pool.map results are consumed here on the main thread, so the
-            # shared counter increment below is safe without a lock.
-            for objs, listed_ok in pool.map(_list_dir, pending):
-                if not listed_ok:
-                    discovery_stats["list_failures"] += 1
-                for obj in objs:
-                    obj_type = obj.get("object_type")
-                    if not obj.get("path"):
-                        continue
-                    if obj_type in ("DIRECTORY", "REPO"):
-                        next_dirs.append(obj["path"])
-                    elif obj_type in ("NOTEBOOK", "FILE"):
-                        leaves.append(obj)
-            pending = next_dirs
+        leaves, failed = collect_tree(_list_children, ["/"], mapper=pool.map)
+    discovery_stats["list_failures"] += failed
 
     # Phase 2: time-window filter (only when enabled).
     if cutoff_ms is None:
@@ -1349,7 +1285,7 @@ def main_scanning_workflow():
     """
     Main function to orchestrate the secret scanning process.
     """
-    print("🔍 Starting TruffleHog Secret Scanning Workflow")
+    print(f"🔍 Starting TruffleHog Secret Scanning Workflow — workspace {_ws_name} (id={json_.get('workspace_id', 'unknown')})")
     print("=" * 60)
 
     # Get current workspace ID and run ID for database storage
@@ -1405,8 +1341,7 @@ def main_scanning_workflow():
 
     # Setup API request parameters
     url = f"{base_url}/api/2.0/search-midtier/unified-search"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
-    
+
     # Build filters - only include time filter if enabled
     filters = {"result_types": ["FILE", "NOTEBOOK"]}
     if time_filter_enabled:
@@ -1440,7 +1375,7 @@ def main_scanning_workflow():
                 del data["page_token"]  # Remove token for first request
 
             # Make API request
-            response, status_code = make_api_request(url, headers, data)
+            response, status_code = make_api_request(url, data)
 
             # /search-midtier/unified-search rejects token-based auth on
             # workspaces where the endpoint is browser-only. See GitHub
@@ -1556,24 +1491,39 @@ def main_scanning_workflow():
                 f"{materialize_stats['skip']} malformed (not counted as failures)."
             )
 
-        # Fail loudly only on genuine coverage gaps: notebooks that failed to
-        # export/read (throttling or export error), directory listings dropped
-        # to throttling during discovery, or findings that failed to persist.
-        # Expected skips above are intentionally excluded.
+        # A small residue of unreadable objects always exists on a real
+        # workspace (binary/non-notebook files, transiently failed exports).
+        # Report it as partial and only hard-fail when the gap is large enough
+        # to signal a systemic problem (sustained throttling), or a finding was
+        # lost. Tolerance: whichever is larger of a floor and a fraction of the
+        # objects discovered.
         unreadable = materialize_stats["error"]
         list_failures = discovery_stats["list_failures"]
         unwritten = insert_stats["attempted"] - insert_stats["written"]
-        if unreadable > 0 or list_failures > 0 or unwritten > 0:
+        coverage_gap, tolerance, _partial, _fatal = completeness_verdict(
+            total_notebooks_discovered, unreadable, list_failures, unwritten,
+            min_failures=Config.INCOMPLETE_SCAN_MIN,
+            max_fraction=Config.INCOMPLETE_SCAN_FRACTION,
+        )
+
+        if coverage_gap > 0:
+            detail = []
+            if unreadable:
+                detail.append(f"{unreadable} unreadable (export failure)")
+            if list_failures:
+                detail.append(f"{list_failures} directory listing(s) failed")
+            note = (f"PARTIAL SCAN for workspace {workspace_id}: {coverage_gap} of "
+                    f"{total_notebooks_discovered} discovered object(s) not scanned "
+                    f"({'; '.join(detail)}); tolerance={tolerance}.")
+            print(f"⚠️  {note}")
+            logger.warning(note)
+
+        if _fatal:
             problems = []
-            if unreadable > 0:
+            if coverage_gap > tolerance:
                 problems.append(
-                    f"{unreadable} discovered notebook(s) could not be read "
-                    f"(throttling or export failure)"
-                )
-            if list_failures > 0:
-                problems.append(
-                    f"{list_failures} directory listing(s) failed after retries "
-                    f"(throttling); their notebooks may be missing from discovery"
+                    f"{coverage_gap} of {total_notebooks_discovered} discovered object(s) "
+                    f"could not be scanned (exceeds tolerance {tolerance}) — likely sustained throttling"
                 )
             if unwritten > 0:
                 problems.append(

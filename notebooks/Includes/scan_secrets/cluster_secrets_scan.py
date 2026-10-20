@@ -64,6 +64,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, TokenProvider
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -104,51 +105,23 @@ db_client = SatDBClient(json_)
 # MAGIC     pip install requests==2.32.3 PyYAML==6.0.2
 # MAGIC fi
 # MAGIC
-# MAGIC # Check if TruffleHog is already installed (likely from notebook scanner)
-# MAGIC if [ -f /tmp/trufflehog ]; then
-# MAGIC     echo "TruffleHog already installed at /tmp/trufflehog"
-# MAGIC     echo "Skipping installation (reusing from notebook scanner)"
-# MAGIC else
-# MAGIC     # Download and install TruffleHog binary to /tmp directory
-# MAGIC     # Pinned to a tagged release to prevent supply-chain tampering via the
-# MAGIC     # mutable main branch. Bump TRUFFLEHOG_VERSION to upgrade.
-# MAGIC     TRUFFLEHOG_VERSION=v3.94.3
-# MAGIC     echo "Installing TruffleHog ${TRUFFLEHOG_VERSION}..."
-# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b /tmp "${TRUFFLEHOG_VERSION}"; then
-# MAGIC         if [ -f /tmp/trufflehog ]; then
-# MAGIC             echo "Setup completed successfully!"
-# MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
-# MAGIC         else
-# MAGIC             echo "ERROR: TruffleHog binary not found after installation!"
-# MAGIC             echo "Please verify network access and try again."
-# MAGIC             exit 1
-# MAGIC         fi
-# MAGIC     else
-# MAGIC         echo "=========================================="
-# MAGIC         echo "ERROR: Failed to download TruffleHog"
-# MAGIC         echo "=========================================="
-# MAGIC         echo ""
-# MAGIC         echo "The TruffleHog security scanner could not be downloaded from:"
-# MAGIC         echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
-# MAGIC         echo ""
-# MAGIC         echo "Possible causes:"
-# MAGIC         echo "  1. Network connectivity issues"
-# MAGIC         echo "  2. Firewall or proxy blocking external downloads"
-# MAGIC         echo "  3. GitHub.com access is restricted in your environment"
-# MAGIC         echo ""
-# MAGIC         echo "ACTION REQUIRED:"
-# MAGIC         echo "Please contact your IT/Security team to allowlist access to:"
-# MAGIC         echo "  - raw.githubusercontent.com"
-# MAGIC         echo "  - github.com/trufflesecurity"
-# MAGIC         echo ""
-# MAGIC         echo "Alternatively, you may need to configure a proxy or use an"
-# MAGIC         echo "internal mirror of the TruffleHog installation package."
-# MAGIC         echo "=========================================="
-# MAGIC         exit 1
+# MAGIC # Install to a private path with an atomic move; retry on failure.
+# MAGIC TRUFFLEHOG_VERSION=v3.94.3
+# MAGIC THBIN=/tmp/trufflehog_cluster
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   for attempt in 1 2 3 4 5; do
+# MAGIC     thdir=$(mktemp -d)
+# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b "$thdir" "${TRUFFLEHOG_VERSION}" && [ -x "$thdir/trufflehog" ]; then
+# MAGIC       mv -f "$thdir/trufflehog" "$THBIN"; rm -rf "$thdir"; break
 # MAGIC     fi
+# MAGIC     rm -rf "$thdir"; echo "TruffleHog install attempt ${attempt} failed; retrying..."; sleep $((attempt * 3))
+# MAGIC   done
 # MAGIC fi
-# MAGIC
-# MAGIC echo "✅ TruffleHog setup verified!"
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   exit 1
+# MAGIC fi
+# MAGIC echo "✅ TruffleHog setup verified at $THBIN!"
 
 # COMMAND ----------
 
@@ -169,9 +142,7 @@ import logging
 import concurrent.futures
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
-
-# Configure logging
-logger = loggr  # Use existing logger from common setup
+from urllib.parse import urlparse
 
 # db_client (initialized in common setup) is used only to mint a single OAuth
 # token; cluster API calls are issued directly (see get_all_clusters below) so
@@ -179,6 +150,15 @@ logger = loggr  # Use existing logger from common setup
 # Extract workspace context
 workspace_id = json_["workspace_id"]
 base_url = json_["url"]
+
+
+class _WorkspaceLogAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[ws={self.extra['name']} id={self.extra['id']}] {msg}", kwargs
+
+
+_ws_name = json_.get("workspace_name") or urlparse(base_url).hostname or "unknown"
+logger = _WorkspaceLogAdapter(loggr, {"name": _ws_name, "id": workspace_id})
 
 # Get run_id from parent orchestrator (shared with notebook scan)
 run_id = json_.get("run_id")
@@ -207,7 +187,7 @@ class Config:
     """Configuration class for cluster secret scanning"""
 
     # File paths
-    TRUFFLEHOG_BINARY = "/tmp/trufflehog"
+    TRUFFLEHOG_BINARY = "/tmp/trufflehog_cluster"
     TRUFFLEHOG_CONFIG = "/tmp/trufflehog_config.yaml"  # Shared with notebook scanner
     TEMP_CLUSTERS_DIR = "/tmp/clusters"
     RESULTS_LOG_FILE = "/tmp/cluster_secrets_scan_results.json"
@@ -283,55 +263,32 @@ print(f"🔧 Config field to scan: {Config.CONFIG_FIELD}")
 
 # COMMAND ----------
 
-# Mint a single OAuth token up front and reuse it (read-only) across all worker
-# threads below.
-#
-# SatDBClient is NOT thread-safe: db_client.get() mutates shared instance state
-# (self._token / self._url) and re-mints an OAuth token via a network POST on
-# EVERY request. Sharing one client across the ThreadPoolExecutor in
-# main_cluster_scanning_workflow() therefore (a) races the auth header between
-# threads and (b) hammers the /oidc/v1/token endpoint, which throttles under the
-# burst and makes token minting return None -> an "Authorization: Bearer None"
-# header -> HTTP 401 "Credential was not sent or was of an unsupported type for
-# this API". Larger workspaces (more clusters -> more concurrent mints) failed
-# while smaller ones passed. We mint once here and issue plain requests.get with
-# a local, immutable header, mirroring notebook_secret_scan.py.
-_api_token = db_client.get_temporary_oauth_token()
-if not _api_token:
+# Thread-safe token provider shared across all worker threads. SatDBClient is
+# not thread-safe, so cluster API calls are issued directly with a header from
+# the provider, which re-mints the token before it expires on long scans.
+_token_provider = TokenProvider(lambda: db_client.get_temporary_oauth_token())
+if not _token_provider.refresh():
     raise ValueError("Unable to obtain OAuth token for cluster scanning")
-_auth_headers = {"Authorization": f"Bearer {_api_token}", "User-Agent": "databricks-sat/0.1.0"}
+
+# Shared limiter for all cluster-API calls. Self-tunes to the workspace rate
+# limit; MAX_WORKERS is the ceiling.
+_rate_limiter = AdaptiveRateLimiter(
+    start=min(4, Config.MAX_WORKERS),
+    max_limit=Config.MAX_WORKERS,
+)
 
 
 def _get_with_retry(url: str, params: Optional[Dict[str, Any]], what: str) -> Optional[requests.Response]:
-    """GET with exponential backoff on HTTP 429.
+    """GET a cluster-API URL through the shared limiter.
 
-    Cluster list/get calls are issued concurrently across MAX_WORKERS threads,
-    which can trip workspace rate limits. Retrying keeps a throttled cluster in
-    the scan instead of dropping it. Mirrors notebook_secret_scan._get_with_retry.
+    Returns the response, or None if the request never reached the server.
     """
-    max_attempts = 5
-    for attempt in range(max_attempts):
-        try:
-            response = requests.get(url, headers=_auth_headers, params=params, timeout=60)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error during {what}: {str(e)}")
-            return None
-
-        if response.status_code != 429:
-            return response
-
-        if attempt == max_attempts - 1:
-            logger.warning(f"Rate limit persisted after {max_attempts} attempts during {what}")
-            return response
-
-        backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
-        logger.warning(
-            f"Rate limit hit during {what}. Backing off {backoff}s "
-            f"(attempt {attempt + 1}/{max_attempts})"
-        )
-        time.sleep(backoff)
-
-    return None
+    return request_with_retry(
+        lambda: requests.get(url, headers=_token_provider.header(), params=params, timeout=60),
+        limiter=_rate_limiter,
+        base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
+    )
 
 
 def get_all_clusters() -> List[Dict[str, Any]]:
@@ -865,7 +822,7 @@ def main_cluster_scanning_workflow():
     Returns:
         Dict: Summary statistics of the scan
     """
-    print("🔍 Starting Cluster Configuration Secret Scanning Workflow")
+    print(f"🔍 Starting Cluster Configuration Secret Scanning Workflow — workspace {_ws_name} (id={workspace_id})")
     print("=" * 60)
 
     # Get current run_id (passed from orchestrator or use fallback)
@@ -1027,7 +984,7 @@ print("📄 TruffleHog binary and config files:")
 print("✅ Cleanup information:")
 print("   - Temporary cluster config files are stored in /tmp/clusters/")
 print("   - These files will be automatically removed when the cluster terminates")
-print("   - TruffleHog binary is shared with notebook scanning (/tmp/trufflehog)")
+print("   - TruffleHog binary installed at /tmp/trufflehog_cluster")
 
 # Note: We don't use dbutils.notebook.exit() here to preserve the output above
 # The orchestrator doesn't need the return value - it just checks for completion
