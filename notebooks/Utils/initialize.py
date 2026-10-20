@@ -92,6 +92,7 @@ json_.update(
         "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
+        "driver_max_parallel_workspaces": 4,  # workspaces analysed at once when use_parallel_runs is True
         # accounts_console: URL for accounts console in special environments (gov cloud, DoD)
         # Leave empty for standard environments. Examples:
         #   - GovCloud (FedRAMP): "https://accounts.cloud.databricks.us"
