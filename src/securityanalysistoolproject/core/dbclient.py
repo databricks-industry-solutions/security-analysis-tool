@@ -682,15 +682,19 @@ class SatDBClient:
             
             if token.get("access_token") is None:
                 LOGGR.debug('no token')
-                raise Exception('No token')
+                raise Exception(
+                    f"Failed to get an Entra ID token for {scopeType}: {token.get('error')}: "
+                    f"{token.get('error_description')} (correlation_id: {token.get('correlation_id')})"
+                )
             else:
                 return(token.get("access_token"))
 
 
 
         except Exception as error:
-            print(f"Exception {error}")
-            print(str(error))
+            # Re-raise: returning None becomes "Bearer None" and a misleading 401 downstream.
+            LOGGR.error(f"Azure token request failed: {error}")
+            raise
 
 
     def getAWSTokenwithOAuth(self, baccount, client_id, client_secret):
