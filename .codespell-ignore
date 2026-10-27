@@ -7,4 +7,9 @@
 #   git diff --cached --name-only | xargs codespell --ignore-words=.codespell-ignore
 #
 # Keep entries lowercase; codespell matches case-insensitively.
-# (No entries yet — the codebase is currently typo-clean.)
+# Package names and checksum fragments in the generated documentation lockfile.
+bu
+coo
+devlop
+trough
+vew
