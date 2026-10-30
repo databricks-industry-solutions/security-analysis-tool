@@ -70,23 +70,33 @@ from core import  parser as pars
 from core.dbclient import SatDBClient
 from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree, completeness_verdict, TokenProvider
 
-if cloud_type =='azure': # use client secret
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-  mastername =' ' # this will not be present when using SPs
-  masterpwd = ' '  # we still need to send empty user/pwd.
-  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
-else: # Populate the master key for the Accounts API
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-  mastername = ' '
-  masterpwd = ' '
-  #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-  #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+# Account API credentials. The SAT app stores these as Unity Catalog secrets in
+# the results schema ({catalog}.{schema}.<key>); a classic install keeps them in
+# the sat_scope secret scope. Read UC first, then the legacy scope, so the scanner
+# authenticates under both the app (which has no sat_scope) and classic
+# deployments. Non-fatal on absence -- SatDBClient then fails loudly at token mint
+# rather than here at import.
+def _sat_cred(key):
+    parts = (json_.get("analysis_schema_name") or "").split(".")
+    if len(parts) >= 2:
+        try:
+            return dbutils.secrets.get(catalog=parts[0], schema=parts[1], key=key)
+        except Exception:
+            pass
+    try:
+        return dbutils.secrets.get(scope=json_.get("master_name_scope", "sat_scope"), key=key)
+    except Exception:
+        return ""
+
+json_.update({
+    "token": "dapijedi",
+    "client_id": _sat_cred("client-id"),
+    "client_secret": _sat_cred(json_.get("client_secret_key", "client-secret")),
+    "mastername": " ",
+    "masterpwd": " ",
+})
+if cloud_type == "azure":
+    json_.setdefault("tenant_id", _sat_cred("tenant-id"))
 
 db_client = SatDBClient(json_)
 

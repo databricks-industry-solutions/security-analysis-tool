@@ -15613,10 +15613,14 @@ PROVISION_SPECS = {
         'notebook': 'permission_analysis_data_collection',
         'params': {},
     },
+    # The secrets scanner mints an account OAuth token from the client-id/
+    # client-secret UC secrets to call the workspace APIs, so it needs client >= 4
+    # for the UC-secret read (client 3 returns empty).
     'secrets': {
         'job_name': 'SAT Secrets Scanner',
         'notebook': 'security_analysis_secrets_scanner',
         'params': {},
+        'client': '4',
     },
     # The three account-level jobs read the account-admin credentials from Unity
     # Catalog secrets, which serverless can only do on environment client >= 4
