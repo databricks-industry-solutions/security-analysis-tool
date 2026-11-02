@@ -148,6 +148,13 @@ Secret scanning behavior can be configured via the `trufflehog_detectors.yaml` f
   - Set to `0` to scan **ALL notebooks** in the workspace (no time filter)
 - **page_size**: Number of notebooks to process per API page (default: 50)
 - **custom detectors**: Add custom regex patterns to detect organization-specific secret formats
+- **ignored_findings**: Findings you reviewed and confirmed are not secrets, as a list of `detector` and `sha256` pairs. Copy both values from the `detector_name` and `secret_sha256` columns of `notebooks_secret_scan_results`. The same value found by another detector, and every other value, is still reported. Can also be set in `custom_trufflehog_detectors.yaml`.
+  ```yaml
+  settings:
+    ignored_findings:
+      - detector: Atlassian
+        sha256: "<secret_sha256 of the finding>"
+  ```
 
 ### Firewall Allowlist Requirements
 
