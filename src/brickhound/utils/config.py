@@ -95,6 +95,8 @@ class CollectorConfig:
 
     # Object type toggles - Compute
     collect_clusters: bool = True
+    # Job clusters are ephemeral and inherit permissions from their job.
+    collect_job_clusters: bool = False
     collect_instance_pools: bool = True
     collect_cluster_policies: bool = True
     collect_global_init_scripts: bool = True

@@ -202,6 +202,11 @@ COLLECTION_CONFIG = {
     'collect_groups': True,
     'collect_service_principals': True,
     'collect_clusters': True,
+    # Job clusters are ephemeral and get their permissions from the job, which
+    # is collected separately. On busy workspaces they are almost all of the
+    # clusters returned (every run in the last 30 days), and each one costs a
+    # permissions API call. Set to True to include them anyway.
+    'collect_job_clusters': False,
     'collect_instance_pools': True,
     'collect_cluster_policies': True,
     'collect_global_init_scripts': True,
@@ -1440,6 +1445,11 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"\n   Collecting Clusters for {ws_name}...")
                 try:
                     clusters = list(ws_client.clusters.list())
+                    skipped_job_clusters = 0
+                    if not COLLECTION_CONFIG.get('collect_job_clusters', False):
+                        all_cluster_count = len(clusters)
+                        clusters = [c for c in clusters if safe_get(c, 'cluster_source') != 'JOB']
+                        skipped_job_clusters = all_cluster_count - len(clusters)
                     for cluster in tqdm(clusters, desc="Clusters"):
                         cluster_id = safe_get(cluster, 'cluster_id')
                         all_vertices.append({
@@ -1484,7 +1494,8 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                                                 })
                             except:
                                 pass
-                    print(f"    Collected {len(clusters)} clusters")
+                    print(f"    Collected {len(clusters)} clusters"
+                          + (f" (skipped {skipped_job_clusters} job clusters)" if skipped_job_clusters else ""))
                 except Exception as e:
                     print(f"    Error collecting clusters: {e}")
 
@@ -2411,6 +2422,8 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 print(f"    Collecting Clusters...")
                 try:
                     ws_clusters = list(ws_client.clusters.list())
+                    if not COLLECTION_CONFIG.get('collect_job_clusters', False):
+                        ws_clusters = [c for c in ws_clusters if safe_get(c, 'cluster_source') != 'JOB']
                     for cluster in ws_clusters:
                         cluster_id = safe_get(cluster, 'cluster_id')
                         all_vertices.append({

@@ -311,6 +311,8 @@ class DatabricksCollector:
             return
         logger.info("Collecting clusters...")
         clusters = self.api_client.list_clusters()
+        if not self.collector_config.collect_job_clusters:
+            clusters = [c for c in clusters if c.get("cluster_source") != "JOB"]
 
         for cluster in tqdm(clusters, desc="Processing clusters"):
             self.graph_builder.build_cluster_node(cluster)
