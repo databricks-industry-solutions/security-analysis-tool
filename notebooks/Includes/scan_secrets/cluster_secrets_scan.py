@@ -200,6 +200,10 @@ class Config:
 
     # Scanning settings
     CONFIG_FIELD = "spark_env_vars"  # Which cluster config field to scan
+    # Job clusters are grouped by their spark_env_vars and only one cluster per
+    # distinct set is scanned (see select_clusters_to_scan). Set to True to
+    # fetch and scan every job cluster individually.
+    SCAN_ALL_JOB_CLUSTERS = False
 
 # Create temporary directories if they don't exist
 try:
@@ -324,6 +328,35 @@ def get_all_clusters() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Failed to get cluster list: {str(e)}")
         raise
+
+
+def select_clusters_to_scan(clusters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep every non-job cluster, and one job cluster per distinct env-var set.
+
+    Every job run creates its own job cluster, so clusters/list can return tens
+    of thousands of job clusters (every run in the last 30 days) that carry a
+    handful of distinct `spark_env_vars` sets. The list response already
+    includes `spark_env_vars`, so job clusters are grouped by their content
+    and only the most recent cluster in each group is fetched and scanned. Job
+    clusters with no env vars have nothing to scan and are dropped. Non-job
+    clusters always go through the full per-cluster fetch.
+    """
+    if Config.SCAN_ALL_JOB_CLUSTERS:
+        return clusters
+    selected: List[Dict[str, Any]] = []
+    latest: Dict[str, Dict[str, Any]] = {}
+    for cluster in clusters:
+        if cluster.get("cluster_source") != "JOB":
+            selected.append(cluster)
+            continue
+        env_vars = cluster.get(Config.CONFIG_FIELD)
+        if not env_vars:
+            continue
+        fingerprint = hashlib.sha256(json.dumps(env_vars, sort_keys=True).encode()).hexdigest()
+        current = latest.get(fingerprint)
+        if current is None or (cluster.get("start_time") or 0) > (current.get("start_time") or 0):
+            latest[fingerprint] = cluster
+    return selected + list(latest.values())
 
 
 def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
@@ -837,10 +870,15 @@ def main_cluster_scanning_workflow():
 
     try:
         # Get all clusters
-        clusters = get_all_clusters()
+        all_clusters = get_all_clusters()
+        clusters = select_clusters_to_scan(all_clusters)
         total_clusters = len(clusters)
+        skipped_job_runs = len(all_clusters) - total_clusters
 
-        logger.info(f"📊 Found {total_clusters} clusters to scan")
+        logger.info(f"📊 Found {len(all_clusters)} clusters, {total_clusters} to scan")
+        if skipped_job_runs:
+            print(f"ℹ️  Skipping {skipped_job_runs} job cluster(s): no env vars, or the same env vars "
+                  f"as a more recent job cluster that is scanned.")
 
         # Scan clusters in parallel (config fetch + TruffleHog scan per cluster
         # are independent). The previous version scanned serially with a fixed
