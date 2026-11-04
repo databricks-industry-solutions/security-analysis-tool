@@ -19,13 +19,8 @@ resources:
         - name: "analysis_schema_name"
           secret:
             permission: "READ"
-            scope: "sat_scope"
-            key: analysis_schema_name
-        - name: "sql-warehouse-id"
-          secret:
-            permission: "READ"
-            scope: "sat_scope"
-            key: sql-warehouse-id
+            scope: "{{.app_config_scope}}"
+            key: {{.analysis_schema_key}}
   jobs:
     brickhound_data_collection:
       name: "SAT Permissions Analysis - Data Collection (Experimental)"
@@ -48,6 +43,17 @@ resources:
           {{- end }}
           notebook_task:
             notebook_path: "/Workspace/Applications/SAT/files/notebooks/permission_analysis_data_collection"
+            base_parameters:
+              secret_scope: "{{.secret_scope}}"
+              secret_key_names: '{{.secret_key_names}}'
+              account_id_param: "{{.account_id}}"
+              client_id_param: "{{.client_id}}"
+              tenant_id_param: "{{.tenant_id}}"
+              subscription_id_param: "{{.subscription_id}}"
+              sql_warehouse_id_param: "{{.sql_warehouse_id}}"
+              analysis_schema_name_param: "{{.analysis_schema_name}}"
+              proxies_param: '{{.proxies}}'
+              use_sp_auth_param: "{{.use_sp_auth}}"
 
       {{- if eq .serverless false }}
       job_clusters:
@@ -94,6 +100,16 @@ resources:
               last_n_days: "30"
               resource_types: "dashboards,genie,apps"
               remediate: "no"
+              secret_scope: "{{.secret_scope}}"
+              secret_key_names: '{{.secret_key_names}}'
+              account_id_param: "{{.account_id}}"
+              client_id_param: "{{.client_id}}"
+              tenant_id_param: "{{.tenant_id}}"
+              subscription_id_param: "{{.subscription_id}}"
+              sql_warehouse_id_param: "{{.sql_warehouse_id}}"
+              analysis_schema_name_param: "{{.analysis_schema_name}}"
+              proxies_param: '{{.proxies}}'
+              use_sp_auth_param: "{{.use_sp_auth}}"
 
       {{- if eq .serverless false }}
       job_clusters:
@@ -140,6 +156,16 @@ resources:
               finding_types: "account_admin,workspace_admin"
               include_idp_managed: "no"
               remediate: "no"
+              secret_scope: "{{.secret_scope}}"
+              secret_key_names: '{{.secret_key_names}}'
+              account_id_param: "{{.account_id}}"
+              client_id_param: "{{.client_id}}"
+              tenant_id_param: "{{.tenant_id}}"
+              subscription_id_param: "{{.subscription_id}}"
+              sql_warehouse_id_param: "{{.sql_warehouse_id}}"
+              analysis_schema_name_param: "{{.analysis_schema_name}}"
+              proxies_param: '{{.proxies}}'
+              use_sp_auth_param: "{{.use_sp_auth}}"
 
       {{- if eq .serverless false }}
       job_clusters:
@@ -183,6 +209,16 @@ resources:
             base_parameters:
               inactive_days: "90"
               min_inactive: "1"
+              secret_scope: "{{.secret_scope}}"
+              secret_key_names: '{{.secret_key_names}}'
+              account_id_param: "{{.account_id}}"
+              client_id_param: "{{.client_id}}"
+              tenant_id_param: "{{.tenant_id}}"
+              subscription_id_param: "{{.subscription_id}}"
+              sql_warehouse_id_param: "{{.sql_warehouse_id}}"
+              analysis_schema_name_param: "{{.analysis_schema_name}}"
+              proxies_param: '{{.proxies}}'
+              use_sp_auth_param: "{{.use_sp_auth}}"
 
       {{- if eq .serverless false }}
       job_clusters:

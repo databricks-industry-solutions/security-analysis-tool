@@ -60,11 +60,11 @@ resource "databricks_job" "brickhound_share_to_account" {
 
       # Detection-only by default. Set remediate=yes deliberately to enable
       # continuous auto-removal of the "account users" ACL entry.
-      base_parameters = {
+      base_parameters = merge(local.sat_base_parameters, {
         last_n_days    = "30"
         resource_types = "dashboards,genie,apps"
         remediate      = "no"
-      }
+      })
     }
 
     timeout_seconds = 3600 # 1 hour

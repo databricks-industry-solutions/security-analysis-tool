@@ -29,19 +29,41 @@ Diagnosis notebooks for each cloud platform are available to help troubleshoot y
 
 <AccordionItem question="Misconfigured Secrets - Secret does not exist with scope">
 
-**Error:**
+**Error (example):**
 
 ```
-Secret does not exist with scope: sat_scope and key: sat_tokens
+SAT configuration missing required value 'client_secret'.
+Expected as job parameter or secret scope 'my-scope' key 'client-secret'.
+```
+
+Or for 0.8.x installs:
+
+```
+Secret does not exist with scope: sat_scope and key: account-console-id
 ```
 
 **Resolution:**
 
-Check if the tokens are configured with the correct names by listing and comparing with the configuration.
+1. Check which scope SAT is configured to use. For 0.9+ installs this is the `secret_scope` job parameter; for older installs it is hardcoded to `sat_scope`.
 
-```bash
-databricks --profile e2-sat secrets list-secrets sat_scope
-```
+2. List the keys present in that scope:
+   ```bash
+   databricks secrets list-secrets <scope-name>
+   ```
+
+3. Verify the SAT service principal has READ permission:
+   ```bash
+   databricks secrets list-acls <scope-name>
+   ```
+
+4. For the full list of required keys per cloud, see the [Secret Scope Reference](./installation/secret-scope.mdx).
+
+**Azure Key Vault-backed scopes:** these scopes cannot be written to via the Databricks
+Secrets API, so `manage_secrets` must be `false`. Grant the SAT service principal
+**Key Vault Secrets User** in Azure RBAC instead of using `put-acl`.
+
+**Scope does not exist:** ensure the scope name matches exactly (case-sensitive) and
+the SAT service principal's token has access to list scopes.
 
 </AccordionItem>
 
