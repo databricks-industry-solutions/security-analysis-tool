@@ -326,7 +326,15 @@ from clientpkgs.accounts_oauth import AccountsOAuth
 
 try:
     acct_oauth = AccountsOAuth(json_)
-    sp_list = acct_oauth.get_account_service_principals()
+    # Check 119 (IA-9) is the only consumer of acctserviceprincipalssecrets. When it is
+    # disabled for this cloud (azure=0 since #339), skip the per-principal secrets calls:
+    # on large accounts that loop alone can exceed the driver's 3000 s budget (#439).
+    ia9_enabled, _ = getSecurityBestPracticeRecord('119', cloud_type)
+    if ia9_enabled:
+        sp_list = acct_oauth.get_account_service_principals()
+    else:
+        loggr.info("Check 119 (IA-9) is disabled for this cloud; skipping service principal secrets collection")
+        sp_list = []
     sp_secrets_all = []
     for sp in sp_list:
         sp_id = str(sp.get('id', ''))
