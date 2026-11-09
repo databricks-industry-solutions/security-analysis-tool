@@ -7,13 +7,13 @@ import Admonition from '@theme/Admonition';
 
 This page covers behavior changes you should expect when upgrading an existing SAT install to a newer version. SAT does not auto-upgrade — see the [FAQ](./faq.mdx#sat-deployment-and-support) for the rationale.
 
-## Upgrading from 0.7.x to 0.8.0
+## Upgrading from older versions to 0.9.0
 
 ### What to do
 
-Re-deploy via your usual install path to pick up the 0.8.0 templates, new checks, and SDK update:
+Re-deploy via your usual install path to pick up the 0.9.0 templates, new checks, and SDK update:
 
-- **Standard install:** rerun `./install.sh` from a fresh clone of the `release/0.8.0` tag.
+- **Standard install:** rerun `./install.sh` from a fresh clone of the `release/0.9.0` tag.
 - **Terraform install:** `terraform apply` against the updated module.
 - **DABS bundle (advanced):** `databricks bundle deploy` from the repo root.
 
@@ -26,7 +26,7 @@ Full setup on the [Permissions Analysis page](./functionality/permissions-analys
 </Admonition>
 
 <Admonition type="info" title="Dashboard check count goes up">
-0.8.0 adds new security checks across Data Protection, Governance, Identity & Access, Network Security, and Informational categories. Your dashboard rows will increase the first time the driver runs after the upgrade. Review the new findings against your security baseline — some may surface deviations that were previously not measured. You can disable any check via the `7. update_sat_check_configuration` notebook (see [Usage → Modifying Security Best Practices](./usage.mdx#modifying-security-best-practices)).
+0.8.0 and above adds new security checks across Data Protection, Governance, Identity & Access, Network Security, and Informational categories. Your dashboard rows will increase the first time the driver runs after the upgrade. Review the new findings against your security baseline — some may surface deviations that were previously not measured. You can disable any check via the `7. update_sat_check_configuration` notebook (see [Usage → Modifying Security Best Practices](./usage.mdx#modifying-security-best-practices)).
 </Admonition>
 
 <Admonition type="info" title="IA-9 no longer evaluated on Azure">
@@ -41,7 +41,7 @@ If you see fewer Identity & Access rows on Azure dashboards than before, this is
 
 ### Other upgrade notes
 
-- **SDK version**: SAT 0.8.0 ships `dbl_sat_sdk-0.1.51`. Re-deploy picks it up automatically; manual installs should reference the wheel under `lib/`.
+- **SDK version**: SAT 0.9.0 ships `dbl_sat_sdk-0.1.54`. Re-deploy picks it up automatically; manual installs should reference the wheel under `lib/`.
 - **Serverless compute**: SAT jobs and the Permissions Analysis app pin to **Environment v5** for predictable behavior across DABS and Terraform installs.
 - **Secret scanner coverage**: cluster init scripts referenced via FUSE mount paths are now scanned alongside `spark_env_vars`. See [Cluster Secrets Scanning](./functionality/cluster-secrets-scanning.mdx).
 

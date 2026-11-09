@@ -1,0 +1,3 @@
+[codespell]
+# Generated lockfiles contain package names and checksums that look like typos.
+skip = *.lock
