@@ -196,3 +196,6 @@ docs/*Implementation_Plan.html
 
 # SAT test framework generated reports
 tests/automated/reports/
+
+# Customer-supplied custom TruffleHog detectors (merged at runtime, not shipped)
+configs/custom_trufflehog_detectors.yaml

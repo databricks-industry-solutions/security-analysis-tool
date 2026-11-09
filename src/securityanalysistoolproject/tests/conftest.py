@@ -9,7 +9,7 @@ from core.dbclient import SatDBClient
 @pytest.fixture(scope="session")
 def get_db_client():
     configParser = configparser.ConfigParser()   
-    configFilePath = '/Users/ramdas.murali/_dev_stuff/config.txt'
+    configFilePath = '/path/to/config.txt'
     configParser.read(configFilePath)
     LoggingUtils.set_logger_level(LoggingUtils.get_log_level('DEBUG'))
     LOGGR = LoggingUtils.get_logger()

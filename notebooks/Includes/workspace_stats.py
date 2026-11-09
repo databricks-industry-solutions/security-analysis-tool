@@ -6,7 +6,7 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### This Notebook gets all Account Stats and Workspace level Stats like number of jobs, numer of users, pricing tier, region, etc
+# MAGIC ##### This Notebook gets all Account Stats and Workspace level Stats like number of jobs, number of users, pricing tier, region, etc
 
 # COMMAND ----------
 

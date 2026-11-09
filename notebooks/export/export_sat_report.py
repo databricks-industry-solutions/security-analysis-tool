@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC ###Use this notebook to export your SAT findings. 
-# MAGIC Run the notebook and downlod the cell content as a CSV  from the Table below
+# MAGIC Run the notebook and download the cell content as a CSV  from the Table below
 
 # COMMAND ----------
 

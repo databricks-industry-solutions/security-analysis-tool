@@ -19,12 +19,13 @@ For example, version `2.1.3` indicates:
 
 ### **Branching Strategy**
 
-All pull requests will be merged into branches that correspond to the latest version. This ensures that the main branch always reflects the most current stable version of the project.
+Feature and bugfix branches are created **from the latest `release/x.x.x` branch — never from `main` and never from another feature branch.** Pull requests merge back into that same latest release branch, and the release branch is merged into `main` at release time. This keeps `main` protected and always reflecting the most current stable version of the project.
 
 #### **Branch Naming Convention**
 
-- **Feature Branches**: `feature/description`
+- **Feature Branches**: `feature/description` or `SFE-XXXX_feature_name`
 - **Bugfix Branches**: `bugfix/description`
+- **Chore Branches**: `chore/description`
 - **Release Branches**: `release/x.x.x`
 - **Hotfix Branches**: `hotfix/x.x.x`
 
@@ -36,12 +37,12 @@ All pull requests will be merged into branches that correspond to the latest ver
     - Merge all initial features and fixes into this branch.
 
 2. **Feature Addition**:
-    - Create a new branch from the main branch: `feature/description`.
+    - Create a new branch from the latest release branch: `feature/description`.
     - Implement the feature and create a pull request.
     - Merge the pull request into the latest release branch (e.g., `release/1.1.0`).
 
 3. **Bug Fixing**:
-    - Create a new branch from the main branch: `bugfix/description`.
+    - Create a new branch from the latest release branch: `bugfix/description`.
     - Implement the fix and create a pull request.
     - Merge the pull request into the latest release branch (e.g., `release/1.0.1`).
 

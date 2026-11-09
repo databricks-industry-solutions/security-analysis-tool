@@ -40,7 +40,7 @@ def test_getindex(get_db_client):
     jsonstr = get_db_client
     dbvectorobj = VectorSearch(jsonstr)
     
-    endpointlst = dbvectorobj.get_index('fsi.ccr.orders_index_ks')
+    endpointlst = dbvectorobj.get_index('example_catalog.example_schema.orders_index')
     print(endpointlst)
 
 

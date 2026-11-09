@@ -1,4 +1,4 @@
-''' assignable resoures module'''
+''' assignable resources module'''
 import time
 from core.dbclient import SatDBClient
 

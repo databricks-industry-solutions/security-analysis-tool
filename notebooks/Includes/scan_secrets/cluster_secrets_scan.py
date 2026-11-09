@@ -64,6 +64,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, TokenProvider
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -74,7 +75,7 @@ elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):
   mastername =' ' # this will not be present when using SPs
   masterpwd = ' '  # we still need to send empty user/pwd.
   json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
-else: #lets populate master key for accounts api
+else: # Populate the master key for the Accounts API
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
   json_.update({'token':'dapijedi', 'client_secret': client_secret})
   mastername = ' '
@@ -104,51 +105,23 @@ db_client = SatDBClient(json_)
 # MAGIC     pip install requests==2.32.3 PyYAML==6.0.2
 # MAGIC fi
 # MAGIC
-# MAGIC # Check if TruffleHog is already installed (likely from notebook scanner)
-# MAGIC if [ -f /tmp/trufflehog ]; then
-# MAGIC     echo "TruffleHog already installed at /tmp/trufflehog"
-# MAGIC     echo "Skipping installation (reusing from notebook scanner)"
-# MAGIC else
-# MAGIC     # Download and install TruffleHog binary to /tmp directory
-# MAGIC     # Pinned to a tagged release to prevent supply-chain tampering via the
-# MAGIC     # mutable main branch. Bump TRUFFLEHOG_VERSION to upgrade.
-# MAGIC     TRUFFLEHOG_VERSION=v3.94.3
-# MAGIC     echo "Installing TruffleHog ${TRUFFLEHOG_VERSION}..."
-# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b /tmp "${TRUFFLEHOG_VERSION}"; then
-# MAGIC         if [ -f /tmp/trufflehog ]; then
-# MAGIC             echo "Setup completed successfully!"
-# MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
-# MAGIC         else
-# MAGIC             echo "ERROR: TruffleHog binary not found after installation!"
-# MAGIC             echo "Please verify network access and try again."
-# MAGIC             exit 1
-# MAGIC         fi
-# MAGIC     else
-# MAGIC         echo "=========================================="
-# MAGIC         echo "ERROR: Failed to download TruffleHog"
-# MAGIC         echo "=========================================="
-# MAGIC         echo ""
-# MAGIC         echo "The TruffleHog security scanner could not be downloaded from:"
-# MAGIC         echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
-# MAGIC         echo ""
-# MAGIC         echo "Possible causes:"
-# MAGIC         echo "  1. Network connectivity issues"
-# MAGIC         echo "  2. Firewall or proxy blocking external downloads"
-# MAGIC         echo "  3. GitHub.com access is restricted in your environment"
-# MAGIC         echo ""
-# MAGIC         echo "ACTION REQUIRED:"
-# MAGIC         echo "Please contact your IT/Security team to allowlist access to:"
-# MAGIC         echo "  - raw.githubusercontent.com"
-# MAGIC         echo "  - github.com/trufflesecurity"
-# MAGIC         echo ""
-# MAGIC         echo "Alternatively, you may need to configure a proxy or use an"
-# MAGIC         echo "internal mirror of the TruffleHog installation package."
-# MAGIC         echo "=========================================="
-# MAGIC         exit 1
+# MAGIC # Install to a private path with an atomic move; retry on failure.
+# MAGIC TRUFFLEHOG_VERSION=v3.94.3
+# MAGIC THBIN=/tmp/trufflehog_cluster
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   for attempt in 1 2 3 4 5; do
+# MAGIC     thdir=$(mktemp -d)
+# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b "$thdir" "${TRUFFLEHOG_VERSION}" && [ -x "$thdir/trufflehog" ]; then
+# MAGIC       mv -f "$thdir/trufflehog" "$THBIN"; rm -rf "$thdir"; break
 # MAGIC     fi
+# MAGIC     rm -rf "$thdir"; echo "TruffleHog install attempt ${attempt} failed; retrying..."; sleep $((attempt * 3))
+# MAGIC   done
 # MAGIC fi
-# MAGIC
-# MAGIC echo "✅ TruffleHog setup verified!"
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   exit 1
+# MAGIC fi
+# MAGIC echo "✅ TruffleHog setup verified at $THBIN!"
 
 # COMMAND ----------
 
@@ -166,16 +139,26 @@ import subprocess
 import time
 import hashlib
 import logging
+import concurrent.futures
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
-# Configure logging
-logger = loggr  # Use existing logger from common setup
-
-# Use db_client for direct API calls (already initialized in common setup)
+# db_client (initialized in common setup) is used only to mint a single OAuth
+# token; cluster API calls are issued directly (see get_all_clusters below) so
+# they are safe to run concurrently.
 # Extract workspace context
 workspace_id = json_["workspace_id"]
 base_url = json_["url"]
+
+
+class _WorkspaceLogAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[ws={self.extra['name']} id={self.extra['id']}] {msg}", kwargs
+
+
+_ws_name = json_.get("workspace_name") or urlparse(base_url).hostname or "unknown"
+logger = _WorkspaceLogAdapter(loggr, {"name": _ws_name, "id": workspace_id})
 
 # Get run_id from parent orchestrator (shared with notebook scan)
 run_id = json_.get("run_id")
@@ -204,13 +187,16 @@ class Config:
     """Configuration class for cluster secret scanning"""
 
     # File paths
-    TRUFFLEHOG_BINARY = "/tmp/trufflehog"
+    TRUFFLEHOG_BINARY = "/tmp/trufflehog_cluster"
     TRUFFLEHOG_CONFIG = "/tmp/trufflehog_config.yaml"  # Shared with notebook scanner
     TEMP_CLUSTERS_DIR = "/tmp/clusters"
     RESULTS_LOG_FILE = "/tmp/cluster_secrets_scan_results.json"
 
     # API settings
     API_SLEEP_SECONDS = 10  # Rate limiting between cluster API calls
+    # Concurrency: clusters are scanned in parallel (config fetch + TruffleHog
+    # scan are independent per cluster). DB inserts stay on the main thread.
+    MAX_WORKERS = 8
 
     # Scanning settings
     CONFIG_FIELD = "spark_env_vars"  # Which cluster config field to scan
@@ -277,19 +263,62 @@ print(f"🔧 Config field to scan: {Config.CONFIG_FIELD}")
 
 # COMMAND ----------
 
+# Thread-safe token provider shared across all worker threads. SatDBClient is
+# not thread-safe, so cluster API calls are issued directly with a header from
+# the provider, which re-mints the token before it expires on long scans.
+_token_provider = TokenProvider(lambda: db_client.get_temporary_oauth_token())
+if not _token_provider.refresh():
+    raise ValueError("Unable to obtain OAuth token for cluster scanning")
+
+# Shared limiter for all cluster-API calls. Self-tunes to the workspace rate
+# limit; MAX_WORKERS is the ceiling.
+_rate_limiter = AdaptiveRateLimiter(
+    start=min(4, Config.MAX_WORKERS),
+    max_limit=Config.MAX_WORKERS,
+)
+
+
+def _get_with_retry(url: str, params: Optional[Dict[str, Any]], what: str) -> Optional[requests.Response]:
+    """GET a cluster-API URL through the shared limiter.
+
+    Returns the response, or None if the request never reached the server.
+    """
+    return request_with_retry(
+        lambda: requests.get(url, headers=_token_provider.header(), params=params, timeout=60),
+        limiter=_rate_limiter,
+        base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
+    )
+
+
 def get_all_clusters() -> List[Dict[str, Any]]:
     """
     Get list of all clusters in the workspace (including terminated).
-    Uses direct API call to /clusters/list endpoint.
+    Issues /api/2.1/clusters/list directly with the pre-minted token and follows
+    next_page_token pagination.
 
     Returns:
         List[Dict]: List of cluster objects with cluster_id, cluster_name, state
     """
     try:
         logger.info("Fetching list of all clusters via direct API call...")
-        # Direct API call to clusters/list endpoint
-        response = db_client.get('/clusters/list', json_params={}, version='2.1')
-        clusters = response.get('clusters', [])
+        url = f"{base_url}/api/2.1/clusters/list"
+        clusters: List[Dict[str, Any]] = []
+        params: Dict[str, Any] = {}
+        while True:
+            response = _get_with_retry(url, params, "clusters/list")
+            if response is None:
+                raise Exception("clusters/list request failed (no response)")
+            if response.status_code != 200:
+                raise Exception(
+                    f"clusters/list failed with code {response.status_code}--{response.text}"
+                )
+            body = response.json()
+            clusters.extend(body.get("clusters", []))
+            next_token = body.get("next_page_token")
+            if not next_token:
+                break
+            params = {"page_token": next_token}
         logger.info(f"Found {len(clusters)} clusters in workspace")
         return clusters
     except Exception as e:
@@ -300,7 +329,8 @@ def get_all_clusters() -> List[Dict[str, Any]]:
 def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
     """
     Get full cluster configuration including spark_env_vars.
-    Uses direct API call to /clusters/get endpoint.
+    Issues /api/2.1/clusters/get directly with the pre-minted token. Safe to call
+    concurrently: no shared client state is mutated.
 
     Args:
         cluster_id: Cluster ID
@@ -309,32 +339,18 @@ def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
         Dict: Full cluster configuration dict or None if error
     """
     try:
-        # Direct API call to clusters/get endpoint
-        json_params = {'cluster_id': cluster_id}
-        response = db_client.get('/clusters/get', json_params=json_params, version='2.1')
-
-        # The response has format: {'satelements': <data>, 'http_status_code': 200}
-        # Extract the actual cluster config from 'satelements' key
-        if isinstance(response, dict) and 'satelements' in response:
-            satelements = response['satelements']
-
-            # satelements can be either a list or dict depending on the endpoint
-            if isinstance(satelements, list):
-                # For single-item endpoints like /clusters/get, it's a list with one element
-                if len(satelements) > 0:
-                    return satelements[0]  # Return first (and only) item
-                else:
-                    logger.warning(f"Empty satelements list for cluster {cluster_id}")
-                    return None
-            elif isinstance(satelements, dict):
-                # Already a dict, return as-is
-                return satelements
-            else:
-                logger.warning(f"Unexpected satelements type: {type(satelements)}")
-                return None
-        else:
-            # Response doesn't have satelements wrapper, return as-is
-            return response
+        url = f"{base_url}/api/2.1/clusters/get"
+        response = _get_with_retry(url, {"cluster_id": cluster_id}, f"clusters/get for {cluster_id}")
+        if response is None:
+            logger.warning(f"No response getting config for cluster {cluster_id}")
+            return None
+        if response.status_code != 200:
+            logger.warning(
+                f"clusters/get for {cluster_id} returned {response.status_code}: {response.text}"
+            )
+            return None
+        # /clusters/get returns the cluster config dict directly.
+        return response.json()
     except Exception as e:
         logger.error(f"Failed to get cluster config for {cluster_id}: {str(e)}")
         return None
@@ -755,6 +771,50 @@ print("✅ Database storage functions defined successfully!")
 
 # COMMAND ----------
 
+def _scan_one_cluster_for_secrets(cluster: Dict[str, Any]) -> Dict[str, Any]:
+    """Fetch a cluster's config and scan its env vars for secrets.
+
+    Pure worker: performs no DB writes, so it is safe to run in a thread pool.
+    Returns a result dict the main thread aggregates and persists. `scanned`
+    is True only when env vars were present and actually scanned (matching the
+    original loop's counting).
+    """
+    cluster_id = cluster.get('cluster_id')
+    cluster_name = cluster.get('cluster_name', 'Unknown')
+    result = {"cluster_id": cluster_id, "cluster_name": cluster_name, "scanned": False, "secrets": []}
+
+    try:
+        cluster_config = get_cluster_config(cluster_id)
+        if not cluster_config:
+            logger.warning(f"Failed to get config for cluster {cluster_id}, skipping")
+            return result
+
+        env_vars = extract_spark_env_vars(cluster_config)
+        if not env_vars:
+            logger.debug(f"No environment variables in cluster {cluster_name}, skipping")
+            return result
+
+        logger.info(f"Scanning {len(env_vars)} environment variables in cluster {cluster_name}")
+        file_path = serialize_env_vars_to_file(cluster_id, cluster_name, env_vars)
+        try:
+            built_in_results, custom_results = scan_cluster_config_for_secrets(file_path)
+            secrets_found = process_trufflehog_output(
+                built_in_results, custom_results, cluster_id, cluster_name, file_path
+            )
+        finally:
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+
+        result["scanned"] = True
+        result["secrets"] = secrets_found or []
+        return result
+    except Exception as e:
+        logger.error(f"Error scanning cluster {cluster_id}: {str(e)}")
+        return result
+
+
 def main_cluster_scanning_workflow():
     """
     Main workflow for scanning cluster configurations for secrets.
@@ -762,7 +822,7 @@ def main_cluster_scanning_workflow():
     Returns:
         Dict: Summary statistics of the scan
     """
-    print("🔍 Starting Cluster Configuration Secret Scanning Workflow")
+    print(f"🔍 Starting Cluster Configuration Secret Scanning Workflow — workspace {_ws_name} (id={workspace_id})")
     print("=" * 60)
 
     # Get current run_id (passed from orchestrator or use fallback)
@@ -782,53 +842,29 @@ def main_cluster_scanning_workflow():
 
         logger.info(f"📊 Found {total_clusters} clusters to scan")
 
-        # Scan each cluster
-        for idx, cluster in enumerate(clusters, 1):
-            cluster_id = cluster.get('cluster_id')
-            cluster_name = cluster.get('cluster_name', 'Unknown')
-
-            logger.info(f"[{idx}/{total_clusters}] Processing cluster: {cluster_name} ({cluster_id})")
-
-            try:
-                # Get full cluster configuration
-                cluster_config = get_cluster_config(cluster_id)
-
-                if not cluster_config:
-                    logger.warning(f"Failed to get config for cluster {cluster_id}, skipping")
+        # Scan clusters in parallel (config fetch + TruffleHog scan per cluster
+        # are independent). The previous version scanned serially with a fixed
+        # API_SLEEP_SECONDS pause between every cluster — that sleep is gone;
+        # DB inserts are kept on the main thread for Spark safety.
+        max_workers = min(Config.MAX_WORKERS, max(1, total_clusters))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for res in pool.map(_scan_one_cluster_for_secrets, clusters):
+                if not res["scanned"]:
                     continue
-
-                # Extract spark_env_vars
-                env_vars = extract_spark_env_vars(cluster_config)
-
-                if not env_vars:
-                    logger.debug(f"No environment variables in cluster {cluster_name}, skipping")
-                    continue
-
-                logger.info(f"Scanning {len(env_vars)} environment variables in cluster {cluster_name}")
-
-                # Serialize to temp file
-                file_path = serialize_env_vars_to_file(cluster_id, cluster_name, env_vars)
-
-                # Run TruffleHog dual-scan
-                built_in_results, custom_results = scan_cluster_config_for_secrets(file_path)
-
-                # Process results
-                secrets_found = process_trufflehog_output(
-                    built_in_results, custom_results, cluster_id, cluster_name, file_path
-                )
 
                 clusters_scanned += 1
+                secrets_found = res["secrets"]
 
                 if secrets_found:
                     clusters_with_secrets += 1
                     total_secrets_found += len(secrets_found)
 
-                    print(f"  🚨 SECRETS DETECTED in {cluster_name}: {len(secrets_found)} secrets found")
+                    print(f"  🚨 SECRETS DETECTED in {res['cluster_name']}: {len(secrets_found)} secrets found")
 
-                    # Store in database
+                    # Store in database (main thread)
                     cluster_metadata = {
-                        "cluster_id": cluster_id,
-                        "cluster_name": cluster_name,
+                        "cluster_id": res["cluster_id"],
+                        "cluster_name": res["cluster_name"],
                         "config_field": Config.CONFIG_FIELD,
                         "secrets_found": len(secrets_found),
                         "secret_details": secrets_found
@@ -836,24 +872,10 @@ def main_cluster_scanning_workflow():
 
                     try:
                         insert_cluster_secret_scan_results(workspace_id, cluster_metadata, current_run_id)
-                        logger.info(f"Stored {len(secrets_found)} secrets for cluster {cluster_id}")
+                        logger.info(f"Stored {len(secrets_found)} secrets for cluster {res['cluster_id']}")
                     except Exception as insert_error:
-                        logger.error(f"Database insertion failed for cluster {cluster_id}: {str(insert_error)}")
+                        logger.error(f"Database insertion failed for cluster {res['cluster_id']}: {str(insert_error)}")
                         print(f"  ❌ Database insertion failed: {str(insert_error)}")
-
-                # Clean up temp file
-                try:
-                    os.remove(file_path)
-                except:
-                    pass
-
-                # Rate limiting
-                if idx < total_clusters:
-                    time.sleep(Config.API_SLEEP_SECONDS)
-
-            except Exception as e:
-                logger.error(f"Error scanning cluster {cluster_id}: {str(e)}")
-                continue
 
         # Insert tracking row if no secrets found anywhere
         if total_secrets_found == 0:
@@ -962,7 +984,7 @@ print("📄 TruffleHog binary and config files:")
 print("✅ Cleanup information:")
 print("   - Temporary cluster config files are stored in /tmp/clusters/")
 print("   - These files will be automatically removed when the cluster terminates")
-print("   - TruffleHog binary is shared with notebook scanning (/tmp/trufflehog)")
+print("   - TruffleHog binary installed at /tmp/trufflehog_cluster")
 
 # Note: We don't use dbutils.notebook.exit() here to preserve the output above
 # The orchestrator doesn't need the return value - it just checks for completion

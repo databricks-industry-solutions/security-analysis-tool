@@ -6,9 +6,10 @@ A modern, dashboard-style security analysis app for Databricks environments.
 Inspired by BloodHound for Active Directory analysis.
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import os
 import re
+import json
 import uuid
 import logging
 from databricks.sdk import WorkspaceClient
@@ -81,6 +82,9 @@ logger.info(f"[CONFIG] BRICKHOUND_SCHEMA={BRICKHOUND_SCHEMA} -> CATALOG={CATALOG
 VERTICES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_vertices"
 EDGES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_edges"
 METADATA_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_collection_metadata"
+SHARED_TO_ACCOUNT_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_shared_to_account"
+PRIVILEGED_NON_IDP_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_privileged_non_idp"
+DENYLIST_CANDIDATES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.brickhound_denylist_candidates"
 
 logger.info(f"[CONFIG FINAL] CATALOG={CATALOG}, SCHEMA={SCHEMA}")
 logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")
@@ -359,6 +363,18 @@ def exec_query_df(sql_query, params=None):
             raise NoAccessError(_no_access_message(e)) from e
         logger.exception("executing query")
         return []
+
+
+def _truthy(val):
+    """Coerce a Statement-Execution cell to a bool.
+
+    The SQL Statement Execution API returns every value as a string, so a
+    BOOLEAN column arrives as 'true'/'false'. Treat those (and real bools)
+    consistently; anything else is falsy.
+    """
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() == 'true'
 
 
 def get_latest_run_id():
@@ -751,6 +767,20 @@ def _no_access_handler(exc):
 # MAIN UI
 # ============================================================================
 
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve static assets (e.g. the favicon) from the app's static/ dir."""
+    return send_from_directory(_STATIC_DIR, filename)
+
+
+@app.route('/favicon.svg')
+def favicon():
+    return send_from_directory(_STATIC_DIR, "favicon.svg")
+
+
 @app.route('/')
 def index():
     return get_main_html()
@@ -764,6 +794,7 @@ def get_main_html():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Permissions Analysis Tool - Security Analysis</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <style>
         :root {
             --bg-dark: #0f172a;
@@ -1632,6 +1663,10 @@ def get_main_html():
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                             Impersonation
                         </div>
+                        <div class="nav-item" data-page="denylistbuilder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                            Denylist Builder
+                        </div>
                     </div>
 
                     <div class="nav-section">
@@ -1655,6 +1690,14 @@ def get_main_html():
                         <div class="nav-item" data-page="secretscopes">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             Secret Scope Access
+                        </div>
+                        <div class="nav-item" data-page="sharedtoaccount">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            Shared to All Users
+                        </div>
+                        <div class="nav-item" data-page="privilegednonidp">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                            Privileged Non-IdP
                         </div>
                     </div>
                 </div>
@@ -1700,7 +1743,7 @@ def get_main_html():
             <!-- Stats Header Bar -->
             <div class="stats-header-bar" id="stats-header-bar">
                 <div class="stats-header-toggle">
-                    <span class="stats-header-toggle-text">Environment Overview and Metrics</span>
+                    <span class="stats-header-toggle-text">Graph Collection — Inventory &amp; Coverage</span>
                     <button class="stats-header-toggle-btn" onclick="toggleStatsHeader()">
                         <span id="stats-toggle-text">Collapse</span>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1765,18 +1808,28 @@ def get_main_html():
                         <li><strong>Security Reports</strong> - Pre-built reports for common security concerns</li>
                     </ul>
 
+                    <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🪪 Account &amp; Identity Governance <span style="font-size: 0.7em; font-weight: 600; color: #10b981; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle;">New</span></h3>
+                    <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 9px; font-size: 0.88em;">
+                        Account-level detections that complement Automatic Identity Management (AIM). These run their own account-wide detection jobs and are surfaced with their own point-in-time coverage:
+                    </p>
+                    <ul style="line-height: 1.5; color: var(--text-secondary); list-style-position: inside; margin-bottom: 13px; font-size: 0.88em;">
+                        <li><strong>Shared to All Users</strong> - Find resources shared with the built-in <em>account users</em> group (i.e. exposed to everyone in the account) and optionally remediate them</li>
+                        <li><strong>Privileged Non-IdP</strong> - Surface Account Admin / Workspace Admin held by identities that aren't IdP-managed (no <code>externalId</code>), or assigned directly to users and service principals — access that bypasses your identity provider's joiner/mover/leaver governance</li>
+                        <li><strong>Denylist Builder</strong> - Rank IdP groups by inactive members to find safe <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">account access denylist</a> candidates, plus an Entra ID dynamic-group rule helper to scale a single denylist entry to thousands of users</li>
+                    </ul>
+
                     <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🚀 Getting Started</h3>
                     
-                    <!-- Environment Overview Instructions -->
+                    <!-- Graph Collection status instructions -->
                     <div style="padding: 13px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.02) 100%); border: 2px solid rgba(16, 185, 129, 0.2); border-radius: 10px; margin-bottom: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                         <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 7px;">
                             <div style="width: 30px; height: 30px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 15px;">
                                 📈
                             </div>
-                            <div style="font-size: 0.9em; font-weight: 700; color: var(--text-primary);">Environment Overview & Metrics</div>
+                            <div style="font-size: 0.9em; font-weight: 700; color: var(--text-primary);">Graph Collection — Inventory &amp; Coverage</div>
                         </div>
                         <p style="color: var(--text-secondary); font-size: 0.82em; line-height: 1.35; margin: 0 0 0 39px;">
-                            The top header bar shows the Databricks environment overview, metrics, and workspace coverage. Use the <strong>Data Collection</strong> dropdown to switch between different collection runs and view historical data.
+                            When you open an <strong>Analysis Tool</strong> or graph <strong>Security Report</strong>, a header bar shows the graph collection's inventory and workspace coverage. Use its <strong>Data Collection</strong> dropdown to switch between collection runs and view historical data. Account &amp; Identity Governance pages run their own account-wide jobs and show their own coverage instead.
                         </p>
                     </div>
                     
@@ -2083,6 +2136,57 @@ def get_main_html():
 
                 <div id="secretscopes-results"></div>
             </div>
+
+            <!-- Shared to All Account Users Report Page -->
+            <div class="page" id="page-sharedtoaccount">
+                <div class="page-header">
+                    <h1 class="page-title">Shared to All Account Users</h1>
+                    <p class="page-desc">Dashboards, Genie Agents, and Apps shared with the built-in "account users" group — accessible to every user in the account. Detected from the audit log by the SAT shared-to-account-users job.</p>
+                </div>
+                <div id="sharedtoaccount-results"></div>
+            </div>
+
+            <!-- Privileged Non-IdP Group Identities Report Page -->
+            <div class="page" id="page-privilegednonidp">
+                <div class="page-header">
+                    <h1 class="page-title">Privileged Non-IdP Group Identities</h1>
+                    <p class="page-desc">Groups that are not IdP-managed (no externalId) holding Account Admin or Workspace Admin, plus users and service principals with those roles assigned directly. Detected by the SAT privileged-non-IdP job.</p>
+                </div>
+                <div id="privilegednonidp-results"></div>
+            </div>
+
+            <!-- Account Denylist Builder Page -->
+            <div class="page" id="page-denylistbuilder">
+                <div class="page-header">
+                    <h1 class="page-title">Account Denylist Builder</h1>
+                    <p class="page-desc">Tools to help build an <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">account access denylist</a>: find IdP groups whose members aren't using Databricks, and generate Entra ID dynamic-group rules that scale a single denylist entry to thousands of users.</p>
+                </div>
+
+                <!-- Section 1: Inactive-user group candidates -->
+                <div style="margin-bottom: 28px;">
+                    <h2 style="font-size: 1.1em; margin-bottom: 4px;">1. Inactive-User Group Candidates</h2>
+                    <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 12px;">
+                        IdP-managed (external) groups ranked by count of inactive members (users with no
+                        <code>system.access.audit</code> activity in the look-back window — a heuristic for the
+                        <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/#status" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">"Inactive: No usage"</a> status). Groups whose members mostly aren't logging in are good denylist candidates.
+                        <br><span style="color: #f59e0b;">Note:</span> under Automatic Identity Management, IdP group memberships are resolved just-in-time and aren't returned by the account SCIM API, so this ranking can be empty even for populated groups. Where that's the case, use the Entra rule builder below.
+                    </p>
+                    <div id="denylist-candidates-results"></div>
+                </div>
+
+                <!-- Section 2: Entra ID dynamic group rule helper -->
+                <div>
+                    <h2 style="font-size: 1.1em; margin-bottom: 4px;">2. Entra ID Dynamic Group Rule Builder</h2>
+                    <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 12px;">
+                        Denylists support up to 100 groups, but a single
+                        <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-membership" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">Entra ID dynamic group</a>
+                        can contain thousands of users via a membership rule. Build a rule below, then create the
+                        group in Entra and add it to your denylist. See also
+                        <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-rule-more-efficient" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">writing efficient rules</a>.
+                    </p>
+                    <div id="entra-rule-builder"></div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -2092,8 +2196,8 @@ def get_main_html():
 
         // Track current page and loaded reports
         let currentPage = 'dashboard';
-        const reportPages = ['isolated', 'orphaned', 'overprivileged', 'highprivilege', 'secretscopes'];
-        const analysisPages = ['principal', 'resource', 'paths', 'risk', 'impersonation'];
+        const reportPages = ['isolated', 'orphaned', 'overprivileged', 'highprivilege', 'secretscopes', 'sharedtoaccount', 'privilegednonidp'];
+        const analysisPages = ['principal', 'resource', 'paths', 'risk', 'impersonation', 'denylistbuilder'];
 
         // Track which analyses have been performed (so we can refresh on run change)
         let lastAnalysis = {
@@ -2130,9 +2234,19 @@ def get_main_html():
             // Show the page
             document.getElementById('page-' + page).classList.add('active');
             currentPage = page;
-            
+
             // Update URL hash
             window.location.hash = page;
+
+            // The global stats header reflects the BrickHound graph collection run
+            // (inventory counts + collector workspace coverage, driven by the run
+            // selector). Hide it where it doesn't belong: the home/intro page (no
+            // data context yet) and the account-level detection pages, which have
+            // their own run_id and per-report coverage block — showing the global
+            // bar there only causes two-coverage-widget confusion.
+            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder'];
+            const statsBar = document.getElementById('stats-header-bar');
+            if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
             // Auto-load reports when navigating to report pages
             if (page === 'isolated') loadIsolatedPrincipals();
@@ -2140,6 +2254,9 @@ def get_main_html():
             else if (page === 'overprivileged') loadOverPrivileged();
             else if (page === 'highprivilege') loadHighPrivilege();
             else if (page === 'secretscopes') loadSecretScopeAccess();
+            else if (page === 'sharedtoaccount') loadSharedToAccount();
+            else if (page === 'privilegednonidp') loadPrivilegedNonIdp();
+            else if (page === 'denylistbuilder') loadDenylistBuilder();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
                 loadSourcePrincipals();
@@ -3608,7 +3725,580 @@ def get_main_html():
             }
         }
 
+        // ── Account Denylist Builder ──────────────────────────────────────
+        async function loadDenylistBuilder() {
+            renderEntraRuleBuilder();       // static; no data dependency
+            await loadDenylistCandidates(); // data-backed table
+        }
+
+        async function loadDenylistCandidates() {
+            const container = document.getElementById('denylist-candidates-results');
+            container.innerHTML = '<div class="loading">Loading inactive-user group candidates...</div>';
+            try {
+                const res = await fetch('/api/report/denylist-candidates');
+                const result = await res.json();
+                if (result.error) { showEmpty('denylist-candidates-results', result.error); return; }
+
+                const data = result.data || [];
+                if (data.length === 0) {
+                    showEmpty('denylist-candidates-results',
+                        'No candidate IdP groups found in the latest run. Note: with Automatic Identity Management (AIM), ' +
+                        'external group memberships are resolved just-in-time and are not returned by the account SCIM API, ' +
+                        'so member-based ranking may be empty even for populated groups. Use the Entra ID dynamic-group ' +
+                        'rule helper below to build denylist groups.');
+                    return;
+                }
+                const detTs = result.detection_timestamp
+                    ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC' : 'Unknown';
+                const days = result.inactive_days || '?';
+                const acctScope = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
+                // renderCoverageBlock escapes chip text, so pass it raw here.
+                const acctLabel = result.account_id
+                    ? 'Account ' + result.account_id + ' (all IdP groups)'
+                    : 'Account-wide (all IdP groups)';
+
+                let html = `
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Accounts',
+                        scopeIcon: '🏛️',
+                        scanned: acctScope,
+                        failed: [],
+                        inReport: [acctLabel],
+                        note: 'Denylist analysis is account-level over account SCIM groups. Inactive = no system.access.audit activity in ' + escapeHtml(String(days)) + ' days. Metastore shown for environment context.'
+                    })}
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Candidate Groups</span>
+                            <span class="results-count">${data.length} group${data.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">
+                            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1.4fr; gap: 8px; padding: 10px 24px; font-size: 0.75em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+                                <div>Group</div><div>Inactive</div><div>Active</div><div>Total</div><div>Inactive %</div><div>Reason</div>
+                            </div>`;
+                data.forEach((c, idx) => {
+                    const isLast = idx === data.length - 1;
+                    const pct = (c.inactive_pct != null) ? c.inactive_pct + '%' : '';
+                    const gname = escapeHtml(c.group_name || c.group_id);
+                    // Group name links to the account-console group detail page.
+                    const nameHtml = c.console_url
+                        ? `<a href="${escapeHtml(c.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none; font-weight: 500;">${gname}</a>`
+                        : `<span style="font-weight:500;">${gname}</span>`;
+                    const reason = escapeHtml(c.candidate_reason || '');
+                    html += `
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1.4fr; gap: 8px; padding: 12px 24px; align-items: center; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                            <div style="min-width:0;"><span style="font-size:18px;">👥</span> ${nameHtml} <span style="color:#10b981;font-size:0.8em;">IdP</span></div>
+                            <div style="color:#ef4444;font-weight:600;">${c.inactive_members ?? 0}</div>
+                            <div style="color:#10b981;">${c.active_members ?? 0}</div>
+                            <div>${c.total_members ?? 0}</div>
+                            <div>${pct}</div>
+                            <div style="font-size:0.8em;color:var(--text-muted);">${reason}</div>
+                        </div>`;
+                });
+                html += `</div></div>`;
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('denylist-candidates-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Entra ID dynamic membership rule scenarios. Each builds a single
+        // parenthesized clause; multiple clauses combine via a chosen operator.
+        // `needs`: '' (no input), 'value' (single), or 'list' (comma-separated).
+        // Escape regex-special chars in a domain for use in an Entra -match rule.
+        // Domains only contain '.' as a regex metacharacter; escape it to '\.'.
+        // Built via fromCharCode(92) to avoid backslash literals (which the Python
+        // string layer serving this HTML would otherwise mangle).
+        const _bs = String.fromCharCode(92);
+        const _nl = String.fromCharCode(10);  // newline without a backslash escape (Python-string safe)
+        const _escRe = s => s.split('.').join(_bs + '.');
+        const ENTRA_SCENARIOS = {
+            guests:         { label: 'Is a guest user', needs: '',
+                              rule: () => '(user.userType -eq "Guest")' },
+            members_only:   { label: 'Is a member (not guest)', needs: '',
+                              rule: () => '(user.userType -eq "Member")' },
+            disabled:       { label: 'Account is disabled', needs: '',
+                              rule: () => '(user.accountEnabled -eq false)' },
+            upn_domain:     { label: 'UPN ends with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.userPrincipalName -match ".*@${_escRe(d)}$"`).join(' -or ') + ')' },
+            upn_not_domain: { label: 'UPN does NOT end with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.userPrincipalName -notMatch ".*@${_escRe(d)}$"`).join(' -and ') + ')' },
+            mail_domain:    { label: 'Mail ends with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.mail -match ".*@${_escRe(d)}$"`).join(' -or ') + ')' },
+            mail_not_domain:{ label: 'Mail does NOT end with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.mail -notMatch ".*@${_escRe(d)}$"`).join(' -and ') + ')' },
+            dept_eq:        { label: 'Department equals', needs: 'value',
+                              rule: v => `(user.department -eq "${v}")` },
+            dept_ne:        { label: 'Department not equals', needs: 'value',
+                              rule: v => `(user.department -ne "${v}")` },
+            dept_in:        { label: 'Department in list', needs: 'list',
+                              rule: v => `(user.department -in [${v.map(x => `"${x}"`).join(', ')}])` },
+            company_eq:     { label: 'Company name equals', needs: 'value',
+                              rule: v => `(user.companyName -eq "${v}")` },
+            company_ne:     { label: 'Company name not equals', needs: 'value',
+                              rule: v => `(user.companyName -ne "${v}")` },
+            company_in:     { label: 'Company name in list', needs: 'list',
+                              rule: v => `(user.companyName -in [${v.map(x => `"${x}"`).join(', ')}])` },
+        };
+
+        // Working set of condition rows for the builder.
+        let _entraConditions = [];
+        let _entraJoin = '-and';
+
+        function renderEntraRuleBuilder() {
+            _entraConditions = [{ scenario: 'guests', value: '' }];
+            _entraJoin = '-and';
+            const el = document.getElementById('entra-rule-builder');
+            el.innerHTML = `
+                <div style="background: var(--bg-input); border-radius: 12px; padding: 20px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <span style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Combine conditions with</span>
+                        <select id="entra-join" onchange="onEntraJoinChange()" style="padding: 6px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em;">
+                            <option value="-and">AND (match all)</option>
+                            <option value="-or">OR (match any)</option>
+                        </select>
+                    </div>
+                    <div id="entra-conditions"></div>
+                    <button onclick="addEntraCondition()" style="margin-top: 10px; padding: 6px 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--accent); cursor: pointer; font-size: 0.85em;">+ Add condition</button>
+                    <div style="margin-top: 16px;">
+                        <label style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Membership rule (paste into Entra "Dynamic membership rules")</label>
+                        <div style="position: relative; margin-top: 6px;">
+                            <pre id="entra-rule-output" style="background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; padding: 14px; white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.9em; min-height: 48px;"></pre>
+                            <button onclick="copyEntraRule()" style="position: absolute; top: 8px; right: 8px; padding: 4px 10px; background: var(--accent); border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.8em;">Copy</button>
+                        </div>
+                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 8px;">
+                            Docs: <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-membership" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">dynamic membership rules</a> ·
+                            <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-rule-more-efficient" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">efficient rules</a>
+                        </div>
+                    </div>
+                </div>`;
+            renderEntraConditions();
+        }
+
+        function renderEntraConditions() {
+            const wrap = document.getElementById('entra-conditions');
+            const scenarioOpts = (sel) => Object.entries(ENTRA_SCENARIOS)
+                .map(([k, s]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${s.label}</option>`).join('');
+            wrap.innerHTML = _entraConditions.map((c, i) => {
+                const spec = ENTRA_SCENARIOS[c.scenario];
+                const needsInput = spec.needs !== '';
+                const placeholder = spec.needs === 'list' ? 'comma-separated, e.g. contoso.com, fabrikam.com' : 'value';
+                return `
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                        <span style="color: var(--text-muted); font-size: 0.85em; width: 44px;">${i === 0 ? 'Where' : (_entraJoin === '-and' ? 'AND' : 'OR')}</span>
+                        <select onchange="updateEntraCondition(${i}, 'scenario', this.value)" style="flex: 1; min-width: 200px; padding: 8px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.88em;">
+                            ${scenarioOpts(c.scenario)}
+                        </select>
+                        <input type="text" value="${escapeHtml(c.value || '')}" oninput="updateEntraCondition(${i}, 'value', this.value)" placeholder="${placeholder}" style="flex: 2; min-width: 200px; padding: 8px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.88em; ${needsInput ? '' : 'visibility: hidden;'}">
+                        <button onclick="removeEntraCondition(${i})" title="Remove" style="padding: 6px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: #ef4444; cursor: pointer; ${_entraConditions.length === 1 ? 'visibility: hidden;' : ''}">✕</button>
+                    </div>`;
+            }).join('');
+            regenEntraRule();
+        }
+
+        function addEntraCondition() { _entraConditions.push({ scenario: 'guests', value: '' }); renderEntraConditions(); }
+        function removeEntraCondition(i) { _entraConditions.splice(i, 1); renderEntraConditions(); }
+        function updateEntraCondition(i, field, val) {
+            _entraConditions[i][field] = val;
+            if (field === 'scenario') renderEntraConditions();  // input visibility may change
+            else regenEntraRule();
+        }
+        function onEntraJoinChange() {
+            _entraJoin = document.getElementById('entra-join').value;
+            renderEntraConditions();
+        }
+
+        function regenEntraRule() {
+            const clauses = [];
+            let incomplete = false;
+            for (const c of _entraConditions) {
+                const spec = ENTRA_SCENARIOS[c.scenario];
+                try {
+                    if (spec.needs === '') { clauses.push(spec.rule()); }
+                    else {
+                        const raw = (c.value || '').trim();
+                        if (!raw) { incomplete = true; continue; }
+                        if (spec.needs === 'list') {
+                            const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+                            if (!parts.length) { incomplete = true; continue; }
+                            clauses.push(spec.rule(parts));
+                        } else {
+                            clauses.push(spec.rule(raw));
+                        }
+                    }
+                } catch (e) { /* skip malformed */ }
+            }
+            let rule;
+            if (!clauses.length) rule = '// add at least one complete condition';
+            else {
+                rule = clauses.length === 1 ? clauses[0] : clauses.join(` ${_entraJoin} `);
+                if (incomplete) rule += _nl + '// note: some conditions are missing values and were skipped';
+            }
+            const out = document.getElementById('entra-rule-output');
+            if (out) out.textContent = rule;
+        }
+
+        function copyEntraRule() {
+            const txt = document.getElementById('entra-rule-output').textContent
+                .split(_nl).filter(l => !l.trim().startsWith('//')).join(_nl).trim();
+            navigator.clipboard.writeText(txt).catch(() => {});
+        }
+
+        // Scope-adaptive coverage block for the SAT audit-log/SCIM tabs (Shared
+        // to All Users, Privileged Non-IdP, Denylist). Rendered in the tab BODY —
+        // never touches BrickHound's global graph-collection header.
+        //
+        // cfg = {
+        //   dateTs:   detection timestamp string (shown "Data Collection Date & Time"),
+        //   scopeLabel: 'Accounts' | 'Metastores' | 'Workspaces' (drives the box title),
+        //   scopeIcon:  emoji for the scope entities,
+        //   scanned:  [{workspace/name, reason}]  (per-entity coverage; optional),
+        //   failed:   [{workspace/name, reason}]  (coverage gaps w/ reason; optional),
+        //   inReport: [names]                      (entities whose data appears),
+        //   note:     extra one-line context (optional)
+        // }
+        // Collapse a long list of rendered items behind a "Show N more" toggle so
+        // reports covering hundreds of workspaces don't render as a giant wall.
+        function collapsibleList(items, renderItem, limit) {
+            if (!items.length) return '';
+            if (items.length <= limit) return items.map(renderItem).join('');
+            const id = 'covmore-' + (collapsibleList._n = (collapsibleList._n || 0) + 1);
+            const shown = items.slice(0, limit).map(renderItem).join('');
+            const rest = items.slice(limit).map(renderItem).join('');
+            const remaining = items.length - limit;
+            return `${shown}`
+                + `<span id="${id}" style="display:none;">${rest}</span>`
+                + `<a href="javascript:void(0)" onclick="const r=document.getElementById('${id}');`
+                + `const on=r.style.display==='none';r.style.display=on?'inline':'none';`
+                + `this.textContent=on?'Show less':'Show ${remaining} more';" `
+                + `style="display:inline-block; margin:2px 4px; font-size:0.85em; color:var(--accent);">`
+                + `Show ${remaining} more</a>`;
+        }
+
+        function renderCoverageBlock(cfg) {
+            const icon = cfg.scopeIcon || '🏢';
+            const CHIP_LIMIT = 12;   // chips shown before collapsing the remainder
+            const FAIL_LIMIT = 8;    // failed entries shown before collapsing
+            const nameOf = (x) => (x && typeof x === 'object') ? (x.workspace || x.name || '') : x;
+            const okChip = (x) => `<span style="display:inline-block; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:2px 8px; margin:2px; font-size:0.85em;">${icon} ${escapeHtml(nameOf(x))}</span>`;
+            // Failed entries render the reason inline (not hover-only) so it's fully visible.
+            const failItem = (x) => `<div style="padding:4px 0; font-size:0.85em;"><span style="color:#ef4444;">${icon} ${escapeHtml(nameOf(x))}</span><span style="color:var(--text-muted);"> — ${escapeHtml(x.reason || 'not scanned')}</span></div>`;
+
+            const scanned = cfg.scanned || [];
+            const failed = cfg.failed || [];
+            const inReport = cfg.inReport || [];
+
+            // Coverage summary line — only meaningful when we have a per-entity scan.
+            let coverageHtml = '';
+            if (scanned.length || failed.length) {
+                const okLine = `<span style="color:#10b981; font-weight:600;">✓ ${scanned.length} scanned</span>`;
+                const failLine = failed.length ? ` · <span style="color:#ef4444; font-weight:600;">✗ ${failed.length} not scanned</span>` : '';
+                coverageHtml = `<div style="margin-top:6px; font-size:0.9em;">${okLine}${failLine}</div>`
+                    + (failed.length ? `<div style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px;">${collapsibleList(failed, failItem, FAIL_LIMIT)}</div>` : '');
+            }
+            const inReportHtml = inReport.length
+                ? `<div style="margin-top:6px;">${collapsibleList(inReport, okChip, CHIP_LIMIT)}</div>`
+                : '<div style="margin-top:6px; color: var(--text-muted); font-size:0.9em;">None</div>';
+            const noteHtml = cfg.note ? `<div style="margin-top:8px; font-size:0.78em; color:var(--text-muted);">${escapeHtml(cfg.note)}</div>` : '';
+            const dateHtml = cfg.dateTs
+                ? `<div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">Data Collection Date &amp; Time</div>
+                   <div style="margin-top:6px; font-size:0.95em;">🕒 ${escapeHtml(cfg.dateTs)}</div>` : '';
+
+            return `
+                <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 1; min-width: 240px;">
+                        ${dateHtml}
+                    </div>
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 2; min-width: 300px;">
+                        <div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">${escapeHtml(cfg.scopeLabel || 'Workspaces')} in this Report</div>
+                        ${coverageHtml}
+                        <div style="font-size:0.78em; color:var(--text-muted); margin-top:${coverageHtml ? '10px' : '6px'};">In this report${inReport.length ? ` (${inReport.length})` : ''}:</div>
+                        ${inReportHtml}
+                        ${noteHtml}
+                    </div>
+                </div>`;
+        }
+
+        async function loadPrivilegedNonIdp() {
+            const container = document.getElementById('privilegednonidp-results');
+            container.innerHTML = '<div class="loading">Loading privileged non-IdP identities...</div>';
+
+            try {
+                const res = await fetch('/api/report/privileged-non-idp');
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('privilegednonidp-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                if (data.length === 0) {
+                    showEmpty('privilegednonidp-results', 'No privileged non-IdP-managed identities found in the latest detection run.');
+                    return;
+                }
+
+                const detTs = result.detection_timestamp
+                    ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC'
+                    : 'Unknown';
+
+                const typeLabels = { account_admin: 'Account Admin', workspace_admin: 'Workspace Admin' };
+
+                // Group by finding_type
+                const byType = {};
+                data.forEach(d => {
+                    const t = d.finding_type || 'unknown';
+                    if (!byType[t]) byType[t] = [];
+                    byType[t].push(d);
+                });
+
+                let html = `
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Workspaces',
+                        scopeIcon: '🏢',
+                        scanned: result.workspaces_scanned || [],
+                        failed: result.workspaces_failed || [],
+                        inReport: result.workspaces_in_report || [],
+                        note: 'Account Admin is detected account-wide; Workspace Admin is resolved per-workspace via the account workspace-assignment API (coverage above).'
+                    })}
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Privileged Non-IdP Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: var(--warning);">${summary.account_admin || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Acct Admin</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: var(--warning);">${summary.workspace_admin || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">WS Admin</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${summary.remediated || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Remediated</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${(summary.total || 0) - (summary.remediated || 0)}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Not Remediated</div></div>
+                        </div>
+                    </div>
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Privileged Identities</span>
+                            <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Categorize a principal_type into a display bucket.
+                const categoryOf = (pt) => (pt || '').includes('Group') ? 'Groups'
+                                         : (pt || '').includes('ServicePrincipal') ? 'Service Principals'
+                                         : 'Users';
+                const categoryEmoji = { 'Users': '👤', 'Groups': '👥', 'Service Principals': '🤖' };
+                const categoryOrder = ['Users', 'Groups', 'Service Principals'];
+
+                ['account_admin', 'workspace_admin'].forEach((type) => {
+                    const items = byType[type];
+                    if (!items || !items.length) return;
+                    const roleLabel = typeLabels[type] || type;
+
+                    // Role header
+                    html += `
+                        <div class="tree-type-group">
+                            <div style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span style="font-size: 20px;">🛡️</span>
+                                <span style="font-weight: 700; flex: 1;">${roleLabel} (${items.length})</span>
+                            </div>`;
+
+                    // Split into Users / Groups / Service Principals subsections
+                    const byCat = { 'Users': [], 'Groups': [], 'Service Principals': [] };
+                    items.forEach(it => byCat[categoryOf(it.principal_type)].push(it));
+
+                    categoryOrder.forEach((cat) => {
+                        const catItems = byCat[cat];
+                        if (!catItems.length) return;
+                        const secId = 'privnonidp-' + type + '-' + cat.replace(/\s+/g, '');
+                        html += `
+                            <div class="tree-type-header" onclick="toggleTreeSection('${secId}')" style="display: flex; align-items: center; gap: 12px; padding: 12px 24px 12px 40px; cursor: pointer; border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${secId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 16px;">${categoryEmoji[cat]}</span>
+                                <span style="font-weight: 600; flex: 1;">${cat} (${catItems.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${secId}-content" style="display: none;">`;
+
+                        catItems.forEach((item, idx) => {
+                            const isLast = idx === catItems.length - 1;
+                            const who = formatPrincipalName(item.principal_name, item.principal_email || item.application_id, null, item.principal_id);
+                            // Link the name to the account console for investigation.
+                            const nameHtml = item.console_url
+                                ? `<a href="${escapeHtml(item.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${who}</a>`
+                                : who;
+                            const roleBadge = `<span style="color: var(--warning); font-weight: 600;">${roleLabel}</span>`;
+                            const idpBadge = item.is_idp_managed
+                                ? ' <span style="color: #10b981;">· IdP-managed</span>'
+                                : ' <span style="color: #ef4444;">· ⚠ Non-IdP</span>';
+                            const remBadge = item.auto_remediated
+                                ? ' <span style="color: #10b981;">· ✓ Remediated</span>'
+                                : ' <span style="color: #ef4444;">· Not Remediated</span>';
+                            const wsHtml = (item.workspace_name || item.workspace_id)
+                                ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(item.workspace_name || item.workspace_id)}</span>` : '';
+
+                            html += `
+                                <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 64px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                    <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="font-weight: 500; word-break: break-all;">${categoryEmoji[cat]} ${nameHtml}</div>
+                                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">${wsHtml}</div>
+                                    </div>
+                                    <div style="font-size: 0.8em; white-space: nowrap;">${roleBadge}${idpBadge}${remBadge}</div>
+                                </div>`;
+                        });
+                        html += `</div>`;
+                    });
+
+                    html += `</div>`;
+                });
+
+                html += `</div></div>`;
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('privilegednonidp-results', 'Error: ' + e.message);
+            }
+        }
+
         // Load Orphaned Resources Report
+        async function loadSharedToAccount() {
+            const container = document.getElementById('sharedtoaccount-results');
+            container.innerHTML = '<div class="loading">Loading shared-to-account-users findings...</div>';
+
+            try {
+                const res = await fetch('/api/report/shared-to-account');
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('sharedtoaccount-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                if (data.length === 0) {
+                    showEmpty('sharedtoaccount-results', 'No resources shared to all account users were found in the latest detection run.');
+                    return;
+                }
+
+                const typeLabels = { dashboards: 'Dashboards', genie: 'Genie Agents', apps: 'Apps' };
+                const typeEmoji  = { dashboards: '📊', genie: '💬', apps: '🧩' };
+
+                // Group by resource_type
+                const byType = {};
+                data.forEach(d => {
+                    const t = d.resource_type || 'unknown';
+                    if (!byType[t]) byType[t] = [];
+                    byType[t].push(d);
+                });
+
+                // Header: detection run date/time + metastore scope + workspaces where shares were found.
+                const detTs = result.detection_timestamp
+                    ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC'
+                    : 'Unknown';
+                const metastores = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
+
+                let html = `
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Metastores',
+                        scopeIcon: '🗄️',
+                        scanned: metastores,
+                        failed: [],
+                        inReport: result.workspaces || [],
+                        note: 'Detection is account-wide over the audit log (system.access.audit) of the metastore above; the entities in this report are the workspaces where shares were found.'
+                    })}
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Shared to All Account Users</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${summary.outstanding || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Not Remediated</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${summary.remediated || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Remediated</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Shared Resources</span>
+                            <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                const typeOrder = ['dashboards', 'genie', 'apps'];
+                const sortedTypes = Object.keys(byType).sort((a, b) => {
+                    const aIdx = typeOrder.indexOf(a), bIdx = typeOrder.indexOf(b);
+                    if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                });
+
+                sortedTypes.forEach((type) => {
+                    const items = byType[type];
+                    const typeId = 'sharedtoaccount-type-' + type.replace(/[^a-zA-Z]/g, '');
+                    const label = typeLabels[type] || type;
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${typeEmoji[type] || '📄'}</span>
+                                <span style="font-weight: 600; flex: 1;">${label} (${items.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    items.forEach((item, idx) => {
+                        const isLast = idx === items.length - 1;
+                        const name = escapeHtml(item.resource_id || 'unknown');
+                        // Format sharer like other tabs: 👤 Full Name (email)
+                        const sharedBy = formatPrincipalName(item.shared_by_display_name, item.shared_by, null, null);
+                        const wsName = item.workspace_name || item.workspace_id || '';
+                        const when = escapeHtml((item.event_time || '').replace('T', ' ').slice(0, 19));
+                        const url = item.resource_url || '';
+
+                        const statusBadge = item.auto_remediated
+                            ? '<span style="color: #10b981; font-weight: 600;">✓ Remediated</span>'
+                            : '<span style="color: #ef4444; font-weight: 600;">⚠ Not Remediated</span>';
+
+                        const nameHtml = url
+                            ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${name}</a>`
+                            : name;
+
+                        const wsHtml = wsName
+                            ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(wsName)}</span>` : '';
+                        const whenHtml = when ? `<span style="margin-left: 10px;">🕒 ${when}</span>` : '';
+                        const sharedToHtml = item.group_name
+                            ? `<span style="margin-left: 10px;">👥 Shared to: ${escapeHtml(item.group_name)}</span>` : '';
+
+                        html += `
+                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; word-break: break-all;">${nameHtml}</div>
+                                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                                        <span>👤 Shared by ${sharedBy}</span>${sharedToHtml}${wsHtml}${whenHtml}
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.8em; white-space: nowrap;">${statusBadge}</div>
+                            </div>`;
+                    });
+
+                    html += `</div></div>`;
+                });
+
+                html += `</div></div>`;
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('sharedtoaccount-results', 'Error: ' + e.message);
+            }
+        }
+
         async function loadOrphanedResources() {
             const container = document.getElementById('orphaned-results');
             container.innerHTML = '<div class="loading">Analyzing resources...</div>';
@@ -7284,6 +7974,276 @@ def report_orphaned_resources():
             'types': len(types)
         },
         'data': results
+    })
+
+
+@app.route('/api/report/shared-to-account')
+def report_shared_to_account():
+    """Resources shared with the built-in 'account users' group.
+
+    Reads the latest snapshot from brickhound_shared_to_account, which is
+    populated by the SAT shared-to-account-users detection notebook/job
+    (notebooks/brickhound/05_share_to_account.py). This endpoint is read-only;
+    remediation happens only in the notebook/job which holds SP credentials.
+    """
+    # This report has its own run_id (per detection run), independent of the
+    # graph collection run_id. Query runs as the calling user (OBO), so Unity
+    # Catalog enforces their grants on the findings table.
+    query = f"""
+    WITH latest AS (
+        SELECT MAX(run_id) AS run_id FROM {SHARED_TO_ACCOUNT_TABLE}
+    )
+    SELECT
+        s.resource_type,
+        s.resource_id,
+        s.workspace_id,
+        s.workspace_name,
+        s.resource_url,
+        s.shared_by,
+        s.shared_by_display_name,
+        s.permission,
+        s.group_name,
+        CAST(s.event_time AS STRING)          AS event_time,
+        CAST(s.detection_timestamp AS STRING) AS detection_timestamp,
+        s.auto_remediated
+    FROM {SHARED_TO_ACCOUNT_TABLE} s
+    JOIN latest l ON s.run_id = l.run_id
+    ORDER BY s.event_time DESC
+    """
+
+    try:
+        results = exec_query_df(query)
+    except Exception as e:
+        # Table absent (job never run) or no read grant — surface a friendly hint.
+        logger.warning("shared-to-account report query failed: %s", e)
+        return jsonify({
+            'error': (
+                'No shared-to-account-users data available yet. Run the '
+                '"SAT Permissions Analysis - Shared to Account Users" job (or the '
+                'notebooks/brickhound/05_share_to_account.py notebook) to populate it.'
+            )
+        })
+
+    # Statement Execution returns booleans as strings ('true'/'false'); normalize.
+    for r in results:
+        r['auto_remediated'] = _truthy(r.get('auto_remediated'))
+    remediated = sum(1 for r in results if r['auto_remediated'])
+    outstanding = len(results) - remediated
+
+    # Header context: detection run timestamp + the distinct workspaces where
+    # shares were found (in-report). Scope = the metastore the system tables
+    # (system.access.audit) are read from, since detection is account-wide over
+    # that metastore rather than a per-workspace scan.
+    detection_timestamp = results[0]['detection_timestamp'] if results else None
+    workspaces = sorted({
+        (r.get('workspace_name') or r.get('workspace_id') or '')
+        for r in results if (r.get('workspace_name') or r.get('workspace_id'))
+    })
+    metastores = []
+    try:
+        rows = exec_query_df("SELECT current_metastore() AS m")
+        if rows and rows[0].get('m'):
+            metastores = [rows[0]['m']]
+    except Exception:
+        metastores = []
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total': len(results),
+            'outstanding': outstanding,
+            'remediated': remediated,
+        },
+        'metastores': metastores,
+        'detection_timestamp': detection_timestamp,
+        'workspaces': workspaces,
+        'data': results,
+    })
+
+
+@app.route('/api/report/privileged-non-idp')
+def report_privileged_non_idp():
+    """Privileged identities that are not IdP-managed.
+
+    Reads the latest snapshot from brickhound_privileged_non_idp, populated by
+    notebooks/brickhound/06_privileged_non_idp_identities.py. Read-only;
+    remediation happens in the notebook/job (which holds SP credentials).
+    """
+    query = f"""
+    WITH latest AS (
+        SELECT MAX(run_id) AS run_id FROM {PRIVILEGED_NON_IDP_TABLE}
+    )
+    SELECT
+        p.finding_type,
+        p.principal_type,
+        p.principal_id,
+        p.principal_name,
+        p.principal_email,
+        p.application_id,
+        p.is_idp_managed,
+        p.scope,
+        p.workspace_id,
+        p.workspace_name,
+        p.console_url,
+        CAST(p.detection_timestamp AS STRING) AS detection_timestamp,
+        p.auto_remediated
+    FROM {PRIVILEGED_NON_IDP_TABLE} p
+    JOIN latest l ON p.run_id = l.run_id
+    ORDER BY p.finding_type, p.is_idp_managed, p.principal_name
+    """
+
+    try:
+        results = exec_query_df(query)
+    except Exception as e:
+        logger.warning("privileged-non-idp report query failed: %s", e)
+        return jsonify({
+            'error': (
+                'No privileged-non-IdP data available yet. Run the '
+                '"SAT Permissions Analysis - Privileged Non-IdP Identities" job (or the '
+                'notebooks/brickhound/06_privileged_non_idp_identities.py notebook) to populate it.'
+            )
+        })
+
+    # Normalize boolean-ish string cells to real bools for the JS layer too,
+    # so client-side conditionals (item.is_idp_managed) behave correctly.
+    for r in results:
+        r['is_idp_managed'] = _truthy(r.get('is_idp_managed'))
+        r['auto_remediated'] = _truthy(r.get('auto_remediated'))
+
+    non_idp = sum(1 for r in results if not r['is_idp_managed'])
+    account_admin = sum(1 for r in results if r.get('finding_type') == 'account_admin')
+    workspace_admin = sum(1 for r in results if r.get('finding_type') == 'workspace_admin')
+    remediated = sum(1 for r in results if r['auto_remediated'])
+
+    detection_timestamp = results[0]['detection_timestamp'] if results else None
+
+    # workspaces_scanned / workspaces_failed are large JSON blobs stored
+    # identically on every row (workspace-admin coverage), so we fetch them from
+    # a single row separately. Selecting them in the main query would multiply
+    # the blob by the row count and blow past the Statement Execution 25 MB
+    # inline result limit, which the endpoint would surface as a false "no data".
+    cov_rows = exec_query_df(f"""
+        WITH latest AS (
+            SELECT MAX(run_id) AS run_id FROM {PRIVILEGED_NON_IDP_TABLE}
+        )
+        SELECT p.workspaces_scanned, p.workspaces_failed
+        FROM {PRIVILEGED_NON_IDP_TABLE} p
+        JOIN latest l ON p.run_id = l.run_id
+        LIMIT 1
+    """)
+
+    def _cov(col):
+        if cov_rows and cov_rows[0].get(col):
+            try:
+                items = json.loads(cov_rows[0][col])
+                # tolerate legacy plain-string entries
+                return [x if isinstance(x, dict) else {'workspace': str(x), 'reason': 'ok'} for x in items]
+            except Exception:
+                return []
+        return []
+    scanned = _cov('workspaces_scanned')
+    failed = _cov('workspaces_failed')
+
+    # "Workspaces in this report" = distinct workspaces whose findings appear
+    # (workspace-admin findings carry a workspace_name; account-level ones don't).
+    in_report = sorted({r['workspace_name'] for r in results
+                        if r.get('workspace_name')})
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total': len(results),
+            'non_idp': non_idp,
+            'account_admin': account_admin,
+            'workspace_admin': workspace_admin,
+            'remediated': remediated,
+        },
+        'detection_timestamp': detection_timestamp,
+        'workspaces_scanned': scanned,
+        'workspaces_failed': failed,
+        'workspaces_in_report': in_report,
+        'data': results,
+    })
+
+
+@app.route('/api/report/denylist-candidates')
+def report_denylist_candidates():
+    """Account groups ranked by inactive-member count (denylist candidates).
+
+    Reads the latest snapshot from brickhound_denylist_candidates, populated by
+    notebooks/brickhound/07_denylist_candidates.py. Read-only.
+    """
+    query = f"""
+    WITH latest AS (
+        SELECT MAX(run_id) AS run_id FROM {DENYLIST_CANDIDATES_TABLE}
+    )
+    SELECT
+        c.group_id,
+        c.group_name,
+        c.is_idp_managed,
+        c.total_members,
+        c.inactive_members,
+        c.active_members,
+        c.inactive_pct,
+        c.inactive_days,
+        c.candidate_reason,
+        c.console_url,
+        CAST(c.detection_timestamp AS STRING) AS detection_timestamp
+    FROM {DENYLIST_CANDIDATES_TABLE} c
+    JOIN latest l ON c.run_id = l.run_id
+    ORDER BY c.inactive_members DESC, c.inactive_pct DESC
+    """
+
+    try:
+        results = exec_query_df(query)
+    except Exception as e:
+        logger.warning("denylist-candidates report query failed: %s", e)
+        return jsonify({
+            'error': (
+                'No denylist-candidate data available yet. Run the '
+                '"SAT Permissions Analysis - Denylist Candidates" job (or the '
+                'notebooks/brickhound/07_denylist_candidates.py notebook) to populate it.'
+            )
+        })
+
+    # Statement Execution returns everything as strings; normalize for the JS layer.
+    for r in results:
+        r['is_idp_managed'] = _truthy(r.get('is_idp_managed'))
+
+    detection_timestamp = results[0]['detection_timestamp'] if results else None
+    inactive_days = results[0]['inactive_days'] if results else None
+    # Denylist analysis is account-level (account SCIM groups). Surface the
+    # metastore for environment context.
+    metastores = []
+    try:
+        rows = exec_query_df("SELECT current_metastore() AS m")
+        if rows and rows[0].get('m'):
+            metastores = [rows[0]['m']]
+    except Exception:
+        metastores = []
+
+    # The account id is embedded in each group's console deep link
+    # (…/user-management/groups/{id}?account_id={acct}); pull it from the first
+    # row so the coverage block can name the account this report covers.
+    account_id = None
+    if results and results[0].get('console_url'):
+        try:
+            from urllib.parse import urlparse, parse_qs
+            account_id = parse_qs(urlparse(results[0]['console_url']).query).get('account_id', [None])[0]
+        except Exception:
+            account_id = None
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total_groups': len(results),
+            'total_inactive': sum(int(r.get('inactive_members') or 0) for r in results),
+        },
+        'detection_timestamp': detection_timestamp,
+        'inactive_days': inactive_days,
+        'metastores': metastores,
+        'account_id': account_id,
+        'data': results,
     })
 
 

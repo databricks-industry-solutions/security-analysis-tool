@@ -6,7 +6,7 @@ class InitScriptsClient(SatDBClient):
 
     def get_allglobalinitscripts_list(self):
         """
-        Returns an array of json objects for global init sccripts.
+        Returns an array of json objects for global init scripts.
         """
         # fetch all init scripts
         globallist = self.get("/global-init-scripts", version='2.0').get('scripts', [])
@@ -15,7 +15,7 @@ class InitScriptsClient(SatDBClient):
 
     def get_global_initscript(self, script_id):
         """
-        Returns an array of json objects for global init sccripts.
+        Returns an array of json objects for global init scripts.
         """
         # fetch all init scripts
         globalscript = self.get("/global-init-scripts/{script_id}", version='2.0').get('satelements', [])

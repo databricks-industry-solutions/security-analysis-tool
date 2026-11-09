@@ -14,7 +14,7 @@ def test_get_schemas_list(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
     catalogslist = UnityCatalogClient(jsonstr)
-    sList = catalogslist.get_schemas_list('sudharshan_test')
+    sList = catalogslist.get_schemas_list('example_schema')
     print(sList)  
     sList = catalogslist.get_schemas_list('nonexistentcat')
     print(sList)  
@@ -30,7 +30,7 @@ def test_get_functions(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client 
     catalogslist = UnityCatalogClient(jsonstr)
-    sList = catalogslist.get_functions('akangsha_catalog', 'akangsha_schema')
+    sList = catalogslist.get_functions('example_catalog', 'example_schema')
     print(sList)
 
 def test_get_external_locations(get_db_client):

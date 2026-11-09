@@ -17,7 +17,7 @@ def test_get_dbfs_directories(get_db_client):
     LOGGR = LoggingUtils.get_logger()
     jsonstr = get_db_client
     dbfsClient = DbfsClient(jsonstr)
-    dbfsDirectories = dbfsClient.get_dbfs_directories("/mnt/rkmmnt")
+    dbfsDirectories = dbfsClient.get_dbfs_directories("/mnt/example_mount")
     LOGGR.debug(dbfsDirectories)
 
 

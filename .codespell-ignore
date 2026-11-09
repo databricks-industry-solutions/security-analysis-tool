@@ -1,0 +1,10 @@
+# codespell ignore list — one lowercase word per line.
+#
+# Add a word here ONLY when codespell flags a term that is intentionally
+# spelled that way (a proper noun, domain term, or code identifier), not a
+# real typo. Used by the pre-commit typo check:
+#
+#   git diff --cached --name-only | xargs codespell --ignore-words=.codespell-ignore
+#
+# Keep entries lowercase; codespell matches case-insensitively.
+# (No entries yet — the codebase is currently typo-clean.)
