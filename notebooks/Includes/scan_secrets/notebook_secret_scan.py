@@ -68,6 +68,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree, completeness_verdict, TokenProvider
 
 if cloud_type =='azure': # use client secret
   client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
@@ -108,52 +109,23 @@ db_client = SatDBClient(json_)
 # MAGIC     pip install requests==2.32.3 PyYAML==6.0.2
 # MAGIC fi
 # MAGIC
-# MAGIC # Check if TruffleHog is already installed (idempotent installation)
-# MAGIC if [ -f /tmp/trufflehog ]; then
-# MAGIC     echo "TruffleHog already installed at /tmp/trufflehog"
-# MAGIC     echo "Skipping installation (already exists)"
-# MAGIC else
-# MAGIC     # Download and install TruffleHog binary to /tmp directory
-# MAGIC     # Pinned to a tagged release to prevent supply-chain tampering via the
-# MAGIC     # mutable main branch. Bump TRUFFLEHOG_VERSION to upgrade.
-# MAGIC     TRUFFLEHOG_VERSION=v3.94.3
-# MAGIC     echo "Installing TruffleHog ${TRUFFLEHOG_VERSION}..."
-# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b /tmp "${TRUFFLEHOG_VERSION}"; then
-# MAGIC         if [ -f /tmp/trufflehog ]; then
-# MAGIC             echo "Setup completed successfully!"
-# MAGIC             echo "TruffleHog binary location: /tmp/trufflehog"
-# MAGIC             echo "Configuration will be loaded from: /Workspace/Repos/.../configs/trufflehog_detectors.yaml"
-# MAGIC         else
-# MAGIC             echo "ERROR: TruffleHog binary not found after installation!"
-# MAGIC             echo "Please verify network access and try again."
-# MAGIC             exit 1
-# MAGIC         fi
-# MAGIC     else
-# MAGIC         echo "=========================================="
-# MAGIC         echo "ERROR: Failed to download TruffleHog"
-# MAGIC         echo "=========================================="
-# MAGIC         echo ""
-# MAGIC         echo "The TruffleHog security scanner could not be downloaded from:"
-# MAGIC         echo "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
-# MAGIC         echo ""
-# MAGIC         echo "Possible causes:"
-# MAGIC         echo "  1. Network connectivity issues"
-# MAGIC         echo "  2. Firewall or proxy blocking external downloads"
-# MAGIC         echo "  3. GitHub.com access is restricted in your environment"
-# MAGIC         echo ""
-# MAGIC         echo "ACTION REQUIRED:"
-# MAGIC         echo "Please contact your IT/Security team to allowlist access to:"
-# MAGIC         echo "  - raw.githubusercontent.com"
-# MAGIC         echo "  - github.com/trufflesecurity"
-# MAGIC         echo ""
-# MAGIC         echo "Alternatively, you may need to configure a proxy or use an"
-# MAGIC         echo "internal mirror of the TruffleHog installation package."
-# MAGIC         echo "=========================================="
-# MAGIC         exit 1
+# MAGIC # Install to a private path with an atomic move; retry on failure.
+# MAGIC TRUFFLEHOG_VERSION=v3.94.3
+# MAGIC THBIN=/tmp/trufflehog_notebook
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   for attempt in 1 2 3 4 5; do
+# MAGIC     thdir=$(mktemp -d)
+# MAGIC     if curl -sSfL "https://raw.githubusercontent.com/trufflesecurity/trufflehog/refs/tags/${TRUFFLEHOG_VERSION}/scripts/install.sh" | sh -s -- -b "$thdir" "${TRUFFLEHOG_VERSION}" && [ -x "$thdir/trufflehog" ]; then
+# MAGIC       mv -f "$thdir/trufflehog" "$THBIN"; rm -rf "$thdir"; break
 # MAGIC     fi
+# MAGIC     rm -rf "$thdir"; echo "TruffleHog install attempt ${attempt} failed; retrying..."; sleep $((attempt * 3))
+# MAGIC   done
 # MAGIC fi
-# MAGIC
-# MAGIC echo "✅ TruffleHog setup verified!"
+# MAGIC if [ ! -x "$THBIN" ]; then
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   exit 1
+# MAGIC fi
+# MAGIC echo "✅ TruffleHog setup verified at $THBIN!"
 
 # COMMAND ----------
 
@@ -176,14 +148,26 @@ import logging
 import shutil
 import yaml
 import tempfile
+import random
 import concurrent.futures
 from datetime import timedelta, datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from typing import Dict, List, Optional, Any, Tuple
 
 # Configure logging for better debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+
+
+class _WorkspaceLogAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[ws={self.extra['name']} id={self.extra['id']}] {msg}", kwargs
+
+
+_ws_name = json_.get("workspace_name") or urlparse(json_.get("url", "")).hostname or "unknown"
+logger = _WorkspaceLogAdapter(
+    logging.getLogger(__name__),
+    {"name": _ws_name, "id": json_.get("workspace_id", "unknown")},
+)
 
 def _default_config() -> Dict[str, Any]:
     """Built-in fallback used only when the shipped config can't be loaded."""
@@ -297,7 +281,7 @@ class Config:
     """Configuration class for TruffleHog scanning parameters"""
     
     # File paths
-    TRUFFLEHOG_BINARY = "/tmp/trufflehog"
+    TRUFFLEHOG_BINARY = "/tmp/trufflehog_notebook"
     TRUFFLEHOG_CONFIG = create_trufflehog_config(config_data)
     TEMP_NOTEBOOKS_DIR = config_data.get("settings", {}).get("file_paths", {}).get("temp_notebooks", "/tmp/notebooks")
     RESULTS_LOG_FILE = config_data.get("settings", {}).get("file_paths", {}).get("results_log", "/tmp/trufflehog_scan_results.json")
@@ -317,16 +301,19 @@ class Config:
     # Directory where a batch of notebooks is materialized so TruffleHog can
     # scan them all in a single invocation instead of once per file.
     SCAN_BATCH_DIR = config_data.get("settings", {}).get("file_paths", {}).get("scan_batch_dir", "/tmp/notebook_scan_batch")
+    # Unscanned-object tolerance before a run is failed as incomplete.
+    INCOMPLETE_SCAN_FRACTION = config_data.get("settings", {}).get("completeness", {}).get("max_unscanned_fraction", 0.02)
+    INCOMPLETE_SCAN_MIN = config_data.get("settings", {}).get("completeness", {}).get("min_unscanned_to_fail", 25)
 
 # Extract Databricks authentication context
 # These are automatically available in Databricks notebooks
 try:
-    token = db_client.get_temporary_oauth_token() 
-    base_url = json_["url"] 
-    
-    if not token or not base_url:
+    _token_provider = TokenProvider(lambda: db_client.get_temporary_oauth_token())
+    base_url = json_["url"]
+
+    if not _token_provider.refresh() or not base_url:
         raise ValueError("Unable to extract Databricks authentication context")
-        
+
     logger.info(f"Successfully extracted Databricks context. Base URL: {base_url}")
     
 except Exception as e:
@@ -416,86 +403,50 @@ def generate_sha256_hash(secret: str) -> str:
     sha.update(secret_bytes)
     return sha.hexdigest()
 
-def make_api_request(url: str, headers: Dict[str, str], data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
-    """
-    Make API request to Databricks with proper error handling.
+# Shared limiter for all workspace-API calls. Self-tunes to the workspace rate
+# limit; MAX_WORKERS is the ceiling.
+_rate_limiter = AdaptiveRateLimiter(
+    start=min(4, Config.MAX_WORKERS),
+    max_limit=Config.MAX_WORKERS,
+)
 
-    Returns a (json_or_none, status_or_none) tuple so callers can branch
-    on HTTP status. Status is None when the request never reached the
-    server (timeout / connection error).
 
-    Rate limits (429) are retried internally with exponential backoff so a
-    transient throttle no longer aborts pagination. We only sleep when the
-    API actually throttles us — there is no unconditional inter-call sleep.
+def make_api_request(url: str, data: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
     """
-    max_attempts = 5
-    for attempt in range(max_attempts):
+    Make a GET request to Databricks.
+
+    Returns a (json_or_none, status_or_none) tuple so callers can branch on
+    HTTP status. Status is None when the request never reached the server.
+    """
+    def _do():
+        headers = {**_token_provider.header(), "Content-Type": "application/json"}
+        return requests.get(url, headers=headers, json=data, timeout=30)
+    resp = request_with_retry(
+        _do, limiter=_rate_limiter, base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
+    )
+    if resp is None:
+        return None, None
+    if resp.status_code == 200:
         try:
-            response = requests.get(url, headers=headers, json=data, timeout=30)
-
-            if response.status_code == 200:
-                return response.json(), 200
-            elif response.status_code == 429:
-                if attempt == max_attempts - 1:
-                    logger.warning(f"Rate limit persisted after {max_attempts} attempts for URL: {url}")
-                    return None, 429
-                backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
-                logger.warning(f"Rate limit hit for URL: {url}. Backing off {backoff}s (attempt {attempt + 1}/{max_attempts})")
-                time.sleep(backoff)
-                continue
-            else:
-                logger.warning(f"API request failed. URL: {url}, Status: {response.status_code}")
-                return None, response.status_code
-
-        except requests.exceptions.Timeout:
-            logger.error(f"Request timeout for URL: {url}")
-            return None, None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error for URL: {url}. Error: {str(e)}")
-            return None, None
-
-    return None, 429
+            return resp.json(), 200
+        except ValueError:
+            logger.warning(f"Non-JSON 200 response for URL: {url}")
+            return None, 200
+    logger.warning(f"API request failed. URL: {url}, Status: {resp.status_code}")
+    return None, resp.status_code
 
 def _get_with_retry(url: str, what: str) -> Optional[requests.Response]:
+    """GET a workspace-API URL through the shared limiter.
+
+    Returns the response, or None if the request never reached the server.
     """
-    Make a GET request, retrying with exponential backoff on HTTP 429.
-
-    Notebook export and get-status are issued concurrently across MAX_WORKERS
-    threads, which can trip workspace rate limits. Retrying keeps a throttled
-    notebook in the scan instead of dropping it.
-
-    Args:
-        url (str): URL to request
-        what (str): Short description of the operation, used in log messages
-
-    Returns:
-        Optional[requests.Response]: Response, or None if the request never
-            reached the server
-    """
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
-    max_attempts = 5
-    for attempt in range(max_attempts):
-        try:
-            response = requests.get(url, headers=headers, timeout=30)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error during {what}: {str(e)}")
-            return None
-
-        if response.status_code != 429:
-            return response
-
-        if attempt == max_attempts - 1:
-            logger.warning(f"Rate limit persisted after {max_attempts} attempts during {what}")
-            return response
-
-        backoff = Config.API_SLEEP_SECONDS * (2 ** attempt)
-        logger.warning(
-            f"Rate limit hit during {what}. Backing off {backoff}s "
-            f"(attempt {attempt + 1}/{max_attempts})"
-        )
-        time.sleep(backoff)
-
-    return None
+    return request_with_retry(
+        lambda: requests.get(url, headers=_token_provider.header(), timeout=30),
+        limiter=_rate_limiter,
+        base_sleep=Config.API_SLEEP_SECONDS,
+        token_provider=_token_provider,
+    )
 
 
 def check_notebook_status(notebook_path: str) -> int:
@@ -524,71 +475,65 @@ def _get_object_metadata(path: str) -> Optional[Dict[str, Any]]:
     `modified_at` for time-window filtering.
     """
     url = f"{base_url}/api/2.0/workspace/get-status?path={quote(path)}"
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
-    try:
-        r = requests.get(url, headers=headers, timeout=30)
-        if r.status_code == 200:
-            return r.json()
-        return None
-    except requests.exceptions.RequestException as e:
-        logger.warning(f"workspace/get-status failed for {path}: {str(e)}")
-        return None
+    r = _get_with_retry(url, f"workspace/get-status for {path}")
+    if r is not None and r.status_code == 200:
+        return r.json()
+    return None
 
 
-def _list_dir(path: str) -> List[Dict[str, Any]]:
-    """Single /workspace/list call. Returns the raw objects list (empty on error/404).
+def _list_dir(path: str) -> Tuple[List[Dict[str, Any]], bool]:
+    """Single /workspace/list call, with HTTP 429 retry/backoff.
 
-    404 is normal for tree roots that don't exist on every workspace
-    (e.g. /Repos on workspaces without Git integration).
+    Returns (objects, listed_ok). `listed_ok` is False only when the directory
+    could not be authoritatively listed — throttled past all retries, or a
+    transport error. The caller counts those so a subtree dropped to throttling
+    surfaces as an incomplete scan instead of silently vanishing from discovery.
+
+    A 404 root is a definitive empty listing (e.g. /Repos on a workspace without
+    Git integration), so `listed_ok` stays True and it is not counted a failure.
     """
     url = f"{base_url}/api/2.0/workspace/list?path={quote(path)}"
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": "databricks-sat/0.1.0"}
-    try:
-        r = requests.get(url, headers=headers, timeout=30)
-        if r.status_code != 200:
-            if r.status_code != 404:
-                logger.warning(f"workspace/list returned {r.status_code} for {path}")
-            return []
-        return r.json().get("objects", [])
-    except requests.exceptions.RequestException as e:
-        logger.warning(f"workspace/list failed for {path}: {str(e)}")
-        return []
+    r = _get_with_retry(url, f"workspace/list for {path}")
+    if r is None:
+        logger.warning(f"workspace/list failed for {path} (no response after retries)")
+        return [], False
+    if r.status_code == 200:
+        return r.json().get("objects", []), True
+    if r.status_code == 404:
+        return [], True
+    logger.warning(f"workspace/list returned {r.status_code} for {path}")
+    return [], False
+
+
+def _list_children(path: str) -> Tuple[List[str], List[Dict[str, Any]], bool]:
+    """Classify one directory's entries into (dir_paths, leaf_objects, listed_ok)."""
+    objs, listed_ok = _list_dir(path)
+    dirs: List[str] = []
+    found: List[Dict[str, Any]] = []
+    for obj in objs:
+        obj_path = obj.get("path")
+        if not obj_path:
+            continue
+        obj_type = obj.get("object_type")
+        if obj_type in ("DIRECTORY", "REPO"):
+            dirs.append(obj_path)
+        elif obj_type in ("NOTEBOOK", "FILE"):
+            found.append(obj)
+    return dirs, found, listed_ok
 
 
 def discover_notebooks_via_workspace_list(time_filter_enabled: bool,
                                           last_edited_after: Optional[int]) -> List[Dict[str, Any]]:
-    """Fallback notebook discovery using /workspace/list (+ /get-status only when needed).
+    """Fallback discovery that walks the whole workspace tree via /workspace/list.
 
-    Used when /search-midtier/unified-search rejects token-based auth
-    (returns 403). See GitHub issue #330 for context. The standard
-    discoverable trees — /Users, /Shared, /Repos — cover the common cases;
-    missing roots are tolerated silently (404).
-
-    Performance: directory traversal is fanned out across a thread pool one
-    level at a time instead of recursing serially, and the per-leaf
-    /workspace/get-status call is skipped entirely when the list response
-    already carries `modified_at`. get-status is only issued (and then in
-    parallel) for the leaves that lack it — eliminating the O(notebooks)
-    serial round-trips that made this path time out on large workspaces.
+    Used when /search-midtier/unified-search rejects token-based auth. Traverses
+    from the workspace root so objects in any location are discovered.
     """
     cutoff_ms = last_edited_after if time_filter_enabled else None
 
-    # Phase 1: parallel breadth-first directory traversal.
-    leaves: List[Dict[str, Any]] = []
-    pending: List[str] = ["/Users", "/Shared", "/Repos"]
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        while pending:
-            next_dirs: List[str] = []
-            for objs in pool.map(_list_dir, pending):
-                for obj in objs:
-                    obj_type = obj.get("object_type")
-                    if not obj.get("path"):
-                        continue
-                    if obj_type in ("DIRECTORY", "REPO"):
-                        next_dirs.append(obj["path"])
-                    elif obj_type in ("NOTEBOOK", "FILE"):
-                        leaves.append(obj)
-            pending = next_dirs
+        leaves, failed = collect_tree(_list_children, ["/"], mapper=pool.map)
+    discovery_stats["list_failures"] += failed
 
     # Phase 2: time-window filter (only when enabled).
     if cutoff_ms is None:
@@ -817,6 +762,16 @@ _results_table_ready = False
 # Findings attempted vs. actually persisted, used to detect a partial write.
 insert_stats = {"attempted": 0, "written": 0, "failed": 0}
 
+# Why discovered notebooks were not scanned. "permission"/"notfound" are
+# expected (the SP legitimately can't read some users' notebooks, or a notebook
+# was deleted between discovery and scan) and must NOT fail the workspace run.
+# "error" (export/read/write failure, e.g. throttling) is a real coverage gap.
+materialize_stats = {"ok": 0, "permission": 0, "notfound": 0, "error": 0, "skip": 0}
+
+# Directories that could not be listed during workspace/list discovery (throttled
+# past retries or transport error). Each represents a silently-dropped subtree.
+discovery_stats = {"list_failures": 0}
+
 
 def ensure_results_table() -> None:
     """Create and annotate the results table once per scan."""
@@ -897,19 +852,74 @@ def insert_secret_scan_results_batch(workspace_id: str,
     insert_stats["attempted"] += len(rows)
     try:
         ensure_results_table()
-        spark.sql(
-            f"""
-            INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
-            (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
-             secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-            VALUES {", ".join(rows)}
-            """
-        )
-        insert_stats["written"] += len(rows)
-        logger.info(f"Persisted {len(rows)} secret finding(s)")
     except Exception as e:
         insert_stats["failed"] += len(rows)
-        logger.error(f"Failed to insert {len(rows)} secret scan result(s): {str(e)}")
+        logger.error(f"Could not ensure results table exists; dropping {len(rows)} finding(s): {str(e)}")
+        return
+
+    written, failed = _persist_rows(rows)
+    insert_stats["written"] += written
+    insert_stats["failed"] += failed
+    if written:
+        logger.info(f"Persisted {written} secret finding(s)")
+
+
+def _insert_values(rows: List[str]) -> None:
+    """Run a single INSERT for the given VALUES tuples. Raises on failure."""
+    spark.sql(
+        f"""
+        INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
+        (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
+         secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
+        VALUES {", ".join(rows)}
+        """
+    )
+
+
+def _persist_rows(rows: List[str]) -> Tuple[int, int]:
+    """Persist finding rows durably, returning (written, failed).
+
+    Strategy: try the whole batch with a few retries (handles transient Spark /
+    concurrent-write errors), and only if the batch still fails fall back to
+    inserting each row on its own. Row-by-row isolates a single unpersistable
+    row so one bad finding no longer drops the entire batch — the previous
+    behavior, which counted all rows in a failed batch as lost.
+    """
+    max_batch_attempts = 3
+    for attempt in range(max_batch_attempts):
+        try:
+            _insert_values(rows)
+            return len(rows), 0
+        except Exception as e:
+            if attempt == max_batch_attempts - 1:
+                logger.warning(
+                    f"Batch insert of {len(rows)} finding(s) failed after "
+                    f"{max_batch_attempts} attempts ({str(e)}); falling back to row-by-row"
+                )
+                break
+            backoff = 1.0 * (2 ** attempt) + random.uniform(0, 1)
+            logger.warning(
+                f"Batch insert attempt {attempt + 1}/{max_batch_attempts} failed "
+                f"({str(e)}); retrying in {backoff:.1f}s"
+            )
+            time.sleep(backoff)
+
+    written = 0
+    for row in rows:
+        row_ok = False
+        for attempt in range(2):
+            try:
+                _insert_values([row])
+                row_ok = True
+                break
+            except Exception as e:
+                if attempt == 1:
+                    logger.error(f"Dropping unpersistable finding after retries: {str(e)}")
+                else:
+                    time.sleep(0.5 + random.uniform(0, 0.5))
+        if row_ok:
+            written += 1
+    return written, len(rows) - written
 
 def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     """
@@ -1074,15 +1084,21 @@ def scan_notebook_for_secrets(notebook_path: str, object_id: str) -> Optional[Li
         logger.error(f"Error scanning notebook {notebook_path}: {str(e)}")
         return None
 
-def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Optional[Tuple[str, Dict[str, Any]]]:
+def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Dict[str, Any]:
     """Write one notebook's content into `scan_dir` so a whole batch can be
     scanned by TruffleHog in a single invocation.
 
     The on-disk filename is the notebook's object_id, which lets findings be
     mapped back to the notebook by source-file basename after the scan.
-    Mirrors the original FUSE-first / API-export fallback. Returns
-    (scan_file_path, metadata) on success, or None if the notebook could not
-    be materialized (missing fields, no access, export failure).
+    Mirrors the original FUSE-first / API-export fallback.
+
+    Returns a dict describing the outcome so the caller can distinguish expected
+    skips from real coverage gaps:
+      {"outcome": "ok",         "scan_file": <path>, "metadata": <dict>}
+      {"outcome": "permission"} - 403, SP can't read it (expected, not a failure)
+      {"outcome": "notfound"}   - 404, deleted between discovery and scan (expected)
+      {"outcome": "error"}      - export/read/write failed, e.g. throttling (real gap)
+      {"outcome": "skip"}       - malformed discovery entry (missing/unsafe id)
     """
     notebook_id = notebook.get("id", "")
     notebook_name = notebook.get("name", "")
@@ -1090,10 +1106,10 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Optional[T
 
     if not notebook_id or not notebook_name:
         logger.warning("Skipping notebook with missing ID or name")
-        return None
+        return {"outcome": "skip"}
     if os.sep in str(notebook_id):
         logger.warning(f"Skipping notebook with unsafe id: {notebook_id}")
-        return None
+        return {"outcome": "skip"}
 
     temp_path = f"{parent_path}/{notebook_name}"
     path = quote(temp_path)
@@ -1106,7 +1122,7 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Optional[T
         if fuse_path:
             try:
                 shutil.copy2(fuse_path, scan_file)
-                return scan_file, metadata
+                return {"outcome": "ok", "scan_file": scan_file, "metadata": metadata}
             except Exception as e:
                 logger.warning(f"FUSE copy failed for {fuse_path}, falling back to API: {e}")
 
@@ -1115,25 +1131,27 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Optional[T
             export_response = export_notebook_content(path)
             if not export_response:
                 logger.warning(f"Failed to export notebook content: {temp_path}")
-                return None
+                return {"outcome": "error"}
             content = export_response.get("content")
             if not content:
                 logger.warning(f"No content found in notebook: {temp_path}")
-                return None
+                return {"outcome": "error"}
             if not decode_and_write_content(content, scan_file):
                 logger.error(f"Failed to write notebook content to file: {scan_file}")
-                return None
-            return scan_file, metadata
+                return {"outcome": "error"}
+            return {"outcome": "ok", "scan_file": scan_file, "metadata": metadata}
         elif notebook_status == 403:
             logger.warning(f"Access denied for notebook: {temp_path}")
+            return {"outcome": "permission"}
         elif notebook_status == 404:
             logger.warning(f"Notebook not found: {temp_path}")
+            return {"outcome": "notfound"}
         else:
             logger.warning(f"Unexpected status {notebook_status} for notebook: {temp_path}")
-        return None
+            return {"outcome": "error"}
     except Exception as e:
         logger.error(f"Error materializing notebook {temp_path}: {str(e)}")
-        return None
+        return {"outcome": "error"}
 
 
 def _scan_and_record_chunk(chunk: List[Dict[str, Any]],
@@ -1153,13 +1171,16 @@ def _scan_and_record_chunk(chunk: List[Dict[str, Any]],
     scan_dir = tempfile.mkdtemp(dir=Config.SCAN_BATCH_DIR)
     try:
         # Phase 1: materialize notebook contents in parallel (I/O-bound).
+        # pool.map results are consumed serially here on the main thread, so the
+        # shared materialize_stats increments are safe without a lock.
         basename_to_meta: Dict[str, Dict[str, Any]] = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
             for res in pool.map(lambda nb: _materialize_notebook(nb, scan_dir), chunk):
-                if res is None:
+                outcome = res.get("outcome", "error")
+                materialize_stats[outcome] = materialize_stats.get(outcome, 0) + 1
+                if outcome != "ok":
                     continue
-                scan_file, metadata = res
-                basename_to_meta[os.path.basename(scan_file)] = metadata
+                basename_to_meta[os.path.basename(res["scan_file"])] = res["metadata"]
 
         # Record metadata + log line for every materialized notebook.
         for metadata in basename_to_meta.values():
@@ -1264,7 +1285,7 @@ def main_scanning_workflow():
     """
     Main function to orchestrate the secret scanning process.
     """
-    print("🔍 Starting TruffleHog Secret Scanning Workflow")
+    print(f"🔍 Starting TruffleHog Secret Scanning Workflow — workspace {_ws_name} (id={json_.get('workspace_id', 'unknown')})")
     print("=" * 60)
 
     # Get current workspace ID and run ID for database storage
@@ -1315,11 +1336,12 @@ def main_scanning_workflow():
     notebooks_with_secrets = 0
 
     insert_stats.update({"attempted": 0, "written": 0, "failed": 0})
+    materialize_stats.update({"ok": 0, "permission": 0, "notfound": 0, "error": 0, "skip": 0})
+    discovery_stats.update({"list_failures": 0})
 
     # Setup API request parameters
     url = f"{base_url}/api/2.0/search-midtier/unified-search"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "databricks-sat/0.1.0"}
-    
+
     # Build filters - only include time filter if enabled
     filters = {"result_types": ["FILE", "NOTEBOOK"]}
     if time_filter_enabled:
@@ -1353,7 +1375,7 @@ def main_scanning_workflow():
                 del data["page_token"]  # Remove token for first request
 
             # Make API request
-            response, status_code = make_api_request(url, headers, data)
+            response, status_code = make_api_request(url, data)
 
             # /search-midtier/unified-search rejects token-based auth on
             # workspaces where the endpoint is browser-only. See GitHub
@@ -1454,16 +1476,54 @@ def main_scanning_workflow():
             logger.info("No secrets found in any notebooks. Inserting a single row to track this run.")
             insert_no_secrets_tracking_row(workspace_id, current_run_id)
 
-        # Fail loudly on a partial scan: reported totals must not look clean
-        # when notebooks went unscanned or findings failed to persist.
-        unscanned = total_notebooks_discovered - total_notebooks_processed
+        # Report expected, non-fatal skips separately from real coverage gaps.
+        # A notebook the SP can't read (403) or that was deleted between
+        # discovery and scan (404) is expected and must NOT fail the workspace
+        # run — otherwise every large multi-tenant workspace fails permanently.
+        expected_skips = (materialize_stats["permission"]
+                          + materialize_stats["notfound"]
+                          + materialize_stats["skip"])
+        if expected_skips > 0:
+            print(
+                f"ℹ️  {expected_skips} discovered notebook(s) skipped as expected: "
+                f"{materialize_stats['permission']} access-denied, "
+                f"{materialize_stats['notfound']} not-found, "
+                f"{materialize_stats['skip']} malformed (not counted as failures)."
+            )
+
+        # A small residue of unreadable objects always exists on a real
+        # workspace (binary/non-notebook files, transiently failed exports).
+        # Report it as partial and only hard-fail when the gap is large enough
+        # to signal a systemic problem (sustained throttling), or a finding was
+        # lost. Tolerance: whichever is larger of a floor and a fraction of the
+        # objects discovered.
+        unreadable = materialize_stats["error"]
+        list_failures = discovery_stats["list_failures"]
         unwritten = insert_stats["attempted"] - insert_stats["written"]
-        if unscanned > 0 or unwritten > 0:
+        coverage_gap, tolerance, _partial, _fatal = completeness_verdict(
+            total_notebooks_discovered, unreadable, list_failures, unwritten,
+            min_failures=Config.INCOMPLETE_SCAN_MIN,
+            max_fraction=Config.INCOMPLETE_SCAN_FRACTION,
+        )
+
+        if coverage_gap > 0:
+            detail = []
+            if unreadable:
+                detail.append(f"{unreadable} unreadable (export failure)")
+            if list_failures:
+                detail.append(f"{list_failures} directory listing(s) failed")
+            note = (f"PARTIAL SCAN for workspace {workspace_id}: {coverage_gap} of "
+                    f"{total_notebooks_discovered} discovered object(s) not scanned "
+                    f"({'; '.join(detail)}); tolerance={tolerance}.")
+            print(f"⚠️  {note}")
+            logger.warning(note)
+
+        if _fatal:
             problems = []
-            if unscanned > 0:
+            if coverage_gap > tolerance:
                 problems.append(
-                    f"{unscanned} of {total_notebooks_discovered} discovered notebook(s) "
-                    f"were not scanned (permissions, throttling, or export failure)"
+                    f"{coverage_gap} of {total_notebooks_discovered} discovered object(s) "
+                    f"could not be scanned (exceeds tolerance {tolerance}) — likely sustained throttling"
                 )
             if unwritten > 0:
                 problems.append(
@@ -1481,6 +1541,10 @@ def main_scanning_workflow():
             "notebooks_with_secrets": notebooks_with_secrets,
             "total_secrets": total_secrets_found,
             "findings_written": insert_stats["written"],
+            "notebooks_access_denied": materialize_stats["permission"],
+            "notebooks_not_found": materialize_stats["notfound"],
+            "notebooks_unreadable": materialize_stats["error"],
+            "discovery_list_failures": discovery_stats["list_failures"],
             "results": results_list
         }
 
