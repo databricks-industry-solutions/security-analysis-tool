@@ -125,4 +125,35 @@ There are a few checks that rely on self-assessment due to the lack of REST APIs
 
 </AccordionItem>
 
+<AccordionItem question="Can I use my own secret scope and key names?">
+
+Yes. SAT only requires the service principal **client secret** to live in a Databricks secret scope — everything else (Account ID, Client ID, SQL Warehouse ID, schema name, etc.) is passed as a direct job parameter in version 0.9+.
+
+**Standard install (`install.sh`):**
+
+1. At the *"Secret scope name"* prompt, enter your existing scope name.
+2. At *"Let SAT write the service principal secret to this scope?"*, answer **No**.
+3. A checkbox lists the values SAT can read from your scope — select each one that is pre-populated.
+4. For each selected value, confirm or change the physical key name used in your scope.
+
+**Terraform install:**
+
+```hcl
+manage_secrets      = false
+secret_scope_name   = "my-corp-scope"
+scope_provided_keys = ["client_secret", "analysis_schema_name"]
+
+# Override key names if yours differ from SAT defaults
+secret_key_names = {
+  client_secret        = "sat-sp-secret"
+  analysis_schema_name = "sat-analysis-schema"
+}
+```
+
+**Azure Key Vault-backed scopes** are supported with `manage_secrets = false` because SAT will not call `put-acl` or `put_secret`. Grant the SAT service principal **Key Vault Secrets User** in Azure RBAC to allow it to read the secret values.
+
+See the [Secret Scope Reference](./installation/secret-scope.mdx) for the full key list, per-cloud requirements, and the app config scope options.
+
+</AccordionItem>
+
 ---

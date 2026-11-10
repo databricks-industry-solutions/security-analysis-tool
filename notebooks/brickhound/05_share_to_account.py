@@ -121,13 +121,28 @@ ACCOUNTS_HOST = resolve_accounts_host(
     cloud_type, WORKSPACE_URL, json_.get("accounts_console", "")
 )
 ACCOUNT_ID    = json_["account_id"]
-CLIENT_ID     = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-id")
-CLIENT_SECRET = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-secret")
+# client_id is a non-secret config value; json_["client_id"] is populated by
+# initialize.py via the param->scope resolution chain.
+CLIENT_ID     = json_.get("client_id") or read_sat_secret(
+    json_.get("secret_scope", SECRETS_SCOPE),
+    json_.get("secret_keys", SECRET_KEYS),
+    "client_id",
+)
+# client_secret is an actual credential; always read from the scope.
+CLIENT_SECRET = read_sat_secret(
+    json_.get("secret_scope", SECRETS_SCOPE),
+    json_.get("secret_keys", SECRET_KEYS),
+    "client_secret",
+)
 
 # tenant-id is required for Azure (Entra/MSAL auth); absent on AWS/GCP.
 TENANT_ID = None
 if cloud_type == "azure":
-    TENANT_ID = json_.get("tenant_id") or dbutils.secrets.get(scope=SECRETS_SCOPE, key="tenant-id")
+    TENANT_ID = json_.get("tenant_id") or read_sat_secret(
+        json_.get("secret_scope", SECRETS_SCOPE),
+        json_.get("secret_keys", SECRET_KEYS),
+        "tenant_id",
+    )
 
 SHARED_TO_ACCOUNT_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_shared_to_account"
 

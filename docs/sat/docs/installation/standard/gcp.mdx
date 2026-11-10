@@ -105,6 +105,36 @@ The installation script will guide you through the setup process. Here's what it
   <img src={useBaseUrl('/gif/terminal-aws.gif')} alt="Installation Process" />
 </div>
 
+<Admonition type="note" title="Note: recording predates BYO-scope prompts">
+The GIF above was recorded before version 0.9. The current installer asks for
+`secret_scope` and whether SAT should manage secrets **before** the credential
+prompts. See the full prompt sequence below.
+</Admonition>
+
+<details>
+<summary>Full prompt walkthrough (0.9+)</summary>
+
+| Prompt | Default | Notes |
+|---|---|---|
+| Select profile | — | Databricks CLI profile |
+| Secret scope name | `sat_scope` | Name of the scope SAT reads from |
+| Let SAT write the service principal secret to this scope? | Yes | Answer **No** to bring your own pre-populated scope |
+| Which values are already in your scope? *(BYO only)* | `client_secret` locked | Checkbox — select any additional values already in your scope |
+| Secret scope key name for: ... *(BYO only)* | SAT default | One prompt per selected item |
+| Databricks Account ID | — | Skipped when deferred to scope |
+| Select catalog | — | Skipped when `analysis_schema_name` is deferred |
+| Schema name for SAT | `security_analysis` | Skipped when `analysis_schema_name` is deferred |
+| Run on serverless? | Yes | |
+| Select warehouse | — | |
+| SAT service principal Client ID | — | Skipped when deferred |
+| Want to use a proxy? | No | |
+| Driver / Secrets scanner schedules, timezone | — | |
+| Deploy Permissions Analysis? | Yes | |
+| Scope SAT will create for app config *(BYO + BrickHound only)* | `sat_app_scope` | Shown only when schema is not already in your scope |
+
+For the BYO scope flow, see the [Secret Scope Reference](../secret-scope.mdx).
+</details>
+
 ---
 
 <Admonition type="note" title="Permissions Analysis App Setup">

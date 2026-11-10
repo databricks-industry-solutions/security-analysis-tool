@@ -125,6 +125,13 @@ uniqueness, URL, and typo checks.
   `SatDBClient._update_token_master()` (AWS/GCP OAuth, Azure MSAL + Databricks).
 - Use the centralized logger (`LoggingUtils`) in SDK code; escape single quotes
   in any JSON before building SQL `INSERT` statements.
+- **Secret key names are indirected** through `DEFAULT_SECRET_KEYS` in
+  `notebooks/Utils/common.py` and the `secret_key_names` override map. Never
+  hardcode key string literals (e.g. `"client-secret"`, `"account-console-id"`)
+  directly in notebook cells or SDK code — always resolve through
+  `SECRET_KEYS[logical_name]` or the `read_sat_secret()` / `resolve_sat_value()`
+  helpers. Only `client_secret` must live in the scope; all other values travel
+  as job `base_parameters` with scope fallback.
 
 ## When you finish
 

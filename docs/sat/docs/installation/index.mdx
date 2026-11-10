@@ -50,6 +50,8 @@ Before proceeding with the installation, make sure you have the following prereq
 - Databricks SQL Warehouse (To run the SQL dashboard)
 - PyPI access from your workspace (To install the SAT utility library)
 
+**Optional — bring your own secret scope:** SAT defaults to creating a `sat_scope` secret scope and writing a single secret (the service principal client secret). If you already have a secret scope you would prefer SAT to read from — including Azure Key Vault-backed scopes — see [Secret Scope Reference](./secret-scope.mdx) for how to configure this during installation.
+
 
 
 
