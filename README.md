@@ -1,8 +1,10 @@
 # SAT: Monitor the Security Health of Databricks Workspaces
 
-The **Security Analysis Tool (SAT)** analyzes your Databricks account and workspace configurations, providing recommendations to help you follow Databricks' security best practices.
+Core security posture checks are now available natively within the Databricks platform in the [**Governance Hub's Security tab**](https://docs.databricks.com/aws/en/admin/governance-hub/security), providing an integrated, zero-installation method of assessing your Databricks security posture against recommended best practices. The Governance Hub Security Posture Management is currently in Private Preview. Please reach out to your Databricks account team to gain access.
 
-**Latest version:** [v0.8.0](https://github.com/databricks-industry-solutions/security-analysis-tool/releases) — live egress testing, per-user identity in Permissions Analysis, expanded secret scanning, and 11 new checks. See the [Upgrade Guide](https://databricks-industry-solutions.github.io/security-analysis-tool/docs/upgrade) for behavior changes when upgrading from 0.7.x.
+The **Security Analysis Tool (SAT)** continues to provide additional security analysis capabilities that are not currently yet available in the Governance Hub, such as secrets scanning, permissions and resource analysis, and other specialized security utilities. If Governance Hub is not yet available in your environment (e.g. AWS GovCloud), refer to the v0.9.1 of **SAT**.
+
+**Latest version:** [v0.9.1](https://github.com/databricks-industry-solutions/security-analysis-tool/releases) — live egress testing, per-user identity in Permissions Analysis, expanded secret scanning and performance improvements, and 11 new checks. See the [Upgrade Guide](https://databricks-industry-solutions.github.io/security-analysis-tool/docs/upgrade) for behavior changes when upgrading from previous versions.
 
 ## Documentation
 

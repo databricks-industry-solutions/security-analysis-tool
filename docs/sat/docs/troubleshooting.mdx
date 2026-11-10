@@ -91,9 +91,9 @@ If you don't see a JSON with a clean listing of workspaces, you are likely havin
 
 </AccordionItem>
 
-<AccordionItem question="Permissions Analysis app shows 'missing sql scope' banner after upgrading to 0.8.0">
+<AccordionItem question="Permissions Analysis app shows 'missing sql scope' banner after upgrading to v0.9.0">
 
-The Permissions Analysis app uses on-behalf-of-user (OBO) authentication in 0.8.0. The required `sql` scope is declared in the SAT install templates, but each user must consent to the scope on first open after the upgrade. If you opened the app before upgrading, your browser session has a cached consent grant without `sql` and you'll see the banner.
+The Permissions Analysis app uses on-behalf-of-user (OBO) authentication in v0.8.0 and above. The required `sql` scope is declared in the SAT install templates, but each user must consent to the scope on first open after the upgrade. If you opened the app before upgrading, your browser session has a cached consent grant without `sql` and you'll see the banner.
 
 **Resolution (try in order):**
 
@@ -107,7 +107,7 @@ The full background and permanent setup is on the [Permissions Analysis page](./
 
 <AccordionItem question="Permissions Analysis app shows 'You don't have permission to read the SAT permissions analysis schema'">
 
-In 0.8.0 the app runs Statement Execution as the calling user, so Unity Catalog enforces the user's grants on the Permissions Analysis tables. If the user does not have `SELECT` on those tables, the app renders a friendly banner instead of a SQL error.
+In 0.8.0 and above, the app runs Statement Execution as the calling user, so Unity Catalog enforces the user's grants on the Permissions Analysis tables. If the user does not have `SELECT` on those tables, the app renders a friendly banner instead of a SQL error.
 
 **Resolution:** an admin grants `SELECT` on the three tables to the user or group that needs to use the app. Replace `<catalog>` and `<schema>` with the values used during your SAT install:
 
