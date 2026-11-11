@@ -91,7 +91,6 @@ JOB_ID_SECRET_KEYS = {
     "brickhound_share_to_account": "shared-to-account-job-id",
     "brickhound_privileged_non_idp": "privileged-non-idp-job-id",
     "brickhound_denylist_candidates": "denylist-job-id",
-    "sat_code_scanner": "code-scanner-job-id",
 }
 
 # Job names as deployed, used to resolve ids when the bundle summary is
@@ -102,7 +101,6 @@ JOB_NAME_PATTERNS = {
     "brickhound_share_to_account": "Shared to Account Users",
     "brickhound_privileged_non_idp": "Privileged Non-IdP",
     "brickhound_denylist_candidates": "Denylist Candidates",
-    "sat_code_scanner": "Code Scanner",
 }
 
 

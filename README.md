@@ -10,7 +10,6 @@ Refer to the [SAT documentation](https://databricks-industry-solutions.github.io
 
 Feature-specific notes live alongside the code:
 
-- [Code security scanning](notebooks/Includes/scan_code/README.md) — static analysis of notebook source and vulnerability scanning of declared dependencies, including the external hosts Trivy needs.
 
 ## Project Support
 
