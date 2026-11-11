@@ -14463,20 +14463,36 @@ def api_assistant_config():
     """Whether the Genie-backed assistant can answer, plus suggested prompts."""
     from agent import genie_chat
     space_id = genie_chat.space_id()
+
+    # Auto-provision once when no space is set, as the app service principal so
+    # the SP owns the space it will later query (a space created by anyone else
+    # is not reachable by the SP). Persisted so this happens at most once.
     if not space_id:
-        return jsonify({
-            'ready': False,
-            'needs_space': True,
-            'message': ('The security assistant has no Genie space yet. '
-                        'Create one from Settings to enable it.'),
-        })
-    # Confirm the space is reachable so a stale id is reported here, not mid-chat.
+        try:
+            space_id = _provision_genie_space(_sp_workspace_client())
+            _app_config['genie_space_id'] = space_id
+            try:
+                write_persisted_config(_app_config)
+            except Exception:  # noqa: BLE001
+                logger.warning('could not persist auto-created genie_space_id', exc_info=True)
+            os.environ['GENIE_SPACE_ID'] = space_id
+            logger.info('auto-created genie space %s on first assistant open', space_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('genie space auto-provision failed')
+            return jsonify({'ready': False, 'needs_space': True,
+                            'message': f'Could not create the assistant automatically: {str(exc)[:200]}'})
+
+    # Confirm the space is reachable so a stale/foreign id is reported here, not
+    # mid-chat. Genie runs as the app service principal (see api_assistant_chat).
     try:
-        client, _ = get_connection()
+        client = _sp_workspace_client()
         client.genie.get_space(space_id=space_id)
     except Exception as exc:  # noqa: BLE001
-        return jsonify({'ready': False,
-                        'message': f'Genie space {space_id} is not reachable: {str(exc)[:200]}'})
+        # A set-but-unreachable space (e.g. created by another identity) can be
+        # recovered by creating a fresh SP-owned one from the panel.
+        return jsonify({'ready': False, 'needs_space': True,
+                        'message': (f'The assistant\'s Genie space is not reachable '
+                                    f'({str(exc)[:160]}). Create a new one to continue.')})
     return jsonify({
         'ready': True,
         'suggestions': ASSISTANT_SUGGESTIONS,
@@ -14512,9 +14528,13 @@ def api_assistant_chat():
         logger.warning('session load failed; starting fresh', exc_info=True)
         conversation_id, history = None, []
 
-    # OBO: query as the signed-in user so Genie honours their Unity Catalog grants.
+    # Genie runs as the app service principal, not the signed-in user: the
+    # forwarded user (OBO) token carries no 'genie' OAuth scope in Databricks
+    # Apps, so Genie rejects it ("required scopes: genie") -- the same platform
+    # constraint the Jobs API has (see _sp_workspace_client). The SP owns the
+    # space and reads the SAT results schema the assistant is scoped to.
     try:
-        client, _ = get_connection()
+        client = _sp_workspace_client()
     except Exception as exc:  # noqa: BLE001
         return jsonify({'error': f'Could not connect to the workspace: {exc}',
                         'session_id': session_id}), 503
