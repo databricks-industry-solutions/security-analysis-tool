@@ -2,11 +2,13 @@ resource "databricks_app" "brickhound" {
   name        = "sat-permissions-exp"
   description = "SAT Permissions Analysis App"
 
-  # OAuth scopes the app may request when forwarding the calling user's
-  # token (OBO). `sql` is required by the Statement Execution API used to
-  # query the brickhound_* tables. Without this, OBO calls return
-  # 403 "Invalid scope, required scopes: sql".
-  user_api_scopes = ["sql"]
+  # OAuth scopes the app requests when forwarding the calling user's token
+  # (OBO). `sql` powers the Statement Execution API used to query the
+  # brickhound_* tables; `genie` lets the security assistant drive the Genie
+  # Conversation API as the signed-in user, so Unity Catalog enforces that
+  # user's own grants on the answer. Without a scope, OBO calls return
+  # 403 "Invalid scope, required scopes: <name>".
+  user_api_scopes = ["sql", "genie"]
 
   resources = [
     {

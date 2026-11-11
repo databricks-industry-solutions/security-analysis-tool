@@ -13807,8 +13807,9 @@ def api_settings():
 
     probe_specs.append((
         'User authorization (OBO)', check_obo,
-        ("User scopes are set when the app is created. Redeploy with "
-         "user_api_scopes [sql, serving.serving-endpoints] on the app to enable this.")))
+        ("User scopes are set on the app. Ensure user_api_scopes include "
+         "[sql, genie] -- genie lets the assistant answer as the signed-in user -- "
+         "then reopen the app to re-consent.")))
 
     # 2. The app's own identity. This is what fails when a service principal
     # secret is rotated or the principal is deleted.

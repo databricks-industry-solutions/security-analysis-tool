@@ -23,10 +23,10 @@ import time
 APP_NAME = "security-analysis"
 SCOPE_NAME = "sat_scope"
 
-# Scopes the app requests when forwarding the caller's token. These bind when the
-# app is CREATED; adding them to a running app does not rebind its OAuth client,
-# which is why a repair recreates the app rather than patching it.
-USER_API_SCOPES = ["sql", "serving.serving-endpoints"]
+# Scopes the app requests when forwarding the caller's token (OBO). `sql` powers
+# every data read via the Statement Execution API; `genie` lets the security
+# assistant drive the Genie Conversation API as the signed-in user.
+USER_API_SCOPES = ["sql", "genie"]
 
 # Grants the app's own service principal needs. SELECT and USE SCHEMA to read the
 # collection results; CREATE TABLE and MODIFY for the two tables the app owns
