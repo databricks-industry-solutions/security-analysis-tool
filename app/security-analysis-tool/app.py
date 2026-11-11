@@ -14433,6 +14433,19 @@ def _provision_genie_space(client):
         serialized_space=serialized,
         title='SAT Security Assistant',
         description='Natural-language Q&A over SAT security analysis results.')
+    # Let every workspace user run the assistant (CAN_RUN). This only grants the
+    # ability to ask — because chat runs on-behalf-of the user, Unity Catalog
+    # still enforces that user's own grants on the tables behind each answer, so
+    # broad CAN_RUN here exposes nothing a user could not already query. Owner
+    # (the app SP) keeps CAN_MANAGE; the PATCH is additive and non-fatal.
+    try:
+        client.api_client.do(
+            'PATCH', f'/api/2.0/permissions/genie/{space.space_id}',
+            body={'access_control_list': [
+                {'group_name': 'users', 'permission_level': 'CAN_RUN'}]})
+    except Exception:  # noqa: BLE001
+        logger.warning('could not share genie space %s with users',
+                       space.space_id, exc_info=True)
     return space.space_id
 
 
@@ -14482,10 +14495,11 @@ def api_assistant_config():
             return jsonify({'ready': False, 'needs_space': True,
                             'message': f'Could not create the assistant automatically: {str(exc)[:200]}'})
 
-    # Confirm the space is reachable so a stale/foreign id is reported here, not
-    # mid-chat. Genie runs as the app service principal (see api_assistant_chat).
+    # Confirm the space is reachable for THIS user (OBO), so "you don't have
+    # access" is reported here rather than mid-chat. Genie runs as the signed-in
+    # user (see api_assistant_chat).
     try:
-        client = _sp_workspace_client()
+        client, _ = get_connection()
         client.genie.get_space(space_id=space_id)
     except Exception as exc:  # noqa: BLE001
         # A set-but-unreachable space (e.g. created by another identity) can be
@@ -14528,13 +14542,13 @@ def api_assistant_chat():
         logger.warning('session load failed; starting fresh', exc_info=True)
         conversation_id, history = None, []
 
-    # Genie runs as the app service principal, not the signed-in user: the
-    # forwarded user (OBO) token carries no 'genie' OAuth scope in Databricks
-    # Apps, so Genie rejects it ("required scopes: genie") -- the same platform
-    # constraint the Jobs API has (see _sp_workspace_client). The SP owns the
-    # space and reads the SAT results schema the assistant is scoped to.
+    # OBO: Genie runs as the signed-in user. The app requests the
+    # 'dashboards.genie' user scope, so the forwarded user token can drive the
+    # Genie Conversation API, and Unity Catalog enforces that user's own grants
+    # on the tables behind the answer. The app service principal only creates and
+    # owns the space (see _provision_genie_space); it never reads for the user.
     try:
-        client = _sp_workspace_client()
+        client, _ = get_connection()
     except Exception as exc:  # noqa: BLE001
         return jsonify({'error': f'Could not connect to the workspace: {exc}',
                         'session_id': session_id}), 503
