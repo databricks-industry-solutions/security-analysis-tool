@@ -157,7 +157,6 @@ def _apply_runtime_config(data):
     # Bridge persisted config to the environment variables the rest of the app
     # already reads, so no other call site has to know about the config file.
     for env_key, cfg_key in (("WAREHOUSE_ID", "warehouse_id"),
-                             ("MODEL_ENDPOINT", "model_endpoint"),
                              ("GENIE_SPACE_ID", "genie_space_id"),
                              ("WORKSPACE_ID", "workspace_id"),
                              ("ACCOUNT_ID", "account_id")):
@@ -1358,50 +1357,37 @@ def get_main_html():
         }
         .assistant-icon-btn.is-open { background: var(--bg-input); color: #a5b4fc; }
 
-        .assistant-models {
-            padding: 12px 16px 14px;
-            border-bottom: 1px solid var(--border);
-            background: rgba(0, 0, 0, 0.16);
-        }
-        .assistant-models-head {
-            display: flex;
-            align-items: baseline;
-            gap: 8px;
-            margin-bottom: 7px;
-        }
-        .assistant-models-head span:first-child {
-            font-size: 0.72em;
-            font-weight: 650;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            color: var(--text-muted);
-        }
-        .assistant-models-note {
-            margin-left: auto;
-            font-size: 0.7em;
-            color: var(--text-muted);
-        }
-        .assistant-models select {
-            width: 100%;
-            background: var(--bg-input);
-            color: var(--text-primary);
+        /* Genie result tables rendered inline in an assistant answer. */
+        .assistant-table-wrap {
+            margin: 10px 0 4px;
+            max-height: 260px;
+            overflow: auto;
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 8px 10px;
-            font-family: inherit;
-            font-size: 0.85em;
-            cursor: pointer;
         }
-        .assistant-models select:focus {
-            outline: none;
-            border-color: rgba(102, 126, 234, 0.7);
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.14);
+        .assistant-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8em;
         }
-        .assistant-models-hint {
+        .assistant-table th, .assistant-table td {
+            text-align: left;
+            padding: 6px 9px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        .assistant-table th {
+            position: sticky;
+            top: 0;
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            font-weight: 650;
+        }
+        .assistant-table tbody tr:last-child td { border-bottom: none; }
+        .assistant-table-note {
             font-size: 0.74em;
             color: var(--text-muted);
-            margin-top: 6px;
-            min-height: 14px;
+            margin: 4px 2px 0;
         }
 
         .assistant-log { flex: 1; overflow-y: auto; padding: 16px; }
@@ -3949,26 +3935,10 @@ def get_main_html():
             <button class="assistant-icon-btn" id="assistant-new-btn" title="New chat" aria-label="Start a new chat">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
             </button>
-            <button class="assistant-icon-btn" id="assistant-model-btn" title="Change model" aria-label="Change model">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="3"/>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                </svg>
-            </button>
             <button class="assistant-close" id="assistant-close" aria-label="Close">&times;</button>
             </div>
         </div>
 
-        <!-- Model selector. Lists the chat endpoints available on this
-             workspace's AI Gateway; the choice applies to the next message. -->
-        <div class="assistant-models" id="assistant-models" style="display:none;">
-            <div class="assistant-models-head">
-                <span>Model</span>
-                <span class="assistant-models-note">Served through the AI Gateway</span>
-            </div>
-            <select id="assistant-model-select"><option>Loading…</option></select>
-            <div class="assistant-models-hint" id="assistant-model-hint"></div>
-        </div>
         <div class="assistant-log" id="assistant-log"></div>
         <div class="assistant-compose">
             <textarea id="assistant-input" rows="1" placeholder="Ask a security question&hellip;"></textarea>
@@ -4307,7 +4277,7 @@ def get_main_html():
                 opts.reconfigure = !!reconfigure;
                 opts.current = reconfigure
                     ? { catalog: status.catalog, schema: status.schema,
-                        warehouse_id: status.warehouse_id, model_endpoint: status.model_endpoint,
+                        warehouse_id: status.warehouse_id,
                         account_id: status.account_id }
                     : {};
                 renderSetupForm(opts);
@@ -4397,15 +4367,6 @@ def get_main_html():
                     </div>
                 </div>
 
-                <div class="setup-group">
-                    <div class="setup-group-title">Assistant <span class="setup-optional">optional</span></div>
-                    <div class="field">
-                        <span class="field-label">Model</span>
-                        ${setupPicker('setup-model', models, 'Default model', cur.model_endpoint)}
-                        <span class="field-help">Powers the assistant. Change it anytime in Settings.</span>
-                    </div>
-                </div>
-
                 <div class="setup-actions">
                     <span class="setup-error" id="setup-error"></span>
                     ${opts.reconfigure ? '<button class="btn btn-ghost" onclick="hideSetup()">Cancel</button>' : ''}
@@ -4432,7 +4393,6 @@ def get_main_html():
                 catalog: fieldValue('setup-catalog'),
                 schema: fieldValue('setup-schema'),
                 warehouse_id: fieldValue('setup-warehouse'),
-                model_endpoint: fieldValue('setup-model'),
                 account_id: fieldValue('setup-account-id'),
                 client_id: fieldValue('setup-client-id'),
                 client_secret: fieldValue('setup-client-secret'),
@@ -5638,68 +5598,45 @@ def get_main_html():
                                  controller: null, turnId: null };
 
 
-        // Model selector — lists the gateway's chat endpoints and switches which
-        // one answers the next message.
-        let assistantModelsLoaded = false;
-
-        function assistantShortModel(name) {
-            // Endpoint names are long ("databricks-claude-opus-4-7"); the prefix is
-            // noise once you know everything is served through the gateway.
-            return String(name || '').replace(/^databricks-/, '');
+        // Render Genie's result table (if any) and a collapsible SQL view.
+        function assistantRenderResult(result) {
+            let html = '';
+            const rows = result.rows || [];
+            const cols = (result.columns && result.columns.length) ? result.columns
+                         : (rows[0] ? Object.keys(rows[0]) : []);
+            if (rows.length && cols.length) {
+                const head = cols.map(c => `<th>${escapeHtml(String(c))}</th>`).join('');
+                const body = rows.map(r =>
+                    `<tr>${cols.map(c => {
+                        const v = r[c];
+                        return `<td>${escapeHtml(v === null || v === undefined ? '' : String(v))}</td>`;
+                    }).join('')}</tr>`).join('');
+                const note = result.truncated
+                    ? `<div class="assistant-table-note">Showing ${rows.length} of ${result.row_count} rows.</div>` : '';
+                html += `<div class="assistant-table-wrap"><table class="assistant-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${note}`;
+            }
+            if (result.sql) {
+                html += `<details class="assistant-trace"><summary>View SQL</summary><pre>${escapeHtml(result.sql)}</pre></details>`;
+            }
+            return html;
         }
 
-        async function assistantToggleModels() {
-            const box = document.getElementById('assistant-models');
-            const btn = document.getElementById('assistant-model-btn');
-            const showing = box.style.display !== 'none';
-            box.style.display = showing ? 'none' : 'block';
-            btn.classList.toggle('is-open', !showing);
-            if (!showing && !assistantModelsLoaded) await assistantLoadModels();
-        }
-
-        async function assistantLoadModels() {
-            const select = document.getElementById('assistant-model-select');
-            const hint = document.getElementById('assistant-model-hint');
+        async function assistantCreateSpace() {
+            const btn = document.getElementById('assistant-create-space');
+            if (btn) { btn.disabled = true; btn.textContent = 'Creating the assistant…'; }
             try {
-                const data = await fetch('/api/assistant/models').then(r => r.json());
-                if (data.error) {
-                    select.innerHTML = '<option>Unavailable</option>';
-                    hint.textContent = data.error;
+                const res = await fetch('/api/assistant/genie/create', { method: 'POST' }).then(r => r.json());
+                if (res.error) {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Create the assistant'; }
+                    alert('Could not create the assistant: ' + res.error);
                     return;
                 }
-                const models = data.models || [];
-                select.innerHTML = models.map(m =>
-                    `<option value="${escapeHtml(m.name)}" ${m.name === data.active ? 'selected' : ''}>${escapeHtml(assistantShortModel(m.name))}</option>`
-                ).join('');
-                hint.textContent = `${models.length} endpoints available`;
-                assistantModelsLoaded = true;
-                assistantSetModelLabel(data.active);
-
-                select.onchange = async () => {
-                    const endpoint = select.value;
-                    hint.textContent = 'Switching…';
-                    try {
-                        const res = await fetch('/api/assistant/models', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ endpoint: endpoint }),
-                        }).then(r => r.json());
-                        if (res.error) { hint.textContent = res.error; return; }
-                        assistantSetModelLabel(res.active);
-                        hint.textContent = 'Applies to your next message.';
-                    } catch (e) {
-                        hint.textContent = e.message;
-                    }
-                };
+                assistantState.ready = null;
+                assistantInit();
             } catch (e) {
-                select.innerHTML = '<option>Unavailable</option>';
-                hint.textContent = e.message;
+                if (btn) { btn.disabled = false; btn.textContent = 'Create the assistant'; }
+                alert('Could not create the assistant: ' + e.message);
             }
-        }
-
-        function assistantSetModelLabel(name) {
-            const label = document.getElementById('assistant-model-label');
-            if (label && name) label.textContent = assistantShortModel(name);
         }
 
         function assistantOpen() {
@@ -5721,13 +5658,18 @@ def get_main_html():
             try {
                 const cfg = await fetch('/api/assistant/config').then(r => r.json());
                 assistantState.ready = !!cfg.ready;
-                if (cfg.model) assistantSetModelLabel(cfg.model);
                 if (!cfg.ready) {
+                    const createBtn = cfg.needs_space
+                        ? `<button class="btn btn-primary btn-sm" id="assistant-create-space" style="margin-top:12px;">Create the assistant</button>`
+                        : '';
                     log.innerHTML = `
                         <div class="empty-state" style="padding:24px 8px;">
                             <p style="font-weight:600;color:var(--text-primary);margin-bottom:6px;">Assistant unavailable</p>
                             <p style="font-size:.88em;">${escapeHtml(cfg.message || '')}</p>
+                            ${createBtn}
                         </div>`;
+                    const cb = document.getElementById('assistant-create-space');
+                    if (cb) cb.addEventListener('click', assistantCreateSpace);
                     return;
                 }
                 log.innerHTML = `
@@ -5737,8 +5679,8 @@ def get_main_html():
                     </div>
                     <div style="font-size:.85em;color:var(--text-muted);line-height:1.5;">
                         Ask about permissions, exposed credentials, or workspace activity.
-                        Answers are grounded in the collected data — the assistant reads it
-                        through a fixed set of tools and cannot modify anything.
+                        Answers are generated by Databricks Genie over your SAT results —
+                        read-only, and scoped to your own Unity Catalog permissions.
                     </div>`;
                 log.querySelectorAll('[data-ask]').forEach(chip => {
                     chip.addEventListener('click', () => {
@@ -5762,8 +5704,6 @@ def get_main_html():
             assistantState.session = null;
             assistantState.busy = false;
             assistantState.turnId = null;
-            const models = document.getElementById('assistant-models');
-            if (models) models.style.display = 'none';
             const send = document.getElementById('assistant-send');
             const stop = document.getElementById('assistant-stop');
             if (send) send.hidden = false;
@@ -5870,15 +5810,7 @@ def get_main_html():
                 } else {
                     assistantState.session = result.session_id;
                     let html = assistantMarkdown(result.answer || '(no answer)');
-                    const calls = result.tool_calls || [];
-                    if (calls.length) {
-                        // String.fromCharCode(10) rather than a backslash escape: the
-                        // enclosing Python f-string would consume '\\n' and emit a raw
-                        // line break, which is a JavaScript syntax error.
-                        const lines = calls.map(t =>
-                            `${t.name || t.tool_name}(${JSON.stringify(t.args || t.tool_args || {})})`).join(String.fromCharCode(10));
-                        html += `<details class="assistant-trace"><summary>${calls.length} data lookup${calls.length === 1 ? '' : 's'}</summary><pre>${escapeHtml(lines)}</pre></details>`;
-                    }
+                    html += assistantRenderResult(result);
                     pending.querySelector('.assistant-text').innerHTML = html;
                 }
             } catch (e) {
@@ -5907,8 +5839,6 @@ def get_main_html():
                 if (!fab) return;
                 fab.addEventListener('click', assistantOpen);
                 document.getElementById('assistant-new-btn').addEventListener('click', assistantNewSession);
-                document.getElementById('assistant-model-btn')
-                        .addEventListener('click', assistantToggleModels);
                 document.getElementById('assistant-close').addEventListener('click', assistantClose);
                 document.getElementById('assistant-send').addEventListener('click', assistantSend);
                 document.getElementById('assistant-stop').addEventListener('click', assistantStop);
@@ -6871,7 +6801,6 @@ def get_main_html():
             }
 
             const warehouses = choices.warehouses || [];
-            const models = choices.model_endpoints || [];
             const spaces = choices.genie_spaces || [];
             const creds = settingsState.credentials || {};
             const present = creds.present || {};
@@ -6893,12 +6822,8 @@ def get_main_html():
                                 value="${escapeHtml(cfg.schema || '')}"
                                 onchange="markSettingDirty('schema', this.value)">`),
                 assistant:
-                    settingField('model_endpoint', 'Model',
-                        'Model that powers the assistant.',
-                        selectMarkup('model_endpoint', cfg.model_endpoint,
-                            models.map(m => ({ value: m, label: m })))) +
                     settingField('genie_space_id', 'Genie space',
-                        'Optional. Lets the assistant use an existing Genie space.',
+                        'The Genie space the assistant answers from. Auto-created over your results schema during setup.',
                         selectMarkup('genie_space_id', cfg.genie_space_id,
                             spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None')),
                 access: `
@@ -13234,28 +13159,6 @@ ASSISTANT_SUGGESTIONS = [
     "Are there hardcoded credentials confirmed active right now?",
 ]
 
-_agent_tools_registered = False
-
-
-def _ensure_agent_ready():
-    """Import and register the assistant's tools on first use.
-
-    Deferred rather than done at import time so a missing optional dependency
-    degrades the assistant alone instead of preventing the app from booting.
-    """
-    global _agent_tools_registered
-    if _agent_tools_registered:
-        return True, None
-    try:
-        from agent.tools import register_all
-        register_all()
-        _agent_tools_registered = True
-        return True, None
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("assistant tools failed to register")
-        return False, str(exc)
-
-
 def _assistant_user():
     """Best-effort identity of the signed-in user, for session ownership."""
     forwarded = (request.headers.get('X-Forwarded-Email')
@@ -13268,39 +13171,6 @@ def _assistant_user():
         return me.user_name or me.display_name or 'unknown'
     except Exception:  # noqa: BLE001
         return 'unknown'
-
-
-def _model_endpoint_available(endpoint_name):
-    """Check that the configured serving endpoint exists in this workspace.
-
-    Databricks Foundation Model endpoints are not present in every workspace, and
-    an absent one otherwise fails with an opaque RESOURCE_DOES_NOT_EXIST on the
-    first question. Returns (available, message).
-    """
-    try:
-        workspace_client, _ = get_connection()
-        names = {e.name for e in workspace_client.serving_endpoints.list() if e.name}
-    except Exception as exc:  # noqa: BLE001
-        # If the check itself fails, don't block the assistant — let the call try.
-        logger.info("serving endpoint check failed: %s", exc)
-        return True, None
-
-    if endpoint_name in names:
-        return True, None
-
-    if names:
-        listed = ", ".join(sorted(names)[:6])
-        return False, (
-            f"Model serving endpoint '{endpoint_name}' was not found in this "
-            f"workspace. Available endpoints: {listed}. Update MODEL_ENDPOINT and "
-            f"redeploy."
-        )
-    return False, (
-        f"Model serving endpoint '{endpoint_name}' was not found, and this "
-        f"workspace has no serving endpoints available. Enable Foundation Model "
-        f"APIs or point MODEL_ENDPOINT at an existing endpoint, then redeploy."
-    )
-
 
 
 # ---------------------------------------------------------------------------
@@ -13403,15 +13273,10 @@ _SETTING_SPECS = {
         'label': 'Results schema',
         'help': 'Unity Catalog schema holding collection results, as catalog.schema.',
     },
-    'model_endpoint': {
-        'env': 'MODEL_ENDPOINT',
-        'label': 'Assistant model',
-        'help': 'Serving endpoint that answers questions in the assistant.',
-    },
     'genie_space_id': {
         'env': 'GENIE_SPACE_ID',
         'label': 'Genie space',
-        'help': 'Optional. Leave empty to disable the Genie tool.',
+        'help': 'The Genie space the assistant answers from. Auto-created over your results schema if left empty.',
     },
     'per_user_filtering': {
         'env': 'ALLOW_SERVICE_PRINCIPAL_FALLBACK',
@@ -13474,17 +13339,6 @@ def _validate_setting(key, value):
             return f"No warehouse with that id: {str(exc)[:160]}"
         return None
 
-    if key == 'model_endpoint':
-        if not text:
-            return "An assistant model is required."
-        try:
-            names = {e.name for e in _sp_workspace_client().serving_endpoints.list() if e.name}
-        except Exception as exc:  # noqa: BLE001
-            return f"Could not list serving endpoints: {str(exc)[:160]}"
-        if text not in names:
-            return f"'{text}' is not a serving endpoint in this workspace."
-        return None
-
     if key == 'genie_space_id':
         if not text:
             return None
@@ -13518,12 +13372,9 @@ def api_settings_update():
     for key, value in payload.items():
         _apply_setting(key, value)
 
-    # A new warehouse or schema invalidates cached run state and the selected
-    # model, so those caches are dropped rather than serving stale answers.
+    # A new warehouse or schema invalidates cached run state.
     if 'warehouse_id' in payload or 'schema' in payload:
         _invalidate_collection_cache()
-    if 'model_endpoint' in payload:
-        _selected_model['endpoint'] = None
 
     logger.info("settings changed by %s: %s", _assistant_user(), sorted(payload))
     return jsonify({'saved': True, 'changed': sorted(payload)})
@@ -13671,7 +13522,6 @@ def api_setup_status():
         'schema': SCHEMA,
         # Current selections, so re-running setup can pre-fill them.
         'warehouse_id': os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '',
-        'model_endpoint': _app_config.get('model_endpoint') or '',
         'account_id': _app_config.get('account_id') or '',
         'has_credentials': has_credentials,
     })
@@ -13789,16 +13639,9 @@ def api_setup_options():
                       for w in client.warehouses.list() if w.id]
     except Exception:  # noqa: BLE001
         logger.info('could not list warehouses', exc_info=True)
-    try:
-        from agent.supervisor import list_chat_endpoints
-        # probe=False keeps first-run setup fast; the picker only needs names.
-        models = [e['name'] for e in list_chat_endpoints(probe=False)]
-    except Exception:  # noqa: BLE001
-        logger.info('could not list model endpoints', exc_info=True)
     return jsonify({
         'catalogs': sorted(catalogs),
         'warehouses': sorted(warehouses, key=lambda w: (w['name'] or '').lower()),
-        'models': models,
         'default_schema': 'security_analysis',
     })
 
@@ -13815,7 +13658,6 @@ def api_setup_complete():
     catalog = (payload.get('catalog') or '').strip().strip('`')
     schema = (payload.get('schema') or 'security_analysis').strip().strip('`')
     warehouse_id = (payload.get('warehouse_id') or '').strip()
-    model_endpoint = (payload.get('model_endpoint') or '').strip()
     genie_space_id = (payload.get('genie_space_id') or '').strip()
     account_id = (payload.get('account_id') or '').strip()
     client_id = (payload.get('client_id') or '').strip()
@@ -13859,7 +13701,6 @@ def api_setup_complete():
     config.update({
         'schema': f'{catalog}.{schema}',
         'warehouse_id': warehouse_id,
-        'model_endpoint': model_endpoint or config.get('model_endpoint'),
         'genie_space_id': genie_space_id,
         # Kept when blank so re-running setup without re-entering it is safe.
         'account_id': account_id or config.get('account_id', ''),
@@ -13872,6 +13713,21 @@ def api_setup_complete():
 
     # Apply immediately so the running process is configured without a restart.
     _apply_runtime_config(config)
+
+    # Auto-provision the assistant's Genie space when the customer didn't supply
+    # one, so the assistant works out of the box. Best-effort: setup still
+    # succeeds if Genie is unavailable, and the space can be created later from
+    # Settings. Skipped when a space id was entered (GENIE_SPACE_ID is set above).
+    if not (os.getenv('GENIE_SPACE_ID') or '').strip():
+        try:
+            space_id = _provision_genie_space(client)
+            config['genie_space_id'] = space_id
+            _app_config['genie_space_id'] = space_id
+            os.environ['GENIE_SPACE_ID'] = space_id
+            write_persisted_config(config)
+            logger.info('auto-created genie space %s during setup', space_id)
+        except Exception:  # noqa: BLE001
+            logger.warning('genie space auto-provision skipped', exc_info=True)
 
     if client_id and client_secret:
         try:
@@ -13911,13 +13767,6 @@ def api_settings_choices():
         except Exception:  # noqa: BLE001
             logger.info('could not list warehouses', exc_info=True)
         try:
-            from agent.supervisor import list_chat_endpoints
-            # probe=False: the dropdown only needs the candidate list, not the
-            # per-endpoint usability probe that makes this call take 10s+.
-            endpoints = [e['name'] for e in list_chat_endpoints(probe=False)]
-        except Exception:  # noqa: BLE001
-            logger.info('could not list chat endpoints', exc_info=True)
-        try:
             spaces = [
                 {'id': sp.space_id, 'name': sp.title or sp.space_id}
                 for sp in client.genie.list_spaces().spaces or []
@@ -13927,7 +13776,6 @@ def api_settings_choices():
 
     return jsonify({
         'warehouses': sorted(warehouses, key=lambda w: (w['name'] or '').lower()),
-        'model_endpoints': endpoints,
         'genie_spaces': sorted(spaces, key=lambda s: (s['name'] or '').lower()),
     })
 
@@ -14035,26 +13883,6 @@ def api_settings():
         ('Jobs are matched by name. Anything not deployed has no matching job yet — '
          'deploy it with the installer and it appears here automatically.')))
 
-    # 6. The assistant's model endpoint on the AI Gateway.
-    def check_model():
-        endpoint = _active_model()
-        if not endpoint:
-            return False, 'No model endpoint is configured.'
-        # _model_endpoint_available deliberately fails open so a failed check does
-        # not block the assistant, which means it cannot prove reachability. List
-        # the endpoints here so an auth failure is reported rather than hidden.
-        client, _ = get_connection()
-        names = {e.name for e in client.serving_endpoints.list() if e.name}
-        if endpoint not in names:
-            return False, (f"'{endpoint}' is not a serving endpoint in this "
-                           f"workspace ({len(names)} available).")
-        return True, f'{endpoint} is serving.'
-
-    probe_specs.append((
-        'Security assistant model', check_model,
-        ('Set MODEL_ENDPOINT to a chat-capable serving endpoint, or pick a different '
-         'model from the assistant panel.')))
-
     # 7. Alerts, which need both a recent SDK and permission to manage alerts.
     def check_alerts():
         client = _sp_workspace_client()
@@ -14081,10 +13909,10 @@ def api_settings():
     # 8. Genie, which is optional by design.
     genie_space = (os.getenv('GENIE_SPACE_ID') or '').strip()
     genie_entry = {
-        'label': 'Genie space',
-        'ok': True,
-        'detail': (f'Connected to {genie_space}.' if genie_space
-                   else 'Not set. The assistant answers from its own tools instead.'),
+        'label': 'Security assistant (Genie)',
+        'ok': bool(genie_space),
+        'detail': (f'Answering from Genie space {genie_space}.' if genie_space
+                   else 'No Genie space yet. Create one from Settings to enable the assistant.'),
         'optional': True,
     }
 
@@ -14099,7 +13927,6 @@ def api_settings():
             'workspace_id': (os.getenv('WORKSPACE_ID') or '').strip(),
             'schema': schema,
             'warehouse_id': warehouse_id,
-            'model_endpoint': _active_model(),
             'genie_space_id': genie_space,
             'sp_fallback_allowed': (
                 os.getenv('ALLOW_SERVICE_PRINCIPAL_FALLBACK', 'false').strip().lower()
@@ -14587,278 +14414,135 @@ def api_secrets_alerts_delete(alert_id):
     return jsonify({'deleted': True, 'id': alert_id})
 
 
-# ---------------------------------------------------------------------------
-# AI Gateway integration
-#
-# Model calls, model selection, and usage reporting all go through the
-# workspace's AI Gateway. Requests carry a usage_context map that the gateway
-# persists to system.serving.endpoint_usage, so this app's traffic is separable
-# for tracing and cost attribution.
-# ---------------------------------------------------------------------------
+def _provision_genie_space(client):
+    """Create a Genie space over the results schema from the bundled template.
 
-# Endpoint chosen in the UI, held in memory. A restart falls back to
-# MODEL_ENDPOINT, which is the installer-managed default.
-_selected_model = {'endpoint': None, 'auto': None}
-
-
-def _active_model():
-    """The model the assistant uses: an explicit choice, then the configured
-    MODEL_ENDPOINT, then an auto-picked available chat endpoint. Auto-picking
-    means the assistant works out of the box even when no model was selected
-    during setup (the model field there is optional)."""
-    if _selected_model['endpoint']:
-        return _selected_model['endpoint']
-    env = (os.getenv('MODEL_ENDPOINT') or '').strip()
-    if env:
-        return env
-    if not _selected_model['auto']:
-        try:
-            from agent.supervisor import list_chat_endpoints
-            # probe=False keeps this fast; we only need a name that exists.
-            endpoints = list_chat_endpoints(probe=False)
-            if endpoints:
-                _selected_model['auto'] = endpoints[0]['name']
-        except Exception:  # noqa: BLE001
-            logger.info('could not auto-select a model endpoint', exc_info=True)
-    return _selected_model['auto'] or 'databricks-claude-opus-4-7'
-
-
-@app.route('/api/assistant/models')
-def api_assistant_models():
-    """Chat endpoints available on the gateway, and which one is in use.
-
-    ``?refresh=1`` re-probes rather than using the cached result, for when the
-    gateway's model line-up changes mid-session.
+    The template (genie_space_template.py) carries the SAT tables, column hints,
+    instructions, and sample questions; {UC_SCHEMA} is replaced with the
+    configured catalog.schema. Returns the new space_id.
     """
-    refresh = request.args.get('refresh') in ('1', 'true', 'yes')
-    try:
-        from agent.supervisor import list_chat_endpoints
-        endpoints = list_chat_endpoints(refresh=refresh)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("listing gateway endpoints failed")
-        return jsonify({'error': str(exc), 'models': [], 'active': _active_model()}), 500
-
-    return jsonify({
-        'models': endpoints,
-        'active': _active_model(),
-        'default': os.getenv('MODEL_ENDPOINT'),
-        'gateway': (os.getenv('AI_GATEWAY_BASE_URL')
-                    or f"{(os.getenv('DATABRICKS_HOST') or '').rstrip('/')}/serving-endpoints"),
-    })
+    if not (CATALOG and SCHEMA):
+        raise RuntimeError('Configure a results schema before creating the Genie space.')
+    warehouse = (os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '').strip()
+    if not warehouse:
+        raise RuntimeError('Configure a SQL warehouse before creating the Genie space.')
+    from genie_space_template import SPACE_TEMPLATE
+    serialized = json.dumps(SPACE_TEMPLATE).replace('{UC_SCHEMA}', f'{CATALOG}.{SCHEMA}')
+    space = client.genie.create_space(
+        warehouse_id=warehouse,
+        serialized_space=serialized,
+        title='SAT Security Assistant',
+        description='Natural-language Q&A over SAT security analysis results.')
+    return space.space_id
 
 
-@app.route('/api/assistant/models', methods=['POST'])
-def api_assistant_models_select():
-    """Switch the assistant's model.
+@app.route('/api/assistant/genie/create', methods=['POST'])
+def api_assistant_genie_create():
+    """Provision the assistant's Genie space and persist its id.
 
-    Validated against the gateway's own list so a selection cannot point at an
-    endpoint that does not exist or is not chat-capable.
-    """
-    payload = request.get_json(silent=True) or {}
-    endpoint = (payload.get('endpoint') or '').strip()
-    if not endpoint:
-        return jsonify({'error': 'An endpoint name is required.'}), 400
-
-    try:
-        from agent.supervisor import list_chat_endpoints
-        available = {e['name'] for e in list_chat_endpoints()}
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({'error': str(exc)}), 500
-
-    if endpoint not in available:
-        return jsonify({
-            'error': (f"'{endpoint}' is not an available chat endpoint on this "
-                      f"workspace's AI Gateway.")
-        }), 400
-
-    _selected_model['endpoint'] = endpoint
-    logger.info("assistant model set to %s by %s", endpoint, _assistant_user())
-    return jsonify({'active': endpoint, 'saved': True})
-
-
-@app.route('/api/assistant/usage')
-def api_assistant_usage():
-    """Token usage and request counts for this app, from the gateway's own records.
-
-    Reads system.serving.endpoint_usage, filtered on the usage_context this app
-    stamps on every request, so the figures cover assistant traffic only rather
-    than everything sharing the endpoint.
+    Created by the app service principal so the app owns the space; the id is
+    then stored in config and bridged to GENIE_SPACE_ID for the running process.
     """
     try:
-        days = max(1, min(90, int(request.args.get('days', 7))))
-    except (TypeError, ValueError):
-        days = 7
-
-    try:
-        rows = exec_query_df(f"""
-            SELECT
-              e.served_entity_id,
-              COALESCE(se.endpoint_name, e.served_entity_id) AS endpoint,
-              COUNT(*)                        AS requests,
-              SUM(e.input_token_count)        AS input_tokens,
-              SUM(e.output_token_count)       AS output_tokens,
-              COUNT(DISTINCT e.usage_context['end_user'])  AS users,
-              COUNT(DISTINCT e.usage_context['session'])   AS sessions,
-              SUM(CASE WHEN e.status_code >= 400 THEN 1 ELSE 0 END) AS errors,
-              MAX(e.request_time)             AS last_request
-            FROM system.serving.endpoint_usage e
-            LEFT JOIN system.serving.served_entities se
-                   ON se.served_entity_id = e.served_entity_id
-            WHERE e.request_time >= current_timestamp() - INTERVAL {days} DAYS
-              AND e.usage_context['application'] = 'security-analysis-tool'
-            GROUP BY e.served_entity_id, COALESCE(se.endpoint_name, e.served_entity_id)
-            ORDER BY requests DESC
-        """)
-    except NoAccessError:
-        raise
+        space_id = _provision_genie_space(_sp_workspace_client())
     except Exception as exc:  # noqa: BLE001
-        logger.info("gateway usage query failed: %s", exc)
-        return jsonify({
-            'available': False,
-            'message': ('Usage records are not readable from this app. Access to '
-                        'system.serving.endpoint_usage is required to report token '
-                        'consumption.'),
-        })
-
-    # The system table is populated on a delay, so an empty result for a recent
-    # window is expected rather than a fault. Report the freshness alongside the
-    # figures so a reader can tell "no usage" from "not yet ingested".
-    latest = None
+        logger.exception('genie space creation failed')
+        return jsonify({'error': str(exc)}), 400
+    _app_config['genie_space_id'] = space_id
     try:
-        freshness = exec_query_df(
-            "SELECT MAX(request_time) AS latest FROM system.serving.endpoint_usage")
-        if freshness:
-            latest = freshness[0].get('latest')
+        write_persisted_config(_app_config)
     except Exception:  # noqa: BLE001
-        pass
-
-    return jsonify({
-        'available': True,
-        'days': days,
-        'rows': rows,
-        'records_through': latest,
-        'note': ('Usage records are ingested by the platform on a delay, so very '
-                 'recent activity may not appear yet.') if not rows else None,
-    })
+        logger.warning('could not persist genie_space_id', exc_info=True)
+    os.environ['GENIE_SPACE_ID'] = space_id
+    logger.info('genie space %s created by %s', space_id, _assistant_user())
+    return jsonify({'genie_space_id': space_id, 'created': True})
 
 
 @app.route('/api/assistant/config')
 def api_assistant_config():
-    """Whether the assistant can answer, plus suggested prompts."""
-    endpoint = _active_model()
-    if not endpoint:
+    """Whether the Genie-backed assistant can answer, plus suggested prompts."""
+    from agent import genie_chat
+    space_id = genie_chat.space_id()
+    if not space_id:
         return jsonify({
             'ready': False,
-            'message': ('The security assistant is not configured. Set MODEL_ENDPOINT '
-                        'to a model serving endpoint and redeploy.'),
+            'needs_space': True,
+            'message': ('The security assistant has no Genie space yet. '
+                        'Create one from Settings to enable it.'),
         })
-    ok, err = _ensure_agent_ready()
-    if not ok:
-        return jsonify({'ready': False, 'message': f'Assistant unavailable: {err}'})
-
-    available, detail = _model_endpoint_available(endpoint)
-    if not available:
-        return jsonify({'ready': False, 'message': detail})
-
+    # Confirm the space is reachable so a stale id is reported here, not mid-chat.
+    try:
+        client, _ = get_connection()
+        client.genie.get_space(space_id=space_id)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'ready': False,
+                        'message': f'Genie space {space_id} is not reachable: {str(exc)[:200]}'})
     return jsonify({
         'ready': True,
         'suggestions': ASSISTANT_SUGGESTIONS,
-        'genie_configured': bool(os.getenv('GENIE_SPACE_ID')),
         'read_only': True,
-        'model': endpoint,
+        'genie_space_id': space_id,
     })
 
 
 @app.route('/api/assistant/chat', methods=['POST'])
 def api_assistant_chat():
-    """Answer one conversational turn."""
-    if not _active_model():
-        return jsonify({'error': 'The security assistant is not configured.'}), 503
-    ok, err = _ensure_agent_ready()
-    if not ok:
-        return jsonify({'error': f'Assistant unavailable: {err}'}), 503
+    """Answer one turn by continuing (or starting) a Genie conversation."""
+    from agent import genie_chat, sessions
+    from agent.logging_util import new_session_id
+
+    if not genie_chat.space_id():
+        return jsonify({'error': 'The security assistant has no Genie space configured.'}), 503
 
     payload = request.get_json(silent=True) or {}
     message = (payload.get('message') or '').strip()
-    session_id = payload.get('session_id')
-    turn_id = (payload.get('turn_id') or '').strip() or None
+    session_id = (payload.get('session_id') or '').strip() or new_session_id()
     if not message:
         return jsonify({'error': 'message is required'}), 400
     if len(message) > 4000:
         return jsonify({'error': 'message is too long (4000 character limit)'}), 400
 
-    try:
-        from agent import sessions
-        from agent.logging_util import new_session_id
-        from agent.supervisor import get_supervisor
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("assistant import failed")
-        return jsonify({'error': f'Assistant unavailable: {exc}'}), 503
-
-    session_id = session_id or new_session_id()
     user = _assistant_user()
 
-    # History is a convenience, not a correctness requirement — answer even if the
-    # sessions table is unreachable.
+    # The Genie conversation_id for this session, plus prior turns for the sidebar.
+    # Best-effort: a sessions-table failure must not stop the user getting an answer.
     try:
-        history = sessions.load(session_id)
+        conversation_id, history = sessions.load(session_id)
     except Exception:  # noqa: BLE001
-        logger.warning("session load failed; continuing without history", exc_info=True)
-        history = []
+        logger.warning('session load failed; starting fresh', exc_info=True)
+        conversation_id, history = None, []
 
-    if turn_id:
-        _register_turn(turn_id)
-
-    def run_turn(endpoint):
-        return get_supervisor().chat(
-            session_id=session_id,
-            user=user,
-            history=history,
-            new_message=message,
-            model=endpoint,
-            is_cancelled=(lambda: _turn_cancelled(turn_id)) if turn_id else None,
-        )
-
+    # OBO: query as the signed-in user so Genie honours their Unity Catalog grants.
     try:
-        try:
-            result = run_turn(_active_model())
-        except Exception as exc:  # noqa: BLE001
-            # A model can be retired between being picked and being used. Rather than
-            # dead-ending the conversation, drop the stale choice, re-probe the gateway
-            # and answer on the default endpoint.
-            if 'deprecated' in str(exc).lower():
-                logger.warning("selected model %s is deprecated; falling back", _active_model())
-                _selected_model['endpoint'] = None
-                try:
-                    from agent.supervisor import list_chat_endpoints
-                    list_chat_endpoints(refresh=True)
-                    result = run_turn(_active_model())
-                except Exception as retry_exc:  # noqa: BLE001
-                    logger.exception("fallback after deprecation also failed")
-                    return jsonify({'error': str(retry_exc), 'session_id': session_id}), 500
-            else:
-                logger.exception("assistant turn failed")
-                return jsonify({'error': str(exc), 'session_id': session_id}), 500
-    finally:
-        if turn_id:
-            _release_turn(turn_id)
+        client, _ = get_connection()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': f'Could not connect to the workspace: {exc}',
+                        'session_id': session_id}), 503
 
-    # A cancelled turn is not persisted: it holds a partial exchange the user
-    # abandoned, and saving it would carry that into the next question's context.
-    if not result.get('cancelled'):
-        # A persistence failure must not lose the answer the user already waited for.
-        try:
-            sessions.save(session_id, user, result.get('messages', []))
-        except Exception:  # noqa: BLE001
-            logger.warning("session save failed", exc_info=True)
+    result = genie_chat.answer(client, message, conversation_id=conversation_id)
+    if result.get('error'):
+        return jsonify({'error': result['error'], 'session_id': session_id}), 502
+
+    conversation_id = result.get('conversation_id') or conversation_id
+    history = (history or []) + [
+        {'role': 'user', 'content': message},
+        {'role': 'assistant', 'content': result.get('answer', ''),
+         'sql': result.get('sql'), 'row_count': result.get('row_count', 0)},
+    ]
+    try:
+        sessions.save(session_id, user, conversation_id, history)
+    except Exception:  # noqa: BLE001
+        logger.warning('session save failed', exc_info=True)
 
     return jsonify({
         'session_id': session_id,
-        'answer': result.get('reply', ''),
-        'tool_calls': result.get('tool_calls', []),
-        'cancelled': bool(result.get('cancelled')),
-        # Which gateway endpoint answered, so the UI can show it per message.
-        'model': result.get('model') or _active_model(),
+        'answer': result.get('answer', ''),
+        'sql': result.get('sql'),
+        'description': result.get('description'),
+        'columns': result.get('columns', []),
+        'rows': result.get('rows', []),
+        'row_count': result.get('row_count', 0),
+        'truncated': result.get('truncated', False),
     })
 
 
