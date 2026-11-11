@@ -43,15 +43,48 @@ def answer(client, question: str, conversation_id: str | None = None) -> dict[st
     genie = client.genie
     try:
         if conversation_id:
-            msg = genie.create_message_and_wait(
+            started = genie.create_message(
                 space_id=sid, conversation_id=conversation_id, content=question)
         else:
-            msg = genie.start_conversation_and_wait(space_id=sid, content=question)
+            started = genie.start_conversation(space_id=sid, content=question)
     except Exception as exc:  # noqa: BLE001
-        log.exception("genie turn failed")
+        log.exception("genie start failed")
         return {"error": f"Genie request failed: {exc}"}
 
-    conv_id = getattr(msg, "conversation_id", None) or conversation_id
+    conv_id = getattr(started, "conversation_id", None) or conversation_id
+    message_id = getattr(started, "message_id", None) or getattr(started, "id", None)
+
+    # Poll to completion ourselves instead of the SDK's *_and_wait helper, which
+    # raises a generic "failed to reach COMPLETED" on a FAILED message and hides
+    # Genie's own error detail. Polling lets us read msg.error and surface the
+    # real reason (bad SQL, insufficient privileges, etc.) to the user.
+    import time
+    msg = None
+    deadline = time.time() + 150
+    while time.time() < deadline:
+        try:
+            msg = genie.get_message(space_id=sid, conversation_id=conv_id, message_id=message_id)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("genie get_message failed")
+            return {"error": f"Genie request failed: {exc}"}
+        if str(getattr(msg, "status", "") or "").split(".")[-1] in (
+                "COMPLETED", "FAILED", "CANCELLED", "QUERY_RESULT_EXPIRED"):
+            break
+        time.sleep(3)
+
+    status = str(getattr(msg, "status", "") or "").split(".")[-1]
+    if status != "COMPLETED":
+        detail = getattr(msg, "error", None)
+        for att in (getattr(msg, "attachments", None) or []):
+            q = getattr(att, "query", None)
+            if q and getattr(q, "error", None):
+                detail = detail or q.error
+        detail = str(detail) if detail else (status or "unknown")
+        log.error("genie message not COMPLETED: status=%s detail=%s", status, detail)
+        return {"error": f"Genie could not answer that ({detail}).",
+                "conversation_id": conv_id}
+
+    conv_id = getattr(msg, "conversation_id", None) or conv_id
     out: dict[str, Any] = {
         "answer": "",
         "conversation_id": conv_id,
