@@ -41,44 +41,53 @@ def answer(client, question: str, conversation_id: str | None = None) -> dict[st
         return {"error": "question is required"}
 
     genie = client.genie
-    try:
+    import time
+
+    def _run_once():
+        """One start-or-continue turn plus a poll to a terminal state.
+
+        Polls get_message ourselves rather than the SDK's *_and_wait helper,
+        which raises a generic "failed to reach COMPLETED" and hides Genie's own
+        error. Returns (message, conversation_id).
+        """
         if conversation_id:
             started = genie.create_message(
                 space_id=sid, conversation_id=conversation_id, content=question)
         else:
             started = genie.start_conversation(space_id=sid, content=question)
-    except Exception as exc:  # noqa: BLE001
-        log.exception("genie start failed")
-        return {"error": f"Genie request failed: {exc}"}
+        cid = getattr(started, "conversation_id", None) or conversation_id
+        mid = getattr(started, "message_id", None) or getattr(started, "id", None)
+        m = None
+        deadline = time.time() + 150
+        while time.time() < deadline:
+            m = genie.get_message(space_id=sid, conversation_id=cid, message_id=mid)
+            if str(getattr(m, "status", "") or "").split(".")[-1] in (
+                    "COMPLETED", "FAILED", "CANCELLED", "QUERY_RESULT_EXPIRED"):
+                break
+            time.sleep(3)
+        return m, cid
 
-    conv_id = getattr(started, "conversation_id", None) or conversation_id
-    message_id = getattr(started, "message_id", None) or getattr(started, "id", None)
-
-    # Poll to completion ourselves instead of the SDK's *_and_wait helper, which
-    # raises a generic "failed to reach COMPLETED" on a FAILED message and hides
-    # Genie's own error detail. Polling lets us read msg.error and surface the
-    # real reason (bad SQL, insufficient privileges, etc.) to the user.
-    import time
-    msg = None
-    deadline = time.time() + 150
-    while time.time() < deadline:
+    # Genie occasionally returns a transient FAILED with no error detail; retry
+    # once when that happens. A FAILED carrying a real error (bad SQL, insufficient
+    # privileges) is deterministic, so it is surfaced immediately rather than retried.
+    msg = conv_id = None
+    for attempt in range(2):
         try:
-            msg = genie.get_message(space_id=sid, conversation_id=conv_id, message_id=message_id)
+            msg, conv_id = _run_once()
         except Exception as exc:  # noqa: BLE001
-            log.exception("genie get_message failed")
+            log.exception("genie turn failed")
             return {"error": f"Genie request failed: {exc}"}
-        if str(getattr(msg, "status", "") or "").split(".")[-1] in (
-                "COMPLETED", "FAILED", "CANCELLED", "QUERY_RESULT_EXPIRED"):
+        status = str(getattr(msg, "status", "") or "").split(".")[-1]
+        if status == "COMPLETED":
             break
-        time.sleep(3)
-
-    status = str(getattr(msg, "status", "") or "").split(".")[-1]
-    if status != "COMPLETED":
         detail = getattr(msg, "error", None)
         for att in (getattr(msg, "attachments", None) or []):
             q = getattr(att, "query", None)
             if q and getattr(q, "error", None):
                 detail = detail or q.error
+        if status == "FAILED" and not detail and attempt == 0:
+            log.warning("genie returned a transient FAILED (no detail); retrying once")
+            continue
         detail = str(detail) if detail else (status or "unknown")
         log.error("genie message not COMPLETED: status=%s detail=%s", status, detail)
         return {"error": f"Genie could not answer that ({detail}).",
