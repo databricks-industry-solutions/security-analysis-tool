@@ -1,0 +1,121 @@
+{{- if .enable_app }}
+resources:
+  apps:
+    sat_security_analysis:
+      name: "security-analysis"
+      description: "Security Analysis Tool — permissions analysis, secret scanning, and security assistant"
+      source_code_path: "../app/security-analysis-tool"
+      # OAuth scopes the app requests when forwarding the calling user's token
+      # (OBO). Declared here so a fresh install's OAuth client carries them from
+      # creation and users consent to them on first open:
+      #   sql   - the Statement Execution API every data read goes through;
+      #           without it reads fail with "required scopes: sql".
+      #   genie - lets the security assistant drive the Genie Conversation API as
+      #           the signed-in user, so Unity Catalog enforces that user's own
+      #           grants on the tables behind each answer. Without it the
+      #           assistant fails with "required scopes: genie".
+      user_api_scopes:
+        - sql
+        - genie
+      resources:
+        - name: "warehouse"
+          sql_warehouse:
+            permission: "CAN_USE"
+            id: {{.warehouse_id}}
+
+        # Unity Catalog schema holding collection results, as `catalog`.schema.
+        - name: "analysis_schema_name"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: analysis_schema_name
+
+        - name: "sql-warehouse-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: sql-warehouse-id
+
+        # Serving endpoint backing the security assistant.
+        - name: "model-endpoint"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: model-endpoint
+
+        # Genie space created by the installer. Empty when Genie was declined —
+        # the assistant then reports that tool as unavailable and keeps working.
+        - name: "genie-space-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: genie-space-id
+
+        # Scopes audit-log queries to this workspace by default.
+        - name: "workspace-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: workspace-id
+
+        # Job ids, read by app.yaml. The job bindings above grant permission to
+        # run the jobs, but Databricks Apps does not inject their ids, so the
+        # installer writes them as secrets and they are bound here.
+        - name: "permissions-job-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: permissions-job-id
+
+        - name: "secrets-job-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: secrets-job-id
+
+        - name: "shared-to-account-job-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: shared-to-account-job-id
+
+        - name: "privileged-non-idp-job-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: privileged-non-idp-job-id
+
+        - name: "denylist-job-id"
+          secret:
+            permission: "READ"
+            scope: "sat_scope"
+            key: denylist-job-id
+
+        # Job bindings power the in-app "Collect data" control. CAN_MANAGE_RUN
+        # allows starting a run without permitting edits to the job definition.
+        - name: "permissions-job"
+          job:
+            permission: "CAN_MANAGE_RUN"
+            id: ${resources.jobs.brickhound_data_collection.id}
+
+        - name: "secrets-job"
+          job:
+            permission: "CAN_MANAGE_RUN"
+            id: ${resources.jobs.sat_secrets.id}
+
+        - name: "shared-to-account-job"
+          job:
+            permission: "CAN_MANAGE_RUN"
+            id: ${resources.jobs.brickhound_share_to_account.id}
+
+        - name: "privileged-non-idp-job"
+          job:
+            permission: "CAN_MANAGE_RUN"
+            id: ${resources.jobs.brickhound_privileged_non_idp.id}
+
+        - name: "denylist-job"
+          job:
+            permission: "CAN_MANAGE_RUN"
+            id: ${resources.jobs.brickhound_denylist_candidates.id}
+
+{{- end }}
