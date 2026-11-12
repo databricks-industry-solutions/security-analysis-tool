@@ -1891,6 +1891,24 @@ def get_main_html():
         .sidebar-nav::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.2);
         }
+
+        /* App-wide scrollbars: thin, rounded, soft slate -- replaces the default
+           grey. The transparent border + background-clip insets the thumb so it
+           reads as a floating pill rather than filling the gutter. */
+        * { scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, .34) transparent; }
+        ::-webkit-scrollbar { width: 11px; height: 11px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, .32);
+            border-radius: 10px;
+            border: 3px solid transparent;
+            background-clip: padding-box;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, .5);
+            background-clip: padding-box;
+        }
+        ::-webkit-scrollbar-corner { background: transparent; }
         .nav-section {
             margin-bottom: 28px;
         }
@@ -2308,12 +2326,14 @@ def get_main_html():
             align-items: flex-start;
             justify-content: space-between;
             gap: 16px;
-            padding: 20px 22px 16px;
+            padding: 20px 20px 14px;
             border-bottom: 1px solid rgba(255, 255, 255, .07);
         }
         .drawer-title { font-size: 1.05em; font-weight: 650; letter-spacing: -.01em; }
         .drawer-sub { font-size: .82em; color: var(--text-muted); margin-top: 2px; }
-        .drawer-body { padding: 18px 22px 28px; overflow-y: auto; flex: 1; min-height: 0; }
+        /* Indent the title text to line up with the section-card titles below. */
+        .drawer-head-titles { flex: 1; min-width: 0; padding-left: 15px; }
+        .drawer-body { padding: 16px 20px 24px; overflow-y: auto; flex: 1; min-height: 0; }
 
         /* Problems, stated plainly. Healthy items are not listed: eight rows
            reading "Healthy" is noise, not information. */
@@ -2620,8 +2640,8 @@ def get_main_html():
             display: flex;
             align-items: center;
             gap: 9px;
-            margin: 16px -22px 0;
-            padding: 14px 22px;
+            margin: 16px -20px 0;
+            padding: 14px 20px;
             background: var(--bg-card);
             border-top: 1px solid rgba(255, 255, 255, .1);
         }
@@ -3924,7 +3944,7 @@ def get_main_html():
     <div class="drawer-scrim" id="settings-scrim" hidden onclick="closeSettingsPanel()"></div>
     <aside class="drawer" id="settings-drawer" hidden aria-label="Settings and health">
         <div class="drawer-head">
-            <div>
+            <div class="drawer-head-titles">
                 <div class="drawer-title">Settings</div>
                 <div class="drawer-sub">Configuration and connection health</div>
             </div>
