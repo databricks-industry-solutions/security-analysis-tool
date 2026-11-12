@@ -17,7 +17,7 @@ import json
 import os
 from typing import Any
 
-SPACE_TITLE = "Security Analysis Tool [SAT]"
+SPACE_TITLE = "Security Analysis Tool (SAT) Assistant"
 SPACE_DESCRIPTION = (
     "Natural-language questions over the Databricks permissions graph and "
     "secret scanning results."

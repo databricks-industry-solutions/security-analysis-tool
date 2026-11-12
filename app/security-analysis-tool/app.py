@@ -14416,12 +14416,18 @@ def api_secrets_alerts_delete(alert_id):
     return jsonify({'deleted': True, 'id': alert_id})
 
 
+GENIE_SPACE_TITLE = 'Security Analysis Tool (SAT) Assistant'
+
+
 def _provision_genie_space(client):
-    """Create a Genie space over the results schema from the bundled template.
+    """Create -- or reuse -- the assistant's Genie space over the results schema.
 
     The template (genie_space_template.py) carries the SAT tables, column hints,
     instructions, and sample questions; {UC_SCHEMA} is replaced with the
-    configured catalog.schema. Returns the new space_id.
+    configured catalog.schema. Idempotent: a space already titled
+    GENIE_SPACE_TITLE is reused and its definition refreshed, so repeated
+    provisions do not accumulate duplicates (Genie otherwise auto-appends a
+    timestamp to a colliding title). Returns the space_id.
     """
     if not (CATALOG and SCHEMA):
         raise RuntimeError('Configure a results schema before creating the Genie space.')
@@ -14430,11 +14436,32 @@ def _provision_genie_space(client):
         raise RuntimeError('Configure a SQL warehouse before creating the Genie space.')
     from genie_space_template import SPACE_TEMPLATE
     serialized = json.dumps(SPACE_TEMPLATE).replace('{UC_SCHEMA}', f'{CATALOG}.{SCHEMA}')
-    space = client.genie.create_space(
-        warehouse_id=warehouse,
-        serialized_space=serialized,
-        title='SAT Security Assistant',
-        description='Natural-language Q&A over SAT security analysis results.')
+    description = 'Natural-language Q&A over SAT security analysis results.'
+
+    # Reuse an existing space with the same title rather than creating a duplicate.
+    existing_id = None
+    try:
+        for sp in (client.genie.list_spaces().spaces or []):
+            if (sp.title or '') == GENIE_SPACE_TITLE:
+                existing_id = sp.space_id
+                break
+    except Exception:  # noqa: BLE001
+        logger.info('could not list genie spaces for reuse', exc_info=True)
+
+    if existing_id:
+        try:
+            client.genie.update_space(
+                space_id=existing_id, serialized_space=serialized, warehouse_id=warehouse,
+                title=GENIE_SPACE_TITLE, description=description)
+        except Exception:  # noqa: BLE001
+            logger.warning('could not refresh existing genie space %s', existing_id, exc_info=True)
+        space_id = existing_id
+    else:
+        space = client.genie.create_space(
+            warehouse_id=warehouse, serialized_space=serialized,
+            title=GENIE_SPACE_TITLE, description=description)
+        space_id = space.space_id
+
     # Let every workspace user run the assistant (CAN_RUN). This only grants the
     # ability to ask — because chat runs on-behalf-of the user, Unity Catalog
     # still enforces that user's own grants on the tables behind each answer, so
@@ -14442,13 +14469,12 @@ def _provision_genie_space(client):
     # (the app SP) keeps CAN_MANAGE; the PATCH is additive and non-fatal.
     try:
         client.api_client.do(
-            'PATCH', f'/api/2.0/permissions/genie/{space.space_id}',
+            'PATCH', f'/api/2.0/permissions/genie/{space_id}',
             body={'access_control_list': [
                 {'group_name': 'users', 'permission_level': 'CAN_RUN'}]})
     except Exception:  # noqa: BLE001
-        logger.warning('could not share genie space %s with users',
-                       space.space_id, exc_info=True)
-    return space.space_id
+        logger.warning('could not share genie space %s with users', space_id, exc_info=True)
+    return space_id
 
 
 @app.route('/api/assistant/genie/create', methods=['POST'])
