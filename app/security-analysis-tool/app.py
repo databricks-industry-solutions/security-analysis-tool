@@ -2275,27 +2275,33 @@ def get_main_html():
         .drawer-scrim {
             position: fixed;
             inset: 0;
-            background: rgba(3, 6, 15, .55);
+            background: rgba(3, 6, 15, .6);
             backdrop-filter: blur(2px);
-            z-index: 900;
+            z-index: 1400;                 /* above the assistant panel (z 1300) */
             animation: drawerFade .16s ease;
         }
+        /* Centered modal dialog. Opens over everything (including the assistant
+           side panel) so Settings no longer collides with it -- close the modal
+           and the assistant is still there. */
         .drawer {
             position: fixed;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            width: 460px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 500px;
             max-width: 92vw;
+            max-height: 86vh;
             background: var(--bg-card, #12151f);
-            border-left: 1px solid rgba(255, 255, 255, .09);
-            box-shadow: -18px 0 48px rgba(0, 0, 0, .45);
-            z-index: 901;
+            border: 1px solid rgba(255, 255, 255, .09);
+            border-radius: 14px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, .55);
+            z-index: 1401;
             display: flex;
             flex-direction: column;
-            animation: drawerIn .2s cubic-bezier(.22, .61, .36, 1);
+            overflow: hidden;              /* clip head/body/savebar to the radius */
+            animation: drawerIn .18s cubic-bezier(.22, .61, .36, 1);
         }
-        @keyframes drawerIn { from { transform: translateX(24px); opacity: .6; } }
+        @keyframes drawerIn { from { transform: translate(-50%, -48%) scale(.97); opacity: 0; } }
         @keyframes drawerFade { from { opacity: 0; } }
         .drawer-head {
             display: flex;
