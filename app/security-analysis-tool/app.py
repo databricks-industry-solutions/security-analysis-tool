@@ -1554,13 +1554,13 @@ def get_main_html():
         .collect-setup-sub { font-size: .85em; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
         .collect-setup-err { font-size: .82em; color: #fca5a5; margin-top: 8px; }
         .collect-setup .btn { flex-shrink: 0; }
-        .collect-group { margin-bottom: 26px; }
+        .collect-group { margin-bottom: 18px; }
 
         /* Manage section: admin actions (redeploy, re-run initializer, remove). */
         .collect-manage {
-            margin-top: 30px;
+            margin-top: 10px;
             border-top: 1px solid rgba(255, 255, 255, .07);
-            padding-top: 4px;
+            padding-top: 6px;
         }
         .collect-manage-head {
             display: flex; align-items: center; gap: 8px;
