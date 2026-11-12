@@ -1448,6 +1448,30 @@ def get_main_html():
         }
         .assistant-chip:hover { border-color: var(--accent); color: var(--text-primary); }
 
+        /* Past-conversations list (History button). */
+        .assistant-history { padding: 2px; }
+        .assistant-history-head {
+            font-size: .64em; font-weight: 700; letter-spacing: .07em;
+            text-transform: uppercase; color: var(--text-muted); margin: 2px 2px 10px;
+        }
+        .assistant-history-item {
+            display: flex; align-items: baseline; gap: 10px; width: 100%;
+            padding: 9px 11px; margin-bottom: 5px;
+            background: var(--bg-input); border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 9px; cursor: pointer; text-align: left;
+            color: var(--text-primary); font: inherit;
+            transition: border-color .12s, background .12s;
+        }
+        .assistant-history-item:hover { border-color: rgba(102, 126, 234, .5); }
+        .assistant-history-title {
+            flex: 1; min-width: 0; font-size: .86em;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .assistant-history-time { flex: 0 0 auto; font-size: .72em; color: var(--text-muted); }
+        .assistant-history-empty {
+            font-size: .85em; color: var(--text-muted); padding: 8px 2px; line-height: 1.5;
+        }
+
         .assistant-compose {
             border-top: 1px solid var(--border);
             padding: 12px 14px;
@@ -3982,6 +4006,9 @@ def get_main_html():
                 <div class="assistant-head-sub" id="assistant-model-label">Permissions, secrets, and audit activity</div>
             </div>
             <div class="assistant-head-actions">
+            <button class="assistant-icon-btn" id="assistant-history-btn" title="Past conversations" aria-label="Past conversations">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+            </button>
             <button class="assistant-icon-btn" id="assistant-new-btn" title="New chat" aria-label="Start a new chat">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
             </button>
@@ -5763,6 +5790,67 @@ def get_main_html():
             if (input) { input.value = ''; input.focus(); }
         }
 
+        // Past conversations: Genie stores every thread per user, so the pane can
+        // list them and reopen one. The history button toggles the list; picking a
+        // conversation reloads its turns and continues it on the next message.
+        function assistantRelTime(ms) {
+            if (!ms) return '';
+            const d = Math.max(0, Date.now() - Number(ms));
+            const day = Math.floor(d / 86400000), h = Math.floor(d / 3600000), m = Math.floor(d / 60000);
+            if (day >= 1) return day + 'd ago';
+            if (h >= 1) return h + 'h ago';
+            if (m >= 1) return m + 'm ago';
+            return 'just now';
+        }
+
+        async function assistantToggleHistory() {
+            const log = document.getElementById('assistant-log');
+            if (log.querySelector('.assistant-history')) { assistantInit(); return; }
+            log.innerHTML = '<div class="loading"><div class="spinner"></div>Loading conversations&hellip;</div>';
+            try {
+                const data = await fetch('/api/assistant/conversations').then(r => r.json());
+                const convs = data.conversations || [];
+                if (!convs.length) {
+                    log.innerHTML = `<div class="assistant-history"><div class="assistant-history-head">Past conversations</div><div class="assistant-history-empty">No past conversations yet. Ask something to start one.</div></div>`;
+                    return;
+                }
+                const items = convs.map(c => `
+                    <button class="assistant-history-item" data-conv="${escapeHtml(c.conversation_id)}">
+                        <span class="assistant-history-title">${escapeHtml(c.title)}</span>
+                        <span class="assistant-history-time">${assistantRelTime(c.created)}</span>
+                    </button>`).join('');
+                log.innerHTML = `<div class="assistant-history"><div class="assistant-history-head">Past conversations</div>${items}</div>`;
+                log.querySelectorAll('.assistant-history-item').forEach(el =>
+                    el.addEventListener('click', () => assistantLoadConversation(el.dataset.conv)));
+            } catch (e) {
+                log.innerHTML = `<div class="assistant-history"><div class="assistant-history-empty">Could not load conversations: ${escapeHtml(e.message)}</div></div>`;
+            }
+        }
+
+        async function assistantLoadConversation(convId) {
+            const log = document.getElementById('assistant-log');
+            log.innerHTML = '<div class="loading"><div class="spinner"></div>Loading conversation&hellip;</div>';
+            try {
+                const data = await fetch('/api/assistant/conversation/' + encodeURIComponent(convId)).then(r => r.json());
+                if (data.error) { log.innerHTML = `<div class="assistant-history"><div class="assistant-history-empty">${escapeHtml(data.error)}</div></div>`; return; }
+                log.innerHTML = '';
+                (data.turns || []).forEach(t => {
+                    if (t.role === 'user') {
+                        assistantAppend('user', assistantMarkdown(t.content || ''));
+                    } else {
+                        let html = assistantMarkdown(t.content || '(no answer)');
+                        if (t.sql) html += `<details class="assistant-trace"><summary>View SQL</summary><pre>${escapeHtml(t.sql)}</pre></details>`;
+                        assistantAppend('ai', html);
+                    }
+                });
+                assistantState.conversationId = convId;
+                const input = document.getElementById('assistant-input');
+                if (input) input.focus();
+            } catch (e) {
+                log.innerHTML = `<div class="assistant-history"><div class="assistant-history-empty">${escapeHtml(e.message)}</div></div>`;
+            }
+        }
+
         // Minimal markdown: bold, inline code, and bullet lines. The assistant is
         // instructed to keep formatting simple, so a full parser is unnecessary.
         function assistantMarkdown(text) {
@@ -5792,8 +5880,7 @@ def get_main_html():
         function assistantAppend(role, html) {
             const log = document.getElementById('assistant-log');
             // Clear the intro block on the first real exchange.
-            const chips = log.querySelector('.assistant-chips');
-            if (chips) log.innerHTML = '';
+            if (log.querySelector('.assistant-chips') || log.querySelector('.assistant-history')) log.innerHTML = '';
             const wrap = document.createElement('div');
             wrap.className = 'assistant-msg ' + (role === 'user' ? 'me' : 'ai');
             if (role === 'user') {
@@ -5890,6 +5977,7 @@ def get_main_html():
                 if (!fab) return;
                 fab.addEventListener('click', assistantOpen);
                 document.getElementById('assistant-new-btn').addEventListener('click', assistantNewSession);
+                document.getElementById('assistant-history-btn').addEventListener('click', assistantToggleHistory);
                 document.getElementById('assistant-close').addEventListener('click', assistantClose);
                 document.getElementById('assistant-send').addEventListener('click', assistantSend);
                 document.getElementById('assistant-stop').addEventListener('click', assistantStop);
@@ -14674,6 +14762,35 @@ def api_assistant_chat():
         'row_count': result.get('row_count', 0),
         'truncated': result.get('truncated', False),
     })
+
+
+@app.route('/api/assistant/conversations')
+def api_assistant_conversations():
+    """The signed-in user's past Genie conversations, newest first."""
+    from agent import genie_chat
+    if not genie_chat.space_id():
+        return jsonify({'conversations': []})
+    try:
+        client, _ = get_connection()
+        return jsonify({'conversations': genie_chat.list_conversations(client)})
+    except Exception as exc:  # noqa: BLE001
+        logger.info('listing genie conversations failed: %s', exc)
+        return jsonify({'conversations': [], 'error': str(exc)[:200]})
+
+
+@app.route('/api/assistant/conversation/<conversation_id>')
+def api_assistant_conversation(conversation_id):
+    """Reload one past conversation's turns so the pane can reopen it."""
+    from agent import genie_chat
+    if not genie_chat.space_id():
+        return jsonify({'turns': []})
+    try:
+        client, _ = get_connection()
+        turns = genie_chat.conversation_turns(client, conversation_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.info('loading genie conversation failed: %s', exc)
+        return jsonify({'error': str(exc)[:200]}), 502
+    return jsonify({'conversation_id': conversation_id, 'turns': turns})
 
 
 # In-flight assistant turns, so a Stop from the browser can halt the tool loop

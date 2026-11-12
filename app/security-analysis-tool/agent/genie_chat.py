@@ -133,6 +133,63 @@ def answer(client, question: str, conversation_id: str | None = None) -> dict[st
     return out
 
 
+def list_conversations(client) -> list[dict[str, Any]]:
+    """The signed-in user's past conversations in the space, newest first.
+
+    Genie scopes conversations to the caller, so under OBO each user sees only
+    their own. ``title`` is the opening question Genie recorded for the thread.
+    """
+    sid = space_id()
+    if not sid:
+        return []
+    res = client.genie.list_conversations(space_id=sid)
+    out = []
+    for c in (getattr(res, "conversations", None) or []):
+        out.append({
+            "conversation_id": getattr(c, "conversation_id", None),
+            "title": (getattr(c, "title", None) or "Conversation"),
+            "created": getattr(c, "created_timestamp", None),
+        })
+    out.sort(key=lambda x: x["created"] or 0, reverse=True)
+    return [c for c in out if c["conversation_id"]]
+
+
+def conversation_turns(client, conversation_id: str) -> list[dict[str, Any]]:
+    """Flatten a stored conversation into render-ready turns (oldest first).
+
+    Each Genie message is one user turn plus its answer; the SQL query result
+    rows are not re-fetched here (they are historical and costly) -- the text
+    answer and the SQL are enough to re-read the thread.
+    """
+    sid = space_id()
+    if not sid:
+        return []
+    res = client.genie.list_conversation_messages(space_id=sid, conversation_id=conversation_id)
+    msgs = list(getattr(res, "messages", None) or [])
+    # Order oldest-first when a timestamp is available; otherwise trust API order.
+    if msgs and getattr(msgs[0], "created_timestamp", None) is not None:
+        msgs.sort(key=lambda m: getattr(m, "created_timestamp", 0) or 0)
+    turns: list[dict[str, Any]] = []
+    for m in msgs:
+        question = getattr(m, "content", None)
+        if question:
+            turns.append({"role": "user", "content": question})
+        text_parts, sql = [], None
+        for att in (getattr(m, "attachments", None) or []):
+            text = getattr(att, "text", None)
+            if text and getattr(text, "content", None):
+                text_parts.append(text.content)
+            query = getattr(att, "query", None)
+            if query:
+                sql = getattr(query, "query", None)
+                if getattr(query, "description", None):
+                    text_parts.append(query.description)
+        answer_text = "\n\n".join(p for p in text_parts if p and p.strip())
+        if answer_text or sql:
+            turns.append({"role": "assistant", "content": answer_text, "sql": sql})
+    return turns
+
+
 def _fetch_result(client, space_id, conversation_id, message_id, attachment_id):
     """Fetch an attachment's query result, tolerating SDK method renames.
 
