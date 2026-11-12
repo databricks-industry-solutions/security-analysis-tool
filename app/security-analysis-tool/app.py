@@ -1698,6 +1698,13 @@ def get_main_html():
 
         /* Guard: any icon added to a row later inherits a sane box. */
         .collect-row svg { max-width: 16px; max-height: 16px; }
+        /* Per-job remove: quiet by default, danger-tinted on hover/arm. */
+        .collect-remove { color: var(--text-muted); }
+        .collect-remove:hover { color: #fca5a5; border-color: rgba(239, 68, 68, .45); }
+        .collect-remove.is-armed {
+            color: #fca5a5; border-color: rgba(239, 68, 68, .6);
+            background: rgba(239, 68, 68, .12);
+        }
 
         /* Anchors styled as buttons need the button box model. */
         a.btn, a.btn:hover { text-decoration: none; }
@@ -6041,6 +6048,7 @@ def get_main_html():
                         ${active
                             ? `<button class="btn btn-sm btn-stop" onclick="cancelCollection('${escapeHtml(job.kind)}')">Cancel run</button>`
                             : `<button class="btn btn-sm" onclick="startCollection('${escapeHtml(job.kind)}')">Run now</button>`}
+                        ${active ? '' : `<button class="btn btn-sm btn-ghost collect-remove" onclick="removeCollectionJob('${escapeHtml(job.kind)}', this)">Remove</button>`}
                     </div>
                     ${active ? '<div class="collect-bar"><div class="collect-bar-fill"></div></div>' : ''}
                     <div class="collect-drawer" id="schedule-${escapeHtml(job.kind)}" style="display:none;"></div>
@@ -6305,6 +6313,38 @@ def get_main_html():
                 if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = 'Remove'; return; }
                 await loadCollectionPanel();
             } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = 'Remove'; }
+        }
+
+        // Remove one collection job. Two-click arm so a single misclick next to
+        // "Run now" can't delete a job; collected data is untouched either way.
+        async function removeCollectionJob(kind, btn) {
+            if (btn.dataset.armed !== '1') {
+                btn.dataset.armed = '1';
+                btn.textContent = 'Confirm remove';
+                btn.classList.add('is-armed');
+                collectionRowNote(kind, 'Removes this job only. Collected data is kept.', 'warn');
+                clearTimeout(btn._armTimer);
+                btn._armTimer = setTimeout(() => {
+                    btn.dataset.armed = '0'; btn.textContent = 'Remove'; btn.classList.remove('is-armed');
+                }, 4000);
+                return;
+            }
+            clearTimeout(btn._armTimer);
+            btn.dataset.armed = '0'; btn.disabled = true; btn.textContent = 'Removing…';
+            btn.classList.remove('is-armed');
+            try {
+                const result = await fetch('/api/collection/teardown/' + encodeURIComponent(kind),
+                    { method: 'POST' }).then(r => r.json());
+                if (result.error) {
+                    collectionRowNote(kind, result.error, 'error');
+                    btn.disabled = false; btn.textContent = 'Remove';
+                    return;
+                }
+                await loadCollectionPanel();
+            } catch (e) {
+                collectionRowNote(kind, e.message, 'error');
+                btn.disabled = false; btn.textContent = 'Remove';
+            }
         }
 
         async function startCollection(kind) {
@@ -15317,6 +15357,48 @@ def api_collection_teardown():
         return jsonify({'error': f'Could not remove jobs: {str(exc)[:200]}'}), 500
     logger.info('collection teardown removed %d job(s)', len(deleted))
     return jsonify({'removed': deleted, 'count': len(deleted)})
+
+
+def _teardown_collection_job(kind):
+    """Delete the single collection job for `kind`, leaving the schema and data
+    intact. Returns the deleted job name, or None when no such job is deployed."""
+    spec = COLLECTION_JOBS.get(kind)
+    if not spec:
+        raise RuntimeError(f'Unknown collection: {kind}')
+    client = _sp_workspace_client()
+    job_id = _collection_job_id(kind)
+    if not job_id:
+        return None
+    name = spec.get('label') or kind
+    try:
+        job = client.jobs.get(int(job_id))
+        if job.settings and job.settings.name:
+            name = job.settings.name
+    except Exception:  # noqa: BLE001
+        pass
+    client.api_client.do('POST', '/api/2.1/jobs/delete', body={'job_id': int(job_id)})
+    with _discovery_lock:
+        _discovered_jobs.clear()
+    _invalidate_collection_cache()
+    _discover_collection_jobs(force=True)
+    return name
+
+
+@app.route('/api/collection/teardown/<kind>', methods=['POST'])
+def api_collection_teardown_one(kind):
+    """Remove a single collection job. The schema and collected data are kept;
+    the job can be recreated later with Set up / Finish setup."""
+    if kind not in COLLECTION_JOBS:
+        return jsonify({'error': 'Unknown collection job.'}), 400
+    try:
+        removed = _teardown_collection_job(kind)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('single-job teardown failed')
+        return jsonify({'error': f'Could not remove the job: {str(exc)[:200]}'}), 500
+    if not removed:
+        return jsonify({'error': 'That job is not deployed.'}), 409
+    logger.info('removed collection job %s (%s)', kind, removed)
+    return jsonify({'removed': removed, 'kind': kind})
 
 
 @app.route('/api/collection/initializer', methods=['POST'])
