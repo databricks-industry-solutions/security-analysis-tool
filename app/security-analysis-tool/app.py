@@ -1316,7 +1316,7 @@ def get_main_html():
             color: #fff;
         }
         .assistant-head-mark svg { width: 15px; height: 15px; }
-        .assistant-head-title { font-weight: 650; font-size: .96em; }
+        .assistant-head-title { font-weight: 650; font-size: 1em; letter-spacing: -.1px; }
         .assistant-head-sub { font-size: .72em; color: var(--text-muted); }
         .assistant-close {
             background: transparent; border: none; cursor: pointer;
@@ -1390,26 +1390,42 @@ def get_main_html():
             margin: 4px 2px 0;
         }
 
-        .assistant-log { flex: 1; overflow-y: auto; padding: 16px; }
-        .assistant-msg { display: flex; gap: 9px; margin-bottom: 15px; }
-        .assistant-av {
-            width: 24px; height: 24px; flex: 0 0 24px; border-radius: 6px;
-            display: grid; place-items: center; font-size: .62em; font-weight: 700;
+        .assistant-log { flex: 1; overflow-y: auto; padding: 18px 16px; }
+        .assistant-msg { margin-bottom: 16px; }
+        .assistant-msg:last-child { margin-bottom: 4px; }
+
+        /* User turns: a compact right-aligned bubble. */
+        .assistant-msg.me { display: flex; justify-content: flex-end; }
+        .assistant-bubble {
+            max-width: 84%;
+            background: var(--bg-input);
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 13px 13px 4px 13px;
+            padding: 9px 13px;
+            font-size: .9em; line-height: 1.55; color: var(--text-primary);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
         }
-        .assistant-msg.me .assistant-av { background: var(--bg-input); color: var(--text-secondary); }
-        .assistant-msg.ai .assistant-av { background: linear-gradient(135deg,#667eea,#8b5cf6); color: #fff; }
-        .assistant-body { flex: 1; min-width: 0; }
+        .assistant-bubble div { margin: 0; }
+
+        /* Assistant turns: full width (room for tables), with a small label. */
+        .assistant-msg.ai { display: block; }
         .assistant-who {
-            font-size: .66em; font-weight: 660; letter-spacing: .05em;
-            text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px;
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: .64em; font-weight: 700; letter-spacing: .07em;
+            text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px;
         }
-        .assistant-text { font-size: .9em; line-height: 1.5; word-wrap: break-word; }
-        .assistant-text div { margin-bottom: 4px; }
-        .assistant-text ul { margin: 5px 0 8px 17px; padding: 0; }
+        .assistant-who::before {
+            content: ""; width: 6px; height: 6px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #8b5cf6);
+        }
+        .assistant-text { font-size: .9em; line-height: 1.55; word-wrap: break-word; color: var(--text-primary); }
+        .assistant-text > div { margin-bottom: 5px; }
+        .assistant-text > div:last-child { margin-bottom: 0; }
+        .assistant-text ul { margin: 6px 0 8px 18px; padding: 0; }
         .assistant-text li { margin-bottom: 3px; }
         .assistant-text code {
-            background: rgba(255,255,255,.07); padding: 1px 4px; border-radius: 3px;
-            font-size: .92em;
+            background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px;
+            font-size: .9em;
         }
 
         .assistant-trace {
@@ -1424,11 +1440,11 @@ def get_main_html():
             font-size: .72em; color: var(--text-muted); overflow-x: auto;
         }
 
-        .assistant-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+        .assistant-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
         .assistant-chip {
-            padding: 5px 10px; border-radius: 13px; cursor: pointer;
+            padding: 6px 12px; border-radius: 999px; cursor: pointer;
             background: var(--bg-input); border: 1px solid var(--border);
-            font-size: .76em; color: var(--text-secondary);
+            font-size: .76em; color: var(--text-secondary); transition: border-color .12s, color .12s;
         }
         .assistant-chip:hover { border-color: var(--accent); color: var(--text-primary); }
 
@@ -1437,18 +1453,19 @@ def get_main_html():
             padding: 12px 14px;
             display: flex; gap: 8px; align-items: flex-end;
         }
+        .assistant-compose .btn { min-height: 38px; }
         .assistant-compose textarea {
-            flex: 1; resize: none; min-height: 36px; max-height: 150px;
+            flex: 1; resize: none; min-height: 38px; max-height: 150px;
             background: var(--bg-input); color: var(--text-primary);
-            border: 1px solid var(--border); border-radius: 6px;
-            padding: 8px 10px; font-family: inherit; font-size: .88em;
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 9px 11px; font-family: inherit; font-size: .88em; line-height: 1.4;
         }
         .assistant-compose textarea:focus { outline: none; border-color: var(--accent); }
         .assistant-note {
-            padding: 0 14px 10px; font-size: .7em; color: var(--text-muted);
-            display: flex; align-items: center; gap: 5px;
+            padding: 2px 16px 12px; font-size: .7em; color: var(--text-muted);
+            display: flex; align-items: flex-start; gap: 6px; line-height: 1.45;
         }
-        .assistant-note svg { width: 11px; height: 11px; flex: 0 0 11px; }
+        .assistant-note svg { width: 11px; height: 11px; flex: 0 0 11px; margin-top: 2px; }
 
         /* Buttons used by the secret-scanning filters and the assistant.
            Matches .search-btn's gradient and lift so the app reads as one
@@ -5746,12 +5763,13 @@ def get_main_html():
             if (chips) log.innerHTML = '';
             const wrap = document.createElement('div');
             wrap.className = 'assistant-msg ' + (role === 'user' ? 'me' : 'ai');
-            wrap.innerHTML = `
-                <div class="assistant-av">${role === 'user' ? 'You' : 'AI'}</div>
-                <div class="assistant-body">
-                    <div class="assistant-who">${role === 'user' ? 'You' : 'Assistant'}</div>
-                    <div class="assistant-text">${html}</div>
-                </div>`;
+            if (role === 'user') {
+                wrap.innerHTML = `<div class="assistant-bubble">${html}</div>`;
+            } else {
+                wrap.innerHTML = `
+                    <div class="assistant-who">Assistant</div>
+                    <div class="assistant-text">${html}</div>`;
+            }
             log.appendChild(wrap);
             log.scrollTop = log.scrollHeight;
             return wrap;
