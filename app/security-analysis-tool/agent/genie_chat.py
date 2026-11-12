@@ -142,14 +142,19 @@ def list_conversations(client) -> list[dict[str, Any]]:
     sid = space_id()
     if not sid:
         return []
-    res = client.genie.list_conversations(space_id=sid)
     out = []
-    for c in (getattr(res, "conversations", None) or []):
-        out.append({
-            "conversation_id": getattr(c, "conversation_id", None),
-            "title": (getattr(c, "title", None) or "Conversation"),
-            "created": getattr(c, "created_timestamp", None),
-        })
+    token = None
+    for _ in range(50):  # page cap, just in case next_page_token never clears
+        res = client.genie.list_conversations(space_id=sid, page_token=token)
+        for c in (getattr(res, "conversations", None) or []):
+            out.append({
+                "conversation_id": getattr(c, "conversation_id", None),
+                "title": (getattr(c, "title", None) or "Conversation"),
+                "created": getattr(c, "created_timestamp", None),
+            })
+        token = getattr(res, "next_page_token", None)
+        if not token:
+            break
     out.sort(key=lambda x: x["created"] or 0, reverse=True)
     return [c for c in out if c["conversation_id"]]
 
@@ -164,8 +169,17 @@ def conversation_turns(client, conversation_id: str) -> list[dict[str, Any]]:
     sid = space_id()
     if not sid:
         return []
-    res = client.genie.list_conversation_messages(space_id=sid, conversation_id=conversation_id)
-    msgs = list(getattr(res, "messages", None) or [])
+    # Page through all messages -- Genie returns them newest-first and may
+    # paginate a long thread, so collect every page and reorder below.
+    msgs = []
+    token = None
+    for _ in range(50):
+        res = client.genie.list_conversation_messages(
+            space_id=sid, conversation_id=conversation_id, page_token=token)
+        msgs.extend(getattr(res, "messages", None) or [])
+        token = getattr(res, "next_page_token", None)
+        if not token:
+            break
     # Order oldest-first when a timestamp is available; otherwise trust API order.
     if msgs and getattr(msgs[0], "created_timestamp", None) is not None:
         msgs.sort(key=lambda m: getattr(m, "created_timestamp", 0) or 0)
