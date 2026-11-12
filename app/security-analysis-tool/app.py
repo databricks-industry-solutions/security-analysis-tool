@@ -147,9 +147,9 @@ def _apply_runtime_config(data):
     NOTEBOOK_SECRETS_TABLE = t("notebooks_secret_scan_results")
     CLUSTER_SECRETS_TABLE = t("clusters_secret_scan_results")
 
-    # Bridge the schema to the env vars the assistant's sql_client reads. Without
-    # this the agent tools raise "SAT_SCHEMA / BRICKHOUND_SCHEMA is not set" even
-    # though the app itself is configured -- the two read config by different means.
+    # Keep BRICKHOUND_SCHEMA / SAT_SCHEMA in sync with the configured
+    # catalog.schema: other parts of the app read them (startup config resolution
+    # and the settings display), so they must track the active schema.
     if CATALOG and SCHEMA:
         os.environ["BRICKHOUND_SCHEMA"] = f"{CATALOG}.{SCHEMA}"
         os.environ["SAT_SCHEMA"] = f"{CATALOG}.{SCHEMA}"
@@ -5594,7 +5594,7 @@ def get_main_html():
         // Security assistant (floating panel)
         // ------------------------------------------------------------------
 
-        const assistantState = { session: null, busy: false, ready: null,
+        const assistantState = { conversationId: null, busy: false, ready: null,
                                  controller: null, turnId: null };
 
 
@@ -5701,7 +5701,7 @@ def get_main_html():
             if (assistantState.busy && assistantState.controller) {
                 try { assistantState.controller.abort(); } catch (e) { /* already settled */ }
             }
-            assistantState.session = null;
+            assistantState.conversationId = null;
             assistantState.busy = false;
             assistantState.turnId = null;
             const send = document.getElementById('assistant-send');
@@ -5799,7 +5799,7 @@ def get_main_html():
                     signal: assistantState.controller.signal,
                     body: JSON.stringify({
                         message: question,
-                        session_id: assistantState.session,
+                        conversation_id: assistantState.conversationId,
                         turn_id: assistantState.turnId,
                     }),
                 });
@@ -5808,7 +5808,7 @@ def get_main_html():
                     pending.querySelector('.assistant-text').innerHTML =
                         `<span style="color:#fca5a5;">${escapeHtml(result.error)}</span>`;
                 } else {
-                    assistantState.session = result.session_id;
+                    assistantState.conversationId = result.conversation_id;
                     let html = assistantMarkdown(result.answer || '(no answer)');
                     html += assistantRenderResult(result);
                     pending.querySelector('.assistant-text').innerHTML = html;
@@ -13140,13 +13140,14 @@ def api_secrets_findings():
 
 
 # ---------------------------------------------------------------------------
-# Security assistant
+# Security assistant (Databricks Genie)
 #
-# Answers questions about the permissions graph, secret scan results, and the
-# audit log. The assistant reaches data only through registered tools — it cannot
-# issue SQL of its own, and no tool writes to the security tables or triggers a
-# job. Its only writes are conversation history and its own tool-call audit trail,
-# both allowlisted in agent/sql_client.py.
+# Answers natural-language questions over the SAT results schema by driving a
+# Genie space's Conversation API as the signed-in user (OBO), so Unity Catalog
+# enforces that user's own grants. Genie generates and runs the SQL and stores
+# every conversation server-side; the app issues no SQL of its own for the
+# assistant and keeps no conversation table -- the browser holds the Genie
+# conversation_id for follow-ups.
 # ---------------------------------------------------------------------------
 
 # Seed prompts for an empty conversation, chosen to span both datasets and to
@@ -14518,59 +14519,43 @@ def api_assistant_config():
 
 @app.route('/api/assistant/chat', methods=['POST'])
 def api_assistant_chat():
-    """Answer one turn by continuing (or starting) a Genie conversation."""
-    from agent import genie_chat, sessions
-    from agent.logging_util import new_session_id
+    """Answer one turn by continuing (or starting) a Genie conversation.
+
+    Conversation state lives in Genie, not in this app. The browser holds the
+    Genie conversation_id for the current thread and sends it back on each
+    follow-up, so there is no app-side session table to maintain. Genie stores
+    every conversation and message server-side (per user) -- that is also the
+    audit record of what was asked and answered.
+    """
+    from agent import genie_chat
 
     if not genie_chat.space_id():
         return jsonify({'error': 'The security assistant has no Genie space configured.'}), 503
 
     payload = request.get_json(silent=True) or {}
     message = (payload.get('message') or '').strip()
-    session_id = (payload.get('session_id') or '').strip() or new_session_id()
+    conversation_id = (payload.get('conversation_id') or '').strip() or None
     if not message:
         return jsonify({'error': 'message is required'}), 400
     if len(message) > 4000:
         return jsonify({'error': 'message is too long (4000 character limit)'}), 400
 
-    user = _assistant_user()
-
-    # The Genie conversation_id for this session, plus prior turns for the sidebar.
-    # Best-effort: a sessions-table failure must not stop the user getting an answer.
-    try:
-        conversation_id, history = sessions.load(session_id)
-    except Exception:  # noqa: BLE001
-        logger.warning('session load failed; starting fresh', exc_info=True)
-        conversation_id, history = None, []
-
-    # OBO: Genie runs as the signed-in user. The app requests the
-    # 'dashboards.genie' user scope, so the forwarded user token can drive the
-    # Genie Conversation API, and Unity Catalog enforces that user's own grants
-    # on the tables behind the answer. The app service principal only creates and
-    # owns the space (see _provision_genie_space); it never reads for the user.
+    # OBO: Genie runs as the signed-in user. The app requests the 'genie' user
+    # scope, so the forwarded user token drives the Genie Conversation API and
+    # Unity Catalog enforces that user's own grants on the tables behind the
+    # answer. The app service principal only creates and owns the space.
     try:
         client, _ = get_connection()
     except Exception as exc:  # noqa: BLE001
-        return jsonify({'error': f'Could not connect to the workspace: {exc}',
-                        'session_id': session_id}), 503
+        return jsonify({'error': f'Could not connect to the workspace: {exc}'}), 503
 
     result = genie_chat.answer(client, message, conversation_id=conversation_id)
     if result.get('error'):
-        return jsonify({'error': result['error'], 'session_id': session_id}), 502
-
-    conversation_id = result.get('conversation_id') or conversation_id
-    history = (history or []) + [
-        {'role': 'user', 'content': message},
-        {'role': 'assistant', 'content': result.get('answer', ''),
-         'sql': result.get('sql'), 'row_count': result.get('row_count', 0)},
-    ]
-    try:
-        sessions.save(session_id, user, conversation_id, history)
-    except Exception:  # noqa: BLE001
-        logger.warning('session save failed', exc_info=True)
+        return jsonify({'error': result['error'],
+                        'conversation_id': result.get('conversation_id')}), 502
 
     return jsonify({
-        'session_id': session_id,
+        'conversation_id': result.get('conversation_id'),
         'answer': result.get('answer', ''),
         'sql': result.get('sql'),
         'description': result.get('description'),
