@@ -1699,7 +1699,7 @@ def get_main_html():
         /* Guard: any icon added to a row later inherits a sane box. */
         .collect-row svg { max-width: 16px; max-height: 16px; }
         /* Per-job remove: quiet by default, danger-tinted on hover/arm. */
-        .collect-remove { color: var(--text-muted); }
+        .collect-remove { color: var(--text-muted); margin-left: 4px; }
         .collect-remove:hover { color: #fca5a5; border-color: rgba(239, 68, 68, .45); }
         .collect-remove.is-armed {
             color: #fca5a5; border-color: rgba(239, 68, 68, .6);
@@ -6041,13 +6041,13 @@ def get_main_html():
                     </div>
                     <div>${freshness}</div>
                     <div class="collect-actions">
-                        ${run && run.run_page_url
-                            ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(run.run_page_url)}" target="_blank" rel="noopener">Last run</a>`
-                            : ''}
-                        <button class="btn btn-sm btn-ghost" onclick="toggleScheduleEditor('${escapeHtml(job.kind)}')">Schedule</button>
                         ${active
                             ? `<button class="btn btn-sm btn-stop" onclick="cancelCollection('${escapeHtml(job.kind)}')">Cancel run</button>`
                             : `<button class="btn btn-sm" onclick="startCollection('${escapeHtml(job.kind)}')">Run now</button>`}
+                        <button class="btn btn-sm btn-ghost" onclick="toggleScheduleEditor('${escapeHtml(job.kind)}')">Schedule</button>
+                        ${run && run.run_page_url
+                            ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(run.run_page_url)}" target="_blank" rel="noopener">Last run</a>`
+                            : ''}
                         ${active ? '' : `<button class="btn btn-sm btn-ghost collect-remove" onclick="removeCollectionJob('${escapeHtml(job.kind)}', this)">Remove</button>`}
                     </div>
                     ${active ? '<div class="collect-bar"><div class="collect-bar-fill"></div></div>' : ''}
