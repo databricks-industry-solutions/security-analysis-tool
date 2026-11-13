@@ -32,7 +32,7 @@
 # MAGIC
 # MAGIC - **Detection** works account-wide via the audit log and needs no per-workspace access.
 # MAGIC - **Remediation** mints a workspace-scoped OAuth token from SAT's account-admin service principal,
-# MAGIC   so the SP (`client-id` in `sat_scope`) must be a **member of each workspace** it needs to remediate.
+# MAGIC   so the SP (`client-id`) must be a **member of each workspace** it needs to remediate.
 # MAGIC
 # MAGIC Findings (and remediation outcomes) are written to **`brickhound_shared_to_account`** in SAT's
 # MAGIC analysis schema, stamped with a `run_id` for point-in-time snapshots. The SAT Permissions Analysis
@@ -40,8 +40,8 @@
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
-# MAGIC - SAT installed (`sat_scope` secret scope with `account-console-id`, `client-id`, `client-secret`,
-# MAGIC   `analysis_schema_name`).
+# MAGIC - SAT app installed (account credentials `account-console-id`, `client-id`, `client-secret`
+# MAGIC   stored as Unity Catalog secrets in the results schema).
 # MAGIC - The service principal must have **Account Admin** and be a member of any workspace you want to
 # MAGIC   remediate.
 # MAGIC - Access to `system.access.audit` and `system.access.workspaces_latest` system tables.
@@ -84,7 +84,7 @@ print(f"Remediate:        {REMEDIATE}")
 
 # DBTITLE 1,Resolve Account Host, Credentials, and Output Table
 # `00_config` chains through Utils/initialize -> Utils/common, exposing:
-#   - SECRETS_SCOPE, CATALOG, SCHEMA
+#   - CATALOG, SCHEMA
 #   - json_ (account_id, accounts_console, ...), cloud_type, getCloudType()
 # We derive the accounts host per cloud (mirrors core/dbclient.py) rather than
 # hardcoding a single cloud, honoring the accounts_console override for GovCloud/DoD.
@@ -123,16 +123,11 @@ ACCOUNTS_HOST = resolve_accounts_host(
 ACCOUNT_ID    = json_["account_id"]
 
 # Account API credentials. The SAT app stores these as Unity Catalog secrets in
-# the results schema; a classic install keeps them in the sat_scope secret scope.
-# Try UC first, then the scope, and stay non-fatal so the job still runs when
-# they are absent (account-level detection is simply skipped).
+# the results schema. Non-fatal so the job still runs when they are absent
+# (account-level detection is simply skipped).
 def _sat_cred(key):
     try:
         return dbutils.secrets.get(catalog=CATALOG, schema=SCHEMA, key=key)
-    except Exception:
-        pass
-    try:
-        return dbutils.secrets.get(scope=SECRETS_SCOPE, key=key)
     except Exception:
         return ""
 CLIENT_ID     = _sat_cred("client-id")

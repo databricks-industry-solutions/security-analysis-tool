@@ -71,22 +71,18 @@ from core.dbclient import SatDBClient
 from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree, completeness_verdict, TokenProvider
 
 # Account API credentials. The SAT app stores these as Unity Catalog secrets in
-# the results schema ({catalog}.{schema}.<key>); a classic install keeps them in
-# the sat_scope secret scope. Read UC first, then the legacy scope, so the scanner
-# authenticates under both the app (which has no sat_scope) and classic
-# deployments. Non-fatal on absence -- SatDBClient then fails loudly at token mint
-# rather than here at import.
+# the results schema ({catalog}.{schema}.<key>) and passes analysis_schema_name as
+# a job parameter. Non-fatal on absence -- SatDBClient then fails loudly at token
+# mint rather than here at import.
 def _sat_cred(key):
     parts = (json_.get("analysis_schema_name") or "").split(".")
     if len(parts) >= 2:
         try:
-            return dbutils.secrets.get(catalog=parts[0], schema=parts[1], key=key)
+            return dbutils.secrets.get(
+                catalog=parts[0].strip("`"), schema=parts[1].strip("`"), key=key)
         except Exception:
-            pass
-    try:
-        return dbutils.secrets.get(scope=json_.get("master_name_scope", "sat_scope"), key=key)
-    except Exception:
-        return ""
+            return ""
+    return ""
 
 json_.update({
     "token": "dapijedi",

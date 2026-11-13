@@ -46,8 +46,8 @@
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
-# MAGIC - SAT installed (`sat_scope` with `account-console-id`, `client-id`, `client-secret`,
-# MAGIC   `analysis_schema_name`).
+# MAGIC - SAT app installed (account credentials `account-console-id`, `client-id`, `client-secret`
+# MAGIC   stored as Unity Catalog secrets in the results schema).
 # MAGIC - The service principal must have **Account Admin**, and **Workspace Admin** on any workspace
 # MAGIC   you want workspace-admin findings for (and remediation to work there).
 # MAGIC - **Azure only:** the compute needs network egress to `login.microsoftonline.com` (Entra ID) for
@@ -111,16 +111,11 @@ ACCOUNTS_HOST = resolve_accounts_host(cloud_type, WORKSPACE_URL, json_.get("acco
 ACCOUNT_ID    = json_["account_id"]
 
 # Account API credentials. The SAT app stores these as Unity Catalog secrets in
-# the results schema; a classic install keeps them in the sat_scope secret scope.
-# Try UC first, then the scope, and stay non-fatal so the job still runs when
-# they are absent (account-level detection is simply skipped).
+# the results schema. Non-fatal so the job still runs when they are absent
+# (account-level detection is simply skipped).
 def _sat_cred(key):
     try:
         return dbutils.secrets.get(catalog=CATALOG, schema=SCHEMA, key=key)
-    except Exception:
-        pass
-    try:
-        return dbutils.secrets.get(scope=SECRETS_SCOPE, key=key)
     except Exception:
         return ""
 CLIENT_ID     = _sat_cred("client-id")

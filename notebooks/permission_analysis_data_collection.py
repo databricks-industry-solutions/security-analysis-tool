@@ -395,11 +395,8 @@ SP_CREDENTIALS['cloud_type'] = cloud_type
 print(f"\n1. Loading Service Principal Credentials...")
 
 # Account API credentials. The SAT app stores these as Unity Catalog secrets in
-# the results schema ({catalog}.{schema}.<key>); a classic install keeps them in
-# the sat_scope secret scope. Read UC first, then the legacy scope, so collection
-# authenticates under both the app (which has no sat_scope) and classic deployments.
-secrets_scope = SECRETS_SCOPE if 'SECRETS_SCOPE' in dir() else "sat_scope"
-
+# the results schema ({catalog}.{schema}.<key>). Non-fatal on absence -- collection
+# then runs against the current workspace only.
 def _bh_cred(key):
     try:
         return dbutils.secrets.get(
@@ -407,10 +404,6 @@ def _bh_cred(key):
             schema=SCHEMA.strip('`').strip(),
             key=key,
         )
-    except Exception:
-        pass
-    try:
-        return dbutils.secrets.get(scope=secrets_scope, key=key)
     except Exception:
         return None
 
