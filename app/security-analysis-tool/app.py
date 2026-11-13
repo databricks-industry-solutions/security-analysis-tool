@@ -2561,6 +2561,21 @@ def get_main_html():
             border-bottom: 1px solid rgba(255, 255, 255, .04);
         }
         .job-row:last-child { border-bottom: none; }
+        /* The jobs section is a link into the Data Collection page. */
+        .settings-jobs-link {
+            display: block; width: 100%; text-align: left; cursor: pointer;
+            background: none; border: none; color: inherit; font: inherit; padding: 0;
+        }
+        .settings-jobs-link .job-row:last-child { border-bottom: 1px solid rgba(255, 255, 255, .04); }
+        .settings-jobs-cta {
+            display: flex; align-items: center; justify-content: flex-end; gap: 3px;
+            margin-top: 10px; font-size: .82em; font-weight: 600; color: var(--accent);
+        }
+        .settings-jobs-cta svg { width: 13px; height: 13px; }
+        .settings-jobs-link:hover .settings-jobs-cta { text-decoration: underline; }
+        /* "Turn off the assistant" -- quiet, danger-tinted on hover. */
+        .settings-danger { margin-top: 14px; color: var(--text-muted); }
+        .settings-danger:hover { color: #fca5a5; border-color: rgba(239, 68, 68, .45); }
         .job-state { font-size: .88em; font-weight: 600; }
         .job-state.on { color: #86efac; }
         .job-state.off { color: var(--text-muted); }
@@ -4317,7 +4332,7 @@ def get_main_html():
 
             // Workspace is configured: the assistant has data to answer against,
             // so reveal its launcher (hidden by default for the welcome screen).
-            document.getElementById('assistant-fab').classList.remove('hidden');
+            if (!status.assistant_disabled) document.getElementById('assistant-fab').classList.remove('hidden');
 
             await loadRuns();
             loadStats();
@@ -5851,6 +5866,42 @@ def get_main_html():
             }
         }
 
+        // Turn the assistant off (two-click confirm) or back on, from Settings.
+        async function assistantDisable(btn) {
+            if (btn.dataset.armed !== '1') {
+                btn.dataset.armed = '1';
+                btn.textContent = 'Click again to turn off';
+                clearTimeout(btn._t);
+                btn._t = setTimeout(() => { btn.dataset.armed = '0'; btn.textContent = 'Turn off the assistant'; }, 4000);
+                return;
+            }
+            clearTimeout(btn._t); btn.disabled = true; btn.textContent = 'Turning off\u2026';
+            try {
+                await fetch('/api/assistant/disable', { method: 'POST' }).then(r => r.json());
+                document.getElementById('assistant-fab').classList.add('hidden');
+                document.getElementById('assistant-panel').classList.remove('open');
+                assistantState.ready = null;
+                loadSettings();
+            } catch (e) { btn.disabled = false; btn.dataset.armed = '0'; btn.textContent = 'Turn off the assistant'; }
+        }
+
+        async function assistantEnable(btn) {
+            btn.disabled = true; btn.textContent = 'Turning on\u2026';
+            try {
+                await fetch('/api/assistant/enable', { method: 'POST' }).then(r => r.json());
+                document.getElementById('assistant-fab').classList.remove('hidden');
+                assistantState.ready = null;
+                loadSettings();
+            } catch (e) { btn.disabled = false; btn.textContent = 'Turn on the assistant'; }
+        }
+
+        // From the Settings jobs section, jump to the Data Collection page.
+        function gotoCollection() {
+            closeSettingsPanel();
+            const el = document.querySelector('[data-page="collection"]');
+            if (el) el.click();
+        }
+
         // Minimal markdown: bold, inline code, and bullet lines. The assistant is
         // instructed to keep formatting simple, so a full parser is unnecessary.
         function assistantMarkdown(text) {
@@ -6993,11 +7044,14 @@ def get_main_html():
                         `<input class="field-input" id="set-schema" type="text"
                                 value="${escapeHtml(cfg.schema || '')}"
                                 onchange="markSettingDirty('schema', this.value)">`),
-                assistant:
-                    settingField('genie_space_id', 'Genie space',
-                        'The Genie space the assistant answers from. Auto-created over your results schema during setup.',
+                assistant: cfg.assistant_disabled
+                    ? `<div class="field-help" style="margin:2px 2px 14px;">The security assistant is turned off. Turn it on to ask natural-language questions about your SAT results.</div>
+                       <button class="btn btn-sm" onclick="assistantEnable(this)">Turn on the assistant</button>`
+                    : settingField('genie_space_id', 'Genie space',
+                        'The Genie space the assistant answers from, created automatically over your results schema.',
                         selectMarkup('genie_space_id', cfg.genie_space_id,
-                            spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None')),
+                            spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None'))
+                      + `<button class="btn btn-sm btn-ghost settings-danger" data-armed="0" onclick="assistantDisable(this)">Turn off the assistant</button>`,
                 access: `
                     <label class="switch-row" for="set-filtering">
                         <span>
@@ -7008,11 +7062,14 @@ def get_main_html():
                                onchange="markSettingDirty('per_user_filtering', this.checked)">
                     </label>`,
                 credentials: credentialsMarkup(creds, bothSet),
-                jobs: jobKeys.map(k => `
+                jobs: `<button type="button" class="settings-jobs-link" onclick="gotoCollection()" title="Open Data Collection">
+                    ${jobKeys.map(k => `
                     <div class="job-row">
                         <span>${escapeHtml(jobs[k].label)}</span>
                         <span class="job-state ${jobs[k].connected ? 'on' : 'off'}">${jobs[k].connected ? 'Deployed' : 'Not deployed'}</span>
-                    </div>`).join(''),
+                    </div>`).join('')}
+                    <div class="settings-jobs-cta">Manage in Data Collection<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
+                </button>`,
             };
 
             const reqChecks = (settingsState.requirements || {}).checks || [];
@@ -13697,6 +13754,7 @@ def api_setup_status():
         'warehouse_id': os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '',
         'account_id': _app_config.get('account_id') or '',
         'has_credentials': has_credentials,
+        'assistant_disabled': bool(_app_config.get('assistant_disabled')),
     })
 
 
@@ -13891,7 +13949,7 @@ def api_setup_complete():
     # one, so the assistant works out of the box. Best-effort: setup still
     # succeeds if Genie is unavailable, and the space can be created later from
     # Settings. Skipped when a space id was entered (GENIE_SPACE_ID is set above).
-    if not (os.getenv('GENIE_SPACE_ID') or '').strip():
+    if not (os.getenv('GENIE_SPACE_ID') or '').strip() and not _app_config.get('assistant_disabled'):
         try:
             space_id = _provision_genie_space(client)
             config['genie_space_id'] = space_id
@@ -14102,6 +14160,7 @@ def api_settings():
             'schema': schema,
             'warehouse_id': warehouse_id,
             'genie_space_id': genie_space,
+            'assistant_disabled': bool(_app_config.get('assistant_disabled')),
             'sp_fallback_allowed': (
                 os.getenv('ALLOW_SERVICE_PRINCIPAL_FALLBACK', 'false').strip().lower()
                 == 'true'),
@@ -14671,10 +14730,38 @@ def api_assistant_genie_create():
     return jsonify({'genie_space_id': space_id, 'created': True})
 
 
+@app.route('/api/assistant/disable', methods=['POST'])
+def api_assistant_disable():
+    """Turn the assistant off: stop using and auto-provisioning the Genie space.
+    The space itself is kept, so turning it back on reuses it."""
+    _app_config['assistant_disabled'] = True
+    try:
+        write_persisted_config(_app_config)
+    except Exception:  # noqa: BLE001
+        logger.warning('could not persist assistant_disabled', exc_info=True)
+    logger.info('assistant turned off by %s', _assistant_user())
+    return jsonify({'disabled': True})
+
+
+@app.route('/api/assistant/enable', methods=['POST'])
+def api_assistant_enable():
+    """Turn the assistant back on; the next open provisions a space if needed."""
+    _app_config['assistant_disabled'] = False
+    try:
+        write_persisted_config(_app_config)
+    except Exception:  # noqa: BLE001
+        logger.warning('could not persist assistant_disabled', exc_info=True)
+    logger.info('assistant turned on by %s', _assistant_user())
+    return jsonify({'disabled': False})
+
+
 @app.route('/api/assistant/config')
 def api_assistant_config():
     """Whether the Genie-backed assistant can answer, plus suggested prompts."""
     from agent import genie_chat
+    if _app_config.get('assistant_disabled'):
+        return jsonify({'ready': False, 'disabled': True,
+                        'message': 'The security assistant is turned off. Turn it on in Settings.'})
     space_id = genie_chat.space_id()
 
     # Auto-provision once when no space is set, as the app service principal so
