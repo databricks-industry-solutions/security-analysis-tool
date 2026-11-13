@@ -23,7 +23,7 @@
       {
         "id": "01f058e2791934fdd9cfdd6d0e892cb6",
         "question": [
-          "List workspaces with verified active secrets, ordered by finding count."
+          "List workspaces by secret finding count, highest first."
         ]
       },
       {
@@ -304,7 +304,6 @@
           "SECRET SCANNING. These tables record credentials found hardcoded in notebook source and in cluster environment variables. `detector_name` identifies the match: 'DapiToken', 'DkeaToken', 'DsapiToken' and 'DoseToken' are Databricks tokens; other values such as 'Slack', 'Postgres' and 'AWS' come from built-in detectors.",
           "SECRET ROW SEMANTICS \u2014 IMPORTANT. A row where `secret_sha256 IS NULL` and `secrets_found = 0` is a tracking marker meaning the workspace was scanned and was clean. It is NOT a finding. Always filter `secret_sha256 IS NOT NULL` when counting findings.",
           "NEVER SUM secrets_found. That column repeats the per-object finding count on every row for that object, so summing it over-counts. Use COUNT(*) for findings, or COUNT(DISTINCT secret_sha256) for distinct credentials.",
-          "VERIFIED SECRETS. `verified = true` means the credential was validated against the live service and is confirmed active. These are the most urgent findings \u2014 surface them first when asked about risk or priority.",
           "SECRETS ARE HASHED. `secret_sha256` is a SHA-256 hash, never plaintext. Use it to correlate: the same hash in several notebooks means one credential was copied, and every location should be reported.",
           "LATEST SCAN. Secret results also accumulate per run_id. For current state take MAX(run_id) per workspace_id across both scan tables, since a workspace may have been scanned by only one of the two scanners.",
           "WORKSPACE NAMES. Join `workspace_id` to `account_workspaces` to report a readable `workspace_name` instead of a numeric id.",
