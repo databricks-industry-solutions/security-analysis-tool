@@ -492,6 +492,7 @@ def scan_cluster_config_for_secrets(file_path: str) -> tuple:
             file_path,
             "--exclude-detectors=DatabricksToken",
             "--no-update",
+            "--no-verification",
             "-j"
         ]
 
@@ -525,6 +526,7 @@ def scan_cluster_config_for_secrets(file_path: str) -> tuple:
             "--no-update",
             "--config",
             Config.TRUFFLEHOG_CONFIG,
+            "--no-verification",
             "-j"
         ]
 

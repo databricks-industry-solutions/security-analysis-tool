@@ -642,6 +642,7 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         file_path,
         f"--exclude-detectors={excluded_detectors}",
         "--no-update",
+        "--no-verification",
         "-j"
     ]
     
@@ -679,6 +680,7 @@ def scan_for_secrets(file_path: str) -> Optional[str]:
         "--no-update",
         "--config",
         Config.TRUFFLEHOG_CONFIG,
+        "--no-verification",
         "-j"
     ]
     
