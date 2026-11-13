@@ -1083,10 +1083,64 @@ def get_main_html():
             height: 100vh;
             position: sticky;
             top: 0;
+            transition: width 0.2s ease;
         }
+        .sidebar.collapsed { width: 72px; }
+        /* Pill on the sidebar's edge toggles the rail; the chevron flips when
+           collapsed. */
+        .nav-collapse-btn {
+            position: absolute;
+            top: 33px;
+            right: -13px;
+            z-index: 60;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+            transition: background 0.15s, color 0.15s;
+        }
+        /* Collapsed header is shorter; nudge the pill up to stay level with the logo. */
+        .sidebar.collapsed .nav-collapse-btn { top: 24px; }
+        .nav-collapse-btn:hover { background: var(--bg-input); color: var(--text-primary); }
+        .nav-collapse-btn svg { width: 14px; height: 14px; transition: transform 0.2s; }
+        .sidebar.collapsed .nav-collapse-btn svg { transform: rotate(180deg); }
+
+        /* Floating label shown on hover over a collapsed-rail icon. Fixed-position
+           (via JS) so it escapes the nav's scroll clipping. */
+        .nav-tip {
+            position: fixed;
+            transform: translateY(-50%);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s;
+            z-index: 2000;
+        }
+        .nav-tip.show { opacity: 1; }
         .main-content {
             flex: 1;
+            /* min-width:0 lets this flex item shrink to the viewport instead of
+               growing to its widest child. Without it a wide table pushes the
+               whole content area past the screen and the right columns get cut
+               off -- the classic flexbox overflow trap. */
+            min-width: 0;
             padding: 0;
+            overflow-x: hidden;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
@@ -1356,6 +1410,38 @@ def get_main_html():
             flex: 0 0 28px;
         }
         .assistant-icon-btn.is-open { background: var(--bg-input); color: #a5b4fc; }
+
+        /* Floating hover labels for the header controls. The panel and header
+           don't clip overflow, so a CSS tooltip below each button is enough;
+           right-aligned so it never spills past the panel's edge. */
+        .assistant-head-actions .assistant-icon-btn,
+        .assistant-head-actions .assistant-close { position: relative; }
+        .assistant-head-actions [data-tip]::after {
+            content: attr(data-tip);
+            position: absolute;
+            top: calc(100% + 7px);
+            right: 0;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 11.5px;
+            font-weight: 500;
+            line-height: 1;
+            white-space: nowrap;
+            padding: 6px 9px;
+            border-radius: 7px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transform: translateY(-3px);
+            pointer-events: none;
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            z-index: 2000;
+        }
+        .assistant-head-actions [data-tip]:hover::after,
+        .assistant-head-actions [data-tip]:focus-visible::after {
+            opacity: 1;
+            transform: translateY(0);
+        }
 
         /* Genie result tables rendered inline in an assistant answer. */
         .assistant-table-wrap {
@@ -1736,6 +1822,29 @@ def get_main_html():
 
         .collect-fresh { font-size: 0.84em; color: var(--text-secondary); white-space: nowrap; }
         .collect-fresh-sub { font-size: 0.75em; color: var(--text-muted); margin-top: 4px; }
+        /* Hover the relative time to see the exact run date. */
+        .collect-fresh[data-full] { position: relative; cursor: default; }
+        .collect-fresh[data-full]::after {
+            content: attr(data-full);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 0;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 11.5px;
+            font-weight: 500;
+            white-space: nowrap;
+            padding: 6px 9px;
+            border-radius: 7px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transform: translateY(3px);
+            pointer-events: none;
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            z-index: 2000;
+        }
+        .collect-fresh[data-full]:hover::after { opacity: 1; transform: translateY(0); }
 
         /* Actions */
         .collect-actions {
@@ -1846,42 +1955,6 @@ def get_main_html():
             .collect-row { grid-template-columns: minmax(0, 1fr); gap: 11px; }
             .collect-actions { justify-self: start; }
             .collect-substate { padding-left: 0; }
-        }
-
-        /* Secret-scanning filter row */
-        .secrets-filter-row {
-            display: flex;
-            gap: 12px;
-            align-items: flex-end;
-            flex-wrap: wrap;
-        }
-        .secrets-filter-row .filter-field {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            flex: 1 1 180px;
-            min-width: 0;
-        }
-        .secrets-filter-row .filter-label {
-            font-size: 0.72em;
-            font-weight: 600;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            color: var(--text-muted);
-        }
-        .secrets-filter-row select {
-            background: var(--bg-input);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 8px 10px;
-            font-size: 0.9em;
-            width: 100%;
-            cursor: pointer;
-        }
-        .secrets-filter-row select:focus {
-            outline: none;
-            border-color: var(--accent);
         }
 
         .logo-text {
@@ -2001,6 +2074,36 @@ def get_main_html():
         .nav-item.active svg {
             opacity: 1;
         }
+
+        /* Collapsed rail: icons only. Labels are bare text nodes, so font-size:0
+           drops them while the SVGs keep their explicit dimensions. */
+        .sidebar.collapsed .sidebar-header { padding: 18px 0; }
+        .sidebar.collapsed .logo { justify-content: center; gap: 0; margin-bottom: 0; }
+        .sidebar.collapsed .logo:hover { transform: none; }
+        /* The text column carries an inline display:flex, so override needs force. */
+        .sidebar.collapsed .logo > div:last-child { display: none !important; }
+        .sidebar.collapsed .logo-icon { width: 38px; height: 38px; font-size: 20px; }
+        .sidebar.collapsed .sidebar-nav { padding: 16px 12px; }
+        .sidebar.collapsed .nav-label { display: none; }
+        .sidebar.collapsed .nav-section { margin-bottom: 14px; }
+        .sidebar.collapsed .nav-section + .nav-section {
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            padding-top: 14px;
+        }
+        .sidebar.collapsed .nav-item {
+            justify-content: center;
+            gap: 0;
+            font-size: 0;
+            padding: 11px 0;
+        }
+        .sidebar.collapsed .nav-item:hover { transform: none; }
+        .sidebar.collapsed .sidebar-footer {
+            flex-direction: column;
+            gap: 6px;
+            padding: 10px 8px 12px;
+        }
+        .sidebar.collapsed .footer-link { width: 100%; justify-content: center; padding: 9px; }
+        .sidebar.collapsed .footer-link span:not(.status-dot) { display: none; }
 
         .sidebar-footer {
             display: flex;
@@ -2947,11 +3050,38 @@ def get_main_html():
             color: var(--text-muted);
             line-height: 1.3;
         }
+        /* Scan-coverage ribbon under the headline figures: value-over-label
+           segments split by hairline dividers, rather than a cramped run of
+           middot-separated muted text. */
         .secret-summary-foot {
-            margin-top: 14px;
-            padding-top: 12px;
-            border-top: 1px solid rgba(255, 255, 255, 0.06);
-            font-size: 0.82em;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 0;
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .sx-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            padding: 0 22px;
+            border-left: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .sx-meta:first-child { padding-left: 0; border-left: none; }
+        .sx-meta-val {
+            font-size: 1.02em;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .sx-meta-label {
+            font-size: 0.7em;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
             color: var(--text-muted);
         }
         /* Card headers used above the secret tables. */
@@ -2971,6 +3101,204 @@ def get_main_html():
         .secret-table-card .data-table td:first-child { padding-left: 18px; }
         .secret-table-card .data-table th:last-child,
         .secret-table-card .data-table td:last-child { padding-right: 18px; }
+
+        /* --- Credential Exposure: consolidated detections view ---
+           Headline figures, detector/workspace breakdowns that double as table
+           facets, and the full detail table with instant client-side filtering. */
+        .sx-grid2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        /* Breakdown rows double as table facets: click to filter the detections. */
+        .sx-facet {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 7px 8px;
+            margin: 0 -8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+        .sx-facet:hover { background: rgba(255, 255, 255, 0.04); }
+        .sx-facet:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .sx-facet.is-active { background: rgba(59, 130, 246, 0.12); }
+        .sx-facet-label {
+            flex: 0 0 170px;
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .sx-facet.is-active .sx-facet-label { color: var(--text-primary); font-weight: 600; }
+        .sx-facet-track { flex: 1; height: 7px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
+        .sx-facet-fill { height: 100%; border-radius: 4px; }
+        .sx-facet-val {
+            flex: 0 0 74px;
+            text-align: right;
+            font-size: 0.85em;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-secondary);
+        }
+
+        /* Detections toolbar: search + facet selects, result count flush right. */
+        .sx-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .sx-search { position: relative; flex: 1 1 240px; min-width: 180px; }
+        .sx-search svg {
+            position: absolute;
+            left: 11px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 15px;
+            height: 15px;
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+        .sx-search input {
+            width: 100%;
+            box-sizing: border-box;
+            background: var(--bg-input);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 10px 8px 32px;
+            color: var(--text-primary);
+            font-size: 0.9em;
+        }
+        .sx-search input:focus { outline: none; border-color: var(--accent); }
+        .sx-toolbar select {
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+        .sx-toolbar select:focus { outline: none; border-color: var(--accent); }
+        /* Multi-select checklist (workspace / detector). A button opens a popover
+           of checkboxes built only from values present in the data. */
+        .sx-ms { position: relative; }
+        .sx-ms-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 0.9em;
+            cursor: pointer;
+            white-space: nowrap;
+            max-width: 220px;
+        }
+        .sx-ms-btn:hover { border-color: rgba(255, 255, 255, 0.22); }
+        .sx-ms-btn.has-sel { border-color: var(--accent); color: #fff; }
+        .sx-ms-text { overflow: hidden; text-overflow: ellipsis; }
+        .sx-ms-btn .sx-ms-chev { width: 12px; height: 12px; opacity: 0.55; flex-shrink: 0; }
+        .sx-ms-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 1500;
+            min-width: 240px;
+            max-height: 320px;
+            overflow-y: auto;
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 10px;
+            box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+            padding: 6px;
+        }
+        .sx-ms-menu[hidden] { display: none; }
+        .sx-ms-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 7px 9px;
+            border-radius: 7px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        .sx-ms-item:hover { background: rgba(255, 255, 255, 0.05); }
+        .sx-ms-check {
+            width: 15px;
+            height: 15px;
+            flex-shrink: 0;
+            border: 1.5px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            display: grid;
+            place-items: center;
+        }
+        .sx-ms-check svg { width: 11px; height: 11px; color: #fff; opacity: 0; }
+        .sx-ms-item.sel .sx-ms-check { background: var(--accent); border-color: var(--accent); }
+        .sx-ms-item.sel .sx-ms-check svg { opacity: 1; }
+        .sx-ms-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sx-ms-cnt { color: var(--text-muted); font-size: 0.85em; font-variant-numeric: tabular-nums; }
+        .sx-ms-foot {
+            display: flex;
+            justify-content: flex-end;
+            padding: 6px 7px 2px;
+            margin-top: 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .sx-ms-foot button { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.82em; font-weight: 600; }
+        .sx-ms-foot button:hover { color: #93b4f5; }
+        .sx-count {
+            margin-left: auto;
+            font-size: 0.82em;
+            color: var(--text-muted);
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        .sx-table-wrap { max-height: 560px; overflow-y: auto; overflow-x: auto; }
+        .sx-table-wrap .data-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--bg-card);
+        }
+        /* Fixed layout pins the table to the container width, so nothing is pushed
+           off the right edge; over-long cells truncate with an ellipsis instead. */
+        .sx-dtable { table-layout: fixed; width: 100%; }
+        /* Cells wrap so the full value is shown -- nothing is truncated. Rows grow
+           taller instead of pushing content off the edge; top-align keeps the
+           first line of every cell level. */
+        .sx-dtable td { vertical-align: top; }
+        .sx-wrap { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+        .sx-break { white-space: normal; overflow-wrap: anywhere; word-break: break-all; line-height: 1.5; }
+        .sx-note {
+            padding: 10px 18px;
+            font-size: 0.8em;
+            color: var(--text-muted);
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .sx-empty-row { padding: 32px 18px; text-align: center; color: var(--text-muted); font-size: 0.9em; }
+        .sx-src { color: var(--text-secondary); text-transform: capitalize; }
+        /* Object cell stacks name over path, so the table drops a column and the
+           hash and workspace stop getting pushed off the edge. */
+        .sx-obj-name { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+        .sx-obj-path {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-all;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.82em;
+            color: var(--text-muted);
+            margin-top: 3px;
+            line-height: 1.5;
+        }
 
         /* Tabular data in the secret-scanning views. These tables previously
            carried a class with no rule behind it, so they fell back to browser
@@ -3010,11 +3338,6 @@ def get_main_html():
             font-size: 0.88em;
             color: var(--text-muted);
         }
-        /* A table flush inside .results-container needs its own edge padding. */
-        .data-table-padded th:first-child,
-        .data-table-padded td:first-child { padding-left: 24px; }
-        .data-table-padded th:last-child,
-        .data-table-padded td:last-child { padding-right: 24px; }
         .data-table .mono {
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             font-size: 0.88em;
@@ -3328,6 +3651,10 @@ def get_main_html():
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar">
+            <button class="nav-collapse-btn" id="nav-collapse-btn" onclick="toggleSidebar()"
+                    aria-label="Collapse navigation" title="Toggle navigation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
             <!-- Sidebar Header -->
             <div class="sidebar-header">
                 <div class="logo" style="cursor: pointer;" data-page="home">
@@ -3414,10 +3741,6 @@ def get_main_html():
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 17h.01"/></svg>
                             Credential Exposure
                         </div>
-                        <div class="nav-item" data-page="secretsfindings">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                            Secret Findings
-                        </div>
                         <div class="nav-item" data-page="secretsalerts">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                             Alerts
@@ -3448,6 +3771,13 @@ def get_main_html():
             <!-- Inline script to prevent flash - runs immediately before page renders -->
             <script>
                 (function() {
+                    // Restore the collapsed rail before paint so it doesn't flash.
+                    try {
+                        if (localStorage.getItem('satNavCollapsed') === '1') {
+                            const sb = document.querySelector('.sidebar');
+                            if (sb) sb.classList.add('collapsed');
+                        }
+                    } catch (e) {}
                     const hash = window.location.hash.substring(1);
                     if (hash) {
                         // Hide home page and activate the correct page immediately
@@ -3469,8 +3799,7 @@ def get_main_html():
                             // bar before the main script hides it.
                             const noStatsBar = ['home', 'sharedtoaccount', 'privilegednonidp',
                                                 'denylistbuilder', 'collection',
-                                                'secretsoverview', 'secretsfindings',
-                                                'secretsalerts'];
+                                                'secretsoverview', 'secretsalerts'];
                             const bar = document.getElementById('stats-header-bar');
                             if (bar && noStatsBar.includes(hash)) bar.style.display = 'none';
                         });
@@ -3940,13 +4269,11 @@ def get_main_html():
             <div class="page" id="page-secretsoverview">
                 <div class="page-header">
                     <h1 class="page-title">Credential Exposure</h1>
-                    <p class="page-desc">Hardcoded credentials found in notebook source and cluster environment variables by the SAT secret scanner. Secrets are stored as SHA-256 hashes, never plaintext. <strong>Active</strong> means the credential was validated against the live service and is confirmed working.</p>
+                    <p class="page-desc">Secrets &mdash; API keys and tokens &mdash; found hardcoded in notebook source and cluster configurations, where anyone with access to the code can read them.</p>
                 </div>
                 <div id="secretsoverview-results"></div>
             </div>
 
-            <!-- Secret Findings (detail table) -->
-            <!-- Settings / Health Page -->
             <!-- Secret Scanning Alerts Page -->
             <div class="page" id="page-secretsalerts">
                 <div class="page-header">
@@ -3954,42 +4281,6 @@ def get_main_html():
                     <p class="page-desc">Get notified when the scanner finds exposed credentials. These are standard Databricks SQL alerts &mdash; the schedule, notifications and history work exactly as they do elsewhere, and each one stays editable in the workspace.</p>
                 </div>
                 <div id="secretsalerts-results"></div>
-            </div>
-
-            <div class="page" id="page-secretsfindings">
-                <div class="page-header">
-                    <h1 class="page-title">Secret Findings</h1>
-                    <p class="page-desc">Individual detections from the most recent scan per workspace. Filter by workspace, source, detector, or confirmed-active status.</p>
-                </div>
-                <div class="card" style="padding: 16px; margin-bottom: 18px;">
-                    <div class="secrets-filter-row">
-                        <div class="filter-field">
-                            <label class="filter-label">Workspace</label>
-                            <select id="sf-workspace"><option value="">All workspaces</option></select>
-                        </div>
-                        <div class="filter-field">
-                            <label class="filter-label">Source</label>
-                            <select id="sf-source">
-                                <option value="">Notebooks and clusters</option>
-                                <option value="notebook">Notebooks</option>
-                                <option value="cluster">Cluster configs</option>
-                            </select>
-                        </div>
-                        <div class="filter-field">
-                            <label class="filter-label">Detector</label>
-                            <select id="sf-detector"><option value="">All detectors</option></select>
-                        </div>
-                        <div class="filter-field">
-                            <label class="filter-label">Status</label>
-                            <select id="sf-verified">
-                                <option value="false">All findings</option>
-                                <option value="true">Confirmed active only</option>
-                            </select>
-                        </div>
-                        <button class="btn btn-primary" id="sf-apply">Apply</button>
-                    </div>
-                </div>
-                <div id="secretsfindings-results"></div>
             </div>
 
         </main>
@@ -4031,13 +4322,13 @@ def get_main_html():
                 <div class="assistant-head-sub" id="assistant-model-label">Permissions, secrets, and audit activity</div>
             </div>
             <div class="assistant-head-actions">
-            <button class="assistant-icon-btn" id="assistant-history-btn" title="Past conversations" aria-label="Past conversations">
+            <button class="assistant-icon-btn" id="assistant-history-btn" data-tip="Past conversations" aria-label="Past conversations">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
             </button>
-            <button class="assistant-icon-btn" id="assistant-new-btn" title="New chat" aria-label="Start a new chat">
+            <button class="assistant-icon-btn" id="assistant-new-btn" data-tip="New chat" aria-label="Start a new chat">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
             </button>
-            <button class="assistant-close" id="assistant-close" aria-label="Close">&times;</button>
+            <button class="assistant-close" id="assistant-close" data-tip="Close" aria-label="Close">&times;</button>
             </div>
         </div>
 
@@ -4077,6 +4368,45 @@ def get_main_html():
             navigateToPage('home');
         });
 
+        // Collapsible sidebar — state persists across sessions.
+        function setSidebarCollapsed(collapsed) {
+            const sb = document.querySelector('.sidebar');
+            if (!sb) return;
+            sb.classList.toggle('collapsed', collapsed);
+            const btn = document.getElementById('nav-collapse-btn');
+            if (btn) btn.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+            try { localStorage.setItem('satNavCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+        }
+        function toggleSidebar() {
+            const sb = document.querySelector('.sidebar');
+            setSidebarCollapsed(!(sb && sb.classList.contains('collapsed')));
+        }
+        // Reconcile aria with the class the pre-paint script may have set.
+        setSidebarCollapsed(!!document.querySelector('.sidebar.collapsed'));
+
+        // Collapsed rail has no visible labels, so show a floating label on hover.
+        // A fixed-position tip (not a ::after) escapes the nav's scroll clipping.
+        (function () {
+            let tip;
+            function show(el) {
+                if (!document.querySelector('.sidebar.collapsed')) return;
+                const label = (el.textContent || '').trim();
+                if (!label) return;
+                if (!tip) { tip = document.createElement('div'); tip.className = 'nav-tip'; document.body.appendChild(tip); }
+                tip.textContent = label;
+                const r = el.getBoundingClientRect();
+                tip.style.top = (r.top + r.height / 2) + 'px';
+                tip.style.left = (r.right + 12) + 'px';
+                tip.classList.add('show');
+            }
+            function hide() { if (tip) tip.classList.remove('show'); }
+            document.querySelectorAll('.nav-item, .footer-link').forEach(el => {
+                el.addEventListener('mouseenter', () => show(el));
+                el.addEventListener('mouseleave', hide);
+                el.addEventListener('click', hide);
+            });
+        })();
+
         // Navigation with auto-load for reports
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -4110,8 +4440,7 @@ def get_main_html():
             // secret scanning pages (different dataset entirely), and Data
             // Collection, which reports freshness for every job itself.
             const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder',
-                                       'collection', 'secretsoverview', 'secretsfindings',
-                                       'secretsalerts'];
+                                       'collection', 'secretsoverview', 'secretsalerts'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
@@ -4125,8 +4454,7 @@ def get_main_html():
             else if (page === 'privilegednonidp') loadPrivilegedNonIdp();
             else if (page === 'denylistbuilder') loadDenylistBuilder();
             else if (page === 'collection') loadCollectionPanel();
-            else if (page === 'secretsoverview') loadSecretsOverview();
-            else if (page === 'secretsfindings') loadSecretsFindings();
+            else if (page === 'secretsoverview') loadSecretsExposure();
             else if (page === 'secretsalerts') loadSecretsAlerts();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
@@ -4344,15 +4672,19 @@ def get_main_html():
             // so reveal its launcher (hidden by default for the welcome screen).
             if (!status.assistant_disabled) document.getElementById('assistant-fab').classList.remove('hidden');
 
-            await loadRuns();
-            loadStats();
-
+            // Navigate first so the target page shows its own loading state
+            // immediately. The run selector and stats only power the
+            // permissions-graph header (hidden on most pages), so they load in the
+            // background instead of blocking first paint. Report pages that need a
+            // run_id fall back to the latest run server-side when it isn't set yet.
             const hash = window.location.hash.substring(1);
             if (hash && document.getElementById(`page-${hash}`)) {
                 navigateToPage(hash);
             } else {
                 navigateToPage('home');
             }
+            loadRuns();
+            loadStats();
         }
         initApp();
 
@@ -5671,24 +6003,22 @@ def get_main_html():
                 </div>`;
         }
 
-        // Horizontal distribution bar — avoids pulling in a charting library.
-        function secretBar(label, value, max, color) {
-            const pct = max > 0 ? (value / max) * 100 : 0;
-            return `
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-                    <div style="flex:0 0 190px;font-size:0.85em;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
-                    <div style="flex:1;height:7px;background:var(--bg-input);border-radius:4px;overflow:hidden;">
-                        <div style="height:100%;width:${pct}%;background:${color};border-radius:4px;"></div>
-                    </div>
-                    <div style="flex:0 0 48px;text-align:right;font-size:0.85em;font-variant-numeric:tabular-nums;">${value}</div>
-                </div>`;
+        // Workspace display: the scanner records a generic "current workspace"
+        // placeholder as the name for a single-workspace scan, so fall back to the
+        // real workspace id in that case (and when the name is simply missing).
+        // Friendly scan timestamp, e.g. "Nov 11, 2:32 PM"; falls back to the raw
+        // value if it can't be parsed.
+        function sxFmtDate(raw) {
+            if (!raw) return '';
+            const d = new Date(String(raw).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return String(raw).slice(0, 16).replace('T', ' ');
+            return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
         }
 
-        function secretStatusBadge(verified) {
-            const active = verified === true || String(verified) === 'true';
-            return active
-                ? '<span class="badge" style="background:rgba(239,68,68,.15);color:#fca5a5;">ACTIVE</span>'
-                : '<span class="badge" style="background:rgba(148,163,184,.15);color:#cbd5e1;">unverified</span>';
+        function secretsWsLabel(name, id) {
+            const n = (name || '').trim();
+            if (n && n.toLowerCase() !== 'current workspace') return n;
+            return String(id || '');
         }
 
 
@@ -6124,9 +6454,9 @@ def get_main_html():
             }
             const ageH = run.start_time ? (Date.now() - Number(run.start_time)) / 3600000 : null;
             if (ageH !== null && ageH > COLLECT_STALE_HOURS) {
-                return { tone: 'stale', text: 'Stale' };
+                return { tone: 'stale', text: 'Out of date' };
             }
-            return { tone: 'ok', text: 'Healthy' };
+            return { tone: 'ok', text: 'Up to date' };
         }
 
         function collectionRow(job) {
@@ -6163,8 +6493,10 @@ def get_main_html():
             if (run && run.start_time) {
                 const duration = (run.end_time && run.start_time)
                     ? formatElapsed(Number(run.end_time) - Number(run.start_time)) : null;
+                const fullDate = new Date(Number(run.start_time)).toLocaleString('en-US',
+                    { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
                 freshness = `
-                    <div class="collect-fresh">${escapeHtml(formatAgo(run.start_time))}</div>
+                    <div class="collect-fresh" data-full="${escapeHtml(fullDate)}">${escapeHtml(formatAgo(run.start_time))}</div>
                     <div class="collect-fresh-sub">
                         ${duration ? 'Completed in ' + escapeHtml(duration) : 'In progress'}
                     </div>`;
@@ -6698,173 +7030,328 @@ def get_main_html():
             }
         }
 
-        async function loadSecretsOverview() {
-            const container = document.getElementById('secretsoverview-results');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading scan results...</div>';
+        // ─────────────────────────────────────────────────────────────────
+        // Credential Exposure — consolidated secrets detections view.
+        // Headline figures come from the server aggregate (accurate totals even
+        // when the detail table is capped); the detector/workspace breakdowns
+        // double as facets that filter the detail table, which filters and
+        // searches client-side for instant response.
+        // ─────────────────────────────────────────────────────────────────
+        const secretsExposure = {
+            summary: {}, byDetector: [], byWorkspace: [],
+            rows: [], truncated: false,
+            filters: { search: '', source: '', detectors: [], workspaces: [] },
+        };
 
+        async function loadSecretsExposure() {
+            const container = document.getElementById('secretsoverview-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading scan results…</div>';
             try {
-                const [sumRes, detRes, wsRes, topRes, sharedRes] = await Promise.all([
+                // In parallel, so a cold warehouse pays its start-up cost once
+                // (shared) rather than once per sequential request.
+                const [sum, det, ws, find] = await Promise.all([
                     fetch('/api/secrets/summary').then(r => r.json()),
                     fetch('/api/secrets/by-detector').then(r => r.json()).catch(() => ({})),
                     fetch('/api/secrets/by-workspace').then(r => r.json()).catch(() => ({})),
-                    fetch('/api/secrets/top-objects').then(r => r.json()).catch(() => ({})),
-                    fetch('/api/secrets/shared').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/secrets/findings?limit=2000').then(r => r.json()).catch(() => ({})),
                 ]);
+                if (sum.ready === false) { showSecretsNotReady('secretsoverview-results', sum.message); return; }
+                if (sum.error) { showEmpty('secretsoverview-results', sum.error); return; }
 
-                if (sumRes.ready === false) {
-                    showSecretsNotReady('secretsoverview-results', sumRes.message);
-                    return;
-                }
-                if (sumRes.error) { showEmpty('secretsoverview-results', sumRes.error); return; }
-
-                const s = sumRes.summary || {};
-                const verified = Number(s.verified_findings || 0);
-                const total = Number(s.total_findings || 0);
-
-                let html = '';
-
-                // Lead with the urgent case: confirmed-live credentials.
-                if (verified > 0) {
-                    html += `
-                        <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;margin-bottom:16px;">
-                            <div style="font-weight:600;color:#fca5a5;margin-bottom:3px;">${verified} confirmed active credential${verified === 1 ? '' : 's'} exposed</div>
-                            <div style="font-size:0.87em;color:var(--text-secondary);">
-                                These were validated against the live service and are working right now. Rotate them, then remove them from source.
-                            </div>
-                        </div>`;
-                }
-
-                html += `
-                    <div class="card secret-summary">
-                        <div class="secret-section-title">Exposure Summary</div>
-                        <div class="secret-stat-grid">
-                            ${secretStatBlock('Confirmed active', verified, verified > 0 ? '#ef4444' : '#22c55e')}
-                            ${secretStatBlock('Total findings', total, total > 0 ? '#f59e0b' : '#22c55e')}
-                            ${secretStatBlock('Distinct secrets', s.distinct_secrets || 0, '#3b82f6')}
-                            ${secretStatBlock('Objects affected', s.affected_objects || 0, '#3b82f6')}
-                            ${secretStatBlock('In notebooks', s.notebook_findings || 0, '#8b5cf6')}
-                            ${secretStatBlock('In cluster configs', s.cluster_findings || 0, '#8b5cf6')}
-                        </div>
-                        <div class="secret-summary-foot">
-                            ${s.workspaces_scanned || 0} workspace${Number(s.workspaces_scanned) === 1 ? '' : 's'} scanned
-                            &middot; ${s.affected_workspaces || 0} with findings
-                            ${s.last_scan_time ? '&middot; last scan ' + escapeHtml(String(s.last_scan_time).slice(0, 16).replace('T', ' ')) : ''}
-                        </div>
-                    </div>`;
-
-                // Detector distribution and per-workspace exposure, side by side.
-                const detRows = (detRes && detRes.rows) || [];
-                const wsRows = (wsRes && wsRes.rows) || [];
-                html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;margin-bottom:16px;">';
-
-                if (detRows.length) {
-                    const max = Math.max(...detRows.map(r => Number(r.findings) || 0), 1);
-                    html += `
-                        <div class="card secret-card">
-                            <div class="secret-section-title">Findings by Detector</div>
-                            ${detRows.map(r => secretBar(
-                                r.detector_name,
-                                Number(r.findings) || 0,
-                                max,
-                                Number(r.verified) > 0 ? '#ef4444' : '#f59e0b'
-                            )).join('')}
-                        </div>`;
-                }
-
-                if (wsRows.length) {
-                    html += `
-                        <div class="card secret-table-card">
-                            <div class="secret-section-title">Exposure by Workspace</div>
-                            <table class="data-table">
-                                <thead><tr><th>Workspace</th><th style="text-align:right;">Findings</th><th style="text-align:right;">Active</th></tr></thead>
-                                <tbody>
-                                    ${wsRows.map(r => `
-                                        <tr>
-                                            <td>${escapeHtml(r.workspace_name || r.workspace_id)}</td>
-                                            <td style="text-align:right;">${Number(r.findings) > 0
-                                                ? `<span style="color:#f59e0b;font-weight:600;">${r.findings}</span>`
-                                                : '<span style="color:#22c55e;">clean</span>'}</td>
-                                            <td style="text-align:right;">${Number(r.verified) > 0
-                                                ? `<span style="color:#ef4444;font-weight:600;">${r.verified}</span>`
-                                                : '—'}</td>
-                                        </tr>`).join('')}
-                                </tbody>
-                            </table>
-                        </div>`;
-                }
-                html += '</div>';
-
-                // A repeated hash means one credential was copied to several
-                // places; every copy has to be found before rotation is complete.
-                const sharedRows = (sharedRes && sharedRes.rows) || [];
-                if (sharedRows.length) {
-                    html += `
-                        <div class="card secret-table-card" style="margin-bottom:16px;">
-                            <div class="secret-section-title">Reused Credentials</div>
-                            <div class="secret-card-sub">
-                                The same secret found in more than one place. Rotating it means updating every copy.
-                            </div>
-                            <table class="data-table">
-                                <thead><tr><th>Status</th><th>Detector</th><th>Hash</th><th style="text-align:right;">Copies</th><th style="text-align:right;">Workspaces</th><th>Example</th></tr></thead>
-                                <tbody>
-                                    ${sharedRows.map(r => `
-                                        <tr>
-                                            <td>${secretStatusBadge(Number(r.verified) > 0)}</td>
-                                            <td>${escapeHtml(r.detector_name)}</td>
-                                            <td class="mono">${escapeHtml(String(r.secret_sha256 || '').slice(0, 12))}…</td>
-                                            <td style="text-align:right;font-weight:600;">${r.occurrences}</td>
-                                            <td style="text-align:right;">${r.workspaces}</td>
-                                            <td class="truncate">${escapeHtml(r.example_object)}</td>
-                                        </tr>`).join('')}
-                                </tbody>
-                            </table>
-                        </div>`;
-                }
-
-                // Where to start remediating.
-                const topRows = (topRes && topRes.rows) || [];
-                if (topRows.length) {
-                    html += `
-                        <div class="card secret-table-card">
-                            <div class="secret-section-title">Most Exposed Objects</div>
-                            <div class="secret-card-sub">
-                                Notebooks and cluster configurations holding the most findings, confirmed-active first.
-                            </div>
-                            <table class="data-table">
-                                <thead><tr><th>Source</th><th>Object</th><th>Location</th><th style="text-align:right;">Findings</th><th style="text-align:right;">Active</th><th style="text-align:right;">Detectors</th></tr></thead>
-                                <tbody>
-                                    ${topRows.map(r => `
-                                        <tr>
-                                            <td><span class="badge" style="background:rgba(148,163,184,.14);color:#cbd5e1;">${escapeHtml(r.source_type)}</span></td>
-                                            <td class="truncate" style="max-width:230px;">${escapeHtml(r.object_name)}</td>
-                                            <td class="mono truncate">${escapeHtml(r.object_path)}</td>
-                                            <td style="text-align:right;font-weight:600;">${r.findings}</td>
-                                            <td style="text-align:right;">${Number(r.verified) > 0
-                                                ? `<span style="color:#ef4444;font-weight:600;">${r.verified}</span>` : '—'}</td>
-                                            <td style="text-align:right;">${r.detectors}</td>
-                                        </tr>`).join('')}
-                                </tbody>
-                            </table>
-                        </div>`;
-                }
-
-                if (total === 0) {
-                    html += `
-                        <div class="card" style="padding:22px;text-align:center;">
-                            <div style="font-weight:600;color:#22c55e;margin-bottom:4px;">No hardcoded credentials found</div>
-                            <div style="font-size:0.88em;color:var(--text-muted);">
-                                ${s.workspaces_scanned || 0} workspace(s) scanned clean in the latest run.
-                            </div>
-                        </div>`;
-                }
-
-                container.innerHTML = html;
+                secretsExposure.summary = sum.summary || {};
+                secretsExposure.byDetector = (det && det.rows) || [];
+                secretsExposure.byWorkspace = (ws && ws.rows) || [];
+                secretsExposure.rows = (find && find.rows) || [];
+                secretsExposure.truncated = !!(find && find.truncated);
+                secretsExposure.filters = { search: '', source: '', detectors: [], workspaces: [] };
+                renderSecretsExposure();
             } catch (e) {
                 showEmpty('secretsoverview-results', 'Failed to load scan results: ' + e.message);
             }
         }
 
-        let secretsFiltersLoaded = false;
+        function renderSecretsExposure() {
+            const s = secretsExposure.summary;
+            const total = Number(s.total_findings || 0);
+            let html = '';
+
+            // Headline figures from the server aggregate: every detection, the
+            // distinct credentials behind them (the unit you rotate), and the
+            // objects to clean up.
+            const nb = Number(s.notebook_findings || 0);
+            const cl = Number(s.cluster_findings || 0);
+            html += `
+                <div class="card secret-summary">
+                    <div class="secret-section-title">Exposure summary</div>
+                    <div class="secret-stat-grid">
+                        ${secretStatBlock('Total findings', total, total > 0 ? '#f59e0b' : '#22c55e')}
+                        ${secretStatBlock('Unique secrets', s.distinct_secrets || 0, '#3b82f6')}
+                        ${secretStatBlock('Affected objects', s.affected_objects || 0, '#3b82f6')}
+                    </div>
+                    <div class="secret-summary-foot">
+                        ${s.last_scan_time ? `<div class="sx-meta">
+                            <div class="sx-meta-val">${escapeHtml(sxFmtDate(s.last_scan_time))}</div>
+                            <div class="sx-meta-label">Last scan</div>
+                        </div>` : ''}
+                        <div class="sx-meta">
+                            <div class="sx-meta-val">${s.affected_workspaces || 0} of ${s.workspaces_scanned || 0}</div>
+                            <div class="sx-meta-label">Workspaces with findings</div>
+                        </div>
+                        <div class="sx-meta">
+                            <div class="sx-meta-val">${nb}</div>
+                            <div class="sx-meta-label">In notebooks</div>
+                        </div>
+                        <div class="sx-meta">
+                            <div class="sx-meta-val">${cl}</div>
+                            <div class="sx-meta-label">In cluster configs</div>
+                        </div>
+                    </div>
+                </div>`;
+
+            if (total === 0) {
+                html += `
+                    <div class="card" style="padding:22px;text-align:center;">
+                        <div style="font-weight:600;color:#22c55e;margin-bottom:4px;">No hardcoded credentials found</div>
+                        <div style="font-size:0.88em;color:var(--text-muted);">${s.workspaces_scanned || 0} workspace(s) scanned clean in the latest run.</div>
+                    </div>`;
+                document.getElementById('secretsoverview-results').innerHTML = html;
+                return;
+            }
+
+            // Breakdowns double as facets: click a row to filter the detections.
+            const det = secretsExposure.byDetector, ws = secretsExposure.byWorkspace;
+            const cards = [];
+            if (det.length) {
+                const max = Math.max(...det.map(r => Number(r.findings) || 0), 1);
+                cards.push(`
+                    <div class="card secret-card">
+                        <div class="secret-section-title">By detector</div>
+                        ${det.map(r => secretsFacet('detectors', r.detector_name, r.detector_name,
+                            Number(r.findings) || 0, max)).join('')}
+                    </div>`);
+            }
+            if (ws.length) {
+                const max = Math.max(...ws.map(r => Number(r.findings) || 0), 1);
+                cards.push(`
+                    <div class="card secret-card">
+                        <div class="secret-section-title">By workspace</div>
+                        ${ws.map(r => secretsFacet('workspaces', r.workspace_id, secretsWsLabel(r.workspace_name, r.workspace_id),
+                            Number(r.findings) || 0, max)).join('')}
+                    </div>`);
+            }
+            if (cards.length === 2) html += '<div class="sx-grid2">' + cards.join('') + '</div>';
+            else if (cards.length === 1) html += `<div style="margin-bottom:16px;">${cards[0]}</div>`;
+
+            // Detail table with a live toolbar; rows are filtered client-side.
+            // table-layout:fixed keeps the table exactly as wide as its container,
+            // so columns truncate with an ellipsis instead of overflowing the card.
+            const cols = '<col style="width:11%"><col style="width:17%"><col style="width:32%"><col style="width:24%"><col style="width:16%">';
+            // Multi-select checklists, built only from values present in the data.
+            const detMs = det.length ? secretsMultiselect('detectors', 'All detectors',
+                det.map(r => ({ value: r.detector_name, label: r.detector_name, count: Number(r.findings) || 0 }))) : '';
+            const wsMs = ws.length ? secretsMultiselect('workspaces', 'All workspaces',
+                ws.map(r => ({ value: String(r.workspace_id), label: secretsWsLabel(r.workspace_name, r.workspace_id), count: Number(r.findings) || 0 }))) : '';
+            html += `
+                <div class="card secret-table-card" style="padding:0;">
+                    <div class="sx-toolbar">
+                        <div class="sx-search">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input id="sx-search" type="text" placeholder="Search object, path, detector or hash…" autocomplete="off">
+                        </div>
+                        <select id="sx-source">
+                            <option value="">Notebooks &amp; clusters</option>
+                            <option value="notebook">Notebooks</option>
+                            <option value="cluster">Cluster configs</option>
+                        </select>
+                        ${detMs}
+                        ${wsMs}
+                        <span class="sx-count" id="sx-count"></span>
+                    </div>
+                    <div class="sx-table-wrap">
+                        <table class="data-table sx-dtable">
+                            <colgroup>${cols}</colgroup>
+                            <thead><tr>
+                                <th>Source</th><th>Detector</th>
+                                <th>Object</th><th>Hash</th><th>Workspace</th>
+                            </tr></thead>
+                            <tbody id="sx-tbody"></tbody>
+                        </table>
+                    </div>
+                    ${secretsExposure.truncated ? '<div class="sx-note">Showing the first 2,000 detections. Narrow with the filters above to see specific findings.</div>' : ''}
+                </div>`;
+
+            document.getElementById('secretsoverview-results').innerHTML = html;
+
+            // Wire the toolbar, multi-selects, and clickable facets.
+            const search = document.getElementById('sx-search');
+            if (search) search.addEventListener('input', e => {
+                secretsExposure.filters.search = e.target.value.trim().toLowerCase();
+                secretsRenderTable();
+            });
+            const srcSel = document.getElementById('sx-source');
+            if (srcSel) srcSel.addEventListener('change', e => {
+                secretsExposure.filters.source = e.target.value; secretsRenderTable();
+            });
+            // Facets (breakdown rows) toggle membership in the same arrays the
+            // multi-selects drive, so clicking a bar or ticking a box is one filter.
+            document.querySelectorAll('.sx-facet').forEach(el => {
+                const fire = () => secretsToggleFilter(el.dataset.kind, el.dataset.value);
+                el.addEventListener('click', fire);
+                el.addEventListener('keydown', ev => {
+                    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fire(); }
+                });
+            });
+            secretsWireMultiselects();
+            secretsApplyFilters();
+        }
+
+        function secretsFacet(kind, value, label, findings, max) {
+            const pct = max > 0 ? (findings / max) * 100 : 0;
+            const active = (secretsExposure.filters[kind] || []).includes(String(value));
+            return `
+                <div class="sx-facet${active ? ' is-active' : ''}" role="button" tabindex="0"
+                     data-kind="${kind}" data-value="${escapeHtml(String(value))}">
+                    <div class="sx-facet-label" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+                    <div class="sx-facet-track"><div class="sx-facet-fill" style="width:${pct}%;background:#f59e0b;"></div></div>
+                    <div class="sx-facet-val">${findings}</div>
+                </div>`;
+        }
+
+        // A checklist dropdown. kind is a filters array key ('detectors' /
+        // 'workspaces'); items is [{value,label,count}] built from present data.
+        function secretsMultiselect(kind, allLabel, items) {
+            const rows = items.map(it => `
+                <div class="sx-ms-item" data-value="${escapeHtml(String(it.value))}">
+                    <span class="sx-ms-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>
+                    <span class="sx-ms-label" title="${escapeHtml(it.label)}">${escapeHtml(it.label)}</span>
+                    <span class="sx-ms-cnt">${it.count}</span>
+                </div>`).join('');
+            return `
+                <div class="sx-ms" data-kind="${kind}" data-all-label="${escapeHtml(allLabel)}">
+                    <button type="button" class="sx-ms-btn" aria-haspopup="true" aria-expanded="false">
+                        <span class="sx-ms-text">${escapeHtml(allLabel)}</span>
+                        <svg class="sx-ms-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <div class="sx-ms-menu" hidden>
+                        ${rows}
+                        <div class="sx-ms-foot"><button type="button" data-ms-clear>Clear</button></div>
+                    </div>
+                </div>`;
+        }
+
+        function secretsWireMultiselects() {
+            document.querySelectorAll('.sx-ms').forEach(ms => {
+                const btn = ms.querySelector('.sx-ms-btn');
+                const menu = ms.querySelector('.sx-ms-menu');
+                const kind = ms.dataset.kind;
+                btn.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const willOpen = menu.hidden;
+                    document.querySelectorAll('.sx-ms-menu').forEach(m => { m.hidden = true; });
+                    menu.hidden = !willOpen;
+                    btn.setAttribute('aria-expanded', String(willOpen));
+                });
+                menu.addEventListener('click', e => e.stopPropagation());
+                ms.querySelectorAll('.sx-ms-item').forEach(it => {
+                    it.addEventListener('click', () => secretsToggleFilter(kind, it.dataset.value));
+                });
+                const clear = ms.querySelector('[data-ms-clear]');
+                if (clear) clear.addEventListener('click', () => { secretsExposure.filters[kind] = []; secretsApplyFilters(); });
+            });
+            // One document listener closes any open menu on an outside click.
+            if (!secretsWireMultiselects._bound) {
+                document.addEventListener('click', () => {
+                    document.querySelectorAll('.sx-ms-menu').forEach(m => { m.hidden = true; });
+                    document.querySelectorAll('.sx-ms-btn').forEach(b => b.setAttribute('aria-expanded', 'false'));
+                });
+                secretsWireMultiselects._bound = true;
+            }
+        }
+
+        // Toggle one value in a filter array (detectors/workspaces), then re-sync
+        // every control bound to that filter and redraw the table.
+        function secretsToggleFilter(kind, value) {
+            const arr = secretsExposure.filters[kind];
+            if (!Array.isArray(arr)) return;
+            const i = arr.indexOf(value);
+            if (i >= 0) arr.splice(i, 1); else arr.push(value);
+            secretsApplyFilters();
+        }
+
+        function secretsMsText(kind, arr, allLabel) {
+            if (!arr.length) return allLabel;
+            if (arr.length === 1) {
+                if (kind === 'workspaces') {
+                    const w = secretsExposure.byWorkspace.find(x => String(x.workspace_id) === String(arr[0]));
+                    return w ? secretsWsLabel(w.workspace_name, w.workspace_id) : arr[0];
+                }
+                return arr[0];
+            }
+            return `${arr.length} ${kind === 'workspaces' ? 'workspaces' : 'detectors'}`;
+        }
+
+        // Reflect filter state onto every control (facets + multi-selects), then
+        // redraw the table -- so the facet bars and the checklists always agree.
+        function secretsApplyFilters() {
+            const f = secretsExposure.filters;
+            document.querySelectorAll('.sx-facet').forEach(el => {
+                const arr = f[el.dataset.kind] || [];
+                el.classList.toggle('is-active', arr.includes(el.dataset.value));
+            });
+            document.querySelectorAll('.sx-ms').forEach(ms => {
+                const kind = ms.dataset.kind, arr = f[kind] || [];
+                ms.querySelectorAll('.sx-ms-item').forEach(it => it.classList.toggle('sel', arr.includes(it.dataset.value)));
+                const txt = ms.querySelector('.sx-ms-text');
+                if (txt) txt.textContent = secretsMsText(kind, arr, ms.dataset.allLabel);
+                ms.querySelector('.sx-ms-btn').classList.toggle('has-sel', arr.length > 0);
+            });
+            secretsRenderTable();
+        }
+
+        function secretsFilteredRows() {
+            const f = secretsExposure.filters;
+            return secretsExposure.rows.filter(r => {
+                if (f.source && r.source_type !== f.source) return false;
+                if (f.detectors.length && !f.detectors.includes(r.detector_name)) return false;
+                if (f.workspaces.length && !f.workspaces.includes(String(r.workspace_id))) return false;
+                if (f.search) {
+                    const hay = ((r.object_name || '') + ' ' + (r.object_path || '') + ' ' + (r.detector_name || '') + ' ' + (r.secret_sha256 || '')).toLowerCase();
+                    if (!hay.includes(f.search)) return false;
+                }
+                return true;
+            });
+        }
+
+        function secretsRenderTable() {
+            const tbody = document.getElementById('sx-tbody');
+            if (!tbody) return;
+            const rows = secretsFilteredRows();
+            const total = secretsExposure.rows.length;
+            // Show the friendly workspace label in the table, not the raw id.
+            const wsName = {};
+            secretsExposure.byWorkspace.forEach(w => { wsName[String(w.workspace_id)] = secretsWsLabel(w.workspace_name, w.workspace_id); });
+            const count = document.getElementById('sx-count');
+            if (count) {
+                count.textContent = rows.length === total
+                    ? `${total} detection${total === 1 ? '' : 's'}`
+                    : `${rows.length} of ${total} detection${total === 1 ? '' : 's'}`;
+            }
+            if (!rows.length) {
+                tbody.innerHTML = `<tr><td colspan="5" class="sx-empty-row">No detections match these filters.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td class="sx-src">${escapeHtml(r.source_type)}</td>
+                    <td class="sx-wrap">${escapeHtml(r.detector_name)}</td>
+                    <td>
+                        <div class="sx-obj-name">${escapeHtml(r.object_name)}</div>
+                        <div class="sx-obj-path">${escapeHtml(r.object_path)}</div>
+                    </td>
+                    <td class="mono sx-break">${escapeHtml(String(r.secret_sha256 || ''))}</td>
+                    <td class="sx-wrap">${escapeHtml(wsName[String(r.workspace_id)] || r.workspace_id)}</td>
+                </tr>`).join('');
+        }
 
         // --- Settings panel -------------------------------------------------
         // Values that the app reads per request are editable here and take effect
@@ -7677,100 +8164,6 @@ def get_main_html():
                 if (result.error) { alert(result.error); return; }
                 await loadSecretsAlerts();
             } catch (e) { alert(e.message); }
-        }
-
-        async function loadSecretsFindings() {
-            if (!secretsFiltersLoaded) {
-                // Populate filter dropdowns once from the aggregate endpoints.
-                try {
-                    const [ws, det] = await Promise.all([
-                        fetch('/api/secrets/by-workspace').then(r => r.json()),
-                        fetch('/api/secrets/by-detector').then(r => r.json()),
-                    ]);
-                    const wsSel = document.getElementById('sf-workspace');
-                    ((ws && ws.rows) || []).forEach(r => {
-                        const o = document.createElement('option');
-                        o.value = r.workspace_id;
-                        o.textContent = r.workspace_name || r.workspace_id;
-                        wsSel.appendChild(o);
-                    });
-                    const detSel = document.getElementById('sf-detector');
-                    ((det && det.rows) || []).forEach(r => {
-                        const o = document.createElement('option');
-                        o.value = r.detector_name;
-                        o.textContent = r.detector_name;
-                        detSel.appendChild(o);
-                    });
-                } catch (e) { /* filters degrade to defaults; the table still loads */ }
-                const applyBtn = document.getElementById('sf-apply');
-                if (applyBtn) applyBtn.addEventListener('click', runSecretsFindings);
-                ['sf-workspace', 'sf-source', 'sf-detector', 'sf-verified'].forEach(id => {
-                    const sel = document.getElementById(id);
-                    if (sel) sel.addEventListener('change', runSecretsFindings);
-                });
-                secretsFiltersLoaded = true;
-            }
-            runSecretsFindings();
-        }
-
-        async function runSecretsFindings() {
-            const container = document.getElementById('secretsfindings-results');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading findings...</div>';
-
-            const p = new URLSearchParams();
-            const ws = document.getElementById('sf-workspace').value;
-            const src = document.getElementById('sf-source').value;
-            const det = document.getElementById('sf-detector').value;
-            const ver = document.getElementById('sf-verified').value;
-            if (ws) p.set('workspace_id', ws);
-            if (src) p.set('source_type', src);
-            if (det) p.set('detector', det);
-            if (ver === 'true') p.set('verified_only', 'true');
-
-            try {
-                const res = await fetch('/api/secrets/findings?' + p.toString());
-                const result = await res.json();
-                if (result.ready === false) {
-                    showSecretsNotReady('secretsfindings-results', result.message);
-                    return;
-                }
-                if (result.error) { showEmpty('secretsfindings-results', result.error); return; }
-
-                const rows = result.rows || [];
-                if (!rows.length) {
-                    showEmpty('secretsfindings-results', 'No findings match these filters.');
-                    return;
-                }
-
-                container.innerHTML = `
-                    <div class="results-container">
-                        <div class="results-header">
-                            <div class="results-title">${result.count} finding${result.count === 1 ? '' : 's'}${result.truncated ? ' (truncated)' : ''}</div>
-                            <div style="font-size:0.8em;color:var(--text-muted);">Secrets shown as SHA-256 prefixes, never plaintext</div>
-                        </div>
-                        <table class="data-table data-table-padded">
-                            <thead><tr>
-                                <th>Status</th><th>Source</th><th>Object</th><th>Location</th>
-                                <th>Detector</th><th>Hash</th><th>Workspace</th><th>Scanned</th>
-                            </tr></thead>
-                            <tbody>
-                                ${rows.map(r => `
-                                    <tr>
-                                        <td>${secretStatusBadge(r.verified)}</td>
-                                        <td><span class="badge" style="background:rgba(148,163,184,.14);color:#cbd5e1;">${escapeHtml(r.source_type)}</span></td>
-                                        <td class="truncate" style="max-width:210px;">${escapeHtml(r.object_name)}</td>
-                                        <td class="mono truncate" style="max-width:290px;">${escapeHtml(r.object_path)}</td>
-                                        <td style="white-space:nowrap;">${escapeHtml(r.detector_name)}</td>
-                                        <td class="mono">${escapeHtml(String(r.secret_sha256 || '').slice(0, 12))}…</td>
-                                        <td class="mono">${escapeHtml(r.workspace_id)}</td>
-                                        <td class="nowrap-muted">${escapeHtml(String(r.scan_time || '').slice(0, 16).replace('T', ' '))}</td>
-                                    </tr>`).join('')}
-                            </tbody>
-                        </table>
-                    </div>`;
-            } catch (e) {
-                showEmpty('secretsfindings-results', 'Failed to load findings: ' + e.message);
-            }
         }
 
         async function loadIsolatedPrincipals() {
@@ -13088,29 +13481,53 @@ _SECRETS_NOT_READY = (
 )
 
 
-def _secrets_table_present(table_name):
-    """True if a scan table exists in the SAT schema.
+# Table-existence checks were the dominant cost of the Credential Exposure page:
+# every one of its endpoints ran a SHOW TABLES per table, so a single page load
+# spent a dozen round-trips just proving the scan tables are there. Now one
+# SHOW TABLES lists the schema and answers every check, and the result is cached
+# briefly (it only changes when a scan first creates a table -- still visible
+# within the TTL).
+_secrets_tables_cache = {'key': None, 'names': None, 'ts': 0.0}
+_secrets_table_lock = threading.Lock()
+_SECRETS_TABLE_TTL = 45.0
 
-    Checked per request rather than cached at import so a first scan becomes
-    visible without restarting the app.
-    """
+
+def _secrets_schema_tables():
+    """Lowercased set of table names in the SAT schema (cached briefly)."""
+    key = (CATALOG, SCHEMA)
+    now = time.time()
+    with _secrets_table_lock:
+        c = _secrets_tables_cache
+        if c['key'] == key and c['names'] is not None and (now - c['ts']) < _SECRETS_TABLE_TTL:
+            return c['names']
     try:
-        rows = exec_query_df(
-            f"SHOW TABLES IN `{CATALOG}`.`{SCHEMA}` LIKE '{table_name}'"
-        )
-        return bool(rows)
+        rows = exec_query_df(f"SHOW TABLES IN `{CATALOG}`.`{SCHEMA}`")
     except NoAccessError:
         raise
     except Exception:
-        logger.info("secret scan table check failed for %s", table_name, exc_info=True)
-        return False
+        logger.info("listing SAT schema tables failed", exc_info=True)
+        return set()  # don't cache a transient failure
+    names = set()
+    for r in rows:
+        n = (r.get('tableName') or r.get('col1') or '')
+        if n:
+            names.add(str(n).lower())
+    with _secrets_table_lock:
+        _secrets_tables_cache.update({'key': key, 'names': names, 'ts': now})
+    return names
+
+
+def _secrets_table_present(table_name):
+    """True if a table exists in the SAT schema (served from the cached list)."""
+    return table_name.lower() in _secrets_schema_tables()
 
 
 def _secrets_sources():
     """Which scan tables exist: (notebooks, clusters)."""
+    names = _secrets_schema_tables()
     return (
-        _secrets_table_present('notebooks_secret_scan_results'),
-        _secrets_table_present('clusters_secret_scan_results'),
+        'notebooks_secret_scan_results' in names,
+        'clusters_secret_scan_results' in names,
     )
 
 
@@ -13164,6 +13581,9 @@ def api_secrets_summary():
     if not (has_nb or has_cl):
         return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
 
+    # One round trip: the headline aggregates over findings plus the count of
+    # scanned workspaces (a scalar subquery over the same CTE), rather than a
+    # second query just for that count.
     rows = exec_query_df(f"""
     WITH {_latest_runs_cte(has_nb, has_cl)},
     {_findings_cte(has_nb, has_cl)}
@@ -13175,16 +13595,12 @@ def api_secrets_summary():
       SUM(CASE WHEN verified THEN 1 ELSE 0 END)         AS verified_findings,
       SUM(CASE WHEN source_type = 'notebook' THEN 1 ELSE 0 END) AS notebook_findings,
       SUM(CASE WHEN source_type = 'cluster'  THEN 1 ELSE 0 END) AS cluster_findings,
-      MAX(scan_time)                                    AS last_scan_time
+      MAX(scan_time)                                    AS last_scan_time,
+      (SELECT COUNT(*) FROM latest_runs)                AS workspaces_scanned
     FROM findings
     """)
     summary = rows[0] if rows else {}
-
-    scanned = exec_query_df(f"""
-    WITH {_latest_runs_cte(has_nb, has_cl)}
-    SELECT COUNT(*) AS workspaces_scanned FROM latest_runs
-    """)
-    workspaces_scanned = (scanned[0].get('workspaces_scanned') if scanned else 0) or 0
+    workspaces_scanned = (summary.get('workspaces_scanned') if summary else 0) or 0
 
     # Tables can exist while holding no rows — created by an earlier install and
     # never populated. That is "not scanned", not "scanned clean"; reporting zero
@@ -13195,7 +13611,6 @@ def api_secrets_summary():
     except (TypeError, ValueError):
         return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
 
-    summary['workspaces_scanned'] = workspaces_scanned
     return jsonify({'ready': True, 'summary': summary})
 
 
@@ -13219,6 +13634,55 @@ def api_secrets_by_detector():
     return jsonify({'ready': True, 'rows': rows})
 
 
+# Workspace display names live at the account level, not in any scanned table, so
+# resolve them with the app's stored account SP credentials and cache the result
+# (names rarely change). Best-effort: returns {} when account_id/credentials are
+# absent or the SP is not an account admin, and callers fall back to the id.
+_account_ws_names_cache = {'names': None, 'ts': 0.0}
+_account_ws_names_lock = threading.Lock()
+_ACCOUNT_WS_NAMES_TTL = 3600.0
+
+
+def _account_host():
+    host = (os.getenv('DATABRICKS_HOST') or '').lower()
+    if 'azuredatabricks.net' in host:
+        return 'https://accounts.azuredatabricks.net'
+    if 'gcp.databricks.com' in host:
+        return 'https://accounts.gcp.databricks.com'
+    return 'https://accounts.cloud.databricks.com'
+
+
+def _account_workspace_names():
+    """Map {workspace_id(str): workspace_name} from the Account API."""
+    now = time.time()
+    with _account_ws_names_lock:
+        c = _account_ws_names_cache
+        if c['names'] is not None and (now - c['ts']) < _ACCOUNT_WS_NAMES_TTL:
+            return c['names']
+    names = {}
+    try:
+        account_id = (_app_config.get('account_id') or os.getenv('ACCOUNT_ID') or '').strip()
+        client_id = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+        client_secret = uc_secret_value(CREDENTIAL_KEYS['client_secret'])
+        if account_id and client_id and client_secret:
+            from databricks.sdk import AccountClient
+            ac = AccountClient(host=_account_host(), account_id=account_id,
+                               client_id=client_id, client_secret=client_secret)
+            for w in ac.workspaces.list():
+                wid = getattr(w, 'workspace_id', None)
+                wname = getattr(w, 'workspace_name', None)
+                if wid is not None and wname:
+                    names[str(wid)] = wname
+    except Exception:  # noqa: BLE001
+        logger.info("account workspace name lookup failed", exc_info=True)
+    with _account_ws_names_lock:
+        # Cache a hit for the full TTL; an empty result (no creds yet) for ~60s so
+        # it picks up credentials added mid-session without a restart.
+        _account_ws_names_cache.update(
+            {'names': names, 'ts': now if names else (now - _ACCOUNT_WS_NAMES_TTL + 60)})
+    return names
+
+
 @app.route('/api/secrets/by-workspace')
 def api_secrets_by_workspace():
     """Per-workspace rollup, including workspaces that scanned clean."""
@@ -13226,18 +13690,10 @@ def api_secrets_by_workspace():
     if not (has_nb or has_cl):
         return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
 
-    has_names = _secrets_table_present('account_workspaces')
-    name_col = ("COALESCE(w.workspace_name, l.workspace_id)"
-                if has_names else "l.workspace_id")
-    name_join = (f"LEFT JOIN `{CATALOG}`.`{SCHEMA}`.account_workspaces w "
-                 f"ON w.workspace_id = l.workspace_id" if has_names else "")
-    group_extra = ", w.workspace_name" if has_names else ""
-
     rows = exec_query_df(f"""
     WITH {_latest_runs_cte(has_nb, has_cl)},
     {_findings_cte(has_nb, has_cl)}
     SELECT l.workspace_id,
-           {name_col} AS workspace_name,
            l.latest_run_id AS run_id,
            COUNT(f.secret_sha256) AS findings,
            COUNT(DISTINCT f.secret_sha256) AS distinct_secrets,
@@ -13247,10 +13703,14 @@ def api_secrets_by_workspace():
            MAX(f.scan_time) AS last_scan_time
     FROM latest_runs l
     LEFT JOIN findings f ON f.workspace_id = l.workspace_id
-    {name_join}
-    GROUP BY l.workspace_id, l.latest_run_id{group_extra}
+    GROUP BY l.workspace_id, l.latest_run_id
     ORDER BY findings DESC, l.workspace_id
     """)
+
+    # Resolve real names from the account; leave null so the UI falls back to id.
+    name_map = _account_workspace_names()
+    for r in rows:
+        r['workspace_name'] = name_map.get(str(r.get('workspace_id'))) or None
     return jsonify({'ready': True, 'rows': rows})
 
 
