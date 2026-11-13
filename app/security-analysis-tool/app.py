@@ -2574,8 +2574,15 @@ def get_main_html():
         .settings-jobs-cta svg { width: 13px; height: 13px; }
         .settings-jobs-link:hover .settings-jobs-cta { text-decoration: underline; }
         /* "Turn off the assistant" -- quiet, danger-tinted on hover. */
-        .settings-danger { margin-top: 14px; color: var(--text-muted); }
-        .settings-danger:hover { color: #fca5a5; border-color: rgba(239, 68, 68, .45); }
+        .settings-danger {
+            display: block; width: fit-content; margin: 16px auto 2px;
+            background: rgba(239, 68, 68, .10); color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, .40); box-shadow: none;
+        }
+        .settings-danger:hover:not(:disabled) {
+            background: rgba(239, 68, 68, .18); color: #fecaca;
+            border-color: rgba(239, 68, 68, .6); box-shadow: none;
+        }
         .job-state { font-size: .88em; font-weight: 600; }
         .job-state.on { color: #86efac; }
         .job-state.off { color: var(--text-muted); }
@@ -6904,7 +6911,6 @@ def get_main_html():
                 settingsState.requirements = settingsState.requirements || { loading: true };
                 settingsState.dirty = {};
                 renderSettings();
-                updateSettingsIndicator(data.failing_count || 0);
                 loadRequirements();
             } catch (e) {
                 document.getElementById('settings-body').innerHTML =
@@ -6929,6 +6935,7 @@ def get_main_html():
             if (badge && checks.length) {
                 badge.textContent = reqFail ? `${reqFail} to fix` : (optFail ? `${optFail} optional` : 'All set');
             }
+            updateSettingsIndicator(reqFail);
         }
 
         function updateSettingsIndicator(failing) {
@@ -7051,7 +7058,7 @@ def get_main_html():
                         'The Genie space the assistant answers from, created automatically over your results schema.',
                         selectMarkup('genie_space_id', cfg.genie_space_id,
                             spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None'))
-                      + `<button class="btn btn-sm btn-ghost settings-danger" data-armed="0" onclick="assistantDisable(this)">Turn off the assistant</button>`,
+                      + `<button class="btn btn-sm settings-danger" data-armed="0" onclick="assistantDisable(this)">Turn off the assistant</button>`,
                 access: `
                     <label class="switch-row" for="set-filtering">
                         <span>
@@ -7301,9 +7308,9 @@ def get_main_html():
 
         (function probeSettings() {
             function run() {
-                fetch('/api/settings')
+                fetch('/api/setup/requirements')
                     .then(r => r.json())
-                    .then(d => updateSettingsIndicator(d.failing_count || 0))
+                    .then(d => updateSettingsIndicator(((d.checks) || []).filter(c => !c.ok && !c.optional).length))
                     .catch(() => {});
             }
             if (document.readyState === 'loading') {
@@ -14020,136 +14027,13 @@ def api_settings():
     warehouse_id = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or ''
     schema = os.getenv('SAT_SCHEMA') or os.getenv('BRICKHOUND_SCHEMA') or ''
 
-    probe_specs = []
-
-    # 1. User identity / OBO. Checked from the request itself rather than config,
-    # because an app can advertise a scope its forwarded token does not carry.
-    forwarded_token = request.headers.get('x-forwarded-access-token')
-
-    def check_obo():
-        token = forwarded_token
-        if not token:
-            return False, ('No user token is being forwarded, so queries cannot run '
-                           'as the signed-in user.')
-        if not _token_has_sql_scope(token):
-            return False, ("The forwarded token is missing the 'sql' scope, which "
-                           "the Statement Execution API requires.")
-        return True, 'Queries run as the signed-in user; Unity Catalog enforces their grants.'
-
-    probe_specs.append((
-        'User authorization (OBO)', check_obo,
-        ("User scopes are set on the app. Ensure user_api_scopes include "
-         "[sql, genie] -- genie lets the assistant answer as the signed-in user -- "
-         "then reopen the app to re-consent.")))
-
-    # 2. The app's own identity. This is what fails when a service principal
-    # secret is rotated or the principal is deleted.
-    def check_sp():
-        me = _sp_workspace_client().current_user.me()
-        name = getattr(me, 'user_name', None) or getattr(me, 'display_name', None)
-        return True, f'Authenticated as {name}.'
-
-    probe_specs.append((
-        'App service principal', check_sp,
-        ('The app cannot authenticate as itself. Its service principal may have been '
-         'deleted or had its secret rotated. Redeploy the app so the platform issues '
-         'fresh credentials.')))
-
-    # 3. Warehouse reachability, which every read and every alert depends on.
-    def check_warehouse():
-        if not warehouse_id:
-            return False, 'No warehouse is configured.'
-        wh = _sp_workspace_client().warehouses.get(id=warehouse_id)
-        state = str(getattr(wh, 'state', '') or '').split('.')[-1]
-        return True, f'{getattr(wh, "name", warehouse_id)} ({state}).'
-
-    probe_specs.append((
-        'SQL warehouse', check_warehouse,
-        ('Choose a warehouse below, or grant this app CAN_USE on one in the '
-         'workspace.')))
-
-    # 4. Can the configured schema actually be read, as the calling user?
-    # Resolved before the fan-out: exec_query_df reads the forwarded user token
-    # from the request, which a worker thread cannot see.
-    try:
-        query_client, query_warehouse = get_connection()
-    except Exception:  # noqa: BLE001
-        query_client, query_warehouse = None, None
-
-    def check_schema():
-        if not schema:
-            return False, 'No results schema is configured.'
-        if query_client is None:
-            return False, ('Could not connect to the warehouse as you, so the '
-                           'schema could not be read.')
-        # One statement, not two: a count over the graph both proves the warehouse
-        # answered and reports the row count. A separate SELECT 1 doubled the
-        # slowest probe in the panel for no extra information.
-        rows = _sql_rows(query_client, query_warehouse,
-                         f'SELECT COUNT(*) AS n FROM {VERTICES_TABLE}')
-        if rows is None:
-            return False, (f'Connected, but {schema} could not be read. Check that '
-                           f'you have USE SCHEMA and SELECT on it.')
-        n = rows[0][0] if rows and rows[0] else 0
-        return True, (f'{schema} is readable, holding {n} rows in the permissions graph.'
-                      if n else
-                      f'{schema} is readable but empty. Run the Permissions Graph job.')
-
-    probe_specs.append((
-        'Unity Catalog access', check_schema,
-        (f'Grant the signed-in user USE CATALOG, USE SCHEMA, and SELECT on '
-         f'{schema or "the schema"}. The app service principal needs the same, plus '
-         f'CREATE TABLE and MODIFY.')))
-
-    # 5. Collection jobs: bound, and startable.
-    def check_jobs():
-        configured = {k: _collection_job_id(k) for k in COLLECTION_JOBS}
-        missing = [k for k, v in configured.items() if not v]
-        if missing:
-            return False, ('Not connected: ' + ', '.join(
-                COLLECTION_JOBS[k]['label'] for k in missing))
-        return True, f'All {len(configured)} collection jobs are connected.'
-
-    probe_specs.append((
-        'Collection jobs', check_jobs,
-        ('Jobs are matched by name. Anything not deployed has no matching job yet — '
-         'deploy it with the installer and it appears here automatically.')))
-
-    # 7. Alerts, which need both a recent SDK and permission to manage alerts.
-    def check_alerts():
-        client = _sp_workspace_client()
-        if not hasattr(client, 'alerts_v2'):
-            return False, ('This deployment ships a databricks-sdk older than 0.51, '
-                           'which has no alerts API.')
-        managed = 0
-        known = {spec['column'] for spec in _alert_templates().values()}
-        for alert in client.alerts_v2.list_alerts():
-            if str(getattr(alert, 'lifecycle_state', '') or '').split('.')[-1] == 'DELETED':
-                continue
-            entry = _serialise_alert(alert)
-            if entry['column'] in known or (entry['display_name'] or '').startswith(
-                    ALERT_NAME_PREFIX):
-                managed += 1
-        return True, (f'{managed} secret-scanning alert(s) configured.' if managed
-                      else 'Alerts API reachable; none configured yet.')
-
-    probe_specs.append((
-        'Secret-scanning alerts', check_alerts,
-        ('The app service principal needs permission to manage SQL alerts in this '
-         'workspace, and databricks-sdk 0.51 or newer.')))
-
-    # 8. Genie, which is optional by design.
+    # Health/permission probes are reported by the lazily-loaded checklist
+    # (/api/setup/requirements); running them here too made the settings panel
+    # wait on ~7 workspace calls before it could render. /api/settings now
+    # returns configuration only and stays fast.
     genie_space = (os.getenv('GENIE_SPACE_ID') or '').strip()
-    genie_entry = {
-        'label': 'Security assistant (Genie)',
-        'ok': bool(genie_space),
-        'detail': (f'Answering from Genie space {genie_space}.' if genie_space
-                   else 'No Genie space yet. Create one from Settings to enable the assistant.'),
-        'optional': True,
-    }
-
-    checks = _run_settings_probes(probe_specs) + [genie_entry]
-    failing = [c for c in checks if not c['ok']]
+    checks = []
+    failing = []
     return jsonify({
         'healthy': not failing,
         'failing_count': len(failing),
