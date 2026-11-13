@@ -2566,13 +2566,16 @@ def get_main_html():
             display: block; width: 100%; text-align: left; cursor: pointer;
             background: none; border: none; color: inherit; font: inherit; padding: 0;
         }
-        .settings-jobs-link .job-row:last-child { border-bottom: 1px solid rgba(255, 255, 255, .04); }
+        /* Footer row: aligns with the job rows above -- label left, chevron
+           right -- with a divider, so nothing floats off to one side. */
         .settings-jobs-cta {
-            display: flex; align-items: center; justify-content: flex-end; gap: 3px;
-            margin-top: 10px; font-size: .82em; font-weight: 600; color: var(--accent);
+            display: flex; align-items: center; justify-content: space-between;
+            margin-top: 11px; padding-top: 11px;
+            border-top: 1px solid rgba(255, 255, 255, .06);
+            font-size: .86em; font-weight: 600; color: var(--accent);
         }
-        .settings-jobs-cta svg { width: 13px; height: 13px; }
-        .settings-jobs-link:hover .settings-jobs-cta { text-decoration: underline; }
+        .settings-jobs-cta svg { width: 15px; height: 15px; }
+        .settings-jobs-link:hover .settings-jobs-cta { color: #93b4f5; }
         /* "Turn off the assistant" -- quiet, danger-tinted on hover. */
         .settings-danger {
             display: block; width: fit-content; margin: 16px auto 2px;
@@ -7075,7 +7078,7 @@ def get_main_html():
                         <span>${escapeHtml(jobs[k].label)}</span>
                         <span class="job-state ${jobs[k].connected ? 'on' : 'off'}">${jobs[k].connected ? 'Deployed' : 'Not deployed'}</span>
                     </div>`).join('')}
-                    <div class="settings-jobs-cta">Manage in Data Collection<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
+                    <div class="settings-jobs-cta"><span>Manage in Data Collection</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
                 </button>`,
             };
 
