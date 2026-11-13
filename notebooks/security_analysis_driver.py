@@ -149,7 +149,7 @@ def processWorkspace(wsrow):
 # COMMAND ----------
 
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def combine(ws):
@@ -159,13 +159,28 @@ def combine(ws):
 
 if use_parallel_runs == True:
     loggr.info("Running in parallel")
+    failed_workspaces = []
     with ThreadPoolExecutor(max_workers=4) as executor:
-        try:
-            result = executor.map(combine, workspaces)
-            for r in result:
-                print(r)
-        except Exception as e:
-            loggr.info(e)
+        future_to_ws = {executor.submit(combine, ws): ws for ws in workspaces}
+        for future in as_completed(future_to_ws):
+            ws = future_to_ws[future]
+            try:
+                future.result()
+                loggr.info(f"Completed analyzing {ws.workspace_id}!")
+            except Exception:
+                loggr.exception(f"Workspace {ws.workspace_id} failed")
+                failed_workspaces.append(ws.workspace_id)
+                # Keep going so the remaining workspaces and the schema cleanup below still run.
+                try:
+                    notifyworkspaceCompleted(ws.workspace_id, False)
+                except Exception:
+                    loggr.exception(
+                        f"Could not record failure for workspace {ws.workspace_id}"
+                    )
+    if failed_workspaces:
+        loggr.error(
+            f"{len(failed_workspaces)} of {len(workspaces)} workspaces failed: {failed_workspaces}"
+        )
 else:
     loggr.info("Running in sequence")
     for ws in workspaces:
