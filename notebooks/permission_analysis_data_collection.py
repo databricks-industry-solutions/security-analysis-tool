@@ -22,19 +22,20 @@
 # MAGIC **Classic Compute (Recommended for Multi-Workspace):**
 # MAGIC - Collects from all configured workspaces
 # MAGIC - Includes account-level resources (Service Principals, Groups, etc.)
-# MAGIC - Requires Service Principal credentials in `sat_scope`
+# MAGIC - Requires account Service Principal credentials (stored by the app as Unity Catalog secrets)
 # MAGIC
 # MAGIC This notebook automatically detects compute type and adjusts collection scope accordingly.
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
 # MAGIC ### For Multi-Workspace Collection (Recommended)
-# MAGIC Set up a Service Principal with Account Admin access. See **00_config** for detailed instructions.
+# MAGIC Set up a Service Principal with Account Admin access. The SAT app stores its
+# MAGIC credentials as Unity Catalog secrets in the results schema ({catalog}.{schema}.<key>).
 # MAGIC
-# MAGIC **Required Secrets** (in scope "brickhound"):
-# MAGIC - `account-id` - Your Databricks Account UUID
-# MAGIC - `sp-client-id` - Service Principal Application ID
-# MAGIC - `sp-client-secret` - Service Principal OAuth Secret
+# MAGIC **Required secrets:**
+# MAGIC - `account-console-id` - Your Databricks Account UUID
+# MAGIC - `client-id` - Service Principal Application ID
+# MAGIC - `client-secret` - Service Principal OAuth Secret
 # MAGIC
 # MAGIC ### For Single Workspace Collection
 # MAGIC If no SP credentials are configured, collection will only run on the current workspace using the notebook user's permissions.
@@ -393,25 +394,41 @@ SP_CREDENTIALS['cloud_type'] = cloud_type
 
 print(f"\n1. Loading Service Principal Credentials...")
 
-# Get the secrets scope name (default: "sat_scope" for SAT integration)
+# Account API credentials. The SAT app stores these as Unity Catalog secrets in
+# the results schema ({catalog}.{schema}.<key>); a classic install keeps them in
+# the sat_scope secret scope. Read UC first, then the legacy scope, so collection
+# authenticates under both the app (which has no sat_scope) and classic deployments.
 secrets_scope = SECRETS_SCOPE if 'SECRETS_SCOPE' in dir() else "sat_scope"
 
-try:
-    # Updated for SAT integration: using SAT secret key names
-    SP_CREDENTIALS['account_id'] = dbutils.secrets.get(scope=secrets_scope, key="account-console-id")
-    SP_CREDENTIALS['client_id'] = dbutils.secrets.get(scope=secrets_scope, key="client-id")
-    SP_CREDENTIALS['client_secret'] = dbutils.secrets.get(scope=secrets_scope, key="client-secret")
-
-    # Try to load tenant_id for Azure (optional for AWS/GCP)
+def _bh_cred(key):
     try:
-        SP_CREDENTIALS['tenant_id'] = dbutils.secrets.get(scope=secrets_scope, key="tenant-id")
-        print(f"   ✓ Loaded tenant-id for Azure authentication")
+        return dbutils.secrets.get(
+            catalog=CATALOG.strip('`').strip(),
+            schema=SCHEMA.strip('`').strip(),
+            key=key,
+        )
     except Exception:
-        # tenant_id not required for AWS/GCP, only log for debugging
+        pass
+    try:
+        return dbutils.secrets.get(scope=secrets_scope, key=key)
+    except Exception:
+        return None
+
+try:
+    SP_CREDENTIALS['account_id'] = _bh_cred("account-console-id")
+    SP_CREDENTIALS['client_id'] = _bh_cred("client-id")
+    SP_CREDENTIALS['client_secret'] = _bh_cred("client-secret")
+
+    # tenant_id is only required for Azure authentication.
+    tenant_id = _bh_cred("tenant-id")
+    if tenant_id:
+        SP_CREDENTIALS['tenant_id'] = tenant_id
+        print(f"   ✓ Loaded tenant-id for Azure authentication")
+    else:
         print(f"   ℹ Note: tenant-id not found in secrets (only required for Azure)")
 
     if SP_CREDENTIALS['account_id'] and SP_CREDENTIALS['client_id'] and SP_CREDENTIALS['client_secret']:
-        print(f"   ✓ Loaded credentials from secrets scope '{secrets_scope}'")
+        print(f"   ✓ Loaded Service Principal credentials")
         print(f"   Account ID: {SP_CREDENTIALS['account_id'][:8]}...")
         print(f"   Client ID: {SP_CREDENTIALS['client_id'][:8]}...")
         print(f"   Account Host: {SP_CREDENTIALS['account_host']}")
@@ -424,12 +441,12 @@ try:
         else:
             MULTI_WORKSPACE_MODE = True
     else:
-        print(f"   ⚠ Some credentials missing in scope '{secrets_scope}'")
+        print(f"   ⚠ Service Principal credentials not configured")
+        print(f"   → Will collect from CURRENT WORKSPACE ONLY")
         MULTI_WORKSPACE_MODE = False
 except Exception as e:
     print(f"   ⚠ Could not load SP credentials: {e}")
     print(f"   → Will collect from CURRENT WORKSPACE ONLY")
-    print(f"   → Set up secrets in scope '{secrets_scope}' for multi-workspace collection")
     MULTI_WORKSPACE_MODE = False
 
 # ============================================================================

@@ -221,16 +221,9 @@ _run_setup = (not _app_mode) or (_param("sat_init").lower() == "true")
 
 if _run_setup:
     create_schema()
-    create_security_checks_table()
     create_account_info_table()
     create_account_workspaces_table()
     create_notebooks_secret_scan_results_table()
     create_clusters_secret_scan_results_table()
     create_workspace_run_complete_table()
-
-    # Initialize best practices
-    readBestPracticesConfigsFile()
-
-    # Initialize sat dasf mapping
-    load_sat_dasf_mapping()
 
