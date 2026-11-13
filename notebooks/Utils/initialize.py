@@ -116,9 +116,6 @@ json_.update(
         "master_pwd_key": "pass",
         "workspace_pat_scope": SECRETS_SCOPE,
         "workspace_pat_token_prefix": "sat-token",
-        "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217",
-        "dashboard_folder": f"{basePath()}/dashboards/",
-        "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
         # accounts_console: URL for accounts console in special environments (gov cloud, DoD)

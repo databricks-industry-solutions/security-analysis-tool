@@ -103,7 +103,7 @@ def form():
     application = [
         Confirm(
             name="enable_app",
-            message="Deploy the Security Analysis app (dashboards + assistant)?",
+            message="Deploy the Security Analysis app?",
             default=True,
         ),
         Text(
