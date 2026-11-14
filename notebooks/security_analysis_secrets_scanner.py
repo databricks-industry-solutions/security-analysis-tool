@@ -28,13 +28,11 @@ hostname = (
     .getOrElse(None)
 )
 cloud_type = getCloudType(hostname)
-clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 json_.update(
     {
         "url": hostname,
         "workspace_id": "accounts",
         "cloud_type": cloud_type,
-        "clusterid": clusterid,
     }
 )
 
@@ -65,7 +63,6 @@ if is_serverless:
     serverless_filter = " where workspace_id = '" + current_workspace + "'"
 
 workspacesdf = spark.sql(f"select * from `all_workspaces` {serverless_filter}")
-display(workspacesdf)
 workspaces = workspacesdf.collect()
 
 if workspaces is None or len(workspaces) == 0:
@@ -161,7 +158,6 @@ def processTruffleHogScan(wsrow, run_id):
     hostname = "https://" + wsrow.deployment_url
     cloud_type = getCloudType(hostname)
     workspace_id = wsrow.workspace_id
-    clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
     ws_json = dict(json_)
     ws_json.update(
         {
@@ -169,7 +165,6 @@ def processTruffleHogScan(wsrow, run_id):
             "workspace_id": workspace_id,
             "workspace_name": wsrow.workspace_name,
             "cloud_type": cloud_type,
-            "clusterid": clusterid,
             "run_id": run_id,  # Add shared run_id
         }
     )
@@ -205,7 +200,6 @@ def processClusterScan(wsrow, run_id):
     cloud_type = getCloudType(hostname)
     workspace_id = wsrow.workspace_id
 
-    clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
     ws_json = dict(json_)
     ws_json.update(
         {
@@ -213,7 +207,6 @@ def processClusterScan(wsrow, run_id):
             "workspace_id": workspace_id,
             "workspace_name": wsrow.workspace_name,
             "cloud_type": cloud_type,
-            "clusterid": clusterid,
             "run_id": run_id,  # Add shared run_id
         }
     )

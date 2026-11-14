@@ -663,7 +663,7 @@ print(f"Wrote {findings_df.count()} finding(s) to {SHARED_TO_ACCOUNT_TABLE} (run
 if events.empty:
     print("✓ No resources shared to all account users in the selected window.")
 else:
-    display(findings_df.orderBy(F.desc("event_time")))
+    print(f"{len(events)} resource(s) shared to all account users — see the results table.")
 
 # COMMAND ----------
 

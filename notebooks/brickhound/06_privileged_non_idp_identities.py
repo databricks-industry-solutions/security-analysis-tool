@@ -635,7 +635,7 @@ print(f"Wrote {findings_df.count()} finding(s) to {PRIVILEGED_NON_IDP_TABLE} (ru
 if findings.empty:
     print("✓ No privileged non-IdP-managed identities found for the selected finding types.")
 else:
-    display(findings_df.orderBy("finding_type", F.desc("is_idp_managed")))
+    print(f"{len(findings)} privileged non-IdP identity finding(s) — see the results table.")
 
 # COMMAND ----------
 

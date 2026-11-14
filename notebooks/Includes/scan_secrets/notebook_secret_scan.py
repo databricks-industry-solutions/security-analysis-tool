@@ -1626,7 +1626,7 @@ print("=" * 30)
 print("📁 Temporary files in /tmp/notebooks:")
 
 if notebooks_by_secrets:
-    display(notebooks_by_secrets)
+    print(f"{len(notebooks_by_secrets)} notebook(s) with secrets — see the results table.")
 else:
     print("No notebooks with secrets to display.")
 

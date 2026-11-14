@@ -3211,17 +3211,8 @@ print(f"\n Saved Data:")
 print(f"  Vertices: {vertices_saved.count():,}")
 print(f"  Edges: {edges_saved.count():,}")
 
-# Verify vertices by type
-print(f"\n Vertices by type:")
-display(vertices_saved.groupBy("node_type").count().orderBy(F.desc("count")))
-
-# Verify edges by relationship
-print(f"\n Edges by relationship:")
-display(edges_saved.groupBy("relationship").count().orderBy(F.desc("count")))
-
 # Critical check: permission grants
-permission_grants = edges_saved.filter(F.col("permission_level").isNotNull())
-grant_count = permission_grants.count()
+grant_count = edges_saved.filter(F.col("permission_level").isNotNull()).count()
 
 print(f"\n Permission Grants: {grant_count:,}")
 
@@ -3230,8 +3221,6 @@ if grant_count == 0:
     print("   Permission analysis will NOT work.")
 else:
     print(f"\n SUCCESS! {grant_count} permission grants saved")
-    print("\n Permission types:")
-    display(permission_grants.groupBy("permission_level").count().orderBy(F.desc("count")))
 
 # COMMAND ----------
 

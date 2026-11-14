@@ -323,4 +323,4 @@ print(f"Wrote {cand_df.count()} candidate group(s) to {DENYLIST_CANDIDATES_TABLE
 if candidates.empty:
     print("✓ No candidate groups found for the current threshold.")
 else:
-    display(cand_df.orderBy(F.desc("inactive_members"), F.desc("inactive_pct")))
+    print(f"{len(candidates)} candidate group(s) — see the results table.")
