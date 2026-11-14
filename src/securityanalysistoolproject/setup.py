@@ -24,7 +24,7 @@ setup(
     name="dbl-sat-sdk",
     version=VERSION,
     packages=[
-        "clientpkgs", "core",
+        "core",
     ],
     python_requires=">=3.8",
     install_requires=[

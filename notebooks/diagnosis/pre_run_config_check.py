@@ -5,18 +5,10 @@
 
 # COMMAND ----------
 
-# MAGIC %run ../Includes/install_sat_sdk
-
-# COMMAND ----------
-
-# MAGIC %run ../Utils/initialize
-
-# COMMAND ----------
-
-# MAGIC %run ../Utils/common
-
-# COMMAND ----------
-
+# This pre-flight only checks that the TruffleHog scanner is installed and that
+# the network it needs is reachable; it needs neither the SAT SDK nor the shared
+# config, so it does not %run install_sat_sdk / initialize / common (the secrets
+# scanner that runs this does that itself).
 # The SAT app supplies all configuration as job parameters and stores credentials
 # as Unity Catalog secrets, so there is no secret scope to validate here. The
 # checks below confirm the TruffleHog scanner is installed and reachable.
