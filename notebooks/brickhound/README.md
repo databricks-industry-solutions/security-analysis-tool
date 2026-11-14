@@ -58,8 +58,8 @@ https://<workspace-url>/apps/brickhound-sat
 ## Configuration
 
 BrickHound automatically uses SAT's configuration:
-- **Credentials**: From `sat_scope` secret scope
-- **Schema**: From SAT's `analysis_schema_name`
+- **Credentials**: Unity Catalog secrets in the results schema (stored by the app)
+- **Schema**: From the `analysis_schema_name` job parameter the app sets
 - **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`, `brickhound_shared_to_account`
 
 No additional configuration needed if SAT is installed!
@@ -84,7 +84,7 @@ Both write to the same Unity Catalog schema for unified security analysis.
 - Check job logs for errors
 
 **Authentication failed?**
-- Verify SAT is installed (`sat_scope` exists)
+- Verify the app is set up and account credentials are stored (Unity Catalog secrets in the results schema)
 - Check service principal has Account Admin role
 
 **Tables not found?**

@@ -10,23 +10,11 @@ resource "databricks_app" "brickhound" {
   # 403 "Invalid scope, required scopes: <name>".
   user_api_scopes = ["sql", "genie"]
 
+  # The app is the source of truth for its configuration: catalog/schema, account
+  # id, and credentials are captured in the app's setup flow and stored as Unity
+  # Catalog secrets, so no secret-scope bindings are needed here. Only the SQL
+  # warehouse is bound, granting the app's service principal CAN_USE.
   resources = [
-    {
-      name = "analysis_schema_name"
-      secret = {
-        scope      = databricks_secret_scope.sat.id
-        key        = "analysis_schema_name"
-        permission = "READ"
-      }
-    },
-    {
-      name = "sql-warehouse-id"
-      secret = {
-        scope      = databricks_secret_scope.sat.id
-        key        = "sql-warehouse-id"
-        permission = "READ"
-      }
-    },
     {
       name = "warehouse"
       sql_warehouse = {

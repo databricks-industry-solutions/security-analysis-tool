@@ -153,8 +153,6 @@ Supplemental Documentation:
 
 Additional Considerations:
 
-Your jobs may fail if there was a pre-existing secret scope named sat_scope when you run terraform apply. To remedy this, you will need to change the name of your secret scope in secrets.tf, re-run terraform apply, and then navigate to Workspace -> Applications -> SAT-TF ->/notebooks/Utils/initialize and change the secret scope name in  6 places (3 times in CMD 4 and 3 times in CMD 5). You then can re-run your failed jobs.
-
 If `terraform apply` fails with `An app with the same name already exists` for `sat-permissions-exp` (typically because BrickHound was previously deployed via the DABS installer or a prior Terraform state was lost), import the existing app into Terraform state and re-apply:
 
 ```bash

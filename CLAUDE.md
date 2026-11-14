@@ -600,7 +600,7 @@ This ensures users have complete visibility into what changes were made and whet
 
 ## Important Implementation Details
 
-1. **Secret Storage:** All credentials stored in Databricks secret scope `sat_scope` during DABS installation
+1. **Secret Storage:** Account credentials are stored as Unity Catalog secrets in the results schema (`{catalog}.{schema}.<key>`) via the app's setup flow; there is no legacy `sat_scope` secret scope
 2. **Workspace filtering:** Use `serverless_filter` SQL clause when running on serverless
 3. **Pagination:** Controlled by `maxpages` and `timebetweencalls` config parameters
 4. **Token refresh:** Tokens regenerated per API call in `_update_token_master()` based on endpoint routing
@@ -616,7 +616,7 @@ BrickHound provides graph-based permissions analysis within SAT, complementing S
 ### Location and Structure
 
 **Notebooks**: `/notebooks/brickhound/`
-- `00_config.py` - Configuration (reads from sat_scope)
+- `00_config.py` - Configuration (reads the `analysis_schema_name` job parameter)
 - `00_analysis_common.py` - Shared utilities
 - `01_data_collection.py` - Main collector (2694 lines)
 - `02-05_*.py` - Interactive analysis notebooks
@@ -636,7 +636,7 @@ BrickHound provides graph-based permissions analysis within SAT, complementing S
 
 ### Architecture
 
-**Credentials**: Uses SAT's `sat_scope` secret scope
+**Credentials**: Unity Catalog secrets in the results schema (stored by the app's setup flow)
 - `account-console-id` → Account UUID
 - `client-id` → Service Principal Application ID  
 - `client-secret` → Service Principal OAuth Secret
@@ -706,14 +706,14 @@ mcp__databricks__get_job_details(
 ### Key Design Decisions
 
 1. **Namespaced Tables**: `brickhound_` prefix keeps everything in SAT's schema while avoiding conflicts
-2. **Reuse sat_scope**: Simplifies credential management, no new secrets needed
+2. **Unity Catalog secrets**: Credentials live in the results schema alongside the data, no separate secret scope
 3. **Separate Job**: Allows independent execution, different schedule (weekly vs. 3x/week)
 4. **Keep SDK Separate**: Avoids dependency conflicts (databricks-sdk vs. requests/msal)
 5. **Complementary Analysis**: BrickHound (permissions) + SAT (config) = comprehensive security
 
 ### Integration Points
 
-1. **Configuration**: BrickHound reads `analysis_schema_name` from sat_scope in `00_config.py`
+1. **Configuration**: BrickHound reads `analysis_schema_name` from the job parameter the app sets in `00_config.py`
 2. **Authentication**: Uses same service principal as SAT (client-id/client-secret)
 3. **Storage**: Writes to SAT's Unity Catalog schema
 4. **Deployment**: Included in SAT's Terraform deployment (brickhound_job.tf)

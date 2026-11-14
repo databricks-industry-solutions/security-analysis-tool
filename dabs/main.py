@@ -5,65 +5,16 @@ import sys
 
 from databricks.sdk import WorkspaceClient
 from sat.repair import repair as repair_install
-from sat.utils import cloud_type
 
 
 def install(client: WorkspaceClient, answers: dict, profile: str):
-    from sat.config import generate_secrets, record_job_ids
-    from sat.genie import create_or_update_space
-
-    cloud = cloud_type(client)
-    generate_secrets(client, answers, cloud)
-
+    """Deploy the app. The app is the source of truth for everything else:
+    catalog/schema, account id, credentials (stored as Unity Catalog secrets),
+    the Genie space and the collection jobs are all configured from the app's own
+    setup flow after it is deployed."""
     warehouse_id = answers.get("warehouse", {}).get("id", None)
-    uc_schema = f'{answers["catalog"]}.{answers["security_analysis_schema"]}'
-
-    # Provision the Genie space here rather than in a notebook, so installation
-    # is a single command and the customer never opens the Genie UI. Idempotent:
-    # an existing space is updated in place, keeping the id already bound to the
-    # app valid across re-installs.
-    genie_space_id = ""
-    if answers.get("enable_app", False) and answers.get("enable_genie", False):
-        print("Creating Genie space for the security assistant...")
-        genie_space_id = (
-            create_or_update_space(
-                client,
-                uc_schema=uc_schema,
-                warehouse_id=warehouse_id,
-                parent_path="/Applications/SAT/genie",
-            )
-            or ""
-        )
-
-    # Bind the id even when empty: the app treats an unset value as "Genie tool
-    # unavailable" and keeps working without it.
-    client.secrets.put_secret(
-        scope="sat_scope",
-        key="genie-space-id",
-        string_value=genie_space_id,
-    )
 
     config = {
-        "catalog": answers.get("catalog", None),
-        "cloud": cloud,
-        "latest_lts": client.clusters.select_spark_version(
-            long_term_support=True,
-            latest=True,
-        ),
-        "node_type": client.clusters.select_node_type(
-            local_disk=True,
-            min_cores=4,
-            gb_per_core=8,
-            photon_driver_capable=True,
-            photon_worker_capable=True,
-        ),
-        # Serverless still selects the compute the collection jobs run on.
-        "serverless": answers.get("enable_serverless", True),
-        "secrets_scanner_schedule": answers.get("secrets_scanner_schedule", "0 0 8 ? * *"),
-        "job_timezone": answers.get("job_timezone", "UTC"),
-        # Permissions analysis is core now; the flag stays for template compatibility.
-        "enable_brickhound": True,
-        "brickhound_schedule": answers.get("brickhound_schedule", "0 0 2 ? * *"),
         "enable_app": answers.get("enable_app", False),
         "warehouse_id": warehouse_id,
     }
@@ -75,55 +26,59 @@ def install(client: WorkspaceClient, answers: dict, profile: str):
     os.system("clear")
     subprocess.call(f"sh ./setup.sh tmp {profile} {config_file}".split(" "))
 
-    # The bundle has now created the jobs, so their ids can be recorded. The app
-    # reads these to enable its in-app run controls; the secrets were seeded empty
-    # before the deploy because the app's resource bindings require the keys to
-    # exist, and the ids were not known until now.
-    unresolved = record_job_ids(client)
-    if unresolved:
-        print(
-            "Note: could not record job ids for: " + ", ".join(unresolved) + ". "
-            "Those collections will show as not connected in the app; re-running "
-            "the installer will retry."
-        )
-
     print("Installation complete.")
     print(f"Review workspace -> {client.config.host}")
     if answers.get("enable_app", False):
-        print("The Security Analysis app is deployed. Open it from Compute -> Apps.")
-        print(
-            "Collection jobs run on the schedules above; you can also trigger "
-            "them from within the app."
-        )
+        print("The Security Analysis app is deployed. Open it from Compute -> Apps,")
+        print("then complete the in-app setup: choose the catalog/schema, enter your")
+        print("account id and credentials. The app stores the credentials as Unity")
+        print("Catalog secrets and provisions its own collection jobs and Genie space.")
 
 
 def run_repair():
     """Restore an existing installation without re-answering the install prompts.
 
-    Reads the configuration back from the secret scope the installer wrote, so a
-    repair needs no input beyond the workspace profile. This is the recovery path
-    for a deleted app service principal, which cannot be fixed in place.
+    The warehouse is read back from the app's resource binding and the schema
+    from the app's own config file, so a repair needs no input beyond the
+    workspace profile. Set SAT_SCHEMA=<catalog>.<schema> to override the schema
+    if the app's config file is no longer available.
     """
-    import base64
-
-    from databricks.sdk import WorkspaceClient
+    from sat.repair import APP_NAME
 
     client = WorkspaceClient()
 
-    def read(key, default=""):
-        try:
-            got = client.secrets.get_secret(scope="sat_scope", key=key)
-            return base64.b64decode(got.value or "").decode().strip()
-        except Exception:  # noqa: BLE001
-            return default
+    # Warehouse id from the app's warehouse resource binding (survives an SP
+    # deletion, unlike anything in the app service principal's home).
+    warehouse_id = ""
+    app_sp = None
+    try:
+        app = client.apps.get(name=APP_NAME)
+        app_sp = app.service_principal_client_id
+        for resource in (app.resources or []):
+            wh = getattr(resource, "sql_warehouse", None)
+            if wh and getattr(wh, "id", None):
+                warehouse_id = wh.id
+                break
+    except Exception:  # noqa: BLE001
+        pass
 
-    uc_schema = read("analysis_schema_name")
-    warehouse_id = read("sql-warehouse-id")
+    # Schema from SAT_SCHEMA, else the app's own config file in the app service
+    # principal's home.
+    uc_schema = (os.environ.get("SAT_SCHEMA") or "").strip()
+    if not uc_schema and app_sp:
+        try:
+            raw = client.workspace.download(
+                f"/Users/{app_sp}/.sat/app_config.json").read()
+            uc_schema = (json.loads(raw).get("schema") or "").strip()
+        except Exception:  # noqa: BLE001
+            uc_schema = ""
+
     if not uc_schema or not warehouse_id:
         print(
-            "Could not read the existing configuration from the sat_scope secret "
-            "scope, so there is nothing to repair. Run ./install.sh for a fresh "
-            "installation."
+            "Could not determine the existing configuration automatically. Set "
+            "SAT_SCHEMA=<catalog>.<schema> and make sure the app's SQL warehouse "
+            "is bound, then re-run ./install.sh --repair. For a fresh installation "
+            "run ./install.sh."
         )
         return False
 

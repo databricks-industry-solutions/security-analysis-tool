@@ -1,54 +1,9 @@
 {
     "welcome_message": "",
     "properties": {
-        "catalog": {
-            "type": "string",
-            "description": "The catalog for SAT"
-        },
-        "cloud": {
-            "type": "string",
-            "description": "Cloud type"
-        },
-        "latest_lts": {
-            "type": "string",
-            "description": "Latest LTS version"
-        },
-        "node_type": {
-            "type": "string",
-            "description": "Node Type"
-        },
-        "serverless": {
-            "type": "boolean",
-            "description": "Serverless"
-        },
-        "driver_schedule": {
-            "type": "string",
-            "description": "Driver job schedule (Quartz cron expression)",
-            "default": "0 0 8 ? * Mon,Wed,Fri"
-        },
-        "secrets_scanner_schedule": {
-            "type": "string",
-            "description": "Secrets scanner job schedule (Quartz cron expression). Default is 10:00 UTC daily, offset 2 hours after the Driver job to avoid Delta write conflicts on shared control tables.",
-            "default": "0 0 10 ? * *"
-        },
-        "job_timezone": {
-            "type": "string",
-            "description": "Job schedule timezone (IANA timezone ID)",
-            "default": "UTC"
-        },
-        "enable_brickhound": {
-            "type": "boolean",
-            "description": "Enable Permissions Analysis",
-            "default": false
-        },
-        "brickhound_schedule": {
-            "type": "string",
-            "description": "Permissions Analysis collection schedule (Quartz cron expression)",
-            "default": "0 0 2 ? * *"
-        },
         "warehouse_id": {
             "type": "string",
-            "description": "The ID of the SQL warehouse to use for SAT Permissions Analysis"
+            "description": "The ID of the SQL warehouse the app uses to query results"
         },
         "enable_app": {
             "type": "boolean",

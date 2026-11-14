@@ -21,7 +21,6 @@ from __future__ import annotations
 import time
 
 APP_NAME = "security-analysis"
-SCOPE_NAME = "sat_scope"
 
 # Scopes the app requests when forwarding the caller's token (OBO). `sql` powers
 # every data read via the Statement Execution API; `genie` lets the security
@@ -80,63 +79,6 @@ def _service_principal_valid(client, application_id: str | None) -> bool:
     except Exception:  # noqa: BLE001
         return False
     return any(getattr(sp, "active", False) for sp in matches)
-
-
-# Collection jobs, mapping the bundle's resource key to the secret the app reads.
-# The app resolves job ids from these secrets because Databricks Apps binds job
-# permissions but does not inject job ids.
-JOB_ID_SECRET_KEYS = {
-    "brickhound_data_collection": "permissions-job-id",
-    "sat_secrets": "secrets-job-id",
-    "brickhound_share_to_account": "shared-to-account-job-id",
-    "brickhound_privileged_non_idp": "privileged-non-idp-job-id",
-    "brickhound_denylist_candidates": "denylist-job-id",
-}
-
-# Job names as deployed, used to resolve ids when the bundle summary is
-# unavailable. Kept beside the resource keys so the two cannot drift apart.
-JOB_NAME_PATTERNS = {
-    "brickhound_data_collection": "Data Collection",
-    "sat_secrets": "Secrets Scanner",
-    "brickhound_share_to_account": "Shared to Account Users",
-    "brickhound_privileged_non_idp": "Privileged Non-IdP",
-    "brickhound_denylist_candidates": "Denylist Candidates",
-}
-
-
-def record_job_ids(client, scope_name="sat_scope"):
-    """Write the deployed collection jobs' ids into the secret scope.
-
-    Called after the bundle deploy, when the jobs exist. The app reads these to
-    enable its in-app run controls; without them every collection shows as "not
-    connected" even though the jobs were created.
-
-    Matching is by job name because the bundle's own resource keys are not
-    exposed through the Jobs API. Returns the keys it could not resolve so the
-    installer can report them rather than failing silently.
-    """
-    unresolved = []
-    try:
-        jobs = list(client.jobs.list())
-    except Exception:  # noqa: BLE001
-        return list(JOB_ID_SECRET_KEYS.values())
-
-    for resource_key, secret_key in JOB_ID_SECRET_KEYS.items():
-        pattern = JOB_NAME_PATTERNS[resource_key]
-        match = next(
-            (j for j in jobs
-             if pattern.lower() in ((j.settings.name if j.settings else "") or "").lower()),
-            None,
-        )
-        if match is None or match.job_id is None:
-            unresolved.append(secret_key)
-            continue
-        try:
-            client.secrets.put_secret(
-                scope=scope_name, key=secret_key, string_value=str(match.job_id))
-        except Exception:  # noqa: BLE001
-            unresolved.append(secret_key)
-    return unresolved
 
 
 def diagnose(client, app_name: str = APP_NAME) -> dict:
@@ -258,25 +200,9 @@ def verify(client, app_name: str, warehouse_id: str, uc_schema: str) -> list[dic
         list(client.alerts_v2.list_alerts())
         return "alerts API reachable"
 
-    def check_jobs():
-        missing = []
-        for key in JOB_ID_SECRET_KEYS.values():
-            try:
-                value = client.secrets.get_secret(scope=SCOPE_NAME, key=key)
-                import base64
-                raw = base64.b64decode(value.value or "").decode().strip()
-                if not raw.isdigit():
-                    missing.append(key)
-            except Exception:  # noqa: BLE001
-                missing.append(key)
-        if missing:
-            raise RepairError("job ids not recorded: " + ", ".join(missing))
-        return "all five collection job ids recorded"
-
     record("App and service principal", check_app)
     record("Unity Catalog reads", check_reads)
     record("Secret-scanning alerts", check_alerts)
-    record("Collection job bindings", check_jobs)
     return checks
 
 def repair(client, profile: str, uc_schema: str, warehouse_id: str,
@@ -318,13 +244,6 @@ def repair(client, profile: str, uc_schema: str, warehouse_id: str,
     for action in restore_grants(client, warehouse_id, uc_schema,
                                  app_sp=report["app_sp"], owner=owner):
         print(f"  {action}")
-
-    print("Recording collection job ids...")
-    unresolved = record_job_ids(client)
-    if unresolved:
-        print("  Could not resolve: " + ", ".join(unresolved))
-    else:
-        print("  All five recorded.")
 
     print("Verifying...")
     checks = verify(client, app_name, warehouse_id, uc_schema)
@@ -408,18 +327,13 @@ def _wait_for_app(client, app_name, timeout_seconds=900):
 
 
 def _default_resources(uc_schema, warehouse_id):
-    """Bindings for an app being created from scratch during a repair."""
-    secrets = [
-        "analysis_schema_name", "sql-warehouse-id", "model-endpoint",
-        "genie-space-id", "workspace-id", "permissions-job-id", "secrets-job-id",
-        "shared-to-account-job-id", "privileged-non-idp-job-id", "denylist-job-id",
-    ]
-    resources = [{
+    """Bindings for an app being created from scratch during a repair.
+
+    Only the SQL warehouse is bound: the app is the source of truth for its own
+    configuration (catalog/schema, account id and credentials in Unity Catalog
+    secrets) and provisions its own collection jobs, so no secret or job bindings
+    are needed."""
+    return [{
         "name": "warehouse",
         "sql_warehouse": {"id": warehouse_id, "permission": "CAN_USE"},
     }]
-    resources.extend({
-        "name": key,
-        "secret": {"scope": SCOPE_NAME, "key": key, "permission": "READ"},
-    } for key in secrets)
-    return resources

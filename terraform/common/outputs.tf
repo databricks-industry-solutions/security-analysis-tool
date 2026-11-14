@@ -1,4 +1,4 @@
-output "secret_scope_id" {
-  value       = databricks_secret_scope.sat.id
-  description = "ID of the created secret scope to add more secrets if necessary"
+output "app_name" {
+  value       = databricks_app.brickhound.name
+  description = "Name of the deployed Security Analysis Tool app"
 }
