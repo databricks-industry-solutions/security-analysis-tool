@@ -4187,7 +4187,7 @@ def get_main_html():
             <div class="page" id="page-secretscopes">
                 <div class="page-header">
                     <h1 class="page-title">Secret Scope Access</h1>
-                    <p class="page-desc">Who can read, write, or manage each secret scope.</p>
+                    <p class="page-desc">Who can read, write, or manage each secret scope. Secret scopes are the legacy credential store &mdash; Unity Catalog secrets offer governed, fine-grained access control and are recommended for new secrets.</p>
                 </div>
 
                 <!-- Filters -->
