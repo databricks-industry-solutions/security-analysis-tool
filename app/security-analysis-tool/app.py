@@ -4042,7 +4042,7 @@ def get_main_html():
             <!-- Principal Analysis Page -->
             <div class="page" id="page-principal">
                 <div class="page-header">
-                    <h1 class="page-title">Principal Analysis <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Enter a user, group, or service principal (by email, name, or application ID). You get back every resource it can reach and how each access is granted — a direct grant, inherited through a group, or via ownership. Use it to review one identity's full reach before granting or revoking access.">i</span></h1>
+                    <h1 class="page-title">Principal Analysis <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Enter a user, group, or service principal (by email, name, or application ID). You get back every resource it can reach and how each access is granted — a direct grant, inherited through a group, or via ownership. Use it to review one identity's full reach, and whether it is itself an Account, Workspace, or Metastore Admin.">i</span></h1>
                     <p class="page-desc">Everything a user, group, or service principal can reach, directly or through group membership.</p>
                 </div>
 
@@ -5109,6 +5109,15 @@ def get_main_html():
                 const isGroup = principalType === 'Group' || principalType === 'AccountGroup';
                 const isServicePrincipal = principalType.includes('ServicePrincipal');
 
+                // Admin / privileged roles this principal holds (Account/Workspace/
+                // Metastore Admin, Catalog Owner). Shown as badges so the card
+                // states up front whether the identity is itself an admin.
+                const adminRoles = principalInfo.admin_roles || [];
+                const roleColor = (risk) => risk === 'CRITICAL' ? '#ef4444' : (risk === 'HIGH' ? '#f59e0b' : '#64748b');
+                const adminBadgesHtml = adminRoles.length
+                    ? adminRoles.map(r => `<span style="display: inline-block; padding: 4px 10px; background: ${roleColor(r.risk_level)}22; color: ${roleColor(r.risk_level)}; border: 1px solid ${roleColor(r.risk_level)}55; border-radius: 6px; font-size: 0.72em; font-weight: 700; text-transform: uppercase; margin-left: 6px;">🛡️ ${escapeHtml(r.role)}</span>`).join('')
+                    : `<span style="display: inline-block; padding: 4px 10px; background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-size: 0.72em; font-weight: 600; text-transform: uppercase; margin-left: 6px;">No admin roles</span>`;
+
                 // Group by resource type, then by resource name, collecting privileges and inheritance paths
                 const byType = {};
                 data.forEach(d => {
@@ -5153,7 +5162,9 @@ def get_main_html():
                             <div style="font-size: 2.5em;">${typeInfo.icon}</div>
                             <div style="flex: 1;">
                                 <div style="font-size: 1.3em; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">${escapeHtml(principalDisplayName)}</div>
-                                <div style="display: inline-block; padding: 4px 10px; background: var(--accent)20; color: var(--accent); border-radius: 6px; font-size: 0.75em; font-weight: 600; text-transform: uppercase;">${typeInfo.label}</div>
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px;">
+                                    <span style="display: inline-block; padding: 4px 10px; background: var(--accent)20; color: var(--accent); border-radius: 6px; font-size: 0.75em; font-weight: 600; text-transform: uppercase;">${typeInfo.label}</span>${adminBadgesHtml}
+                                </div>
                             </div>
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.05);">
@@ -11350,6 +11361,32 @@ def api_what_can_access():
         if member_result and len(member_result) > 0:
             member_count = member_result[0].get('member_count', 0)
 
+    # Admin / privileged roles the principal itself holds. Reuses the same
+    # detection as the High Privilege report (identify_privileged_principals_query)
+    # so Principal Analysis shows whether this identity is an Account / Workspace /
+    # Metastore Admin (or Catalog Owner) -- not just what it can reach.
+    admin_roles = []
+    try:
+        p_email_l = (p_email or '').lower()
+        p_name_l = (p_name or '').lower()
+        _seen_roles = set()
+        for _row in identify_privileged_principals_query(run_id):
+            _matches = (
+                _row.get('principal_id', '') == p_id
+                or (p_email_l and (_row.get('principal_email') or '').lower() == p_email_l)
+                or (p_name_l and (_row.get('principal_name') or '').lower() == p_name_l)
+            )
+            if not _matches:
+                continue
+            _role = _row.get('privileged_role', '')
+            if _role and _role not in _seen_roles:
+                _seen_roles.add(_role)
+                admin_roles.append({'role': _role, 'risk_level': _row.get('risk_level', 'UNKNOWN')})
+    except NoAccessError:
+        raise
+    except Exception:
+        admin_roles = []
+
     return jsonify({
         'success': True,
         'message': f"{total} resource(s) accessible to {principal['display_name'] or principal['name']}",
@@ -11359,7 +11396,8 @@ def api_what_can_access():
             'display_name': principal['display_name'],
             'email': principal['email'],
             'type': principal['node_type'],
-            'member_count': member_count
+            'member_count': member_count,
+            'admin_roles': admin_roles
         },
         'summary': {
             'total': total,
