@@ -1498,6 +1498,36 @@ def get_main_html():
             transform: translateY(0);
         }
 
+        /* Multi-principal selection chips + per-principal result panels. */
+        #principal-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .principal-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 5px 6px 5px 12px; border-radius: 16px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            color: var(--text-primary); font-size: 0.85em;
+        }
+        .principal-chip button {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 18px; height: 18px; border: none; border-radius: 50%;
+            background: transparent; color: var(--text-muted);
+            font-size: 15px; line-height: 1; cursor: pointer;
+        }
+        .principal-chip button:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .principal-chip-clear {
+            align-self: center; background: none; border: none;
+            color: var(--text-muted); font-size: 0.82em;
+            text-decoration: underline; cursor: pointer;
+        }
+        details.principal-multi { margin-bottom: 14px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        details.principal-multi > summary {
+            cursor: pointer; padding: 12px 16px; font-weight: 600;
+            color: var(--text-primary); background: var(--bg-input); list-style: none;
+        }
+        details.principal-multi > summary::-webkit-details-marker { display: none; }
+        details.principal-multi > summary::before { content: '\\25B8'; margin-right: 8px; color: var(--text-muted); }
+        details.principal-multi[open] > summary::before { content: '\\25BE'; }
+        details.principal-multi > div { padding: 6px 12px 12px; }
+
         /* Genie result tables rendered inline in an assistant answer. */
         .assistant-table-wrap {
             margin: 10px 0 4px;
@@ -4022,7 +4052,7 @@ def get_main_html():
                         <div class="search-box">
                             <div style="flex: 1; position: relative;">
                                 <input type="text" class="search-input" id="principal-search"
-                                       placeholder="Search by name, user email, group, or service principal..."
+                                       placeholder="Search a user, group, or service principal — add several to compare..."
                                        autocomplete="off">
                                 <button class="search-clear-btn" id="principal-clear-btn" onclick="clearPrincipalSearch()" style="display: none;" title="Clear search">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -4032,8 +4062,10 @@ def get_main_html():
                                 </button>
                                 <div class="autocomplete-dropdown" id="principal-autocomplete"></div>
                             </div>
-                            <button class="search-btn" onclick="analyzePrincipal()">Analyze</button>
+                            <button class="search-btn" onclick="analyzeSelectedPrincipals()">Analyze</button>
                         </div>
+                        <div id="principal-chips"></div>
+                        <div id="principal-chips-hint" style="margin-top: 8px; font-size: 0.82em; color: var(--text-muted);">Tip: pick or type a principal to add it below &mdash; add several to analyze them side by side, then click Analyze.</div>
                     </div>
 
                     <!-- Principal Type Filter -->
@@ -4589,7 +4621,7 @@ def get_main_html():
                 else if (currentPage === 'secretscopes') { clearSecretScopeFilters(); }
 
                 // Auto-refresh analysis if user has previously performed one
-                if (lastAnalysis.principal) analyzePrincipal();
+                if (lastAnalysis.principal) analyzeSelectedPrincipals();
                 if (lastAnalysis.resource) analyzeResource();
                 if (lastAnalysis.paths) findPaths();
                 if (lastAnalysis.risk) assessRisk();
@@ -4994,12 +5026,13 @@ def get_main_html():
             document.getElementById('page-principal').classList.add('active');
             currentPage = 'principal';
 
-            // Set the search field and trigger analysis
+            // Pre-fill with the single principal (as one chip) and analyze it.
+            const id = decodeURIComponent(principalIdentifier);
+            principalSelection = [{ id: id, label: id }];
+            renderPrincipalChips();
             const searchField = document.getElementById('principal-search');
-            if (searchField) {
-                searchField.value = decodeURIComponent(principalIdentifier);
-                analyzePrincipal();
-            }
+            if (searchField) { searchField.value = ''; delete searchField.dataset.identifier; }
+            analyzeSelectedPrincipals();
         }
 
         // Navigate to Escalation Paths page with pre-filled principal
@@ -5039,15 +5072,16 @@ def get_main_html():
         }
 
         // Principal Analysis
-        async function analyzePrincipal() {
+        async function analyzePrincipal(identifierArg, containerArg) {
             const searchInput = document.getElementById('principal-search');
-            const query = searchInput.value.trim();
-            if (!query) return;
+            const container = containerArg || 'principal-results';
+            const query = ((searchInput && searchInput.value) || '').trim();
 
-            // Use the stored identifier if available (from autocomplete), otherwise use the input value
-            const identifier = searchInput.dataset.identifier || query;
-            lastAnalysis.principal = identifier;  // Track for auto-refresh
-            showLoading('principal-results');
+            // An explicit identifier (from the multi-principal driver) wins;
+            // otherwise use the stored autocomplete identifier, else the typed text.
+            const identifier = identifierArg || (searchInput && searchInput.dataset.identifier) || query;
+            if (!identifier) return;
+            showLoading(container);
 
             try {
                 const res = await fetch('/api/what-can-access', {
@@ -5058,7 +5092,7 @@ def get_main_html():
                 const result = await res.json();
 
                 if (!result.success) {
-                    showEmpty('principal-results', result.message);
+                    showEmpty(container, result.message);
                     return;
                 }
 
@@ -5244,9 +5278,9 @@ def get_main_html():
                 });
 
                 html += '</div></div>';
-                document.getElementById('principal-results').innerHTML = html;
+                document.getElementById(container).innerHTML = html;
             } catch (e) {
-                showEmpty('principal-results', 'Error: ' + e.message);
+                showEmpty(container, 'Error: ' + e.message);
             }
         }
 
@@ -9911,17 +9945,79 @@ def get_main_html():
         }
         
         function selectPrincipal(identifier, displayName) {
+            if (autocompleteDropdown) autocompleteDropdown.classList.remove('show');
+            addPrincipalChip(identifier, displayName || identifier);
+        }
+
+        // --- Multi-principal selection: analyze several principals at once ---
+        let principalSelection = [];  // [{ id, label }]
+
+        function renderPrincipalChips() {
+            const box = document.getElementById('principal-chips');
+            if (!box) return;
+            if (principalSelection.length === 0) { box.innerHTML = ''; return; }
+            box.innerHTML = principalSelection.map(p =>
+                `<span class="principal-chip">${escapeHtml(p.label)}` +
+                `<button type="button" aria-label="Remove" onclick="removePrincipalChip('${escapeHtml(p.id)}')">&times;</button></span>`
+            ).join('') +
+            `<button type="button" class="principal-chip-clear" onclick="clearPrincipalSelection()">Clear all</button>`;
+        }
+
+        function addPrincipalChip(identifier, label) {
+            if (!identifier) return;
+            if (!principalSelection.some(p => p.id === identifier)) {
+                principalSelection.push({ id: identifier, label: label || identifier });
+                renderPrincipalChips();
+            }
             if (principalSearchInput) {
-                // Show display name in the search box, but store the identifier for the API call
-                principalSearchInput.value = displayName || identifier;
-                principalSearchInput.dataset.identifier = identifier;
-                // Show clear button
-                document.getElementById('principal-clear-btn').style.display = 'flex';
+                principalSearchInput.value = '';
+                delete principalSearchInput.dataset.identifier;
+                const cb = document.getElementById('principal-clear-btn');
+                if (cb) cb.style.display = 'none';
+                principalSearchInput.focus();
             }
-            if (autocompleteDropdown) {
-                autocompleteDropdown.classList.remove('show');
+        }
+
+        function removePrincipalChip(identifier) {
+            principalSelection = principalSelection.filter(p => p.id !== identifier);
+            renderPrincipalChips();
+        }
+
+        function clearPrincipalSelection() {
+            principalSelection = [];
+            renderPrincipalChips();
+            const r = document.getElementById('principal-results');
+            if (r) r.innerHTML = '';
+        }
+
+        async function analyzeSelectedPrincipals() {
+            // Use the selected chips; if none, fall back to whatever is typed or
+            // selected in the search box, so a single lookup still works without
+            // first adding a chip.
+            let list = principalSelection.slice();
+            if (list.length === 0 && principalSearchInput) {
+                const q = (principalSearchInput.value || '').trim();
+                const id = principalSearchInput.dataset.identifier || q;
+                if (id) list = [{ id: id, label: q || id }];
             }
-            analyzePrincipal();
+            if (list.length === 0) {
+                showEmpty('principal-results', 'Add one or more principals (search above), then click Analyze.');
+                return;
+            }
+            lastAnalysis.principal = true;  // marker so a data refresh re-runs this
+            if (list.length === 1) {
+                await analyzePrincipal(list[0].id, 'principal-results');
+                return;
+            }
+            // Several principals: render one collapsible panel each so they compare easily.
+            const container = document.getElementById('principal-results');
+            container.innerHTML = list.map((p, i) =>
+                `<details class="principal-multi" open><summary>${escapeHtml(p.label)}</summary>` +
+                `<div id="principal-multi-${i}"></div></details>`
+            ).join('');
+            for (let i = 0; i < list.length; i++) {
+                await analyzePrincipal(list[i].id, `principal-multi-${i}`);
+            }
         }
 
         // Clear principal search
@@ -10175,7 +10271,7 @@ def get_main_html():
         ['principal', 'resource', 'paths', 'risk'].forEach(id => {
             document.getElementById(id + '-search')?.addEventListener('keypress', e => {
                 if (e.key === 'Enter') {
-                    const fn = {principal: analyzePrincipal, resource: analyzeResource, paths: findPaths, risk: assessRisk};
+                    const fn = {principal: analyzeSelectedPrincipals, resource: analyzeResource, paths: findPaths, risk: assessRisk};
                     fn[id]();
                 }
             });
@@ -11642,8 +11738,17 @@ def find_all_paths_bfs(graph, node_info, edge_info, start, targets, max_depth=5,
             })
 
         for neighbor in graph.get(current, []):
-            if neighbor not in path:  # Avoid cycles
-                queue.append((neighbor, path + [neighbor]))
+            if neighbor in path:  # Avoid cycles
+                continue
+            # In membership_only mode, only walk group-membership edges while
+            # traversing. The result is identical to filtering completed paths
+            # afterwards, but pruning here keeps the BFS inside the (small)
+            # membership subgraph instead of exploring every edge in the graph.
+            if membership_only:
+                rel = edge_info.get((current, neighbor), {}).get('relationship', '')
+                if rel not in ('MemberOf', 'HasMember'):
+                    continue
+            queue.append((neighbor, path + [neighbor]))
 
     return all_paths
 
@@ -12363,8 +12468,6 @@ def api_impersonation_paths():
             'paths': formatted_paths
         })
 
-    except NoAccessError:
-        raise
     except NoAccessError:
         # Surface to the Flask errorhandler as the friendly 403 banner.
         raise
