@@ -164,23 +164,36 @@ print("✅ Dashboard JSON file updated successfully!")
 # DBTITLE 1,Check if Dashboard exists first
 import requests
 
-response = requests.get(
-          'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
-          headers={'Authorization': 'Bearer %s' % token},
-          timeout=60
-        )
+# The list API is paginated, so collect every page before searching for the SAT dashboard
+all_dashboards = []
+page_token = None
+while True:
+    params = {'page_size': 100}
+    if page_token:
+        params['page_token'] = page_token
+    response = requests.get(
+              'https://%s/api/2.0/lakeview/dashboards' % (DOMAIN),
+              headers={'Authorization': 'Bearer %s' % token},
+              params=params,
+              timeout=60
+            )
+    response.raise_for_status()
+    page = response.json()
+    all_dashboards.extend(page.get('dashboards', []))
+    page_token = page.get('next_page_token')
+    if not page_token:
+        break
 
 exists = True
 
-if 'Security Analysis Tool [SAT]' in response.text:
-    json_response = response.json()
-    filtered_dashboard = [d for d in json_response['dashboards'] if d['display_name'] == 'Security Analysis Tool [SAT]']
+filtered_dashboard = [d for d in all_dashboards if d.get('display_name') == 'Security Analysis Tool [SAT]']
+if filtered_dashboard:
 
     dashboard_id = filtered_dashboard[0]['dashboard_id']
     print("Dashboard already exists")
 else:
     exists = False
-    print("Dashboard doesn't exist yet")           
+    print("Dashboard doesn't exist yet")
 
 
 # COMMAND ----------
