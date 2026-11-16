@@ -28,11 +28,16 @@ hostname = (
     .getOrElse(None)
 )
 cloud_type = getCloudType(hostname)
+# SatDBClient (core/dbclient.py) requires a clusterid key. On serverless this
+# resolves to the serverless cluster tag; default to "" so the key is always
+# present (the children inherit it via dict(json_)).
+clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId", "")
 json_.update(
     {
         "url": hostname,
         "workspace_id": "accounts",
         "cloud_type": cloud_type,
+        "clusterid": clusterid,
     }
 )
 
