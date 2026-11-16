@@ -408,7 +408,18 @@ def _bh_cred(key):
         return None
 
 try:
-    SP_CREDENTIALS['account_id'] = _bh_cred("account-console-id")
+    # account_id is not stored as a UC secret (the app passes it as a job
+    # parameter), so fall back to the analysis config (json_ from initialize) /
+    # the account_id widget when the UC secret is absent.
+    _param_account_id = ""
+    try:
+        _param_account_id = (json_.get("account_id") or "").strip()
+    except Exception:
+        try:
+            _param_account_id = (dbutils.widgets.get("account_id") or "").strip()
+        except Exception:
+            _param_account_id = ""
+    SP_CREDENTIALS['account_id'] = _bh_cred("account-console-id") or _param_account_id
     SP_CREDENTIALS['client_id'] = _bh_cred("client-id")
     SP_CREDENTIALS['client_secret'] = _bh_cred("client-secret")
 
