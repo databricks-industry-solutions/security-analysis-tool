@@ -508,8 +508,21 @@ workspaces_to_collect = []
 # Track workspace collection status for metadata
 WORKSPACE_COLLECTION_STATUS = {}  # {workspace_id: {'name': str, 'status': 'success'|'failed'|'skipped', 'error': str|None}}
 
+# Account-level identity/admin collection (account users, groups, memberships, and
+# Account/Metastore Admin roles) needs only the account service-principal
+# credentials, not classic multi-workspace compute. Enable it whenever those creds
+# are present (requires serverless env client >= 4 to read the UC secret),
+# independently of MULTI_WORKSPACE_MODE -- which still gates the per-workspace
+# RESOURCE iteration that serverless can't do. This is what surfaces Account Admin
+# and Metastore Admin even in single-workspace/serverless mode.
+ACCOUNT_MODE = bool(
+    SP_CREDENTIALS.get('client_id')
+    and SP_CREDENTIALS.get('client_secret')
+    and SP_CREDENTIALS.get('account_id')
+)
+
 # Initialize AccountClient if we have SP credentials
-if MULTI_WORKSPACE_MODE:
+if ACCOUNT_MODE:
     print(f"\n   Testing connection to Accounts Console...")
     print(f"   Host: {SP_CREDENTIALS['account_host']}")
     print(f"   Account ID: {SP_CREDENTIALS['account_id']}")
@@ -915,7 +928,11 @@ print("Collection helper functions defined.")
 # COMMAND ----------
 
 # DBTITLE 1,Account-Level Collection
-if MULTI_WORKSPACE_MODE:
+# Runs whenever the AccountClient initialized (account creds available), including
+# in single-workspace/serverless mode -- this is account-level identity + admin
+# data (Account Admin, Metastore Admin, account groups/memberships) read through
+# one account client, so it does not need the per-workspace resource iteration.
+if account_client is not None:
     import traceback
     print("="*80)
     print("Account-Level Collection")
