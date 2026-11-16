@@ -619,94 +619,53 @@ def decode_and_write_content(content: str, output_path: str) -> bool:
 def scan_for_secrets(file_path: str) -> Optional[str]:
     """
     Run TruffleHog scan on a file to detect secrets.
-    Runs two scans: one with built-in detectors and one with custom detectors,
-    then combines the results.
-    
+
+    A single pass runs the built-in detectors (minus the excluded ones, e.g.
+    DatabricksToken) together with the custom SAT detectors: ``--config`` augments
+    the built-in set rather than replacing it, so one scan covers both. Running a
+    separate custom pass as well -- as this used to -- re-ran every built-in
+    detector and reported every built-in secret twice, doubling both the findings
+    and the scan time.
+
     Args:
         file_path (str): Path to file to scan
-        
+
     Returns:
         Optional[str]: TruffleHog output in JSON format or None if error
     """
-    all_results = []
-    
-    # Scan 1: Run with built-in detectors (excluding specified ones)
     excluded_detectors = ",".join(Config.EXCLUDED_DETECTORS)
-    builtin_command_args = [
+    command_args = [
         Config.TRUFFLEHOG_BINARY,
         "filesystem",
         file_path,
+        "--config",
+        Config.TRUFFLEHOG_CONFIG,
         f"--exclude-detectors={excluded_detectors}",
         "--no-update",
         "--no-verification",
-        "-j"
+        "-j",
     ]
-    
+
     try:
-        logger.info(f"Running built-in detectors scan on {file_path}")
-        logger.info(f"Built-in scan command: {' '.join(builtin_command_args)}")
+        logger.info(f"Running TruffleHog scan on {file_path}")
+        logger.info(f"Scan command: {' '.join(command_args)}")
         result = subprocess.run(
-            builtin_command_args,
+            command_args,
             shell=False,
             capture_output=True,
             text=True,
-            timeout=300  # 5 minute timeout
+            timeout=300,  # 5 minute timeout
         )
-        logger.info(f"Built-in scan exit code: {result.returncode}")
-        
-        if result.stdout:
-            all_results.append(result.stdout)
-            logger.info(f"Built-in detectors scan completed with {len(result.stdout.splitlines())} output lines")
-            logger.debug(f"Built-in scan produced {len(result.stdout)} bytes across {len(result.stdout.splitlines())} hits")
-        else:
-            logger.info(f"Built-in detectors scan completed with no secrets found")
-            print(f"Built-in scan stdout was empty")
-        
+        logger.info(f"Scan exit code: {result.returncode}")
         if result.stderr:
-            logger.info(f"Built-in scan stderr: {result.stderr}")
-            logger.debug(f"Built-in scan stderr: {result.stderr}")
-    except subprocess.TimeoutExpired:
-        logger.error(f"Built-in detectors scan timed out for file: {file_path}")
-    
-    # Scan 2: Run with custom detectors from config file
-    custom_command_args = [
-        Config.TRUFFLEHOG_BINARY,
-        "filesystem",
-        file_path,
-        "--no-update",
-        "--config",
-        Config.TRUFFLEHOG_CONFIG,
-        "--no-verification",
-        "-j"
-    ]
-    
-    try:
-        logger.info(f"Running custom detectors scan on {file_path}")
-        result = subprocess.run(
-            custom_command_args,
-            shell=False,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
+            logger.info(f"Scan stderr: {result.stderr}")
         if result.stdout:
-            all_results.append(result.stdout)
-            logger.info(f"Custom detectors scan completed with output")
-        else:
-            logger.info(f"Custom detectors scan completed with no secrets found")
-        
-        if result.stderr:
-            logger.debug(f"Custom scan stderr: {result.stderr}")
-        if result.returncode != 0:
-            logger.warning(f"Custom scan returned non-zero exit code: {result.returncode}")
+            logger.info(f"Scan completed with {len(result.stdout.splitlines())} output line(s)")
+            return result.stdout
+        logger.info("Scan completed with no secrets found")
+        return ""
     except subprocess.TimeoutExpired:
-        logger.error(f"Custom detectors scan timed out for file: {file_path}")
-    
-    # Combine results from both scans
-    if all_results:
-        return "\n".join(all_results)
-    else:
-        logger.warning(f"Both scans completed but no results found for {file_path}")
+        logger.error(f"TruffleHog scan timed out for file: {file_path}")
         return ""
 
 def process_trufflehog_output(trufflehog_output: str) -> List[Dict[str, str]]:

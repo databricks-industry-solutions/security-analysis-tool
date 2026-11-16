@@ -466,93 +466,55 @@ print("✅ Utility functions defined successfully!")
 
 # COMMAND ----------
 
-def scan_cluster_config_for_secrets(file_path: str) -> tuple:
+def scan_cluster_config_for_secrets(file_path: str) -> List[Dict]:
     """
-    Run TruffleHog dual-scan (built-in + custom detectors) on cluster config file.
+    Run a single TruffleHog pass on a cluster config file: the built-in detectors
+    (minus DatabricksToken) together with the custom SAT detectors via --config.
+
+    --config augments the built-in detector set rather than replacing it, so one
+    scan covers both. Running a separate custom pass as well -- as this used to --
+    re-ran every built-in detector and reported each built-in secret twice,
+    doubling both the findings and the scan time.
 
     Args:
         file_path: Path to temp file containing cluster config
 
     Returns:
-        tuple: (built_in_results, custom_results) as lists of dicts
+        List[Dict]: TruffleHog findings as a list of dicts
     """
-    built_in_results = []
-    custom_results = []
+    cmd = [
+        Config.TRUFFLEHOG_BINARY,
+        "filesystem",
+        file_path,
+        "--config",
+        Config.TRUFFLEHOG_CONFIG,
+        "--exclude-detectors=DatabricksToken",
+        "--no-update",
+        "--no-verification",
+        "-j",
+    ]
 
     try:
-        # Scan 1: Built-in detectors (excluding DatabricksToken)
-        logger.info(f"Running built-in detectors scan on {file_path}")
-        built_in_cmd = [
-            Config.TRUFFLEHOG_BINARY,
-            "filesystem",
-            file_path,
-            "--exclude-detectors=DatabricksToken",
-            "--no-update",
-            "--no-verification",
-            "-j"
-        ]
-
-        logger.info(f"Built-in scan command: {' '.join(built_in_cmd)}")
-
-        built_in_process = subprocess.run(
-            built_in_cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
-
-        logger.info(f"Built-in scan exit code: {built_in_process.returncode}")
-
-        if built_in_process.stdout:
-            built_in_results = [
+        logger.info(f"Running TruffleHog scan on {file_path}")
+        logger.info(f"Scan command: {' '.join(cmd)}")
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        logger.info(f"Scan exit code: {proc.returncode}")
+        if proc.stdout:
+            results = [
                 json.loads(line)
-                for line in built_in_process.stdout.strip().split('\n')
+                for line in proc.stdout.strip().split('\n')
                 if line.strip()
             ]
-            logger.info(f"Built-in detectors scan completed with {len(built_in_results)} output lines")
-        else:
-            logger.info("Built-in detectors scan completed with no secrets found")
-
-        # Scan 2: Custom detectors (Databricks-specific)
-        logger.info(f"Running custom detectors scan on {file_path}")
-        custom_cmd = [
-            Config.TRUFFLEHOG_BINARY,
-            "filesystem",
-            file_path,
-            "--no-update",
-            "--config",
-            Config.TRUFFLEHOG_CONFIG,
-            "--no-verification",
-            "-j"
-        ]
-
-        custom_process = subprocess.run(
-            custom_cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
-
-        logger.info(f"Custom scan exit code: {custom_process.returncode}")
-
-        if custom_process.stdout:
-            custom_results = [
-                json.loads(line)
-                for line in custom_process.stdout.strip().split('\n')
-                if line.strip()
-            ]
-            logger.info(f"Custom detectors scan completed with {len(custom_results)} output lines")
-        else:
-            logger.info("Custom detectors scan completed with no secrets found")
-
-        return (built_in_results, custom_results)
-
+            logger.info(f"Scan completed with {len(results)} finding line(s)")
+            return results
+        logger.info("Scan completed with no secrets found")
+        return []
     except subprocess.TimeoutExpired:
         logger.error(f"TruffleHog scan timed out for {file_path}")
-        return ([], [])
+        return []
     except Exception as e:
         logger.error(f"Failed to scan cluster config for secrets: {str(e)}")
-        return ([], [])
+        return []
 
 
 def extract_config_key_from_finding(file_content_lines: List[str], raw_secret: str) -> Optional[str]:
@@ -589,14 +551,13 @@ def extract_config_key_from_finding(file_content_lines: List[str], raw_secret: s
         return None
 
 
-def process_trufflehog_output(built_in_results: List[Dict], custom_results: List[Dict],
+def process_trufflehog_output(results: List[Dict],
                                cluster_id: str, cluster_name: str, file_path: str) -> List[Dict]:
     """
     Process TruffleHog scan results and extract secret metadata.
 
     Args:
-        built_in_results: Results from built-in detectors scan
-        custom_results: Results from custom detectors scan
+        results: Findings from the TruffleHog scan
         cluster_id: Cluster ID
         cluster_name: Cluster name
         file_path: Path to scanned file
@@ -613,10 +574,7 @@ def process_trufflehog_output(built_in_results: List[Dict], custom_results: List
     except:
         file_content_lines = []
 
-    # Combine all results
-    all_results = built_in_results + custom_results
-
-    for result in all_results:
+    for result in results:
         try:
             detector_name = result.get('DetectorName', 'Unknown')
             raw_secret = result.get('Raw', '')
@@ -805,9 +763,9 @@ def _scan_one_cluster_for_secrets(cluster: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"Scanning {len(env_vars)} environment variables in cluster {cluster_name}")
         file_path = serialize_env_vars_to_file(cluster_id, cluster_name, env_vars)
         try:
-            built_in_results, custom_results = scan_cluster_config_for_secrets(file_path)
+            results = scan_cluster_config_for_secrets(file_path)
             secrets_found = process_trufflehog_output(
-                built_in_results, custom_results, cluster_id, cluster_name, file_path
+                results, cluster_id, cluster_name, file_path
             )
         finally:
             try:
