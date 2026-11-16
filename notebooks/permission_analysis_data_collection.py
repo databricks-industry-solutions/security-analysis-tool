@@ -1366,8 +1366,8 @@ for ws_idx, ws in enumerate(ws_iteration_list):
         if COLLECTION_CONFIG['collect_groups']:
             print(f"\n   Collecting Groups for {ws_name}...")
             try:
-                # Workspace-level groups.list() returns members inline (unlike
-                # account-level groups.list() which requires per-group .get() calls).
+                # groups.list() returns the group records but does not reliably
+                # include members inline, so each group's members are fetched below.
                 groups = list(ws_client.groups.list())
                 for group in tqdm(groups, desc="Groups"):
                     all_vertices.append({
@@ -1384,9 +1384,19 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         'properties': safe_json({'workspace_id': str(ws_id)}),
                         'metadata': safe_json({'external_id': safe_get(group, 'external_id')})
                     })
-                    # Collect memberships
-                    if hasattr(group, 'members') and group.members:
-                        for member in group.members:
+                    # Collect memberships. groups.list() usually omits members, so
+                    # fetch the full group with .get() when they're absent --
+                    # otherwise every membership (including the 'admins' group) is
+                    # silently dropped and admin/group-inheritance analysis is blank.
+                    members = getattr(group, 'members', None)
+                    if not members:
+                        try:
+                            members = getattr(ws_client.groups.get(group.id), 'members', None)
+                        except Exception as e:
+                            print(f"    Error getting members for group {group.id}: {e}")
+                            members = None
+                    if members:
+                        for member in members:
                             # Determine member type for correct ID prefix
                             member_type = member.type if hasattr(member, 'type') else None
                             ref = member.ref if hasattr(member, 'ref') else ''
