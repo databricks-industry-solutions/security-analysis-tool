@@ -420,6 +420,19 @@ try:
         except Exception:
             _param_account_id = ""
     SP_CREDENTIALS['account_id'] = _bh_cred("account-console-id") or _param_account_id
+
+    # scan_scope decides whether resource collection spans every workspace the SP
+    # can reach ("all") or just the current workspace ("current"). The app passes
+    # it as a job parameter; default is current-workspace for safety.
+    _param_scan_scope = "current"
+    try:
+        _param_scan_scope = (json_.get("scan_scope") or "current").strip().lower()
+    except Exception:
+        try:
+            _param_scan_scope = (dbutils.widgets.get("scan_scope") or "current").strip().lower()
+        except Exception:
+            _param_scan_scope = "current"
+    SCAN_ALL_WORKSPACES = _param_scan_scope in ("all", "all-workspaces", "multi")
     SP_CREDENTIALS['client_id'] = _bh_cred("client-id")
     SP_CREDENTIALS['client_secret'] = _bh_cred("client-secret")
 
@@ -437,13 +450,23 @@ try:
         print(f"   Client ID: {SP_CREDENTIALS['client_id'][:8]}...")
         print(f"   Account Host: {SP_CREDENTIALS['account_host']}")
 
-        # Override for serverless: even with credentials, restrict to current workspace
-        if is_serverless:
-            print(f"   ⚠ Running on SERVERLESS compute - restricting to current workspace only")
-            print(f"   → Switch to Classic Compute for multi-workspace collection")
-            MULTI_WORKSPACE_MODE = False
-        else:
+        # Resource scope follows the scan_scope the app passed, not the compute
+        # type. "all" iterates every workspace the SP can reach (needs the SP added
+        # to each workspace). On serverless this relies on cross-workspace access;
+        # if a workspace is unreachable it fails soft (per-workspace try/except) and
+        # is recorded, so the customer can enroll in the serverless cross-workspace
+        # preview via their account team. "current" (default) stays single-workspace.
+        if SCAN_ALL_WORKSPACES:
             MULTI_WORKSPACE_MODE = True
+            if is_serverless:
+                print(f"   ⚙ scan_scope=all on SERVERLESS: attempting all reachable workspaces")
+                print(f"   → Unreachable workspaces are skipped (enroll in serverless")
+                print(f"     cross-workspace access if remote workspaces are skipped)")
+            else:
+                print(f"   ⚙ scan_scope=all on CLASSIC: collecting from all reachable workspaces")
+        else:
+            MULTI_WORKSPACE_MODE = False
+            print(f"   ⚙ scan_scope=current: collecting resources from this workspace only")
     else:
         print(f"   ⚠ Service Principal credentials not configured")
         print(f"   → Will collect from CURRENT WORKSPACE ONLY")
@@ -1192,7 +1215,24 @@ if account_client is not None:
         # ================================================================
         print("\n🔗 Collecting Workspace Assignments...")
         assignment_count = 0
+        ws_admin_edge_count = 0
         for ws in tqdm(workspaces_to_collect, desc="Workspace Assignments"):
+            # Workspace vertex so assignment / admin edges resolve to a workspace
+            # name in the app (one per workspace, account-wide).
+            all_vertices.append({
+                'id': f"workspace:{ws.workspace_id}",
+                'node_type': 'Workspace',
+                'name': ws.workspace_name,
+                'display_name': ws.workspace_name,
+                'email': None,
+                'owner': None,
+                'active': True,
+                'created_at': None,
+                'updated_at': None,
+                'comment': None,
+                'properties': None,
+                'metadata': safe_json({'workspace_id': str(ws.workspace_id)})
+            })
             try:
                 assignments = list(account_client.workspace_assignment.list(workspace_id=ws.workspace_id))
                 for assignment in assignments:
@@ -1219,9 +1259,27 @@ if account_client is not None:
                         'created_at': datetime.now()
                     })
                     assignment_count += 1
+
+                    # Capture the ADMIN permission so Workspace Admins can be
+                    # identified account-wide (every workspace, including remote
+                    # ones) without a per-workspace resource scan. The
+                    # workspace-assignment API returns WorkspacePermission enum
+                    # values (ADMIN / USER); ADMIN == workspace admin here.
+                    perms = getattr(assignment, 'permissions', None) or []
+                    if any(str(getattr(p, 'value', p)).upper() == 'ADMIN' for p in perms):
+                        all_edges.append({
+                            'src': src,
+                            'dst': f"workspace:{ws.workspace_id}",
+                            'relationship': 'WorkspaceAdmin',
+                            'permission_level': 'ADMIN',
+                            'inherited': False,
+                            'properties': None,
+                            'created_at': datetime.now()
+                        })
+                        ws_admin_edge_count += 1
             except Exception as e:
                 pass  # Some workspaces may not allow listing assignments
-        print(f"   ✓ Collected {assignment_count} workspace assignments")
+        print(f"   ✓ Collected {assignment_count} workspace assignments ({ws_admin_edge_count} workspace-admin)")
 
         # ================================================================
         # Collect Metastores

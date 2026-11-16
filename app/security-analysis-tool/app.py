@@ -2301,6 +2301,55 @@ def get_main_html():
             font-size: 1.1em;
         }
 
+        /* Scope banner: tells the customer, per page, whether the data is
+           account-wide or this-workspace, with live counts and how to change it. */
+        .scope-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin: -12px 0 24px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        .scope-banner.warn { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.3); }
+        .scope-banner.ok   { background: rgba(16, 185, 129, 0.07); border-color: rgba(16, 185, 129, 0.25); }
+        .scope-banner-icon { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px; }
+        .scope-banner-body { flex: 1; min-width: 0; }
+        .scope-badge {
+            display: inline-block;
+            font-size: 0.72em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-right: 8px;
+            vertical-align: middle;
+            background: rgba(102, 126, 234, 0.18);
+            color: #c4b5fd;
+            border: 1px solid rgba(102, 126, 234, 0.35);
+        }
+        .scope-badge.account { background: rgba(16,185,129,0.15); color:#6ee7b7; border-color: rgba(16,185,129,0.35); }
+        .scope-badge.workspace { background: rgba(102,126,234,0.18); color:#c4b5fd; border-color: rgba(102,126,234,0.35); }
+        .scope-badge.warn { background: rgba(245,158,11,0.15); color:#fcd34d; border-color: rgba(245,158,11,0.35); }
+        .scope-banner-text { color: rgba(255,255,255,0.75); }
+        .scope-banner-text strong { color: rgba(255,255,255,0.92); font-weight: 650; }
+        .scope-help { margin-top: 6px; }
+        .scope-help summary {
+            cursor: pointer; color: var(--text-secondary);
+            font-size: 0.92em; list-style: none; user-select: none;
+        }
+        .scope-help summary::-webkit-details-marker { display: none; }
+        .scope-help summary:hover { color: var(--text-primary); }
+        .scope-help-body { margin-top: 8px; color: rgba(255,255,255,0.65); }
+        .scope-help-body p { margin: 0 0 8px; }
+        .scope-help-body .enable { color:#6ee7b7; }
+        .scope-help-body .disable { color: rgba(255,255,255,0.6); }
+
         /* Search Box */
         .search-container {
             background: var(--bg-card);
@@ -4505,6 +4554,93 @@ def get_main_html():
         });
 
         // Function to navigate to a page and update URL hash
+        // Which scope each page's data has. 'account' = account-wide identity/admin
+        // data; 'workspace' = resources scoped to the scanned workspace(s); 'mixed'
+        // = identities account-wide but resource reach limited to scanned workspaces.
+        const PAGE_SCOPE = {
+            highprivilege: 'account', privilegednonidp: 'account',
+            sharedtoaccount: 'account', denylistbuilder: 'account',
+            principal: 'mixed', paths: 'mixed', impersonation: 'mixed', isolated: 'mixed',
+            resource: 'workspace', orphaned: 'workspace', overprivileged: 'workspace',
+            secretscopes: 'workspace', secretsoverview: 'workspace', secretsalerts: 'workspace',
+        };
+        let _scopeCache = null;
+        async function loadScope(force) {
+            if (_scopeCache && !force) return _scopeCache;
+            try { _scopeCache = await fetch('/api/scope').then(r => r.json()); }
+            catch (e) { _scopeCache = { configured: false }; }
+            return _scopeCache;
+        }
+        function _scopeHelp(enableText, disableText) {
+            return `<details class="scope-help"><summary>How to change this</summary>
+                <div class="scope-help-body">
+                    <p class="enable">${escapeHtml(enableText)}</p>
+                    <p class="disable">${escapeHtml(disableText)}</p>
+                </div></details>`;
+        }
+        async function renderScopeBanner(page) {
+            const scopeType = PAGE_SCOPE[page];
+            const pageEl = document.getElementById('page-' + page);
+            if (!pageEl) return;
+            // Remove any stale banner first.
+            const old = pageEl.querySelector(':scope > .scope-banner');
+            if (old) old.remove();
+            if (!scopeType) return;
+            const s = await loadScope();
+            if (!s || !s.configured) return;
+            const aw = s.account_wide || {}, rs = s.resource_scan || {};
+            const c = aw.counts || {};
+            const infoIcon = '<svg class="scope-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
+            const warnIcon = '<svg class="scope-banner-icon" viewBox="0 0 24 24" fill="none" stroke="#fcd34d" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+            let cls = '', icon = infoIcon, badge = '', text = '', help = '';
+
+            if (scopeType === 'account') {
+                if (aw.active) {
+                    cls = 'ok';
+                    badge = '<span class="scope-badge account">Account-wide</span>';
+                    text = `Covers your entire account — <strong>${c.workspaces_total||0}</strong> workspaces, <strong>${c.account_groups||0}</strong> account groups, <strong>${c.account_admins||0}</strong> account admins.`;
+                    help = _scopeHelp('Already on. ' + (aw.enable_guidance||''), aw.disable_guidance||'');
+                } else {
+                    cls = 'warn'; icon = warnIcon;
+                    badge = '<span class="scope-badge warn">Account-wide not enabled</span>';
+                    text = aw.account_id_present && aw.credentials_present
+                        ? `Account credentials are set but no account-wide data was collected yet. Run the collection jobs, and confirm the service principal has the <strong>Account admin</strong> role.`
+                        : `This page needs account-wide data, which isn't enabled yet — so it may be empty or partial.`;
+                    help = _scopeHelp(aw.enable_guidance||'', aw.disable_guidance||'');
+                }
+            } else if (scopeType === 'workspace') {
+                const multi = (rs.scope === 'all');
+                const nScanned = (rs.workspaces_scanned||[]).length;
+                cls = ''; badge = multi
+                    ? `<span class="scope-badge workspace">${nScanned>0?nScanned+' workspaces':'All workspaces'}</span>`
+                    : '<span class="scope-badge workspace">This workspace</span>';
+                text = multi
+                    ? `Resource findings are scanned from <strong>all reachable workspaces</strong>${nScanned>0?' ('+nScanned+' collected)':''}. Compute: <strong>${escapeHtml(rs.compute||'serverless')}</strong>.`
+                    : `Resource findings here are from <strong>this workspace only</strong>. Other workspaces aren't included.`;
+                const failed = (rs.workspaces_failed||[]).length;
+                if (multi && failed > 0) {
+                    cls = 'warn'; icon = warnIcon;
+                    text += ` <strong>${failed}</strong> workspace(s) were skipped (unreachable) — on serverless, ask your account team to enroll you in cross-workspace access.`;
+                }
+                help = _scopeHelp(rs.enable_guidance||'', rs.disable_guidance||'');
+            } else { // mixed
+                const multi = (rs.scope === 'all');
+                badge = '<span class="scope-badge account">Identities: account-wide</span>' +
+                        (multi ? '<span class="scope-badge workspace">Resources: all workspaces</span>'
+                               : '<span class="scope-badge workspace">Resources: this workspace</span>');
+                text = `Identities and admin roles are <strong>account-wide</strong>. The resources a principal can reach are limited to the <strong>${multi?'scanned':'current'}</strong> workspace(s).`;
+                if (!aw.active) { cls = 'warn'; icon = warnIcon; text += ` Account-wide identity data isn't fully enabled yet.`; }
+                help = _scopeHelp((aw.enable_guidance||'') + ' ' + (rs.enable_guidance||''), rs.disable_guidance||'');
+            }
+
+            const header = pageEl.querySelector(':scope > .page-header');
+            const banner = document.createElement('div');
+            banner.className = 'scope-banner' + (cls ? ' ' + cls : '');
+            banner.innerHTML = `${icon}<div class="scope-banner-body"><div>${badge}<span class="scope-banner-text">${text}</span></div>${help}</div>`;
+            if (header && header.nextSibling) header.parentNode.insertBefore(banner, header.nextSibling);
+            else pageEl.insertBefore(banner, pageEl.firstChild);
+        }
+
         function navigateToPage(page) {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -4532,6 +4668,9 @@ def get_main_html():
                                        'collection', 'secretsoverview', 'secretsalerts'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
+
+            // Scope banner: tell the customer what this page's data covers.
+            renderScopeBanner(page);
 
             // Auto-load reports when navigating to report pages
             if (page === 'isolated') loadIsolatedPrincipals();
@@ -4801,7 +4940,9 @@ def get_main_html():
                 opts.current = reconfigure
                     ? { catalog: status.catalog, schema: status.schema,
                         warehouse_id: status.warehouse_id,
-                        account_id: status.account_id }
+                        account_id: status.account_id,
+                        scan_scope: status.scan_scope,
+                        job_compute: status.job_compute }
                     : {};
                 renderSetupForm(opts);
             } catch (e) {
@@ -4890,6 +5031,26 @@ def get_main_html():
                     </div>
                 </div>
 
+                <div class="setup-group">
+                    <div class="setup-group-title">Collection scope &amp; compute</div>
+                    <div class="field">
+                        <span class="field-label">Workspaces to scan</span>
+                        <select class="field-input" id="setup-scan-scope">
+                            <option value="current"${(cur.scan_scope || 'current') !== 'all' ? ' selected' : ''}>This workspace only</option>
+                            <option value="all"${(cur.scan_scope || 'current') === 'all' ? ' selected' : ''}>All workspaces in the account</option>
+                        </select>
+                        <span class="field-help">Resource findings (clusters, jobs, grants, secret scopes) are scanned per workspace. Identity/admin data is always account-wide when account credentials are set. "All workspaces" needs the service principal added to each workspace.</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Job compute</span>
+                        <select class="field-input" id="setup-job-compute">
+                            <option value="serverless"${(cur.job_compute || 'serverless') !== 'classic' ? ' selected' : ''}>Serverless (recommended)</option>
+                            <option value="classic"${(cur.job_compute || 'serverless') === 'classic' ? ' selected' : ''}>Classic (single-node cluster)</option>
+                        </select>
+                        <span class="field-help">Serverless starts instantly and needs no cluster. Choose Classic to scan all workspaces if your account isn't yet enrolled in serverless cross-workspace access. Changing this re-creates the collection jobs.</span>
+                    </div>
+                </div>
+
                 <div class="setup-actions">
                     <span class="setup-error" id="setup-error"></span>
                     ${opts.reconfigure ? '<button class="btn btn-ghost" onclick="hideSetup()">Cancel</button>' : ''}
@@ -4919,6 +5080,8 @@ def get_main_html():
                 account_id: fieldValue('setup-account-id'),
                 client_id: fieldValue('setup-client-id'),
                 client_secret: fieldValue('setup-client-secret'),
+                scan_scope: fieldValue('setup-scan-scope') || 'current',
+                job_compute: fieldValue('setup-job-compute') || 'serverless',
             };
             if (!payload.catalog) { err.textContent = 'Choose a catalog.'; return; }
             if (!payload.warehouse_id) { err.textContent = 'Choose a SQL warehouse.'; return; }
@@ -9330,9 +9493,21 @@ def get_main_html():
                     </div>
 
                     <div class="results-container">
-                        <div class="results-header">
+                        <div class="results-header" style="flex-wrap: wrap; gap: 10px;">
                             <span class="results-title">High Privilege Principals</span>
-                            <span class="results-count">${data.length} privilege grants</span>
+                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <input id="hp-search" type="text" oninput="applyHighPrivFilter()" placeholder="Search by name, email, or source group…"
+                                       style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); padding: 6px 10px; font-size: 0.85em; min-width: 240px;">
+                                <select id="hp-role-filter" onchange="applyHighPrivFilter()"
+                                        style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); padding: 6px 10px; font-size: 0.85em;">
+                                    <option value="">All roles</option>
+                                    <option value="Account Admin">Account Admin</option>
+                                    <option value="Metastore Admin">Metastore Admin</option>
+                                    <option value="Workspace Admin">Workspace Admin</option>
+                                    <option value="Catalog Owner">Catalog Owner</option>
+                                </select>
+                                <span class="results-count" id="hp-filter-count"></span>
+                            </div>
                         </div>
                         <div class="results-body" style="padding: 0;">`;
 
@@ -9364,7 +9539,7 @@ def get_main_html():
                     const roleId = 'highpriv-role-' + role.replace(/\s+/g, '').toLowerCase();
 
                     html += `
-                        <div class="tree-type-group">
+                        <div class="tree-type-group" data-role="${role}">
                             <div class="tree-type-header" onclick="toggleTreeSection('${roleId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
                                 <span class="tree-toggle" id="${roleId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
                                 <span style="font-size: 20px;">${roleEmojis[role]}</span>
@@ -9388,9 +9563,10 @@ def get_main_html():
 
                         // Create analyze link - use email for users, name for others
                         const analyzeId = principal.email || principal.name;
+                        const hpSearch = (principal.name + ' ' + (principal.email || '') + ' ' + principal.access.map(a => a.via || '').join(' ')).toLowerCase();
 
                         html += `
-                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                            <div class="tree-resource hp-row" data-search="${escapeHtml(hpSearch)}" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
                                 <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
                                 <span style="font-size: 20px;">${pIcon}</span>
                                 <div style="flex: 1; min-width: 0;">
@@ -9417,6 +9593,35 @@ def get_main_html():
             } catch (e) {
                 showEmpty('highprivilege-results', 'Error: ' + e.message);
             }
+        }
+
+        // Live search + role filter for the High Privilege tree. Hides principal
+        // rows that don't match, collapses role groups with no matches, and expands
+        // matching groups so results are visible without manual clicking.
+        function applyHighPrivFilter() {
+            const q = (document.getElementById('hp-search')?.value || '').trim().toLowerCase();
+            const roleF = document.getElementById('hp-role-filter')?.value || '';
+            let shown = 0;
+            document.querySelectorAll('#highprivilege-results .tree-type-group').forEach(g => {
+                const role = g.getAttribute('data-role') || '';
+                const roleOk = (!roleF || role === roleF);
+                let anyRow = false;
+                g.querySelectorAll('.hp-row').forEach(r => {
+                    const txt = r.getAttribute('data-search') || '';
+                    const match = roleOk && (!q || txt.includes(q));
+                    r.style.display = match ? '' : 'none';
+                    if (match) { anyRow = true; shown++; }
+                });
+                g.style.display = (roleOk && anyRow) ? '' : 'none';
+                if ((q || roleF) && anyRow) {
+                    const content = g.querySelector('.tree-type-content');
+                    const toggle = g.querySelector('.tree-toggle');
+                    if (content) content.style.display = 'block';
+                    if (toggle) toggle.textContent = '▼';
+                }
+            });
+            const c = document.getElementById('hp-filter-count');
+            if (c) c.textContent = (q || roleF) ? (shown + ' match' + (shown === 1 ? '' : 'es')) : '';
         }
 
         // Secret Scope filter data cache
@@ -11665,6 +11870,40 @@ def identify_privileged_principals_query(run_id):
                OR LOWER(g.name) LIKE '%workspace%admin%'
                OR LOWER(g.name) = 'workspace admins')
     ),
+    -- Workspace Admins via the account workspace-assignment API (ADMIN), assigned
+    -- directly to a user / service principal -- account-wide (every workspace).
+    workspace_admins_assign AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Workspace Admin' as privileged_role,
+            w.name as resource_name,
+            'HIGH' as risk_level
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name) AND v.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} w ON e.dst = w.id AND w.run_id = '{run_id}' AND w.node_type = 'Workspace'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'WorkspaceAdmin'
+    ),
+    -- Members of groups granted Workspace Admin via assignment inherit it.
+    workspace_admins_assign_group AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Workspace Admin' as privileged_role,
+            g.name as resource_name,
+            'HIGH' as risk_level
+        FROM {EDGES_TABLE} ae
+        JOIN {VERTICES_TABLE} g ON ae.src = g.id AND g.run_id = '{run_id}' AND g.node_type IN ('Group', 'AccountGroup')
+        JOIN {EDGES_TABLE} me ON me.dst = g.id AND me.run_id = '{run_id}' AND me.relationship = 'MemberOf'
+        JOIN {VERTICES_TABLE} v ON (me.src = v.id OR me.src = v.email OR me.src = v.name) AND v.run_id = '{run_id}'
+        WHERE ae.run_id = '{run_id}'
+          AND ae.relationship = 'WorkspaceAdmin'
+    ),
     -- Catalog Owners: Owners of catalogs
     catalog_owners AS (
         SELECT
@@ -11689,6 +11928,10 @@ def identify_privileged_principals_query(run_id):
         SELECT * FROM metastore_admins
         UNION ALL
         SELECT * FROM workspace_admins
+        UNION ALL
+        SELECT * FROM workspace_admins_assign
+        UNION ALL
+        SELECT * FROM workspace_admins_assign_group
         UNION ALL
         SELECT * FROM catalog_owners
     )
@@ -13204,25 +13447,36 @@ def report_high_privilege_principals():
     --                  Workspace-level 'admins' group = Workspace Admin
     -- Use both node_type AND id prefix to identify (id prefix is more reliable)
     admin_groups AS (
-        SELECT id, name, node_type,
-            CASE
-                -- Account-level admins group (by node_type OR id prefix) or groups with 'account admin' in name
-                WHEN ((node_type = 'AccountGroup' OR id LIKE 'account_group:%') AND LOWER(name) = 'admins')
-                     OR LOWER(name) LIKE '%account%admin%' THEN 'Account Admin'
-                WHEN LOWER(name) LIKE '%metastore%admin%' THEN 'Metastore Admin'
-                -- Workspace-level admins group (not account-level) or groups with 'workspace admin' in name
-                WHEN (node_type = 'Group' AND id NOT LIKE 'account_group:%' AND LOWER(name) = 'admins')
-                     OR LOWER(name) LIKE '%workspace%admin%'
-                     OR LOWER(name) = 'workspace admins' THEN 'Workspace Admin'
-            END as admin_role
-        FROM {VERTICES_TABLE}
-        WHERE run_id = '{run_id}'
-          AND node_type IN ('Group', 'AccountGroup')
-          AND (LOWER(name) = 'admins'
-               OR LOWER(name) LIKE '%account%admin%'
-               OR LOWER(name) LIKE '%metastore%admin%'
-               OR LOWER(name) LIKE '%workspace%admin%'
-               OR LOWER(name) = 'workspace admins')
+        SELECT id, name, node_type, admin_role FROM (
+            SELECT id, name, node_type,
+                CASE
+                    -- Account-level admins group (by node_type OR id prefix) or groups with 'account admin' in name
+                    WHEN ((node_type = 'AccountGroup' OR id LIKE 'account_group:%') AND LOWER(name) = 'admins')
+                         OR LOWER(name) LIKE '%account%admin%' THEN 'Account Admin'
+                    WHEN LOWER(name) LIKE '%metastore%admin%' THEN 'Metastore Admin'
+                    -- Workspace-level admins group (not account-level) or groups with 'workspace admin' in name
+                    WHEN (node_type = 'Group' AND id NOT LIKE 'account_group:%' AND LOWER(name) = 'admins')
+                         OR LOWER(name) LIKE '%workspace%admin%'
+                         OR LOWER(name) = 'workspace admins' THEN 'Workspace Admin'
+                END as admin_role
+            FROM {VERTICES_TABLE}
+            WHERE run_id = '{run_id}'
+              AND node_type IN ('Group', 'AccountGroup')
+              AND (LOWER(name) = 'admins'
+                   OR LOWER(name) LIKE '%account%admin%'
+                   OR LOWER(name) LIKE '%metastore%admin%'
+                   OR LOWER(name) LIKE '%workspace%admin%'
+                   OR LOWER(name) = 'workspace admins')
+        )
+        UNION
+        -- Groups granted Workspace Admin via the account workspace-assignment API
+        -- (account-wide, every workspace). Their members/nested members inherit it.
+        SELECT g.id, g.name, g.node_type, 'Workspace Admin' as admin_role
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON e.src = g.id AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'WorkspaceAdmin'
+          AND g.node_type IN ('Group', 'AccountGroup')
     ),
 
     -- Level 2: Groups that are members of admin groups (nested level 1)
@@ -13338,6 +13592,28 @@ def report_high_privilege_principals():
           AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
           AND v.run_id = '{run_id}'
           AND c.run_id = '{run_id}'
+    ),
+
+    -- Workspace Admins assigned directly (user/SP) via the account
+    -- workspace-assignment API -- account-wide, covers every workspace, not just
+    -- the one the app runs in. Group assignments are folded into admin_groups
+    -- above so their members expand through principals_via_groups.
+    ws_admins_direct AS (
+        SELECT DISTINCT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Workspace Admin' as role,
+            w.name as via,
+            'Assignment' as access_type
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name)
+        JOIN {VERTICES_TABLE} w ON e.dst = w.id AND w.run_id = '{run_id}' AND w.node_type = 'Workspace'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'WorkspaceAdmin'
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND v.run_id = '{run_id}'
     )
 
     SELECT principal_id, principal_name, principal_email, principal_type, role, via, access_type
@@ -13351,6 +13627,8 @@ def report_high_privilege_principals():
         SELECT * FROM catalog_owners
         UNION ALL
         SELECT * FROM catalog_all_privileges
+        UNION ALL
+        SELECT * FROM ws_admins_direct
     )
     ORDER BY
         CASE role
@@ -13372,30 +13650,32 @@ def report_high_privilege_principals():
 
     results = exec_query_df(query)
 
-    # Build summary
-    summary = {
-        'account_admin': 0,
-        'metastore_admin': 0,
-        'workspace_admin': 0,
-        'catalog_owner': 0,
-        'total_principals': set()
+    # Build summary. Count DISTINCT principals per role: a principal can legitimately
+    # appear on several rows for the same role (e.g. direct assignment AND via a
+    # group, or across multiple workspaces), so counting rows would over-report.
+    role_sets = {
+        'account_admin': set(),
+        'metastore_admin': set(),
+        'workspace_admin': set(),
+        'catalog_owner': set(),
     }
-
+    role_keys = {
+        'Account Admin': 'account_admin',
+        'Metastore Admin': 'metastore_admin',
+        'Workspace Admin': 'workspace_admin',
+        'Catalog Owner': 'catalog_owner',
+    }
+    total_principals = set()
     for r in results:
         role = r.get('role', '')
         pid = r.get('principal_id', '')
-        summary['total_principals'].add(pid)
+        total_principals.add(pid)
+        key = role_keys.get(role)
+        if key:
+            role_sets[key].add(pid)
 
-        if role == 'Account Admin':
-            summary['account_admin'] += 1
-        elif role == 'Metastore Admin':
-            summary['metastore_admin'] += 1
-        elif role == 'Workspace Admin':
-            summary['workspace_admin'] += 1
-        elif role == 'Catalog Owner':
-            summary['catalog_owner'] += 1
-
-    summary['total_principals'] = len(summary['total_principals'])
+    summary = {k: len(v) for k, v in role_sets.items()}
+    summary['total_principals'] = len(total_principals)
 
     return jsonify({
         'success': True,
@@ -14347,6 +14627,8 @@ def api_setup_status():
         'account_id': _app_config.get('account_id') or '',
         'has_credentials': has_credentials,
         'assistant_disabled': bool(_app_config.get('assistant_disabled')),
+        'scan_scope': _app_config.get('scan_scope') or 'current',
+        'job_compute': _app_config.get('job_compute') or 'serverless',
     })
 
 
@@ -14442,6 +14724,106 @@ def api_setup_requirements():
                     'all_required_ok': not required_fail})
 
 
+@app.route('/api/scope')
+def api_scope():
+    """Scope status for the whole app: whether account-wide data is being
+    collected, live counts that prove it, the resource-scan scope/compute, and
+    plain guidance on how to enable or disable each. The UI uses this to badge
+    every page and to tell the customer exactly what to change."""
+    sp = (os.getenv('DATABRICKS_CLIENT_ID') or '').strip()
+    if not is_configured():
+        return jsonify({'configured': False})
+
+    account_id = (_app_config.get('account_id') or '').strip()
+    try:
+        creds_present = uc_secret_present('client-id') and uc_secret_present('client-secret')
+    except Exception:  # noqa: BLE001
+        creds_present = False
+    account_configured = bool(account_id and creds_present)
+
+    # Live counts from the current run prove whether account-wide data actually
+    # landed (the account SP authenticated and had the Account Admin role).
+    counts = {'workspaces_total': 0, 'account_users': 0, 'account_groups': 0,
+              'account_admins': 0, 'metastores': 0}
+    coverage = None
+    run_id = None
+    try:
+        run_id = get_current_run_id()
+    except Exception:  # noqa: BLE001
+        run_id = None
+    if run_id:
+        try:
+            rows = exec_query_df(f"""
+                SELECT
+                  (SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id='{run_id}' AND node_type='Workspace') AS workspaces_total,
+                  (SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id='{run_id}' AND node_type='AccountUser') AS account_users,
+                  (SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id='{run_id}' AND node_type='AccountGroup') AS account_groups,
+                  (SELECT COUNT(DISTINCT src) FROM {EDGES_TABLE} WHERE run_id='{run_id}' AND relationship='AccountAdmin') AS account_admins,
+                  (SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id='{run_id}' AND node_type='Metastore') AS metastores
+            """)
+            if rows:
+                counts = {k: int(rows[0].get(k) or 0) for k in counts}
+        except Exception:  # noqa: BLE001
+            logger.info('scope counts query failed', exc_info=True)
+        try:
+            coverage = get_collection_coverage(run_id)
+        except Exception:  # noqa: BLE001
+            coverage = None
+
+    # Account-wide is "active" when the account data is actually present, not just
+    # when credentials were entered -- that is what the customer can trust.
+    account_active = account_configured and (
+        counts['account_admins'] > 0 or counts['account_groups'] > 0 or counts['workspaces_total'] > 0)
+
+    scan_scope = _scan_scope()
+    compute = _job_compute()
+    mode = (coverage or {}).get('collection_mode') or 'single-workspace'
+    ws_collected = (coverage or {}).get('workspaces_collected') or []
+    ws_failed = (coverage or {}).get('workspaces_failed') or []
+
+    enable_account = (
+        'Account-wide data is collected by the app\'s account service principal. '
+        'To enable it: in the account console grant the service principal the '
+        '"Account admin" role, then in Settings → Re-run setup add the Account ID '
+        'and the service principal\'s OAuth client ID + secret.')
+    disable_account = (
+        'To turn account-wide scanning off, remove the account credentials in '
+        'Settings → Re-run setup (leave Account ID / client ID / secret blank). '
+        'The app then reports on this workspace only.')
+    enable_multi = (
+        'Multi-workspace resource scanning needs the service principal added to '
+        'each target workspace. Choose "All workspaces" in setup. On classic '
+        'compute this works today; on serverless it needs cross-workspace access '
+        '(if remote workspaces are skipped, ask your account team to enroll you).')
+    disable_multi = (
+        'To scan this workspace only, choose "This workspace" for the collection '
+        'scope in Settings → Re-run setup.')
+
+    return jsonify({
+        'configured': True,
+        'service_principal': sp,
+        'account_id': account_id,
+        'account_wide': {
+            'credentials_present': creds_present,
+            'account_id_present': bool(account_id),
+            'configured': account_configured,
+            'active': account_active,
+            'counts': counts,
+            'enable_guidance': enable_account,
+            'disable_guidance': disable_account,
+        },
+        'resource_scan': {
+            'scope': scan_scope,
+            'compute': compute,
+            'collection_mode': mode,
+            'workspaces_scanned': ws_collected,
+            'workspaces_failed': ws_failed,
+            'enable_guidance': enable_multi,
+            'disable_guidance': disable_multi,
+        },
+    })
+
+
 @app.route('/api/setup/options')
 def api_setup_options():
     """Catalogs, warehouses and models the welcome form offers. Works before the
@@ -14485,6 +14867,8 @@ def api_setup_complete():
     account_id = (payload.get('account_id') or '').strip()
     client_id = (payload.get('client_id') or '').strip()
     client_secret = (payload.get('client_secret') or '').strip()
+    scan_scope = 'all' if (payload.get('scan_scope') or 'current') == 'all' else 'current'
+    job_compute = 'classic' if (payload.get('job_compute') or 'serverless') == 'classic' else 'serverless'
 
     if not catalog:
         return jsonify({'error': 'Choose a catalog for SAT to use.'}), 400
@@ -14527,6 +14911,9 @@ def api_setup_complete():
         'genie_space_id': genie_space_id,
         # Kept when blank so re-running setup without re-entering it is safe.
         'account_id': account_id or config.get('account_id', ''),
+        # Collection scope and compute, read by provisioning and the collectors.
+        'scan_scope': scan_scope,
+        'job_compute': job_compute,
     })
     try:
         write_persisted_config(config)
@@ -15688,6 +16075,18 @@ def _import_notebooks(client):
     return dest_root
 
 
+def _scan_scope():
+    """'all' to collect resources from every workspace the SP can reach, else
+    'current' (default) for the app's own workspace only. Set in setup/settings."""
+    return 'all' if (_app_config.get('scan_scope') or 'current') == 'all' else 'current'
+
+
+def _job_compute():
+    """'classic' to run collection jobs on a single-node job cluster, else
+    'serverless' (default). Classic is the historical multi-workspace path."""
+    return 'classic' if (_app_config.get('job_compute') or 'serverless') == 'classic' else 'serverless'
+
+
 def _job_base_parameters(extra=None):
     """Config every collection notebook needs, passed as job parameters so the
     notebooks read them without any secret scope (see notebooks/Utils/initialize)."""
@@ -15696,6 +16095,9 @@ def _job_base_parameters(extra=None):
         'sql_warehouse_id': os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '',
         'account_id': os.getenv('ACCOUNT_ID', ''),
         'proxies': '{}',
+        # Resource-collection scope; the permissions collector reads this to decide
+        # single- vs multi-workspace (see permission_analysis_data_collection.py).
+        'scan_scope': _scan_scope(),
     }
     if extra:
         params.update(extra)
@@ -15727,6 +16129,74 @@ def _serverless_job_body(name, notebook_path, base_parameters, task_key, client=
     }
 
 
+# Cache the cloud-valid cluster defaults so we resolve them once per process.
+_classic_cluster_defaults = None
+
+
+def _classic_cluster_spec(client):
+    """A single-node job-cluster spec valid for this workspace's cloud.
+
+    Spark version and node type are resolved from the workspace (not hard-coded),
+    so this works on AWS/Azure/GCP. Single-user security mode runs the cluster as
+    the job's run_as (the app SP) and allows the Unity Catalog secret reads the
+    account-level collectors need."""
+    global _classic_cluster_defaults
+    if _classic_cluster_defaults is None:
+        try:
+            spark_version = client.clusters.select_spark_version(long_term_support=True)
+        except Exception:  # noqa: BLE001
+            spark_version = '15.4.x-scala2.12'
+        try:
+            node_type_id = client.clusters.select_node_type(local_disk=True)
+        except Exception:  # noqa: BLE001
+            node_type_id = 'i3.xlarge'
+        _classic_cluster_defaults = (spark_version, node_type_id)
+    spark_version, node_type_id = _classic_cluster_defaults
+    sp = (os.getenv('DATABRICKS_CLIENT_ID') or '').strip()
+    spec = {
+        'spark_version': spark_version,
+        'node_type_id': node_type_id,
+        'num_workers': 0,
+        'spark_conf': {
+            'spark.master': 'local[*]',
+            'spark.databricks.cluster.profile': 'singleNode',
+        },
+        'custom_tags': {'ResourceClass': 'SingleNode', 'Application': 'SAT'},
+        'data_security_mode': 'SINGLE_USER',
+    }
+    if sp:
+        spec['single_user_name'] = sp
+    return spec
+
+
+def _classic_job_body(name, notebook_path, base_parameters, task_key, client, **_ignore):
+    """A classic single-node job-cluster job. Used when job_compute == 'classic';
+    this is the historical path that supports multi-workspace collection."""
+    return {
+        'name': name,
+        'tags': {'Application': 'SAT'},
+        'tasks': [{
+            'task_key': task_key,
+            'notebook_task': {
+                'notebook_path': notebook_path,
+                'base_parameters': base_parameters,
+            },
+            'new_cluster': _classic_cluster_spec(client),
+            'timeout_seconds': 3600,
+        }],
+        'max_concurrent_runs': 1,
+    }
+
+
+def _build_job_body(client, name, notebook_path, base_parameters, task_key, client_env='3'):
+    """Build a job body for the configured compute: classic job-cluster or
+    serverless. ``client_env`` is the serverless environment version (ignored for
+    classic)."""
+    if _job_compute() == 'classic':
+        return _classic_job_body(name, notebook_path, base_parameters, task_key, client)
+    return _serverless_job_body(name, notebook_path, base_parameters, task_key, client=client_env)
+
+
 def _find_job_id_by_name(client, name):
     for job in client.jobs.list(name=name):
         if job.settings and job.settings.name == name and job.job_id:
@@ -15756,8 +16226,8 @@ def _provision_collection(run_initializer=True):
     # Initializer first: it creates the schema and result tables the others fill.
     # sat_init tells initialize.py to run the one-time schema/table setup. Only the
     # initializer carries it, so concurrent collection jobs don't re-run that DDL.
-    init_body = _serverless_job_body(
-        _INITIALIZER_JOB_NAME, f'{notebooks_dir}/{_INITIALIZER_NOTEBOOK}',
+    init_body = _build_job_body(
+        client, _INITIALIZER_JOB_NAME, f'{notebooks_dir}/{_INITIALIZER_NOTEBOOK}',
         _job_base_parameters({'sat_init': 'true'}), 'Initializer')
     init_id = _upsert_job(client, init_body)
     results['initializer'] = {'job_id': init_id}
@@ -15769,10 +16239,10 @@ def _provision_collection(run_initializer=True):
         results['initializer']['run_id'] = init_run
 
     for kind, spec in PROVISION_SPECS.items():
-        body = _serverless_job_body(
-            spec['job_name'], f"{notebooks_dir}/{spec['notebook']}",
+        body = _build_job_body(
+            client, spec['job_name'], f"{notebooks_dir}/{spec['notebook']}",
             _job_base_parameters(spec['params']), spec['notebook'].split('/')[-1],
-            client=spec.get('client', '3'))
+            client_env=spec.get('client', '3'))
         try:
             results[kind] = {'job_id': _upsert_job(client, body)}
         except Exception as exc:  # noqa: BLE001
