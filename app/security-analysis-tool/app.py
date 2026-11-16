@@ -1092,7 +1092,9 @@ def get_main_html():
             position: absolute;
             top: 33px;
             right: -13px;
-            z-index: 60;
+            /* Above the page's sticky stats header (z 100) so the edge pill is
+               never painted over by page content; stays below modals/overlays. */
+            z-index: 110;
             width: 26px;
             height: 26px;
             border-radius: 50%;
