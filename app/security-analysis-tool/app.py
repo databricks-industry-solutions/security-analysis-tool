@@ -1443,6 +1443,61 @@ def get_main_html():
             transform: translateY(0);
         }
 
+        /* Reusable help icon for page titles. A small "i" badge that reveals a
+           wrapping tip on hover/focus (wider + wrapping, unlike the one-line
+           button tips above) so a page can carry a sentence or two of
+           how-to-use / how-to-read guidance without cluttering the header. */
+        .help-tip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 17px;
+            height: 17px;
+            margin-left: 9px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+            font-style: normal;
+            line-height: 1;
+            cursor: help;
+            vertical-align: middle;
+            position: relative;
+            user-select: none;
+        }
+        .help-tip:hover, .help-tip:focus-visible { color: var(--text-primary); border-color: var(--accent); }
+        .help-tip::after {
+            content: attr(data-help);
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            width: max-content;
+            max-width: 340px;
+            white-space: normal;
+            text-align: left;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 12.5px;
+            font-weight: 400;
+            line-height: 1.5;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transform: translateY(-4px);
+            pointer-events: none;
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            z-index: 2000;
+        }
+        .help-tip:hover::after,
+        .help-tip:focus-visible::after {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
         /* Genie result tables rendered inline in an assistant answer. */
         .assistant-table-wrap {
             margin: 10px 0 4px;
@@ -3957,7 +4012,7 @@ def get_main_html():
             <!-- Principal Analysis Page -->
             <div class="page" id="page-principal">
                 <div class="page-header">
-                    <h1 class="page-title">Principal Analysis</h1>
+                    <h1 class="page-title">Principal Analysis <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Enter a user, group, or service principal (by email, name, or application ID). You get back every resource it can reach and how each access is granted — a direct grant, inherited through a group, or via ownership. Use it to review one identity's full reach before granting or revoking access.">i</span></h1>
                     <p class="page-desc">Everything a user, group, or service principal can reach, directly or through group membership.</p>
                 </div>
 
@@ -4000,7 +4055,7 @@ def get_main_html():
             <!-- Resource Analysis Page -->
             <div class="page" id="page-resource">
                 <div class="page-header">
-                    <h1 class="page-title">Resource Analysis</h1>
+                    <h1 class="page-title">Resource Analysis <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Enter a resource (for example catalog.schema.table, a cluster, or a warehouse). You get back every principal that can reach it, their permission level, and whether access is direct or inherited through a group. Use it to audit who can touch a sensitive asset.">i</span></h1>
                     <p class="page-desc">Every principal that can reach a given resource, and the grant that allows it.</p>
                 </div>
 
@@ -4051,7 +4106,7 @@ def get_main_html():
             <!-- Escalation Paths Page -->
             <div class="page" id="page-paths">
                 <div class="page-header">
-                    <h1 class="page-title">Escalation Paths</h1>
+                    <h1 class="page-title">Escalation Paths <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Enter a principal to trace routes by which it could reach admin or otherwise privileged access — for example through a group that owns a resource, or by managing a more-privileged identity. Each row is one path; shorter paths are easier to exploit, so review whether any step is unintended.">i</span></h1>
                     <p class="page-desc">Routes by which a principal could obtain admin or otherwise privileged access.</p>
                 </div>
 
@@ -4091,7 +4146,7 @@ def get_main_html():
             <!-- Impersonation Analysis Page -->
             <div class="page" id="page-impersonation">
                 <div class="page-header">
-                    <h1 class="page-title">Impersonation Analysis</h1>
+                    <h1 class="page-title">Impersonation Analysis <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Lists identities that can act as another identity — for example by managing a service principal or its tokens, or running jobs as someone else. Read each row as a can-act-as relationship and confirm it is intended.">i</span></h1>
                     <p class="page-desc">Principals that can act as another identity, and the permissions that make it possible.</p>
                 </div>
 
@@ -4150,7 +4205,7 @@ def get_main_html():
             <!-- Isolated Principals Report Page -->
             <div class="page" id="page-isolated">
                 <div class="page-header">
-                    <h1 class="page-title">Isolated Principals</h1>
+                    <h1 class="page-title">Isolated Principals <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Each row is an identity with almost no groups or grants — often a leftover, test, or misconfigured account. Confirm whether it is still needed; stale accounts are good deactivation candidates.">i</span></h1>
                     <p class="page-desc">Identities with almost no group membership or grants. Often leftover or misconfigured accounts.</p>
                 </div>
                 <div id="isolated-results"></div>
@@ -4159,7 +4214,7 @@ def get_main_html():
             <!-- Orphaned Resources Report Page -->
             <div class="page" id="page-orphaned">
                 <div class="page-header">
-                    <h1 class="page-title">Orphaned Resources</h1>
+                    <h1 class="page-title">Orphaned Resources <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Resources with no explicit grants, so access falls back to inherited or default permissions that are easy to overlook. Review whether that inherited access is appropriate, or add explicit grants.">i</span></h1>
                     <p class="page-desc">Resources with no explicit grants. Access falls back to inherited or default permissions.</p>
                 </div>
                 <div id="orphaned-results"></div>
@@ -4168,7 +4223,7 @@ def get_main_html():
             <!-- Over-Privileged Principals Report Page -->
             <div class="page" id="page-overprivileged">
                 <div class="page-header">
-                    <h1 class="page-title">Over-Privileged Principals</h1>
+                    <h1 class="page-title">Over-Privileged Principals <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Identities whose granted access is wider than their recent activity suggests they use. Treat them as right-sizing candidates — compare granted versus used access and trim what is not needed.">i</span></h1>
                     <p class="page-desc">Identities holding more access than their activity suggests they need.</p>
                 </div>
                 <div id="overprivileged-results"></div>
@@ -4177,7 +4232,7 @@ def get_main_html():
             <!-- High Privilege Principals Report Page -->
             <div class="page" id="page-highprivilege">
                 <div class="page-header">
-                    <h1 class="page-title">High Privilege Principals</h1>
+                    <h1 class="page-title">High Privilege Principals <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Identities with admin rights, granted directly or inherited through a group. Keep this set as small as possible, and for each one confirm the admin rights are required.">i</span></h1>
                     <p class="page-desc">Identities with administrative rights, whether granted directly or inherited through groups.</p>
                 </div>
                 <div id="highprivilege-results"></div>
@@ -4186,7 +4241,7 @@ def get_main_html():
             <!-- Secret Scope Access Report Page -->
             <div class="page" id="page-secretscopes">
                 <div class="page-header">
-                    <h1 class="page-title">Secret Scope Access</h1>
+                    <h1 class="page-title">Secret Scope Access <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Each row is a principal's access to a scope — READ sees the secret values, WRITE adds or changes them, and MANAGE can also change who has access (MANAGE includes WRITE includes READ). Watch for broad groups with READ, or non-admins with MANAGE.">i</span></h1>
                     <p class="page-desc">Who can read, write, or manage each secret scope. Secret scopes are the legacy credential store &mdash; Unity Catalog secrets offer governed, fine-grained access control and are recommended for new secrets.</p>
                 </div>
 
@@ -4217,7 +4272,7 @@ def get_main_html():
             <!-- Shared to All Account Users Report Page -->
             <div class="page" id="page-sharedtoaccount">
                 <div class="page-header">
-                    <h1 class="page-title">Shared to All Account Users</h1>
+                    <h1 class="page-title">Shared to All Account Users <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Each row is a dashboard, Genie space, or app shared with the built-in account users group, so everyone in the account can read it. Treat as unintended exposure unless it is meant to be public, and remove the account-users grant to restrict it.">i</span></h1>
                     <p class="page-desc">Dashboards, Genie spaces, and apps shared with the built-in account users group, and therefore readable by everyone in the account.</p>
                 </div>
                 <div id="sharedtoaccount-results"></div>
@@ -4226,7 +4281,7 @@ def get_main_html():
             <!-- Privileged Non-IdP Group Identities Report Page -->
             <div class="page" id="page-privilegednonidp">
                 <div class="page-header">
-                    <h1 class="page-title">Privileged Non-IdP Group Identities</h1>
+                    <h1 class="page-title">Privileged Non-IdP Group Identities <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Admin rights held outside your identity provider, so they survive offboarding — removing someone from the IdP does not revoke them. Review each and move the privilege under an IdP-managed group where possible.">i</span></h1>
                     <p class="page-desc">Administrative rights held outside your identity provider. These accounts survive offboarding, because removing someone from the IdP does not revoke them.</p>
                 </div>
                 <div id="privilegednonidp-results"></div>
@@ -4235,7 +4290,7 @@ def get_main_html():
             <!-- Account Denylist Builder Page -->
             <div class="page" id="page-denylistbuilder">
                 <div class="page-header">
-                    <h1 class="page-title">Account Denylist Builder</h1>
+                    <h1 class="page-title">Account Denylist Builder <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Finds IdP groups whose members have no recent Databricks activity, ranked so a higher inactive count or percentage is a stronger denylist candidate. Review the members first, then use the generated Entra ID dynamic-group rule to apply one denylist entry at scale.">i</span></h1>
                     <p class="page-desc">Tools to help build an <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">account access denylist</a>: find IdP groups whose members aren't using Databricks, and generate Entra ID dynamic-group rules that scale a single denylist entry to thousands of users.</p>
                 </div>
 
