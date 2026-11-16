@@ -15562,10 +15562,14 @@ def _collection_job_id(kind):
 # _discover_collection_jobs matches on, so a job created here is picked up by
 # discovery the moment it exists -- no restart, no id to record.
 PROVISION_SPECS = {
+    # Reads the account-admin credentials from Unity Catalog secrets to collect
+    # group memberships as the account SP (the app SP can't read SCIM members), so
+    # it needs client >= 4 for the UC-secret read (client 3 returns empty).
     'permissions': {
         'job_name': 'SAT Permissions Analysis - Data Collection',
         'notebook': 'permission_analysis_data_collection',
         'params': {},
+        'client': '4',
     },
     # The secrets scanner mints an account OAuth token from the client-id/
     # client-secret UC secrets to call the workspace APIs, so it needs client >= 4

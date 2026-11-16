@@ -1369,6 +1369,27 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                 # groups.list() returns the group records but does not reliably
                 # include members inline, so each group's members are fetched below.
                 groups = list(ws_client.groups.list())
+
+                # The app service principal that runs this job is not a workspace
+                # admin and so cannot read SCIM group members. When the account
+                # service-principal credentials are available (requires serverless
+                # env client >= 4 to read the UC secret), authenticate as that
+                # account-admin SP to read memberships; otherwise fall back to the
+                # default client (members will be empty for a non-admin caller).
+                member_client = ws_client
+                if SP_CREDENTIALS.get('client_id') and SP_CREDENTIALS.get('client_secret'):
+                    try:
+                        from databricks.sdk import WorkspaceClient as _MemberClient
+                        member_client = _MemberClient(
+                            host=ws_client.config.host,
+                            client_id=SP_CREDENTIALS['client_id'],
+                            client_secret=SP_CREDENTIALS['client_secret'],
+                            auth_type='oauth-m2m',
+                        )
+                    except Exception as e:
+                        print(f"    Could not build account-SP client for memberships ({e}); using default client")
+                        member_client = ws_client
+
                 for group in tqdm(groups, desc="Groups"):
                     all_vertices.append({
                         'id': f"ws_{ws_id}_group:{group.id}",
@@ -1391,7 +1412,7 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                     members = getattr(group, 'members', None)
                     if not members:
                         try:
-                            members = getattr(ws_client.groups.get(group.id), 'members', None)
+                            members = getattr(member_client.groups.get(group.id), 'members', None)
                         except Exception as e:
                             print(f"    Error getting members for group {group.id}: {e}")
                             members = None
