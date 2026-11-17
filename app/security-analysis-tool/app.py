@@ -16023,8 +16023,8 @@ def _alert_templates():
         'total_findings': {
             'label': 'Any hardcoded secret found',
             'description': (
-                'Fires when the most recent scan finds any hardcoded secret in '
-                'notebook source or cluster configuration.'
+                'The latest scan found hardcoded secrets in notebook source or '
+                'cluster configuration.'
             ),
             'column': 'total_findings',
             'default_threshold': 0,
@@ -16038,8 +16038,8 @@ WHERE secret_sha256 IS NOT NULL
         'new_findings': {
             'label': 'Findings increased since previous scan',
             'description': (
-                'Fires only when the newest scan found more secrets than the one '
-                'before it, so a known backlog does not alert every day.'
+                'The latest scan found more hardcoded secrets than the previous '
+                'scan — exposure is growing.'
             ),
             'column': 'new_findings',
             'default_threshold': 0,
@@ -16063,9 +16063,8 @@ FROM counts""",
         'stale_scan': {
             'label': 'Scanner has not run recently',
             'description': (
-                'Fires when the last completed scan is older than the threshold in '
-                'hours. Catches a silently broken schedule, where no findings is '
-                'indistinguishable from no scanning.'
+                'The secret scanner has not completed a run within the threshold — '
+                'its schedule may be broken and results may be stale.'
             ),
             'column': 'hours_since_scan',
             'default_threshold': 48,
