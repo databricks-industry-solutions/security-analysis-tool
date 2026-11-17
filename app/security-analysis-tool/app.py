@@ -4582,11 +4582,13 @@ def get_main_html():
             const scopeType = PAGE_SCOPE[page];
             const pageEl = document.getElementById('page-' + page);
             if (!pageEl) return;
-            // Remove any stale banner first.
-            const old = pageEl.querySelector(':scope > .scope-banner');
-            if (old) old.remove();
-            if (!scopeType) return;
+            if (!scopeType) { pageEl.querySelectorAll('.scope-banner').forEach(b => b.remove()); return; }
             const s = await loadScope();
+            // Do all DOM work synchronously AFTER the await: navigateToPage fires
+            // several times on load, so removing-then-inserting around the await
+            // would let concurrent calls stack 2-3 banners. Removing every existing
+            // banner immediately before inserting one keeps exactly one.
+            pageEl.querySelectorAll('.scope-banner').forEach(b => b.remove());
             if (!s || !s.configured) return;
             const aw = s.account_wide || {}, rs = s.resource_scan || {};
             const c = aw.counts || {};
@@ -6888,6 +6890,24 @@ def get_main_html():
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
                         </button>
                         <div class="collect-manage-body" id="collect-manage-body"${manageOpen ? '' : ' hidden'}>
+                            <div class="manage-action" id="collect-compute-action" style="align-items:flex-start;">
+                                <div class="manage-action-text" style="flex:1;">
+                                    <div class="manage-action-title">Compute &amp; scope</div>
+                                    <div class="manage-action-sub">How the collection jobs run, and how many workspaces they scan. Applying re-creates the jobs with the new settings.</div>
+                                    <div id="collect-compute-note" style="font-size:.8em;color:var(--text-muted);margin-top:6px;"></div>
+                                </div>
+                                <div style="display:flex;flex-direction:column;gap:8px;align-items:stretch;min-width:220px;">
+                                    <select id="collect-compute-select" class="field-input">
+                                        <option value="serverless">Serverless compute</option>
+                                        <option value="classic">Classic (single-node cluster)</option>
+                                    </select>
+                                    <select id="collect-scope-select" class="field-input">
+                                        <option value="current">Scan this workspace only</option>
+                                        <option value="all">Scan all workspaces</option>
+                                    </select>
+                                    <button class="btn btn-sm" id="collect-compute-apply" onclick="applyComputeControl(this)">Apply &amp; redeploy</button>
+                                </div>
+                            </div>
                             <div class="manage-action">
                                 <div class="manage-action-text">
                                     <div class="manage-action-title">Redeploy jobs</div>
@@ -6914,12 +6934,61 @@ def get_main_html():
                     </div>` : '';
 
                 panel.innerHTML = banner + sections + manage;
+                if (manage) loadComputeControl();
                 if (jobs.some(j => j.latest_run && j.latest_run.active)) startElapsedTicker();
                 openDrawers.forEach(kind => toggleScheduleEditor(kind));
                 return jobs;
             } catch (e) {
                 panel.innerHTML = `<div class="card" style="padding:16px;"><div style="color:#fca5a5;">${escapeHtml(e.message)}</div></div>`;
                 return null;
+            }
+        }
+
+        // Populate the Compute & scope control with the current settings and
+        // disable the classic option when this workspace can't run classic compute.
+        async function loadComputeControl() {
+            try {
+                const r = await fetch('/api/collection/compute').then(x => x.json());
+                if (r.error) return;
+                const cs = document.getElementById('collect-compute-select');
+                const ss = document.getElementById('collect-scope-select');
+                const note = document.getElementById('collect-compute-note');
+                if (cs) cs.value = r.compute || 'serverless';
+                if (ss) ss.value = r.scan_scope || 'current';
+                if (cs && !r.classic_available) {
+                    const opt = cs.querySelector('option[value="classic"]');
+                    if (opt) { opt.disabled = true; opt.textContent = 'Classic (not available in this workspace)'; }
+                }
+                if (note) {
+                    note.textContent = r.classic_available
+                        ? 'Classic compute is available in this workspace.'
+                        : "Classic compute isn't available in this workspace; serverless is used.";
+                }
+            } catch (e) { /* non-fatal */ }
+        }
+
+        async function applyComputeControl(btn) {
+            const cs = document.getElementById('collect-compute-select');
+            const ss = document.getElementById('collect-scope-select');
+            const note = document.getElementById('collect-compute-note');
+            const label = btn ? btn.textContent : '';
+            if (note) note.textContent = '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+            try {
+                const r = await fetch('/api/collection/compute', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ compute: cs ? cs.value : 'serverless', scan_scope: ss ? ss.value : 'current' }),
+                }).then(x => x.json());
+                if (r.error) {
+                    if (note) note.textContent = r.error;
+                    if (btn) { btn.disabled = false; btn.textContent = label; }
+                    return;
+                }
+                _scopeCache = null;  // scope changed — refresh page banners on next view
+                await loadCollectionPanel();
+            } catch (e) {
+                if (note) note.textContent = e.message;
+                if (btn) { btn.disabled = false; btn.textContent = label; }
             }
         }
 
@@ -16465,6 +16534,76 @@ def api_collection_provision():
             }), 403
         return jsonify({'error': f'Provisioning failed: {message[:300]}'}), 500
     return jsonify({'provisioned': True, **result})
+
+
+_classic_available_cache = None
+
+
+def _classic_compute_available(client=None):
+    """Whether this workspace can run classic (job-cluster) compute. Probes the
+    node-type and Spark-version listings; a serverless-only workspace returns
+    neither. Cached per process. Any error is treated as 'not available' so the
+    UI only offers classic when it should work."""
+    global _classic_available_cache
+    if _classic_available_cache is not None:
+        return _classic_available_cache
+    ok = False
+    try:
+        client = client or _sp_workspace_client()
+        node_types = getattr(client.clusters.list_node_types(), 'node_types', None) or []
+        versions = client.clusters.spark_versions()
+        ok = bool(node_types) and bool(getattr(versions, 'versions', None))
+    except Exception:  # noqa: BLE001
+        ok = False
+    _classic_available_cache = ok
+    return ok
+
+
+@app.route('/api/collection/compute', methods=['GET', 'POST'])
+def api_collection_compute():
+    """Get or set the compute and scope the collection jobs run with.
+
+    GET returns the current choice and whether classic compute is available in
+    this workspace. POST persists the choice and re-creates the jobs so it takes
+    effect immediately (serverless <-> classic, this-workspace <-> all)."""
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup first.'}), 409
+
+    if request.method == 'GET':
+        return jsonify({
+            'compute': _job_compute(),
+            'scan_scope': _scan_scope(),
+            'classic_available': _classic_compute_available(),
+        })
+
+    payload = request.get_json(silent=True) or {}
+    compute = 'classic' if payload.get('compute') == 'classic' else 'serverless'
+    scan_scope = 'all' if payload.get('scan_scope') == 'all' else 'current'
+    if compute == 'classic' and not _classic_compute_available():
+        return jsonify({'error': 'Classic compute is not available in this workspace. '
+                                 'Use serverless, or enable classic clusters for the '
+                                 'app service principal.'}), 400
+
+    config = dict(_app_config)
+    config['job_compute'] = compute
+    config['scan_scope'] = scan_scope
+    try:
+        write_persisted_config(config)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('compute config write failed')
+        return jsonify({'error': f'Could not save the setting: {str(exc)[:180]}'}), 500
+    _apply_runtime_config(config)
+
+    # Re-create the jobs so the new compute/scope is applied now. Keep the
+    # existing data: the initializer is not re-run here.
+    try:
+        result = _provision_collection(run_initializer=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('re-provision after compute change failed')
+        return jsonify({'error': f'Setting saved, but re-creating the jobs failed: '
+                                 f'{str(exc)[:220]}'}), 500
+    return jsonify({'saved': True, 'compute': compute, 'scan_scope': scan_scope,
+                    'jobs': result.get('jobs', {})})
 
 
 def _provisioned_job_names():
