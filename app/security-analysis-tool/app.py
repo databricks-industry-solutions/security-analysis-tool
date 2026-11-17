@@ -11961,10 +11961,34 @@ def _principal_admin_resources(run_id, id_variants, email, name):
     the principal directly and through the groups it belongs to. Account Admin is
     account-wide, so it has no list. Returns {role: [names]}."""
     out = {'Workspace Admin': [], 'Metastore Admin': [], 'Catalog Owner': []}
-    idents = {v for v in list(id_variants or []) + [email, name] if v}
-    if not idents or not run_id:
+    seeds = {str(v) for v in (list(id_variants or []) + [email, name]) if v}
+    if not seeds or not run_id:
         return out
-    id_in = ','.join("'" + sanitize(v) + "'" for v in idents)
+
+    # The same person appears as both an account-level id (account_user:X) and a
+    # workspace-level id (ws_<wsid>_user:X), and the workspace vertex often has an
+    # empty email. Account-level edges (WorkspaceAdmin, MemberOf) key off
+    # account_user:X, so bridge every representation by the shared id core, and
+    # recover the canonical email/name from any matching vertex.
+    cores = {s.split(':')[-1] for s in seeds if ':' in s} | {s for s in seeds if s.isdigit()}
+    idents = set(seeds)
+    for c in cores:
+        idents |= {c, f'account_user:{c}', f'account_group:{c}', f'account_sp:{c}'}
+    id_in = ','.join("'" + sanitize(v) + "'" for v in idents) or "''"
+
+    emails = {email.lower()} if email else set()
+    names = {name.lower()} if name else set()
+    try:
+        for r in exec_query_df(f"""
+            SELECT DISTINCT email, name FROM {VERTICES_TABLE}
+            WHERE run_id = '{run_id}' AND id IN ({id_in})
+        """):
+            if r.get('email'):
+                emails.add(str(r['email']).lower())
+            if r.get('name'):
+                names.add(str(r['name']).lower())
+    except Exception:  # noqa: BLE001
+        pass
 
     # Groups (direct membership) the principal belongs to, as (id, name) pairs.
     groups = []
@@ -11991,19 +12015,43 @@ def _principal_admin_resources(run_id, id_variants, email, name):
 
     src_vals = idents | set(all_grp_ids)
     src_in = ','.join("'" + sanitize(v) + "'" for v in src_vals) or "''"
-    owner_vals = {str(v).lower() for v in (idents | set(own_grp_ids) | set(own_grp_names))}
+    owner_vals = {str(v).lower() for v in (emails | names | idents | set(own_grp_ids) | set(own_grp_names))}
     owner_in = ','.join("'" + sanitize(v) + "'" for v in owner_vals) or "''"
 
+    ws_names = set()
+    # Path 1: account workspace-assignment ADMIN (directly or via a group).
     try:
-        out['Workspace Admin'] = [r['name'] for r in exec_query_df(f"""
+        for r in exec_query_df(f"""
             SELECT DISTINCT w.name AS name
             FROM {EDGES_TABLE} e
             JOIN {VERTICES_TABLE} w ON e.dst = w.id AND w.run_id = '{run_id}' AND w.node_type = 'Workspace'
             WHERE e.run_id = '{run_id}' AND e.relationship = 'WorkspaceAdmin' AND e.src IN ({src_in})
-            ORDER BY w.name
-        """) if r.get('name')]
+        """):
+            if r.get('name'):
+                ws_names.add(r['name'])
     except Exception:  # noqa: BLE001
         pass
+    # Path 2: membership in a workspace-local 'admins' group (id like
+    # ws_<workspaceId>_group:...). That makes the principal an admin of THAT
+    # workspace even without an assignment edge -- which is how admins of the
+    # workspace SAT runs in are represented.
+    try:
+        for r in exec_query_df(f"""
+            SELECT DISTINCT COALESCE(w.name, CONCAT('workspace ', regexp_extract(g.id, '^ws_([0-9]+)_', 1))) AS name
+            FROM {EDGES_TABLE} me
+            JOIN {VERTICES_TABLE} g ON me.dst = g.id AND g.run_id = '{run_id}'
+                 AND g.node_type = 'Group' AND LOWER(g.name) = 'admins'
+            LEFT JOIN {VERTICES_TABLE} w ON w.run_id = '{run_id}' AND w.node_type = 'Workspace'
+                 AND w.id = CONCAT('workspace:', regexp_extract(g.id, '^ws_([0-9]+)_', 1))
+            WHERE me.run_id = '{run_id}' AND me.relationship = 'MemberOf'
+              AND regexp_extract(g.id, '^ws_([0-9]+)_', 1) != ''
+              AND me.src IN ({src_in})
+        """):
+            if r.get('name'):
+                ws_names.add(r['name'])
+    except Exception:  # noqa: BLE001
+        pass
+    out['Workspace Admin'] = sorted(ws_names)
     try:
         out['Metastore Admin'] = [r['name'] for r in exec_query_df(f"""
             SELECT DISTINCT name FROM {VERTICES_TABLE}
