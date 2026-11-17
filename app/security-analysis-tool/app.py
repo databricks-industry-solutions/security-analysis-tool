@@ -5338,6 +5338,36 @@ def get_main_html():
                     ? adminRoles.map(r => `<span style="display: inline-block; padding: 4px 10px; background: ${roleColor(r.risk_level)}22; color: ${roleColor(r.risk_level)}; border: 1px solid ${roleColor(r.risk_level)}55; border-radius: 6px; font-size: 0.72em; font-weight: 700; text-transform: uppercase; margin-left: 6px;">🛡️ ${escapeHtml(r.role)}</span>`).join('')
                     : `<span style="display: inline-block; padding: 4px 10px; background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-size: 0.72em; font-weight: 600; text-transform: uppercase; margin-left: 6px;">No admin roles</span>`;
 
+                // "What and where" detail for each admin role: which workspaces
+                // (Workspace Admin), which metastores (Metastore Admin), which
+                // catalogs (Catalog Owner). Account Admin is account-wide. This is
+                // what stops "Workspace Admin" from being mistaken for admin of the
+                // workspace SAT is installed in -- it names the actual workspaces.
+                const roleEmoji = { 'Account Admin': '👑', 'Metastore Admin': '🗄️', 'Workspace Admin': '🏢', 'Catalog Owner': '📚' };
+                const adminDetailHtml = adminRoles.length ? `
+                    <div style="margin-top: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 12px 14px;">
+                        <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px;">Admin roles — what &amp; where</div>
+                        ${adminRoles.map(r => {
+                            const color = roleColor(r.risk_level);
+                            const res = r.resources || [];
+                            const label = r.role === 'Workspace Admin' ? 'workspace' : (r.role === 'Metastore Admin' ? 'metastore' : (r.role === 'Catalog Owner' ? 'catalog' : ''));
+                            let where;
+                            if (r.role === 'Account Admin') where = 'Entire account';
+                            else if (!res.length) where = `<span style="color: var(--text-muted);">${label || 'resource'} not identified in this collection</span>`;
+                            else if (res.length <= 8) where = res.map(escapeHtml).join(', ');
+                            else where = res.slice(0, 8).map(escapeHtml).join(', ') + ` <span style="color: var(--text-muted);">+${res.length - 8} more</span>`;
+                            const countStr = (r.role !== 'Account Admin' && res.length) ? ` · ${res.length} ${label}${res.length === 1 ? '' : 's'}` : '';
+                            return `<div style="display: flex; gap: 10px; margin-bottom: 8px; font-size: 0.86em; line-height: 1.5;">
+                                <span style="flex: 0 0 auto;">${roleEmoji[r.role] || '🛡️'}</span>
+                                <div style="min-width: 0;">
+                                    <span style="color: ${color}; font-weight: 650;">${escapeHtml(r.role)}</span><span style="color: var(--text-muted);">${countStr}</span>
+                                    <div style="color: var(--text-secondary); margin-top: 2px; word-break: break-word;">${where}</div>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                        <div style="font-size: 0.78em; color: var(--text-muted); margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">Admin roles are detected account-wide. "Workspace Admin" means this identity administers the listed workspaces — not necessarily the workspace SAT is installed in.</div>
+                    </div>` : '';
+
                 // Group by resource type, then by resource name, collecting privileges and inheritance paths
                 const byType = {};
                 data.forEach(d => {
@@ -5416,8 +5446,9 @@ def get_main_html():
                             </div>
                             ` : ''}
                         </div>
+                        ${adminDetailHtml}
                     </div>
-                    
+
                     <!-- Access Summary Card -->
                     <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
                         <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Access Summary</div>
@@ -9606,7 +9637,10 @@ def get_main_html():
                             </div>
                         </div>
                         <div style="margin-top: 12px; font-size: 0.8em; color: var(--text-muted);">
-                            Includes effective privileges via nested group membership (up to 2 levels deep)
+                            Includes effective privileges via nested group membership (up to 2 levels deep).
+                            Roles are detected <strong>account-wide</strong>: a Workspace Admin administers some
+                            workspace in the account (named in each row's "via"), not necessarily this one, and
+                            a Metastore Admin administers the named metastore.
                         </div>
                     </div>
 
@@ -11694,7 +11728,7 @@ def api_what_can_access():
     try:
         p_email_l = (p_email or '').lower()
         p_name_l = (p_name or '').lower()
-        _seen_roles = set()
+        role_risk = {}
         for _row in identify_privileged_principals_query(run_id):
             _matches = (
                 _row.get('principal_id', '') == p_id
@@ -11704,9 +11738,21 @@ def api_what_can_access():
             if not _matches:
                 continue
             _role = _row.get('privileged_role', '')
-            if _role and _role not in _seen_roles:
-                _seen_roles.add(_role)
-                admin_roles.append({'role': _role, 'risk_level': _row.get('risk_level', 'UNKNOWN')})
+            if _role:
+                role_risk.setdefault(_role, _row.get('risk_level', 'UNKNOWN'))
+
+        if role_risk:
+            # Resolve the specific resources behind each resource-scoped admin role
+            # (which workspaces / metastores / catalogs) so the UI can name them.
+            role_resources = _principal_admin_resources(run_id, p_id_variants, p_email, p_name)
+            _order = ['Account Admin', 'Metastore Admin', 'Workspace Admin', 'Catalog Owner']
+            for _role in sorted(role_risk, key=lambda r: _order.index(r) if r in _order else 99):
+                admin_roles.append({
+                    'role': _role,
+                    'risk_level': role_risk[_role],
+                    'scope': 'account' if _role == 'Account Admin' else 'resource',
+                    'resources': role_resources.get(_role, []),
+                })
     except NoAccessError:
         raise
     except Exception:
@@ -11906,6 +11952,75 @@ def identify_escalation_targets_query(run_id):
         privileged_role
     """
     return exec_query_df(query)
+
+
+def _principal_admin_resources(run_id, id_variants, email, name):
+    """The specific resources behind one principal's resource-scoped admin roles:
+    which workspaces (Workspace Admin, via WorkspaceAdmin edges), which metastores
+    (Metastore Admin, by ownership), which catalogs (Catalog Owner). Resolved for
+    the principal directly and through the groups it belongs to. Account Admin is
+    account-wide, so it has no list. Returns {role: [names]}."""
+    out = {'Workspace Admin': [], 'Metastore Admin': [], 'Catalog Owner': []}
+    idents = {v for v in list(id_variants or []) + [email, name] if v}
+    if not idents or not run_id:
+        return out
+    id_in = ','.join("'" + sanitize(v) + "'" for v in idents)
+
+    # Groups (direct membership) the principal belongs to, as (id, name) pairs.
+    groups = []
+    try:
+        for r in exec_query_df(f"""
+            SELECT DISTINCT g.id AS gid, g.name AS gname
+            FROM {EDGES_TABLE} e
+            JOIN {VERTICES_TABLE} g ON e.dst = g.id AND g.run_id = '{run_id}'
+            WHERE e.run_id = '{run_id}' AND e.relationship = 'MemberOf'
+              AND g.node_type IN ('Group', 'AccountGroup')
+              AND e.src IN ({id_in})
+        """):
+            groups.append((r.get('gid'), r.get('gname')))
+    except Exception:  # noqa: BLE001
+        pass
+
+    all_grp_ids = [gid for gid, _ in groups if gid]
+    # Universal groups (everyone belongs) must NOT attribute ownership: many
+    # metastores/catalogs are owned by "account users", and counting those would
+    # falsely make every account user an admin of them.
+    _universal = {'account users', 'users'}
+    own_grp_ids = [gid for gid, gname in groups if gid and (gname or '').lower() not in _universal]
+    own_grp_names = [gname for _, gname in groups if gname and gname.lower() not in _universal]
+
+    src_vals = idents | set(all_grp_ids)
+    src_in = ','.join("'" + sanitize(v) + "'" for v in src_vals) or "''"
+    owner_vals = {str(v).lower() for v in (idents | set(own_grp_ids) | set(own_grp_names))}
+    owner_in = ','.join("'" + sanitize(v) + "'" for v in owner_vals) or "''"
+
+    try:
+        out['Workspace Admin'] = [r['name'] for r in exec_query_df(f"""
+            SELECT DISTINCT w.name AS name
+            FROM {EDGES_TABLE} e
+            JOIN {VERTICES_TABLE} w ON e.dst = w.id AND w.run_id = '{run_id}' AND w.node_type = 'Workspace'
+            WHERE e.run_id = '{run_id}' AND e.relationship = 'WorkspaceAdmin' AND e.src IN ({src_in})
+            ORDER BY w.name
+        """) if r.get('name')]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out['Metastore Admin'] = [r['name'] for r in exec_query_df(f"""
+            SELECT DISTINCT name FROM {VERTICES_TABLE}
+            WHERE run_id = '{run_id}' AND node_type = 'Metastore' AND LOWER(owner) IN ({owner_in})
+            ORDER BY name
+        """) if r.get('name')]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out['Catalog Owner'] = [r['name'] for r in exec_query_df(f"""
+            SELECT DISTINCT name FROM {VERTICES_TABLE}
+            WHERE run_id = '{run_id}' AND node_type = 'Catalog' AND LOWER(owner) IN ({owner_in})
+            ORDER BY name
+        """) if r.get('name')]
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def identify_privileged_principals_query(run_id):
