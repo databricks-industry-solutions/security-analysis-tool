@@ -8001,7 +8001,7 @@ def get_main_html():
                         </div>
                         <div class="sx-meta">
                             <div class="sx-meta-val" style="color:${(s.affected_workspaces || 0) > 0 ? '#f59e0b' : '#22c55e'};">${s.affected_workspaces || 0}</div>
-                            <div class="sx-meta-label">With findings</div>
+                            <div class="sx-meta-label">Workspaces with findings</div>
                         </div>
                         <div class="sx-meta">
                             <div class="sx-meta-val">${nb}</div>
