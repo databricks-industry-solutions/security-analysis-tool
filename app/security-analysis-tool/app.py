@@ -8973,6 +8973,11 @@ def get_main_html():
                                 <label for="al-name">Alert name</label>
                                 <input id="al-name" type="text" value="${escapeHtml(e.display_name || ('SAT Secrets: ' + (tpl.label || '')))}" placeholder="Alert name">
                             </div>
+                            <div class="alert-field wide">
+                                <label for="al-description">Description</label>
+                                <textarea id="al-description" rows="2" placeholder="Shown on the alert" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);padding:9px 11px;font:inherit;font-size:0.9em;resize:vertical;">${escapeHtml(e.description || tpl.description || '')}</textarea>
+                                <div class="alert-field-hint">Appears on the alert in the workspace — customize it for your team.</div>
+                            </div>
                             <div class="alert-field">
                                 <label for="al-retrigger">Re-notify after</label>
                                 <select id="al-retrigger">
@@ -9051,9 +9056,11 @@ def get_main_html():
             const cron = (sel && sel.value !== '__custom') ? sel.value
                 : (cronInput ? cronInput.value.trim() : '');
             const destSel = document.getElementById('al-destinations');
+            const descEl = document.getElementById('al-description');
             return {
                 template_id: alertState.selectedTemplate,
                 display_name: document.getElementById('al-name').value.trim(),
+                description: descEl ? descEl.value.trim() : '',
                 operator: document.getElementById('al-operator').value,
                 threshold: document.getElementById('al-threshold').value,
                 cron: cron,
@@ -16016,8 +16023,8 @@ def _alert_templates():
         'total_findings': {
             'label': 'Any hardcoded secret found',
             'description': (
-                'Fires when the most recent scan finds any hardcoded secret, '
-                'whether or not it was validated as live.'
+                'Fires when the most recent scan finds any hardcoded secret in '
+                'notebook source or cluster configuration.'
             ),
             'column': 'total_findings',
             'default_threshold': 0,
@@ -16139,6 +16146,7 @@ def _serialise_alert(alert, templates=None):
             if getattr(s, 'destination_id', None)
         ],
         'owner': getattr(alert, 'owner_user_name', None),
+        'description': getattr(alert, 'custom_description', None),
         'url': _alert_url(alert.id),
     }
 
@@ -16216,11 +16224,15 @@ def _build_alert_object(payload, template, existing=None):
 
     pause = bool(payload.get('paused'))
 
+    description = (payload.get('description') or '').strip() or template['description']
+    if len(description) > 1000:
+        raise ValueError('Description is too long (1000 character limit).')
+
     return sql_service.AlertV2(
         display_name=name,
         query_text=template['query'],
         warehouse_id=warehouse_id,
-        custom_description=template['description'],
+        custom_description=description,
         evaluation=sql_service.AlertV2Evaluation(
             source=sql_service.AlertV2OperandColumn(name=template['column']),
             comparison_operator=getattr(sql_service.ComparisonOperator, operator),
