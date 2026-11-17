@@ -4615,6 +4615,49 @@ def get_main_html():
                     <p class="disable">${escapeHtml(disableText)}</p>
                 </div></details>`;
         }
+        // --- Reusable per-report workspace filter -------------------------------
+        // Options are derived from the rows actually present, so newly-scanned
+        // workspaces appear automatically and the control hides itself when there's
+        // only one workspace to show.
+        function wsOptionsFromRows(rows) {
+            const seen = new Map();
+            (rows || []).forEach(r => {
+                const id = (r.workspace_id || r.workspace_name || '').toString();
+                if (!id) return;
+                if (!seen.has(id)) seen.set(id, (r.workspace_name || r.workspace_id || id).toString());
+            });
+            return Array.from(seen, ([id, name]) => ({ id, name }))
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        }
+        function wsFilterSelectHtml(selectId, rows, onchange) {
+            const opts = wsOptionsFromRows(rows);
+            if (opts.length <= 1) return '';  // nothing meaningful to filter
+            return `<select id="${selectId}" onchange="${onchange}" style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); padding: 6px 10px; font-size: 0.85em;">
+                <option value="">All workspaces (${opts.length})</option>
+                ${opts.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join('')}
+            </select>`;
+        }
+        function applyWsFilter(containerId, selectId) {
+            const sel = document.getElementById(selectId);
+            const v = sel ? sel.value : '';
+            const root = document.getElementById(containerId);
+            if (!root) return;
+            root.querySelectorAll('.ws-row').forEach(r => {
+                r.style.display = (!v || r.getAttribute('data-ws') === v) ? '' : 'none';
+            });
+            // Hide groups with no visible rows; expand groups that still have matches.
+            root.querySelectorAll('.tree-type-group').forEach(g => {
+                const any = Array.from(g.querySelectorAll('.ws-row')).some(r => r.style.display !== 'none');
+                g.style.display = any ? '' : 'none';
+                if (v && any) {
+                    const c = g.querySelector('.tree-type-content');
+                    const t = g.querySelector('.tree-toggle');
+                    if (c) c.style.display = 'block';
+                    if (t) t.textContent = '▼';
+                }
+            });
+        }
+
         // Expand/collapse a truncated "+N more" inline list (admin resources, etc.)
         // so the full set is viewable no matter how long.
         function toggleMore(id, btn) {
@@ -9103,9 +9146,12 @@ def get_main_html():
                         </div>
                     </div>
                     <div class="results-container">
-                        <div class="results-header">
+                        <div class="results-header" style="flex-wrap: wrap; gap: 10px;">
                             <span class="results-title">Privileged Identities</span>
-                            <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                ${wsFilterSelectHtml('pni-ws-filter', data, "applyWsFilter('privilegednonidp-results','pni-ws-filter')")}
+                                <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                            </div>
                         </div>
                         <div class="results-body" style="padding: 0;">`;
 
@@ -9163,7 +9209,7 @@ def get_main_html():
                                 ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(item.workspace_name || item.workspace_id)}</span>` : '';
 
                             html += `
-                                <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 64px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <div class="tree-resource ws-row" data-ws="${escapeHtml((item.workspace_id || item.workspace_name || '').toString())}" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 64px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
                                     <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
                                     <div style="flex: 1; min-width: 0;">
                                         <div style="font-weight: 500; word-break: break-all;">${categoryEmoji[cat]} ${nameHtml}</div>
@@ -9252,9 +9298,12 @@ def get_main_html():
                         </div>
                     </div>
                     <div class="results-container">
-                        <div class="results-header">
+                        <div class="results-header" style="flex-wrap: wrap; gap: 10px;">
                             <span class="results-title">Shared Resources</span>
-                            <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                ${wsFilterSelectHtml('sta-ws-filter', data, "applyWsFilter('sharedtoaccount-results','sta-ws-filter')")}
+                                <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                            </div>
                         </div>
                         <div class="results-body" style="padding: 0;">`;
 
@@ -9305,7 +9354,7 @@ def get_main_html():
                             ? `<span style="margin-left: 10px;">👥 Shared to: ${escapeHtml(item.group_name)}</span>` : '';
 
                         html += `
-                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                            <div class="tree-resource ws-row" data-ws="${escapeHtml((item.workspace_id || item.workspace_name || '').toString())}" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
                                 <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
                                 <div style="flex: 1; min-width: 0;">
                                     <div style="font-weight: 500; word-break: break-all;">${nameHtml}</div>

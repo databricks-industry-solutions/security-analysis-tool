@@ -1387,6 +1387,17 @@ except Exception as e:
     print(f"⚠ Could not determine local metastore ID: {e}")
     print(f"  Remote UC collection will proceed for all metastores found.")
 
+# Workspace-scoped object types: these belong to a specific workspace, so each is
+# tagged with workspace_id + workspace_name below for per-workspace filtering in
+# the app. Account identities and UC objects (catalog/schema/table) are NOT
+# workspace-scoped and are deliberately excluded.
+_WS_OBJECT_TYPES = {
+    'Cluster', 'InstancePool', 'ClusterPolicy', 'ServingEndpoint',
+    'VectorSearchEndpoint', 'Experiment', 'Dashboard', 'Query', 'Alert',
+    'Job', 'Pipeline', 'Warehouse', 'SQLWarehouse', 'SecretScope', 'Secret',
+    'Token', 'App',
+}
+
 for ws_idx, ws in enumerate(ws_iteration_list):
     # Determine if this is the current workspace
     if ws is None:
@@ -1414,6 +1425,10 @@ for ws_idx, ws in enumerate(ws_iteration_list):
     # Initialize status tracking
     if ws_id not in WORKSPACE_COLLECTION_STATUS:
         WORKSPACE_COLLECTION_STATUS[ws_id] = {'name': ws_name, 'status': 'pending', 'error': None}
+
+    # Remember where this workspace's vertices start so they can be tagged with
+    # the workspace they belong to once collection for it succeeds (see loop end).
+    _ws_vtx_start = len(all_vertices)
 
     mode_label = "FULL" if is_current else "LIMITED"
     print(f"\n{'='*60}")
@@ -3011,6 +3026,21 @@ for ws_idx, ws in enumerate(ws_iteration_list):
         WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'failed'
         WORKSPACE_COLLECTION_STATUS[ws_id]['error'] = str(e)[:500]
         continue
+
+    # Tag every workspace-scoped object collected this iteration with the
+    # workspace it belongs to, so the app can filter reports by workspace. UC
+    # objects and account identities are left untouched. setdefault keeps any
+    # workspace_id a collector already set.
+    for _v in all_vertices[_ws_vtx_start:]:
+        if _v.get('node_type') in _WS_OBJECT_TYPES:
+            _p = _v.get('properties')
+            try:
+                _pd = json.loads(_p) if isinstance(_p, str) and _p else (_p if isinstance(_p, dict) else {})
+            except Exception:
+                _pd = {}
+            _pd.setdefault('workspace_id', str(ws_id))
+            _pd.setdefault('workspace_name', ws_name)
+            _v['properties'] = safe_json(_pd)
 
 print(f"\n Per-workspace collection complete!")
 print(f"   Vertices: {len(all_vertices)}")
