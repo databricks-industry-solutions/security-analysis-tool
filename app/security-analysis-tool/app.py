@@ -3370,6 +3370,8 @@ def get_main_html():
             display: flex;
             flex-direction: column;
             gap: 3px;
+            flex: 1 1 0;
+            min-width: 120px;
             padding: 0 22px;
             border-left: 1px solid rgba(255, 255, 255, 0.08);
         }
@@ -4694,7 +4696,7 @@ def get_main_html():
             <!-- Credential Exposure (secret scanning overview) -->
             <div class="page" id="page-secretsoverview">
                 <div class="page-header">
-                    <h1 class="page-title">Credential Exposure</h1>
+                    <h1 class="page-title">Credential Exposure <span class="help-tip" tabindex="0" aria-label="About this page" data-help="The secret scanner inspects notebook source and cluster environment variables for hardcoded credentials (API keys, tokens, passwords). 'Verified' means the credential was validated as live. Rotate the unique secrets and remove them from the code/config. Run and schedule the scan from Data Collection.">i</span></h1>
                     <p class="page-desc">Secrets &mdash; API keys and tokens &mdash; found hardcoded in notebook source and cluster configurations, where anyone with access to the code can read them.</p>
                 </div>
                 <div id="secretsoverview-results"></div>
@@ -4703,7 +4705,7 @@ def get_main_html():
             <!-- Secret Scanning Alerts Page -->
             <div class="page" id="page-secretsalerts">
                 <div class="page-header">
-                    <h1 class="page-title">Alerts</h1>
+                    <h1 class="page-title">Alerts <span class="help-tip" tabindex="0" aria-label="About this page" data-help="Create Databricks SQL alerts that email recipients when the scanner's findings meet a condition (e.g. any confirmed live credential). Pick what to watch, the threshold, how often to check, and who to notify. 'Test condition now' shows whether it would fire; actual emails are sent on the alert's schedule.">i</span></h1>
                     <p class="page-desc">Get notified when the scanner finds exposed credentials. These are standard Databricks SQL alerts &mdash; the schedule, notifications and history work exactly as they do elsewhere, and each one stays editable in the workspace.</p>
                 </div>
                 <div id="secretsalerts-results"></div>
@@ -7961,6 +7963,7 @@ def get_main_html():
                 if (sum.error) { showEmpty('secretsoverview-results', sum.error); return; }
 
                 secretsExposure.summary = sum.summary || {};
+                secretsExposure.scanJobUrl = sum.scan_job_url || '';
                 secretsExposure.byDetector = (det && det.rows) || [];
                 secretsExposure.byWorkspace = (ws && ws.rows) || [];
                 secretsExposure.rows = (find && find.rows) || [];
@@ -7992,7 +7995,9 @@ def get_main_html():
                     </div>
                     <div class="secret-summary-foot">
                         ${s.last_scan_time ? `<div class="sx-meta">
-                            <div class="sx-meta-val">${escapeHtml(sxFmtDate(s.last_scan_time))}</div>
+                            <div class="sx-meta-val">${secretsExposure.scanJobUrl
+                                ? `<a href="${escapeHtml(secretsExposure.scanJobUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;" title="Open the secret scanner job">${escapeHtml(sxFmtDate(s.last_scan_time))} ↗</a>`
+                                : escapeHtml(sxFmtDate(s.last_scan_time))}</div>
                             <div class="sx-meta-label">Last scan</div>
                         </div>` : ''}
                         <div class="sx-meta">
@@ -14979,7 +14984,19 @@ def api_secrets_summary():
     except (TypeError, ValueError):
         return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
 
-    return jsonify({'ready': True, 'summary': summary})
+    # Link the "Last scan" stat to the scanner job so users can jump to its runs.
+    scan_job_url = None
+    try:
+        jid = _collection_job_id('secrets')
+        host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+        if jid and host:
+            if not host.startswith('http'):
+                host = 'https://' + host
+            scan_job_url = f"{host}/jobs/{jid}"
+    except Exception:  # noqa: BLE001
+        scan_job_url = None
+
+    return jsonify({'ready': True, 'summary': summary, 'scan_job_url': scan_job_url})
 
 
 @app.route('/api/secrets/by-detector')
