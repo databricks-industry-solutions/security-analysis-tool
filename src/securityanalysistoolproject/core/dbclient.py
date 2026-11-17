@@ -62,10 +62,13 @@ class SatDBClient:
             LOGGR.info(f"Using provided accounts_console URL: {self._ACCTURL}")
         else:
             # Construct account URL from workspace URL domain
-            # Works for standard (.com) and GovCloud (.us) environments
+            # Works for standard (.com), GovCloud (.us), and DoD IL5 (.mil).
+            # DoD uses the distinct 'accounts-dod' prefix; others use 'accounts'.
             domain = pars.get_domain(self._raw_url)
             if 'aws' in self._cloud_type:
-                self._ACCTURL = f"https://accounts.cloud.databricks.{domain}"
+                self._ACCTURL = ("https://accounts-dod.cloud.databricks.mil"
+                                 if domain == 'mil'
+                                 else f"https://accounts.cloud.databricks.{domain}")
             elif "gcp" in self._cloud_type:
                 self._ACCTURL = f"https://accounts.gcp.databricks.{domain}"
             elif 'azure' in self._cloud_type:

@@ -387,7 +387,11 @@ if cloud_type == 'azure':
 elif cloud_type == 'gcp':
     SP_CREDENTIALS['account_host'] = f"https://accounts.gcp.databricks.{domain}"
 else:  # aws
-    SP_CREDENTIALS['account_host'] = f"https://accounts.cloud.databricks.{domain}"
+    # DoD IL5 (.mil) uses the 'accounts-dod' prefix; commercial (.com) and
+    # GovCloud/FedRAMP (.us) use the standard 'accounts' host.
+    SP_CREDENTIALS['account_host'] = (
+        "https://accounts-dod.cloud.databricks.mil" if domain == 'mil'
+        else f"https://accounts.cloud.databricks.{domain}")
 
 # Store cloud type for later use
 SP_CREDENTIALS['cloud_type'] = cloud_type

@@ -15070,11 +15070,11 @@ def _account_host():
     """Account console host for this workspace's cloud, gov clouds included.
 
     Derived from the workspace host's domain suffix (TLD) rather than hardcoded
-    hosts, so government clouds resolve correctly: AWS commercial and gov share
-    the accounts.cloud.databricks.<tld> shape (.com commercial, .us GovCloud/
-    FedRAMP, .mil DoD, .com.br etc.), Azure uses accounts.azuredatabricks.<tld>,
-    GCP uses accounts.gcp.databricks.<tld>. Mirrors the collection notebooks'
-    resolve_accounts_host. An explicit ACCOUNT_CONSOLE_HOST env override wins —
+    hosts, so government clouds resolve correctly: AWS commercial (.com) and
+    GovCloud/FedRAMP (.us) share the accounts.cloud.databricks.<tld> shape, while
+    AWS DoD IL5 (.mil) uses the distinct accounts-dod.cloud.databricks.mil host.
+    Azure uses accounts.azuredatabricks.<tld>, GCP accounts.gcp.databricks.<tld>.
+    An explicit ACCOUNT_CONSOLE_HOST env override wins —
     the escape hatch for any isolated/special environment."""
     override = (os.getenv('ACCOUNT_CONSOLE_HOST') or '').strip()
     if override:
@@ -15087,6 +15087,10 @@ def _account_host():
         return f"https://accounts.azuredatabricks.{tld}"
     if 'gcp.databricks' in host:
         return f"https://accounts.gcp.databricks.{tld}"
+    # AWS DoD IL5 account console uses the 'accounts-dod' prefix, unlike
+    # commercial (.com) and GovCloud/FedRAMP (.us) which use 'accounts'.
+    if tld == 'mil':
+        return 'https://accounts-dod.cloud.databricks.mil'
     return f"https://accounts.cloud.databricks.{tld}"
 
 

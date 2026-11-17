@@ -71,8 +71,12 @@ def resolve_accounts_host(cloud: str, workspace_url: str, override: str = "") ->
     if override:
         return override.rstrip("/")
     domain = _domain_from_url(workspace_url)
+    # DoD IL5 (.mil) uses the 'accounts-dod' prefix; commercial (.com) and
+    # GovCloud/FedRAMP (.us) use the standard 'accounts' host.
+    aws_host = ("https://accounts-dod.cloud.databricks.mil" if domain == "mil"
+                else f"https://accounts.cloud.databricks.{domain}")
     return {
-        "aws":   f"https://accounts.cloud.databricks.{domain}",
+        "aws":   aws_host,
         "gcp":   f"https://accounts.gcp.databricks.{domain}",
         "azure": f"https://accounts.azuredatabricks.{domain}",
     }[cloud]
