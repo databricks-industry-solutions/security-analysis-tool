@@ -2390,12 +2390,27 @@ def get_main_html():
         /* Help & Support page */
         .help-section {
             background: var(--bg-card); border: 1px solid var(--border);
-            border-radius: 12px; padding: 20px 24px; margin-bottom: 16px;
+            border-radius: 12px; padding: 18px 24px; margin-bottom: 14px;
         }
+        /* Section header is a clickable summary with a rotating caret; the title is
+           clearly larger/bolder than the question rows nested inside. */
+        .help-section > summary {
+            list-style: none; cursor: pointer; display: flex; align-items: center;
+            gap: 12px; user-select: none; margin: 0;
+        }
+        .help-section > summary::-webkit-details-marker { display: none; }
+        .help-section > summary h2 { flex: 1; }
         .help-section h2 {
-            font-size: 1.15em; margin: 0 0 4px; color: #ffffff; font-weight: 700;
-            letter-spacing: -0.01em;
+            font-size: 1.32em; margin: 0; color: #ffffff; font-weight: 750;
+            letter-spacing: -0.015em;
         }
+        .help-section-caret {
+            flex: 0 0 auto; width: 18px; height: 18px; color: var(--text-muted);
+            transition: transform 0.18s ease;
+        }
+        .help-section[open] > summary .help-section-caret { transform: rotate(90deg); }
+        .help-section > summary:hover h2 { color: #e9e4ff; }
+        .help-section[open] > summary { margin-bottom: 14px; }
         .help-section .help-sub { font-size: 0.86em; color: var(--text-muted); margin: 0 0 16px; }
         .help-steps { margin: 0; padding-left: 20px; color: var(--text-secondary); font-size: 0.9em; line-height: 1.7; }
         .help-steps li { margin: 2px 0; }
@@ -4155,24 +4170,23 @@ def get_main_html():
                     <p class="page-desc">How SAT works, answers to common questions, and where to get help.</p>
                 </div>
 
-                <div class="help-section">
-                    <h2>Understanding the Reports</h2>
+                <details class="help-section" open>
+                    <summary><h2>Understanding the Reports</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
                     <div class="help-card-grid" id="help-report-cards"></div>
-                </div>
+                </details>
 
-                <div class="help-section">
-                    <h2>Getting Started</h2>
-                    <p class="help-sub">Four steps from a fresh install to results.</p>
+                <details class="help-section" open>
+                    <summary><h2>Getting Started</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
                     <ol class="help-steps">
                         <li><strong>Complete setup</strong> — pick a catalog/schema for results and a SQL warehouse. Optionally add an Account ID + a service principal (with the <strong>Account admin</strong> role) to unlock account-wide data.</li>
                         <li><strong>Run Data Collection</strong> — provision and run the collection jobs; they build the permission graph and findings.</li>
                         <li><strong>Read the scope banner</strong> — every page shows whether its data is account-wide or limited to this workspace, and how to change that.</li>
                         <li><strong>Explore</strong> — use Principal / Resource Analysis and the Security Reports to review access.</li>
                     </ol>
-                </div>
+                </details>
 
-                <div class="help-section">
-                    <h2>Frequently Asked Questions</h2>
+                <details class="help-section">
+                    <summary><h2>Frequently Asked Questions</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
                     <div class="help-faq">
                         <details><summary>A page is empty or says "no data" — why?</summary>
                             <div class="help-faq-body">Either collection hasn't run yet, or the page needs data that isn't enabled. Check <strong>Data Collection</strong> for a recent successful run, and read the page's <strong>scope banner</strong> — it states whether account-wide data is on and, if not, exactly what to enable.</div></details>
@@ -4201,10 +4215,10 @@ def get_main_html():
                         <details><summary>Will my settings and data survive a redeploy or upgrade?</summary>
                             <div class="help-faq-body">Yes. Configuration is stored in the app's config file and credentials in Unity Catalog secrets; collected results live in your results schema. Redeploying the app or jobs doesn't clear them. "Redeploy jobs" only updates the job definitions/notebooks, and "Re-run initializer" rebuilds the result tables' schema without dropping prior runs.</div></details>
                     </div>
-                </div>
+                </details>
 
-                <div class="help-section">
-                    <h2>Troubleshooting</h2>
+                <details class="help-section">
+                    <summary><h2>Troubleshooting</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
                     <div class="help-faq">
                         <details><summary>Account-wide data is missing</summary>
                             <div class="help-faq-body">Confirm the Account ID + credentials are set (Settings → Re-run setup) and that the service principal holds the <strong>Account admin</strong> role, then run the collection jobs. The scope banner reports "set up, no data yet" when credentials exist but a run hasn't produced data.</div></details>
@@ -4221,10 +4235,10 @@ def get_main_html():
                         <details><summary>A new workspace isn't appearing in scans</summary>
                             <div class="help-faq-body">Add the service principal as a <strong>workspace admin</strong> on that workspace and make sure collection scope is set to <strong>Multiple workspaces</strong> (Data Collection → Manage). The next collection run discovers it automatically — no re-setup needed.</div></details>
                     </div>
-                </div>
+                </details>
 
-                <div class="help-section">
-                    <h2>More Help</h2>
+                <details class="help-section" open>
+                    <summary><h2>More Help</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
                     <div class="help-links">
                         <a class="help-link-card" href="https://databricks-industry-solutions.github.io/security-analysis-tool/" target="_blank" rel="noopener noreferrer">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
@@ -4243,7 +4257,7 @@ def get_main_html():
                             Databricks Trust Center
                         </a>
                     </div>
-                </div>
+                </details>
 
                 <!-- Report guide modal (populated by openHelpGuide) -->
                 <div class="help-modal-overlay" id="help-modal-overlay" onclick="if(event.target===this)closeHelpGuide()">
