@@ -17119,7 +17119,9 @@ def _serverless_job_body(name, notebook_path, base_parameters, task_key, client=
                 'base_parameters': base_parameters,
             },
             'environment_key': 'default',
-            'timeout_seconds': 3600,
+            # No task timeout: a large workspace's scan/collection can legitimately
+            # run for hours, and an artificial cap would kill it mid-run.
+            'timeout_seconds': 0,
         }],
         'environments': [{
             'environment_key': 'default',
@@ -17182,7 +17184,8 @@ def _classic_job_body(name, notebook_path, base_parameters, task_key, client, **
                 'base_parameters': base_parameters,
             },
             'new_cluster': _classic_cluster_spec(client),
-            'timeout_seconds': 3600,
+            # No task timeout (see serverless body) — large scans must not be capped.
+            'timeout_seconds': 0,
         }],
         'max_concurrent_runs': 1,
     }
