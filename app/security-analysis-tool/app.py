@@ -2342,9 +2342,12 @@ def get_main_html():
         .scope-help summary {
             cursor: pointer; color: var(--text-secondary);
             font-size: 0.92em; list-style: none; user-select: none;
+            display: inline-flex; align-items: center; gap: 6px;
         }
         .scope-help summary::-webkit-details-marker { display: none; }
         .scope-help summary:hover { color: var(--text-primary); }
+        .scope-help-caret { width: 12px; height: 12px; flex: 0 0 auto; transition: transform 0.15s ease; }
+        .scope-help[open] .scope-help-caret { transform: rotate(90deg); }
         .scope-help-body { margin-top: 8px; color: rgba(255,255,255,0.65); }
         .scope-help-body p { margin: 0 0 8px; }
         .scope-help-body .enable { color:#6ee7b7; }
@@ -4572,7 +4575,8 @@ def get_main_html():
             return _scopeCache;
         }
         function _scopeHelp(enableText, disableText) {
-            return `<details class="scope-help"><summary>How to change this</summary>
+            const caret = '<svg class="scope-help-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>';
+            return `<details class="scope-help"><summary>${caret}How to change this</summary>
                 <div class="scope-help-body">
                     <p class="enable">${escapeHtml(enableText)}</p>
                     <p class="disable">${escapeHtml(disableText)}</p>
@@ -6961,8 +6965,8 @@ def get_main_html():
                 }
                 if (note) {
                     note.textContent = r.classic_available
-                        ? 'Classic compute is available in this workspace.'
-                        : "Classic compute isn't available in this workspace; serverless is used.";
+                        ? 'Classic compute is available — jobs run on an ephemeral single-node job cluster.'
+                        : "Classic compute isn't available here (the service principal can't create clusters — e.g. a serverless-only workspace), so jobs run on serverless.";
                 }
             } catch (e) { /* non-fatal */ }
         }
@@ -16540,19 +16544,24 @@ _classic_available_cache = None
 
 
 def _classic_compute_available(client=None):
-    """Whether this workspace can run classic (job-cluster) compute. Probes the
-    node-type and Spark-version listings; a serverless-only workspace returns
-    neither. Cached per process. Any error is treated as 'not available' so the
-    UI only offers classic when it should work."""
+    """Whether the app can run classic (job-cluster) compute here.
+
+    The real signal is the app service principal's ``allow-cluster-create``
+    entitlement: without it no classic cluster can launch, which is exactly the
+    case on a serverless-only workspace (the create API returns "no associated
+    worker environments"). The node-type / Spark-version listings are NOT a
+    signal -- they return the full catalog even on serverless-only workspaces.
+    Cached per process; any error is treated as not available."""
     global _classic_available_cache
     if _classic_available_cache is not None:
         return _classic_available_cache
     ok = False
     try:
         client = client or _sp_workspace_client()
-        node_types = getattr(client.clusters.list_node_types(), 'node_types', None) or []
-        versions = client.clusters.spark_versions()
-        ok = bool(node_types) and bool(getattr(versions, 'versions', None))
+        me = client.current_user.me()
+        entitlements = {str(getattr(e, 'value', '') or '')
+                        for e in (getattr(me, 'entitlements', None) or [])}
+        ok = 'allow-cluster-create' in entitlements
     except Exception:  # noqa: BLE001
         ok = False
     _classic_available_cache = ok
@@ -16580,9 +16589,11 @@ def api_collection_compute():
     compute = 'classic' if payload.get('compute') == 'classic' else 'serverless'
     scan_scope = 'all' if payload.get('scan_scope') == 'all' else 'current'
     if compute == 'classic' and not _classic_compute_available():
-        return jsonify({'error': 'Classic compute is not available in this workspace. '
-                                 'Use serverless, or enable classic clusters for the '
-                                 'app service principal.'}), 400
+        return jsonify({'error': "Classic compute isn't available here: the app's "
+                                 "service principal can't create clusters (it lacks the "
+                                 "allow-cluster-create entitlement, e.g. a serverless-only "
+                                 "workspace). Use serverless, or grant the service principal "
+                                 "cluster-create and try again."}), 400
 
     config = dict(_app_config)
     config['job_compute'] = compute
