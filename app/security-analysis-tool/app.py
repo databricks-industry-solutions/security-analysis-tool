@@ -3261,7 +3261,7 @@ def get_main_html():
             margin-right: auto;
         }
         .alert-sql {
-            margin-top: 14px;
+            margin-top: 10px;
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             font-size: 0.8em;
             color: var(--text-muted);
@@ -3272,6 +3272,24 @@ def get_main_html():
             max-height: 190px;
             overflow: auto;
         }
+        /* Cleaned-up alert editor: numbered section labels + advanced disclosure */
+        .alert-step-label {
+            font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.5px;
+            color: #a78bfa; font-weight: 700; margin: 20px 0 8px;
+        }
+        .alert-step-label:first-of-type { margin-top: 4px; }
+        .alert-advanced { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 6px; }
+        .alert-advanced > summary {
+            cursor: pointer; list-style: none; font-size: 0.82em; color: var(--text-secondary);
+            font-weight: 600; padding: 8px 0; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .alert-advanced > summary::-webkit-details-marker { display: none; }
+        .alert-advanced > summary::before { content: '▸'; color: var(--text-muted); }
+        .alert-advanced[open] > summary::before { content: '▾'; }
+        .alert-test-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+        .alert-test-result { font-size: 0.86em; }
+        .alert-test-result .fire { color: #fca5a5; font-weight: 600; }
+        .alert-test-result .ok { color: #86efac; font-weight: 600; }
         .alert-empty {
             text-align: center;
             padding: 40px 24px;
@@ -8853,10 +8871,9 @@ def get_main_html():
             slot.innerHTML = `
                 <div class="alert-form">
                     <div class="alert-form-title">${isEdit ? 'Edit alert' : 'New alert'}</div>
-                    <div class="alert-form-sub">
-                        Creates a Databricks SQL alert. The query below is generated for you and runs on this app's warehouse.
-                    </div>
+                    <div class="alert-form-sub">A Databricks SQL alert that emails your recipients when the condition is met. It also appears under Alerts in the workspace and keeps working if this app is removed.</div>
 
+                    <div class="alert-step-label">1 · What to watch</div>
                     <div class="alert-type-grid">
                         ${templates.map(t => `
                             <button type="button" class="alert-type${t.id === tpl.id ? ' selected' : ''}"
@@ -8869,13 +8886,10 @@ def get_main_html():
                             </button>`).join('')}
                     </div>
 
+                    <div class="alert-step-label">2 · When to alert</div>
                     <div class="alert-field-grid">
-                        <div class="alert-field wide">
-                            <label for="al-name">Alert name</label>
-                            <input id="al-name" type="text" value="${escapeHtml(e.display_name || ('SAT Secrets: ' + (tpl.label || '')))}" placeholder="Alert name">
-                        </div>
                         <div class="alert-field">
-                            <label for="al-operator">Trigger when</label>
+                            <label for="al-operator">Trigger when ${escapeHtml(tpl.column || 'value')}</label>
                             <select id="al-operator">
                                 <option value="GREATER_THAN"${operator === 'GREATER_THAN' ? ' selected' : ''}>is greater than</option>
                                 <option value="GREATER_THAN_OR_EQUAL"${operator === 'GREATER_THAN_OR_EQUAL' ? ' selected' : ''}>is greater than or equal to</option>
@@ -8883,28 +8897,39 @@ def get_main_html():
                                 <option value="LESS_THAN"${operator === 'LESS_THAN' ? ' selected' : ''}>is less than</option>
                                 <option value="NOT_EQUAL"${operator === 'NOT_EQUAL' ? ' selected' : ''}>does not equal</option>
                             </select>
-                            <div class="alert-field-hint">${escapeHtml(tpl.column || '')}</div>
                         </div>
                         <div class="alert-field">
                             <label for="al-threshold">Threshold</label>
                             <input id="al-threshold" type="number" step="any" value="${escapeHtml(String(threshold === undefined ? 0 : threshold))}">
                             <div class="alert-field-hint">${tpl.id === 'stale_scan' ? 'Hours since the last scan' : 'Number of findings'}</div>
                         </div>
+                    </div>
+                    <div class="alert-test-row">
+                        <button type="button" class="btn btn-sm btn-ghost" id="al-test" onclick="runAlertCheck()">Test condition now</button>
+                        <span class="alert-test-result" id="al-test-result"></span>
+                    </div>
+
+                    <div class="alert-step-label">3 · How often to check</div>
+                    <div class="alert-field-grid">
                         <div class="alert-field">
                             <label for="al-schedule">Check</label>
                             <select id="al-schedule" onchange="onAlertScheduleChange()">
                                 ${presets.map(p => `<option value="${escapeHtml(p.cron)}"${p.cron === cron ? ' selected' : ''}>${escapeHtml(p.label)}</option>`).join('')}
-                                <option value="__custom"${cronKnown ? '' : ' selected'}>Custom cron...</option>
+                                <option value="__custom"${cronKnown ? '' : ' selected'}>Custom cron…</option>
                             </select>
                         </div>
                         <div class="alert-field" id="al-cron-wrap" style="${cronKnown ? 'display:none;' : ''}">
                             <label for="al-cron">Quartz cron</label>
                             <input id="al-cron" type="text" value="${escapeHtml(cron)}" placeholder="0 0 8 * * ?">
                         </div>
+                    </div>
+
+                    <div class="alert-step-label">4 · Who to notify</div>
+                    <div class="alert-field-grid">
                         <div class="alert-field wide">
                             <label for="al-subscribers">Email recipients</label>
                             <input id="al-subscribers" type="text" value="${escapeHtml(subscribers)}" placeholder="you@company.com, security@company.com">
-                            <div class="alert-field-hint">Comma-separated.</div>
+                            <div class="alert-field-hint">Comma-separated workspace users.</div>
                         </div>
                         ${destinations.length ? `
                         <div class="alert-field wide">
@@ -8914,26 +8939,32 @@ def get_main_html():
                             </select>
                             <div class="alert-field-hint">Slack, PagerDuty or webhooks configured in this workspace.</div>
                         </div>` : ''}
-                        <div class="alert-field">
-                            <label for="al-retrigger">Re-notify after</label>
-                            <select id="al-retrigger">
-                                <option value="0"${retrigger === 0 ? ' selected' : ''}>Every check</option>
-                                <option value="3600"${retrigger === 3600 ? ' selected' : ''}>1 hour</option>
-                                <option value="21600"${retrigger === 21600 ? ' selected' : ''}>6 hours</option>
-                                <option value="86400"${retrigger === 86400 ? ' selected' : ''}>24 hours</option>
-                            </select>
-                            <div class="alert-field-hint">Silences repeats while still triggered.</div>
-                        </div>
-                        <div class="alert-field" style="justify-content:flex-end;">
-                            <label class="alert-check">
-                                <input id="al-notify-ok" type="checkbox"${e.notify_on_ok ? ' checked' : ''}>
-                                Also notify when resolved
-                            </label>
-                        </div>
                     </div>
 
-                    <details>
-                        <summary style="cursor:pointer;font-size:0.85em;color:var(--text-muted);">Query this alert runs</summary>
+                    <details class="alert-advanced">
+                        <summary>Advanced &amp; name</summary>
+                        <div class="alert-field-grid" style="margin-top:10px;">
+                            <div class="alert-field wide">
+                                <label for="al-name">Alert name</label>
+                                <input id="al-name" type="text" value="${escapeHtml(e.display_name || ('SAT Secrets: ' + (tpl.label || '')))}" placeholder="Alert name">
+                            </div>
+                            <div class="alert-field">
+                                <label for="al-retrigger">Re-notify after</label>
+                                <select id="al-retrigger">
+                                    <option value="0"${retrigger === 0 ? ' selected' : ''}>Every check</option>
+                                    <option value="3600"${retrigger === 3600 ? ' selected' : ''}>1 hour</option>
+                                    <option value="21600"${retrigger === 21600 ? ' selected' : ''}>6 hours</option>
+                                    <option value="86400"${retrigger === 86400 ? ' selected' : ''}>24 hours</option>
+                                </select>
+                                <div class="alert-field-hint">Silences repeats while still triggered.</div>
+                            </div>
+                            <div class="alert-field" style="justify-content:flex-end;">
+                                <label class="alert-check">
+                                    <input id="al-notify-ok" type="checkbox"${e.notify_on_ok ? ' checked' : ''}>
+                                    Also notify when resolved
+                                </label>
+                            </div>
+                        </div>
                         <div class="alert-sql">${escapeHtml(tpl.query || '')}</div>
                     </details>
 
@@ -8943,6 +8974,37 @@ def get_main_html():
                         <button class="btn btn-sm" id="al-save" onclick="saveAlert()">${isEdit ? 'Save changes' : 'Create alert'}</button>
                     </div>
                 </div>`;
+        }
+
+        async function runAlertCheck() {
+            const btn = document.getElementById('al-test');
+            const out = document.getElementById('al-test-result');
+            if (!out) return;
+            out.textContent = '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+            try {
+                const r = await fetch('/api/secrets/alerts/run-check', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        template_id: alertState.selectedTemplate,
+                        operator: document.getElementById('al-operator').value,
+                        threshold: document.getElementById('al-threshold').value,
+                    }),
+                }).then(x => x.json());
+                if (r.error) { out.innerHTML = '<span class="fire">' + escapeHtml(r.error) + '</span>'; }
+                else {
+                    const v = (Math.round(r.value * 100) / 100);
+                    out.innerHTML = `Now: <strong>${escapeHtml(r.column)} = ${v}</strong> — `
+                        + (r.would_fire
+                            ? '<span class="fire">would trigger</span>'
+                            : '<span class="ok">would not trigger</span>')
+                        + ' <span style="color:var(--text-muted);">(SQL alerts email on their schedule, not from this test)</span>';
+                }
+            } catch (e) {
+                out.innerHTML = '<span class="fire">' + escapeHtml(e.message) + '</span>';
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Test condition now'; }
+            }
         }
 
         function onAlertScheduleChange() {
@@ -16357,6 +16419,47 @@ def api_secrets_alerts_delete(alert_id):
         return jsonify({'error': _alert_error_message(exc)}), 400
     logger.info('trashed secrets alert %s by %s', alert_id, _assistant_user())
     return jsonify({'deleted': True, 'id': alert_id})
+
+
+@app.route('/api/secrets/alerts/run-check', methods=['POST'])
+def api_secrets_alerts_run_check():
+    """Evaluate an alert's condition right now and report the current value and
+    whether it would fire. SQL Alerts only email on their schedule and have no
+    on-demand send, so this is a live preview of the condition, not an email."""
+    payload = request.get_json(silent=True) or {}
+    templates = _alert_templates()
+    tpl = templates.get(payload.get('template_id'))
+    if not tpl:
+        return jsonify({'error': 'Unknown alert type.'}), 400
+    operator = (payload.get('operator') or tpl['default_operator']).strip().upper()
+    raw = payload.get('threshold')
+    try:
+        threshold = float(raw if raw not in (None, '') else tpl['default_threshold'])
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Threshold must be a number.'}), 400
+    try:
+        rows = exec_query_df(tpl['query'])
+        value = 0.0
+        if rows:
+            r0 = rows[0]
+            got = r0.get(tpl['column'])
+            if got is None and r0:
+                got = next(iter(r0.values()), None)
+            value = float(got) if got is not None else 0.0
+    except NoAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': f'Could not run the check: {str(exc)[:200]}'}), 500
+    cmp = {
+        'GREATER_THAN': value > threshold,
+        'GREATER_THAN_OR_EQUAL': value >= threshold,
+        'EQUAL': value == threshold,
+        'NOT_EQUAL': value != threshold,
+        'LESS_THAN': value < threshold,
+        'LESS_THAN_OR_EQUAL': value <= threshold,
+    }
+    return jsonify({'value': value, 'column': tpl['column'], 'threshold': threshold,
+                    'operator': operator, 'would_fire': bool(cmp.get(operator, False))})
 
 
 GENIE_SPACE_TITLE = 'Security Analysis Tool (SAT) Assistant'
