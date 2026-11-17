@@ -5036,7 +5036,7 @@ def get_main_html():
                     <summary><svg class="setup-guide-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Setup &amp; access guide — identities, permissions, and scope</summary>
                     <div class="setup-guide-body">
                         <h4>Two identities</h4>
-                        SAT runs everything as the <strong>app's service principal</strong> (the app's own identity; its jobs run as this principal). For account-wide data it also uses <strong>account API credentials</strong> — a service principal's OAuth client ID + secret. These can be the <em>same</em> service principal.
+                        SAT runs everything as the <strong>app's service principal</strong> (the app's own identity; its jobs run as this principal). For account-wide data it also uses <strong>account API credentials</strong> — a service principal's OAuth client ID + secret, holding the Account admin role. That can be the app's own service principal, or <em>any other</em> service principal you grant Account admin — whichever you enter below is what's used.
 
                         <h4>Choose what you need</h4>
                         <ul>
@@ -15076,14 +15076,17 @@ def api_setup_requirements():
             csec = uc_secret_value('client-secret')
             err = _verify_account_credentials(cid, csec)
             add('Account admin role', not err,
-                'The service principal authenticates to the account.' if not err
+                'The account-credential service principal authenticates to the account.' if not err
                 else f'Account authentication failed: {err}',
-                'Grant the app service principal the Account Admin role '
-                '(Account console -> User management -> Service principals -> '
-                f'{sp} -> Roles -> Account admin).', optional=True)
+                'Grant the service principal whose client ID and secret you entered '
+                'the Account Admin role (Account console -> User management -> '
+                'Service principals -> that principal -> Roles -> Account admin). '
+                'It can be this app\'s service principal or any other service principal.',
+                optional=True)
         except Exception as exc:  # noqa: BLE001
             add('Account admin role', False, f'Could not verify: {str(exc)[:140]}',
-                'Grant the app service principal Account Admin in the account console.',
+                'Grant the account-credential service principal (the one whose client '
+                'ID/secret you entered) the Account Admin role in the account console.',
                 optional=True)
 
     required_fail = [c for c in checks if not c['ok'] and not c['optional']]
@@ -15149,10 +15152,11 @@ def api_scope():
     ws_failed = (coverage or {}).get('workspaces_failed') or []
 
     enable_account = (
-        'Account-wide data is collected by the app\'s account service principal. '
-        'To enable it: in the account console grant the service principal the '
-        '"Account admin" role, then in Settings → Re-run setup add the Account ID '
-        'and the service principal\'s OAuth client ID + secret.')
+        'Account-wide data is collected using account API credentials — a service '
+        'principal with the Account admin role (the app\'s own service principal, '
+        'or any other one you choose). To enable it: in the account console grant '
+        'that service principal the "Account admin" role, then in Settings → Re-run '
+        'setup add the Account ID and that service principal\'s OAuth client ID + secret.')
     disable_account = (
         'To turn account-wide scanning off, remove the account credentials in '
         'Settings → Re-run setup (leave Account ID / client ID / secret blank). '
