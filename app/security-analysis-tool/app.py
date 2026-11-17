@@ -10751,6 +10751,47 @@ def api_runs():
                         'request_id': req_id, 'runs': []}), 500
 
 
+def _dedupe_principal_rows(rows, id_field='id'):
+    """Collapse the account-level and workspace-level representations of the same
+    identity into one row. The same person is collected twice -- once from the
+    account SCIM directory (account_user:X) and once from a workspace's SCIM
+    directory (ws_<workspaceId>_user:X) -- and the workspace copy often has an
+    empty email, so email alone can't unify them. They share the id *core* (the
+    part after the last colon), so key on (category, core) and keep the
+    account-level row (it carries the email). Groups across levels have distinct
+    cores, so genuinely different groups are never merged. Order is preserved."""
+    def parts(r):
+        pid = str(r.get(id_field) or '')
+        head = pid.split(':', 1)[0] if ':' in pid else pid
+        core = pid.split(':')[-1] if ':' in pid else pid
+        blob = (str(r.get('node_type') or r.get('type') or '') + ' ' + head).lower()
+        if 'group' in blob:
+            cat = 'g'
+        elif 'serviceprincipal' in blob or 'sp' in head.lower().split('_'):
+            cat = 's'
+        else:
+            cat = 'u'
+        is_account = blob.lstrip().startswith('account') or head.lower().startswith('account')
+        return cat, core, is_account
+
+    best, order = {}, []
+    for r in rows:
+        cat, core, is_account = parts(r)
+        if not core:
+            continue
+        key = (cat, core)
+        if key not in best:
+            best[key] = r
+            order.append(key)
+        else:
+            cur = best[key]
+            _, _, cur_account = parts(cur)
+            if (is_account and not cur_account) or \
+               (is_account == cur_account and r.get('email') and not cur.get('email')):
+                best[key] = r
+    return [best[k] for k in order]
+
+
 @app.route('/api/search-principals')
 def api_search_principals():
     """Search for principals (users, groups, service principals) by name or email"""
@@ -10811,7 +10852,9 @@ def api_search_principals():
                 'email': row.get('email')
             }
             principals.append(principal)
-        
+
+        # Collapse account/workspace twins of the same identity into one entry.
+        principals = _dedupe_principal_rows(principals, id_field='identifier')
         return jsonify({'principals': principals})
         
     except NoAccessError:
@@ -10974,7 +11017,7 @@ def api_browse_principals_by_type():
             sql_params[f"t{i}"] = t
 
         sql = f"""
-            SELECT id, name, display_name, email
+            SELECT id, name, display_name, email, node_type
             FROM {VERTICES_TABLE}
             WHERE run_id = :run_id
             AND node_type IN ({placeholders})
@@ -10989,10 +11032,13 @@ def api_browse_principals_by_type():
                 'id': row.get('id', ''),
                 'name': row.get('name', ''),
                 'display_name': row.get('display_name', ''),
-                'email': row.get('email', '')
+                'email': row.get('email', ''),
+                'node_type': row.get('node_type', ''),
             }
             principals.append(principal)
-        
+
+        # Collapse account/workspace twins of the same identity into one entry.
+        principals = _dedupe_principal_rows(principals, id_field='id')
         return jsonify({
             'success': True,
             'principals': principals,
@@ -11485,6 +11531,25 @@ def api_what_can_access():
         p_id_variants.append(f"account_user:{p_id}")
         p_id_variants.append(f"account_group:{p_id}")
         p_id_variants.append(f"account_sp:{p_id}")
+
+    # The same person exists as both an account-level vertex (account_user:X) and a
+    # workspace-level one (ws_<workspaceId>_user:X), each carrying different ACLs
+    # (UC grants / account roles vs workspace object permissions). Since the lists
+    # now show one deduped entry, resolve EVERY vertex that shares this id core so
+    # analysis covers both -- whichever representation was picked.
+    try:
+        _core = p_id.split(':')[-1] if ':' in p_id else p_id
+        if _core:
+            for _s in exec_query_df(f"""
+                SELECT DISTINCT id FROM {VERTICES_TABLE}
+                WHERE run_id = '{run_id}' AND substring_index(id, ':', -1) = '{sanitize(_core)}'
+                  AND node_type IN ('User','AccountUser','ServicePrincipal','AccountServicePrincipal','Group','AccountGroup')
+            """):
+                _sid = _s.get('id')
+                if _sid and _sid not in p_id_variants:
+                    p_id_variants.append(_sid)
+    except Exception:  # noqa: BLE001
+        logger.debug("sibling id resolution failed", exc_info=True)
 
     logger.debug(f"Principal found: id={p_id}, email={p_email}, name={p_name}")
     logger.debug(f"ID variants to search: {p_id_variants}")
@@ -13081,14 +13146,18 @@ def api_principals_list():
             ROW_NUMBER() OVER (
                 PARTITION BY
                     CASE
-                        -- Users: dedupe by email
+                        -- Users: dedupe by the id core (the part after the last
+                        -- colon), which is shared by the account-level
+                        -- (account_user:X) and workspace-level (ws_<id>_user:X)
+                        -- copies of the same person. Email can't be used: the
+                        -- workspace copy often has none, so the two wouldn't merge.
                         WHEN node_type IN ('User', 'AccountUser')
-                        THEN LOWER(COALESCE(email, name, id))
+                        THEN CONCAT('u:', substring_index(id, ':', -1))
                         -- SPs: dedupe by application_id (consistent across workspace/account)
                         WHEN node_type IN ('ServicePrincipal', 'AccountServicePrincipal')
-                        THEN LOWER(COALESCE(application_id, name, id))
+                        THEN CONCAT('s:', LOWER(COALESCE(application_id, substring_index(id, ':', -1))))
                         -- Groups: dedupe by name
-                        ELSE LOWER(COALESCE(name, id))
+                        ELSE CONCAT('g:', LOWER(COALESCE(name, id)))
                     END
                 ORDER BY
                     -- Prefer Account-level nodes (they typically have more complete info)
