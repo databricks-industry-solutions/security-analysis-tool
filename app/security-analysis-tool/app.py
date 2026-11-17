@@ -4610,6 +4610,16 @@ def get_main_html():
                     <p class="disable">${escapeHtml(disableText)}</p>
                 </div></details>`;
         }
+        // Expand/collapse a truncated "+N more" inline list (admin resources, etc.)
+        // so the full set is viewable no matter how long.
+        function toggleMore(id, btn) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const show = el.style.display === 'none';
+            el.style.display = show ? 'inline' : 'none';
+            btn.textContent = show ? 'show less' : (btn.getAttribute('data-more') || '+ more');
+        }
+
         async function renderScopeBanner(page) {
             const scopeType = PAGE_SCOPE[page];
             const pageEl = document.getElementById('page-' + page);
@@ -5347,7 +5357,7 @@ def get_main_html():
                 const adminDetailHtml = adminRoles.length ? `
                     <div style="margin-top: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 12px 14px;">
                         <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px;">Admin roles — what &amp; where</div>
-                        ${adminRoles.map(r => {
+                        ${adminRoles.map((r, ri) => {
                             const color = roleColor(r.risk_level);
                             const res = r.resources || [];
                             const label = r.role === 'Workspace Admin' ? 'workspace' : (r.role === 'Metastore Admin' ? 'metastore' : (r.role === 'Catalog Owner' ? 'catalog' : ''));
@@ -5355,7 +5365,14 @@ def get_main_html():
                             if (r.role === 'Account Admin') where = 'Entire account';
                             else if (!res.length) where = `<span style="color: var(--text-muted);">${label || 'resource'} not identified in this collection</span>`;
                             else if (res.length <= 8) where = res.map(escapeHtml).join(', ');
-                            else where = res.slice(0, 8).map(escapeHtml).join(', ') + ` <span style="color: var(--text-muted);">+${res.length - 8} more</span>`;
+                            else {
+                                // Show the first 8, with the rest in a span that the
+                                // "+N more" link expands/collapses so nothing is hidden.
+                                const restId = 'adminres-' + ri;
+                                where = res.slice(0, 8).map(escapeHtml).join(', ')
+                                    + `<span id="${restId}" style="display: none;">, ${res.slice(8).map(escapeHtml).join(', ')}</span>`
+                                    + ` <a href="javascript:void(0)" data-more="+${res.length - 8} more" onclick="toggleMore('${restId}', this)" style="color: var(--accent); text-decoration: none; white-space: nowrap;">+${res.length - 8} more</a>`;
+                            }
                             const countStr = (r.role !== 'Account Admin' && res.length) ? ` · ${res.length} ${label}${res.length === 1 ? '' : 's'}` : '';
                             return `<div style="display: flex; gap: 10px; margin-bottom: 8px; font-size: 0.86em; line-height: 1.5;">
                                 <span style="flex: 0 0 auto;">${roleEmoji[r.role] || '🛡️'}</span>
