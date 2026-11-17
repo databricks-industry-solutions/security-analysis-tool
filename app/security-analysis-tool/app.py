@@ -5099,10 +5099,10 @@ def get_main_html():
                     <div class="field">
                         <span class="field-label">Job compute</span>
                         <select class="field-input" id="setup-job-compute">
-                            <option value="serverless"${(cur.job_compute || 'serverless') !== 'classic' ? ' selected' : ''}>Serverless (recommended)</option>
-                            <option value="classic"${(cur.job_compute || 'serverless') === 'classic' ? ' selected' : ''}>Classic (single-node cluster)</option>
+                            <option value="serverless"${(opts.classic_available === false || (cur.job_compute || 'serverless') !== 'classic') ? ' selected' : ''}>Serverless (recommended)</option>
+                            <option value="classic"${opts.classic_available === false ? ' disabled' : ((cur.job_compute || 'serverless') === 'classic' ? ' selected' : '')}>Classic (single-node cluster)${opts.classic_available === false ? ' — not available in this workspace' : ''}</option>
                         </select>
-                        <span class="field-help">Serverless starts instantly and needs no cluster. Choose Classic to scan all workspaces if your account isn't yet enrolled in serverless cross-workspace access. Changing this re-creates the collection jobs.</span>
+                        <span class="field-help">Serverless starts instantly and needs no cluster. Classic runs jobs on an ephemeral single-node job cluster; use it to scan multiple workspaces when your account isn't yet enrolled in serverless cross-workspace access. Changing this re-creates the collection jobs.</span>
                     </div>
                 </div>
 
@@ -7011,11 +7011,7 @@ def get_main_html():
                 if (cs && !r.classic_available) {
                     const opt = cs.querySelector('option[value="classic"]');
                     if (opt) { opt.disabled = true; opt.textContent = 'Classic (not available in this workspace)'; }
-                }
-                if (note) {
-                    note.textContent = r.classic_available
-                        ? 'Classic compute is available — jobs run on an ephemeral single-node job cluster.'
-                        : "Classic compute isn't available here (the service principal can't create clusters — e.g. a serverless-only workspace), so jobs run on serverless.";
+                    if (cs.value === 'classic') cs.value = 'serverless';
                 }
             } catch (e) { /* non-fatal */ }
         }
@@ -14974,6 +14970,9 @@ def api_setup_options():
         'catalogs': sorted(catalogs),
         'warehouses': sorted(warehouses, key=lambda w: (w['name'] or '').lower()),
         'default_schema': 'security_analysis',
+        # So the compute picker can disable Classic when this workspace can't run
+        # it (the SP lacks allow-cluster-create, e.g. serverless-only).
+        'classic_available': _classic_compute_available(client),
     })
 
 
