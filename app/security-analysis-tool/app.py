@@ -4705,7 +4705,7 @@ def get_main_html():
             <!-- Secret Scanning Alerts Page -->
             <div class="page" id="page-secretsalerts">
                 <div class="page-header">
-                    <h1 class="page-title">Alerts <span class="help-tip" tabindex="0" aria-label="About this page" data-help="Create Databricks SQL alerts that email recipients when the scanner's findings meet a condition (e.g. any confirmed live credential). Pick what to watch, the threshold, how often to check, and who to notify. 'Test condition now' shows whether it would fire; actual emails are sent on the alert's schedule.">i</span></h1>
+                    <h1 class="page-title">Alerts <span class="help-tip" tabindex="0" aria-label="About this page" data-help="Create Databricks SQL alerts that email recipients when the scanner's findings meet a condition (e.g. any hardcoded secret found). Pick what to watch, the threshold, how often to check, and who to notify. 'Test condition now' shows whether it would fire; actual emails are sent on the alert's schedule.">i</span></h1>
                     <p class="page-desc">Get notified when the scanner finds exposed credentials. These are standard Databricks SQL alerts &mdash; the schedule, notifications and history work exactly as they do elsewhere, and each one stays editable in the workspace.</p>
                 </div>
                 <div id="secretsalerts-results"></div>
@@ -16013,22 +16013,6 @@ def _alert_templates():
     named column, not the first column by position.
     """
     return {
-        'verified_findings': {
-            'label': 'Confirmed active credentials',
-            'description': (
-                'Fires when the scanner confirms a credential is live by validating '
-                'it against the service. The highest-severity signal available.'
-            ),
-            'column': 'verified_findings',
-            'default_threshold': 0,
-            'default_operator': 'GREATER_THAN',
-            'severity': 'critical',
-            'query': f"""SELECT COUNT(*) AS verified_findings
-FROM {NOTEBOOK_SECRETS_TABLE}
-WHERE verified = true
-  AND secret_sha256 IS NOT NULL
-  AND run_id = (SELECT MAX(run_id) FROM {NOTEBOOK_SECRETS_TABLE})""",
-        },
         'total_findings': {
             'label': 'Any hardcoded secret found',
             'description': (
