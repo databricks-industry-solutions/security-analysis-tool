@@ -5042,7 +5042,8 @@ def get_main_html():
                         warehouse_id: status.warehouse_id,
                         account_id: status.account_id,
                         scan_scope: status.scan_scope,
-                        job_compute: status.job_compute }
+                        job_compute: status.job_compute,
+                        collect_notebooks: status.collect_notebooks }
                     : {};
                 renderSetupForm(opts);
             } catch (e) {
@@ -5176,6 +5177,15 @@ def get_main_html():
                         </select>
                         <span class="field-help">Serverless starts instantly and needs no cluster. Classic runs jobs on an ephemeral single-node job cluster; use it to scan multiple workspaces when your account isn't yet enrolled in serverless cross-workspace access. Changing this re-creates the collection jobs.</span>
                     </div>
+                    <div class="field">
+                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="setup-collect-notebooks" style="margin-top: 3px;"${cur.collect_notebooks ? ' checked' : ''}>
+                            <span>
+                                <span class="field-label" style="display: block;">Scan notebook &amp; folder permissions</span>
+                                <span class="field-help">Off by default. Adds notebooks, folders, and repos (with their access) to Resource Analysis. This walks the whole workspace tree and reads per-object ACLs, so it makes collection noticeably slower — turn it on only if you need notebook-level visibility.</span>
+                            </span>
+                        </label>
+                    </div>
                 </div>
 
                 <div class="setup-actions">
@@ -5209,6 +5219,7 @@ def get_main_html():
                 client_secret: fieldValue('setup-client-secret'),
                 scan_scope: fieldValue('setup-scan-scope') || 'current',
                 job_compute: fieldValue('setup-job-compute') || 'serverless',
+                collect_notebooks: !!(document.getElementById('setup-collect-notebooks') || {}).checked,
             };
             if (!payload.catalog) { err.textContent = 'Choose a catalog.'; return; }
             if (!payload.warehouse_id) { err.textContent = 'Choose a SQL warehouse.'; return; }
@@ -5255,7 +5266,8 @@ def get_main_html():
                 'ServicePrincipal': '🤖', 'AccountServicePrincipal': '🤖', 'Service Principal': '🤖',
                 'Catalog': '📦', 'Schema': '📁', 'Table': '📊', 'View': '👁',
                 'Cluster': '⚡', 'Job': '⏱', 'Warehouse': '🏭',
-                'ServingEndpoint': '🚀', 'SecretScope': '🔐'
+                'ServingEndpoint': '🚀', 'SecretScope': '🔐',
+                'Notebook': '📓', 'Directory': '🗂️', 'Repo': '📚'
             };
             return emojis[type] || '📄';
         }
@@ -5739,7 +5751,10 @@ def get_main_html():
                         'Warehouse': { icon: '🏭', color: '#ec4899' },
                         'ServingEndpoint': { icon: '🚀', color: '#a855f7' },
                         'SecretScope': { icon: '🔐', color: '#6366f1' },
-                        'Metastore': { icon: '🗄️', color: '#14b8a6' }
+                        'Metastore': { icon: '🗄️', color: '#14b8a6' },
+                        'Notebook': { icon: '📓', color: '#0ea5e9' },
+                        'Directory': { icon: '🗂️', color: '#64748b' },
+                        'Repo': { icon: '📚', color: '#22c55e' }
                     };
                     return typeMap[type] || { icon: '📄', color: '#6b7280' };
                 };
@@ -6137,7 +6152,10 @@ def get_main_html():
                 'Job': '⚙️',
                 'Warehouse': '🏭',
                 'ServingEndpoint': '🚀',
-                'SecretScope': '🔐'
+                'SecretScope': '🔐',
+                'Notebook': '📓',
+                'Directory': '🗂️',
+                'Repo': '📚'
             };
             return icons[type] || '📄';
         }
@@ -7068,6 +7086,9 @@ def get_main_html():
                                         <option value="current">Scan this workspace only</option>
                                         <option value="all">Scan multiple workspaces</option>
                                     </select>
+                                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85em; color: var(--text-secondary); cursor: pointer;">
+                                        <input type="checkbox" id="collect-notebooks-check"> Scan notebook &amp; folder permissions (slower)
+                                    </label>
                                     <button class="btn btn-sm" id="collect-compute-apply" onclick="applyComputeControl(this)">Apply &amp; redeploy</button>
                                 </div>
                             </div>
@@ -7118,6 +7139,8 @@ def get_main_html():
                 const note = document.getElementById('collect-compute-note');
                 if (cs) cs.value = r.compute || 'serverless';
                 if (ss) ss.value = r.scan_scope || 'current';
+                const nb = document.getElementById('collect-notebooks-check');
+                if (nb) nb.checked = !!r.collect_notebooks;
                 if (cs && !r.classic_available) {
                     const opt = cs.querySelector('option[value="classic"]');
                     if (opt) { opt.disabled = true; opt.textContent = 'Classic (not available in this workspace)'; }
@@ -7134,9 +7157,10 @@ def get_main_html():
             if (note) note.textContent = '';
             if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
             try {
+                const nb = document.getElementById('collect-notebooks-check');
                 const r = await fetch('/api/collection/compute', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ compute: cs ? cs.value : 'serverless', scan_scope: ss ? ss.value : 'current' }),
+                    body: JSON.stringify({ compute: cs ? cs.value : 'serverless', scan_scope: ss ? ss.value : 'current', collect_notebooks: !!(nb && nb.checked) }),
                 }).then(x => x.json());
                 if (r.error) {
                     if (note) note.textContent = r.error;
@@ -10975,7 +10999,7 @@ def api_search_resources():
             WHERE run_id = :run_id
             AND node_type IN ('Catalog', 'Schema', 'Table', 'View', 'Volume', 'Function',
                               'Cluster', 'ClusterPolicy', 'Job', 'Warehouse', 'ServingEndpoint',
-                              'SecretScope', 'Metastore')
+                              'SecretScope', 'Metastore', 'Notebook', 'Directory', 'Repo')
             AND LOWER(COALESCE(name, '')) LIKE LOWER(:search_pattern)
             ORDER BY
                 CASE
@@ -15062,6 +15086,7 @@ def api_setup_status():
         'assistant_disabled': bool(_app_config.get('assistant_disabled')),
         'scan_scope': _app_config.get('scan_scope') or 'current',
         'job_compute': _app_config.get('job_compute') or 'serverless',
+        'collect_notebooks': bool(_app_config.get('collect_notebooks')),
     })
 
 
@@ -15347,6 +15372,7 @@ def api_setup_complete():
     client_secret = (payload.get('client_secret') or '').strip()
     scan_scope = 'all' if (payload.get('scan_scope') or 'current') == 'all' else 'current'
     job_compute = 'classic' if (payload.get('job_compute') or 'serverless') == 'classic' else 'serverless'
+    collect_notebooks = bool(payload.get('collect_notebooks'))
 
     if not catalog:
         return jsonify({'error': 'Choose a catalog for SAT to use.'}), 400
@@ -15392,6 +15418,7 @@ def api_setup_complete():
         # Collection scope and compute, read by provisioning and the collectors.
         'scan_scope': scan_scope,
         'job_compute': job_compute,
+        'collect_notebooks': collect_notebooks,
     })
     try:
         write_persisted_config(config)
@@ -16565,6 +16592,12 @@ def _job_compute():
     return 'classic' if (_app_config.get('job_compute') or 'serverless') == 'classic' else 'serverless'
 
 
+def _collect_notebooks():
+    """True to collect notebook/folder permissions (opt-in, default off). Heavier
+    than the other collectors, so customers choose to pay the collection time."""
+    return bool(_app_config.get('collect_notebooks'))
+
+
 def _job_base_parameters(extra=None):
     """Config every collection notebook needs, passed as job parameters so the
     notebooks read them without any secret scope (see notebooks/Utils/initialize)."""
@@ -16576,6 +16609,8 @@ def _job_base_parameters(extra=None):
         # Resource-collection scope; the permissions collector reads this to decide
         # single- vs multi-workspace (see permission_analysis_data_collection.py).
         'scan_scope': _scan_scope(),
+        # Opt-in notebook/folder permission collection.
+        'collect_notebooks': 'true' if _collect_notebooks() else 'false',
     }
     if extra:
         params.update(extra)
@@ -16987,12 +17022,14 @@ def api_collection_compute():
         return jsonify({
             'compute': _job_compute(),
             'scan_scope': _scan_scope(),
+            'collect_notebooks': _collect_notebooks(),
             'classic_available': _classic_compute_available(),
         })
 
     payload = request.get_json(silent=True) or {}
     compute = 'classic' if payload.get('compute') == 'classic' else 'serverless'
     scan_scope = 'all' if payload.get('scan_scope') == 'all' else 'current'
+    collect_notebooks = bool(payload.get('collect_notebooks'))
     if compute == 'classic' and not _classic_compute_available():
         return jsonify({'error': "Classic compute isn't available here: the app's "
                                  "service principal can't create clusters (it lacks the "
@@ -17003,6 +17040,7 @@ def api_collection_compute():
     config = dict(_app_config)
     config['job_compute'] = compute
     config['scan_scope'] = scan_scope
+    config['collect_notebooks'] = collect_notebooks
     try:
         write_persisted_config(config)
     except Exception as exc:  # noqa: BLE001
@@ -17019,7 +17057,7 @@ def api_collection_compute():
         return jsonify({'error': f'Setting saved, but re-creating the jobs failed: '
                                  f'{str(exc)[:220]}'}), 500
     return jsonify({'saved': True, 'compute': compute, 'scan_scope': scan_scope,
-                    'jobs': result.get('jobs', {})})
+                    'collect_notebooks': collect_notebooks, 'jobs': result.get('jobs', {})})
 
 
 def _provisioned_job_names():

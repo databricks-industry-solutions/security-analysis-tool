@@ -433,6 +433,22 @@ try:
         except Exception:
             _param_scan_scope = "current"
     SCAN_ALL_WORKSPACES = _param_scan_scope in ("all", "all-workspaces", "multi")
+
+    # collect_notebooks (opt-in, default off) turns on notebook/folder permission
+    # collection. It's off by default because walking the workspace tree and
+    # reading per-object ACLs is far heavier than the other collectors.
+    _param_collect_nb = "false"
+    try:
+        _param_collect_nb = str(json_.get("collect_notebooks") or "false").strip().lower()
+    except Exception:
+        try:
+            _param_collect_nb = str(dbutils.widgets.get("collect_notebooks") or "false").strip().lower()
+        except Exception:
+            _param_collect_nb = "false"
+    COLLECT_NOTEBOOKS = _param_collect_nb in ("true", "yes", "1", "on")
+    COLLECTION_CONFIG['collect_notebooks'] = COLLECT_NOTEBOOKS
+    COLLECTION_CONFIG['collect_repos'] = COLLECT_NOTEBOOKS
+
     SP_CREDENTIALS['client_id'] = _bh_cred("client-id")
     SP_CREDENTIALS['client_secret'] = _bh_cred("client-secret")
 
@@ -1395,7 +1411,7 @@ _WS_OBJECT_TYPES = {
     'Cluster', 'InstancePool', 'ClusterPolicy', 'ServingEndpoint',
     'VectorSearchEndpoint', 'Experiment', 'Dashboard', 'Query', 'Alert',
     'Job', 'Pipeline', 'Warehouse', 'SQLWarehouse', 'SecretScope', 'Secret',
-    'Token', 'App',
+    'Token', 'App', 'Notebook', 'Directory', 'Repo',
 }
 
 for ws_idx, ws in enumerate(ws_iteration_list):
@@ -3018,6 +3034,102 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                     print(f"    ⚠ Unity Catalog (metastore {remote_metastore_id}): {e}")
                     # Still mark as attempted so we don't retry on other workspaces with this metastore
                     COLLECTED_METASTORE_IDS.add(remote_metastore_id)
+
+        # Notebooks & folders (opt-in; the heaviest collector). Walk the workspace
+        # tree once, create Directory/Notebook/Repo vertices + a Contains hierarchy,
+        # then read ACLs in a small thread pool and keep only DIRECT (non-inherited)
+        # grants -- inheritance is represented by the Contains edges, so the graph
+        # stays lean. Bounded by a max-object cap so a huge workspace can't run away.
+        if COLLECT_NOTEBOOKS:
+            print(f"\n   Collecting notebooks & folders for {ws_name}...")
+            try:
+                import concurrent.futures
+                _NB_MAX = 20000
+                _ws_objects = []          # (object_id, kind, path)
+                _dir_path_to_id = {}      # path -> directory object_id, for Contains
+                _to_visit = ['/']
+                _visited = set()
+                while _to_visit and len(_ws_objects) < _NB_MAX:
+                    _p = _to_visit.pop()
+                    if _p in _visited:
+                        continue
+                    _visited.add(_p)
+                    try:
+                        _listing = list(ws_client.workspace.list(_p))
+                    except Exception:
+                        continue
+                    for _o in _listing:
+                        _ot = str(getattr(_o, 'object_type', '') or '').split('.')[-1].upper()
+                        _opath = getattr(_o, 'path', '') or ''
+                        _oid = getattr(_o, 'object_id', None)
+                        if _oid is None or not _opath:
+                            continue
+                        if _ot == 'DIRECTORY':
+                            _dir_path_to_id[_opath] = _oid
+                            _ws_objects.append((_oid, 'Directory', _opath))
+                            _to_visit.append(_opath)
+                        elif _ot == 'NOTEBOOK':
+                            _ws_objects.append((_oid, 'Notebook', _opath))
+                        elif _ot == 'REPO':
+                            _ws_objects.append((_oid, 'Repo', _opath))
+                        if len(_ws_objects) >= _NB_MAX:
+                            break
+
+                for _oid, _kind, _opath in _ws_objects:
+                    _vid = f"ws_{ws_id}_{_kind.lower()}:{_oid}"
+                    all_vertices.append({
+                        'id': _vid, 'node_type': _kind,
+                        'name': _opath.rsplit('/', 1)[-1] or _opath,
+                        'display_name': _opath, 'owner': None, 'email': None,
+                        'application_id': None, 'active': True,
+                        'created_at': None, 'updated_at': None, 'comment': None,
+                        'properties': safe_json({'path': _opath, 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                        'metadata': None,
+                    })
+                    _parent = _opath.rsplit('/', 1)[0] or '/'
+                    _pid = _dir_path_to_id.get(_parent)
+                    if _pid is not None and _pid != _oid:
+                        all_edges.append({
+                            'src': f"ws_{ws_id}_directory:{_pid}", 'dst': _vid,
+                            'relationship': 'Contains', 'permission_level': None,
+                            'inherited': False, 'properties': None, 'created_at': datetime.now(),
+                        })
+
+                def _nb_fetch(_obj):
+                    _oid, _kind, _opath = _obj
+                    _api = 'directories' if _kind == 'Directory' else ('repos' if _kind == 'Repo' else 'notebooks')
+                    try:
+                        return (_obj, ws_client.permissions.get(_api, str(_oid)))
+                    except Exception:
+                        return (_obj, None)
+
+                _nb_edges = 0
+                if COLLECTION_CONFIG['collect_permissions'] and _ws_objects:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as _ex:
+                        for _obj, _perms in _ex.map(_nb_fetch, _ws_objects):
+                            if not _perms or not getattr(_perms, 'access_control_list', None):
+                                continue
+                            _oid, _kind, _opath = _obj
+                            _vid = f"ws_{ws_id}_{_kind.lower()}:{_oid}"
+                            for _acl in _perms.access_control_list:
+                                _principal = _acl.user_name or _acl.group_name or _acl.service_principal_name
+                                if not _principal or not _acl.all_permissions:
+                                    continue
+                                for _perm in _acl.all_permissions:
+                                    if safe_get(_perm, 'inherited', False):
+                                        continue  # keep direct grants only; inheritance via Contains
+                                    all_edges.append({
+                                        'src': _principal, 'dst': _vid,
+                                        'relationship': safe_get(_perm, 'permission_level'),
+                                        'permission_level': safe_get(_perm, 'permission_level'),
+                                        'inherited': False, 'properties': None,
+                                        'created_at': datetime.now(),
+                                    })
+                                    _nb_edges += 1
+                print(f"    Collected {len(_ws_objects)} notebook/folder objects, {_nb_edges} direct grants"
+                      + (" (capped at %d)" % _NB_MAX if len(_ws_objects) >= _NB_MAX else ""))
+            except Exception as e:
+                print(f"    Error collecting notebooks: {e}")
 
         WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'success'
 

@@ -38,7 +38,8 @@ import json
 # Configuration comes from the job parameters the SAT app sets when it provisions
 # a collection job. Values the app stored as Unity Catalog secrets (in the results
 # schema) are read from there as a fallback. No legacy secret scope is involved.
-for _w in ("account_id", "sql_warehouse_id", "analysis_schema_name", "proxies"):
+for _w in ("account_id", "sql_warehouse_id", "analysis_schema_name", "proxies",
+           "scan_scope", "collect_notebooks"):
     try:
         dbutils.widgets.text(_w, "")
     except Exception:
@@ -79,6 +80,9 @@ json_ = {
     "maxpages":10,
     "timebetweencalls":1,
     "proxies": json.loads(_conf("proxies", "proxies", "{}") or "{}"),
+    # Collection-scope job parameters set by the app (plain params, not secrets).
+    "scan_scope": _param("scan_scope") or "current",
+    "collect_notebooks": _param("collect_notebooks") or "false",
 }
 
 # COMMAND ----------
