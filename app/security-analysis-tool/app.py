@@ -7102,8 +7102,11 @@ def get_main_html():
                                         <option value="current">Scan this workspace only</option>
                                         <option value="all">Scan multiple workspaces</option>
                                     </select>
-                                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85em; color: var(--text-secondary); cursor: pointer;">
-                                        <input type="checkbox" id="collect-notebooks-check"> Scan notebook &amp; folder permissions (slower)
+                                    <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.85em; color: var(--text-secondary); cursor: pointer; max-width: 440px;">
+                                        <input type="checkbox" id="collect-notebooks-check" style="margin-top: 3px;">
+                                        <span>Also scan notebook &amp; folder permissions
+                                            <span style="display: block; color: var(--text-muted); font-size: 0.95em; margin-top: 2px; font-weight: 400;">Adds notebooks, folders, and repos — and who can access them — to Resource Analysis. It walks the whole workspace tree reading per-object permissions, so collection runs noticeably slower. This choice is saved and takes effect on the next collection run only after you click <strong>Apply &amp; redeploy</strong>.</span>
+                                        </span>
                                     </label>
                                     <button class="btn btn-sm" id="collect-compute-apply" onclick="applyComputeControl(this)">Apply &amp; redeploy</button>
                                 </div>
