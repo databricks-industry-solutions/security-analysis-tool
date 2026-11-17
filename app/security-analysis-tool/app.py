@@ -2196,10 +2196,11 @@ def get_main_html():
         .sidebar-footer {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 8px;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 6px;
             flex-shrink: 0;
-            padding: 10px 12px 12px;
+            padding: 10px 10px 12px;
             border-top: 1px solid rgba(255, 255, 255, 0.06);
             background: rgba(0, 0, 0, 0.15);
         }
@@ -2209,15 +2210,15 @@ def get_main_html():
             position: relative;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             font: inherit;
-            font-size: 0.82em;
+            font-size: 0.78em;
             font-weight: 500;
             color: rgba(148, 163, 184, 0.9);
             background: transparent;
             border: 1px solid transparent;
             border-radius: 8px;
-            padding: 7px 10px;
+            padding: 6px 8px;
             cursor: pointer;
             text-decoration: none;
             white-space: nowrap;
@@ -2419,6 +2420,68 @@ def get_main_html():
         }
         .help-link-card:hover { border-color: #667eea; transform: translateY(-1px); }
         .help-link-card svg { width: 17px; height: 17px; color: #a78bfa; flex-shrink: 0; }
+
+        /* Interactive report-guide cards + modal */
+        .help-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(234px, 1fr)); gap: 12px; }
+        .help-card {
+            text-align: left; background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 10px; padding: 14px 16px; cursor: pointer; display: flex; gap: 12px;
+            align-items: flex-start; transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+        }
+        .help-card:hover { border-color: #667eea; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.28); }
+        .help-card-icon { font-size: 1.4em; flex: 0 0 auto; line-height: 1; margin-top: 1px; }
+        .help-card-title { font-weight: 650; font-size: 0.9em; color: var(--text-primary); margin-bottom: 3px; }
+        .help-card-sub { font-size: 0.78em; color: var(--text-muted); line-height: 1.45; }
+        .help-card-arrow { margin-left: auto; color: var(--text-muted); align-self: center; transition: transform 0.15s; }
+        .help-card:hover .help-card-arrow { transform: translateX(3px); color: #a78bfa; }
+
+        .help-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+            z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 24px;
+            opacity: 0; pointer-events: none; transition: opacity 0.15s;
+        }
+        .help-modal-overlay.show { opacity: 1; pointer-events: auto; }
+        .help-modal {
+            background: linear-gradient(180deg, #1a1d2e 0%, #16182a 100%);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; max-width: 660px; width: 100%;
+            max-height: 86vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+            transform: translateY(10px) scale(0.99); transition: transform 0.18s ease;
+        }
+        .help-modal-overlay.show .help-modal { transform: none; }
+        .help-modal-head {
+            display: flex; align-items: center; gap: 14px; padding: 20px 24px;
+            border-bottom: 1px solid var(--border); position: sticky; top: 0;
+            background: #1a1d2e; z-index: 1; border-radius: 16px 16px 0 0;
+        }
+        .help-modal-head .emoji { font-size: 1.8em; line-height: 1; }
+        .help-modal-title { font-size: 1.15em; font-weight: 700; color: var(--text-primary); }
+        .help-modal-sub { font-size: 0.84em; color: var(--text-muted); margin-top: 2px; }
+        .help-modal-close {
+            margin-left: auto; background: none; border: none; color: var(--text-muted);
+            font-size: 1.6em; line-height: 1; cursor: pointer; padding: 0 4px;
+        }
+        .help-modal-close:hover { color: var(--text-primary); }
+        .help-modal-body { padding: 20px 24px 26px; }
+        .help-modal-body h4 {
+            font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.6px; color: #a78bfa;
+            margin: 20px 0 8px; font-weight: 700;
+        }
+        .help-modal-body h4:first-child { margin-top: 0; }
+        .help-modal-body p { color: var(--text-secondary); font-size: 0.9em; line-height: 1.6; margin: 0; }
+        .help-modal-body ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 0.9em; line-height: 1.7; }
+        .help-modal-body ul li { margin: 2px 0; }
+        .help-modal-body code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
+        .help-modal-body strong { color: rgba(255,255,255,0.92); }
+        .help-modal-example {
+            background: var(--bg-input); border-left: 3px solid #667eea; border-radius: 6px;
+            padding: 11px 14px; font-size: 0.87em; color: var(--text-secondary); line-height: 1.6;
+        }
+        .help-modal-cta {
+            display: inline-flex; align-items: center; gap: 6px; margin-top: 20px; padding: 9px 16px;
+            background: var(--accent, #667eea); color: #fff; border: none; border-radius: 8px;
+            font-size: 0.88em; font-weight: 600; cursor: pointer; text-decoration: none;
+        }
+        .help-modal-cta:hover { opacity: 0.9; }
 
         /* Search Box */
         .search-container {
@@ -3958,10 +4021,10 @@ def get_main_html():
             </nav>
 
             <div class="sidebar-footer">
-                <button class="footer-link" id="help-link" title="Help &amp; Support"
-                        aria-label="Help and support" onclick="navigateToPage('help')">
+                <button class="footer-link" id="help-link" title="Help"
+                        aria-label="Help" onclick="navigateToPage('help')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    <span>Help &amp; Support</span>
+                    <span>Help</span>
                 </button>
                 <button class="footer-link" id="settings-gear" title="Settings"
                         aria-label="Settings" onclick="openSettingsPanel()">
@@ -4072,6 +4135,12 @@ def get_main_html():
                 </div>
 
                 <div class="help-section">
+                    <h2>Understanding the reports</h2>
+                    <p class="help-sub">Click any analysis to learn what it shows, how to read it, what to look for, and an example.</p>
+                    <div class="help-card-grid" id="help-report-cards"></div>
+                </div>
+
+                <div class="help-section">
                     <h2>Getting started</h2>
                     <p class="help-sub">Four steps from a fresh install to results.</p>
                     <ol class="help-steps">
@@ -4140,6 +4209,21 @@ def get_main_html():
                         </a>
                     </div>
                     <p class="help-sub" style="margin-top:14px; margin-bottom:0;">Tip: the <strong>scope banner</strong> on each page and the requirements checklist in setup tell you, live, what's configured and what to change.</p>
+                </div>
+
+                <!-- Report guide modal (populated by openHelpGuide) -->
+                <div class="help-modal-overlay" id="help-modal-overlay" onclick="if(event.target===this)closeHelpGuide()">
+                    <div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+                        <div class="help-modal-head">
+                            <span class="emoji" id="help-modal-emoji">📘</span>
+                            <div>
+                                <div class="help-modal-title" id="help-modal-title">Report</div>
+                                <div class="help-modal-sub" id="help-modal-sub"></div>
+                            </div>
+                            <button class="help-modal-close" aria-label="Close" onclick="closeHelpGuide()">&times;</button>
+                        </div>
+                        <div class="help-modal-body" id="help-modal-body"></div>
+                    </div>
                 </div>
             </div>
 
@@ -4710,6 +4794,120 @@ def get_main_html():
         });
 
         // Function to navigate to a page and update URL hash
+        // Report guides shown on the Help page. Each opens a modal explaining what
+        // the analysis shows, how to read it, what to look for, and an example.
+        const REPORT_GUIDES = {
+            principal: { emoji: '👤', title: 'Principal Analysis', nav: 'principal',
+                sub: 'Everything one identity can reach',
+                whatItIs: 'Pick a user, group, or service principal and see every resource it can access, how each grant is obtained, and the admin roles it holds.',
+                howToRead: ['Each row is a resource the principal can reach.', 'The grant path is labelled <strong>Direct</strong>, <strong>Group</strong> (inherited via membership), <strong>Ownership</strong>, or <strong>Parent</strong> (inherited from a parent object).', 'The "Admin roles — what &amp; where" box lists Account / Workspace / Metastore Admin, naming the exact workspaces and metastores.'],
+                lookFor: ['Broad reach via a large group the person does not need.', 'Admin roles held by non-human or stale identities.', 'Access to sensitive catalogs/secret scopes inherited from a wide group.'],
+                example: 'Analyzing a departing employee shows they are Workspace Admin on 3 workspaces and can read a secrets scope via the <code>account users</code> group — revoke before offboarding.' },
+            resource: { emoji: '📦', title: 'Resource Analysis', nav: 'resource',
+                sub: 'Everyone who can reach one resource',
+                whatItIs: 'Pick a resource (catalog, table, cluster, job, warehouse, secret scope, notebook, folder…) and see every principal that can access it and how.',
+                howToRead: ['Each row is a principal with access, their permission level, and whether it is direct, via a group, via ownership, or inherited from a parent.', 'Use the quick-browse buttons to list resources by type, or search by name.'],
+                lookFor: ['A sensitive table or secret scope reachable by a broad group.', 'More principals than expected with MANAGE / ALL PRIVILEGES.', 'Access inherited from a parent catalog/folder that should be tighter.'],
+                example: 'Checking a production catalog reveals <code>account users</code> has USE CATALOG — far too broad for prod data.' },
+            paths: { emoji: '🪜', title: 'Escalation Paths', nav: 'paths',
+                sub: 'Routes to higher privilege',
+                whatItIs: 'Traces how a principal could reach admin or otherwise-privileged access — through a group that owns a resource, or by managing a more-privileged identity.',
+                howToRead: ['Each row is one path; read it left-to-right as a chain of steps.', 'Shorter paths are easier to exploit.'],
+                lookFor: ['Short paths from ordinary users to admin.', 'Paths that pass through a group anyone can join.', 'Unexpected ownership that grants management of a privileged identity.'],
+                example: 'A developer is in a group that can manage a service principal that is Account Admin — a two-step escalation to full control.' },
+            impersonation: { emoji: '🎭', title: 'Impersonation', nav: 'impersonation',
+                sub: 'Who can act as whom',
+                whatItIs: 'Lists identities that can act as another identity — by managing a service principal or its tokens, or running jobs as someone else.',
+                howToRead: ['Read each row as a "can act as" relationship from a source to a target principal.', 'Confirm each relationship is intended.'],
+                lookFor: ['Users who can manage a high-privilege service principal.', '"Can act as" chains that bypass a person’s own permissions.'],
+                example: 'An analyst can manage the service principal that owns the finance pipeline — they can run it as that SP and read everything it can.' },
+            highprivilege: { emoji: '🛡️', title: 'High Privilege Principals', nav: 'highprivilege',
+                sub: 'Admins across the account',
+                whatItIs: 'Every identity with admin rights — Account Admin, Metastore Admin, Workspace Admin, or Catalog Owner — direct or inherited through a group.',
+                howToRead: ['Grouped by role; each row names the identity and the "via" (the workspace, metastore, group, or direct role it comes from).', 'Roles are detected <strong>account-wide</strong>, so a Workspace Admin may administer other workspaces, not this one.', 'Use the search box and role filter to narrow.'],
+                lookFor: ['More Account/Metastore Admins than necessary.', 'Admin held via a group rather than assigned directly.', 'Service principals with admin that no one owns.'],
+                example: 'Filtering to Account Admin shows 12 principals — several are personal accounts that should be moved to a managed admin group.' },
+            isolated: { emoji: '🧍', title: 'Isolated Principals', nav: 'isolated',
+                sub: 'Leftover / unused identities',
+                whatItIs: 'Identities with almost no groups or grants — often leftover, test, or misconfigured accounts.',
+                howToRead: ['Each row is an identity with minimal connections in the graph.', 'Treat as candidates to confirm and deactivate.'],
+                lookFor: ['Stale accounts from former employees or finished projects.', 'Test service principals that were never cleaned up.'],
+                example: 'A service principal with no group memberships and one orphaned token — a leftover from a POC, safe to remove.' },
+            orphaned: { emoji: '🗃️', title: 'Orphaned Resources', nav: 'orphaned',
+                sub: 'No explicit grants',
+                whatItIs: 'Resources with no explicit permission grants, so access falls back to inherited or default permissions that are easy to overlook.',
+                howToRead: ['Each row is a resource whose access is implicit (owner/inherited) rather than explicitly granted.'],
+                lookFor: ['Sensitive objects relying only on inherited access.', 'Resources whose only access is the owner — confirm that is intended.'],
+                example: 'A schema with no grants is reachable only through its catalog’s broad grant — add explicit, narrower grants.' },
+            overprivileged: { emoji: '📉', title: 'Over-Privileged Principals', nav: 'overprivileged',
+                sub: 'Granted more than used',
+                whatItIs: 'Identities whose granted access is wider than their recent activity suggests they use — right-sizing candidates.',
+                howToRead: ['Compare granted access against recent usage for each principal.', 'Large gaps are the best trimming candidates.'],
+                lookFor: ['Broad grants with little or no recent activity.', 'Admin or ALL PRIVILEGES that is never exercised.'],
+                example: 'A group has ALL PRIVILEGES on a catalog but no member has queried it in 90 days — downgrade to read, or remove.' },
+            secretscopes: { emoji: '🔐', title: 'Secret Scope Access', nav: 'secretscopes',
+                sub: 'Who can read/write secrets',
+                whatItIs: 'Each row is a principal’s access to a secret scope — READ sees values, WRITE changes them, MANAGE can also change who has access.',
+                howToRead: ['MANAGE includes WRITE includes READ.', 'Filter by workspace when multiple are scanned.', 'These are legacy secret scopes; Unity Catalog secrets offer finer-grained, governed access.'],
+                lookFor: ['Broad groups with READ on sensitive scopes.', 'Non-admins with MANAGE.'],
+                example: 'The <code>users</code> group has READ on a scope holding a prod database password — restrict to a small service group.' },
+            sharedtoaccount: { emoji: '🌐', title: 'Shared to All Users', nav: 'sharedtoaccount',
+                sub: 'Shared with everyone',
+                whatItIs: 'Dashboards, Genie spaces, and apps shared with the built-in <code>account users</code> group, so everyone in the account can open them.',
+                howToRead: ['Each row is an object shared account-wide, who shared it, and when.', 'Filter by workspace when multiple are scanned.'],
+                lookFor: ['Dashboards exposing sensitive data to everyone.', 'Shares that were meant for a team, not the whole account.'],
+                example: 'A revenue dashboard shared to all account users — restrict it to the finance group.' },
+            privilegednonidp: { emoji: '🚫', title: 'Privileged Non-IdP', nav: 'privilegednonidp',
+                sub: 'Admin outside your IdP',
+                whatItIs: 'Admin rights held outside identity-provider-managed groups — assigned directly, or via non-IdP groups — so they survive offboarding in your IdP.',
+                howToRead: ['Each row is a privileged identity flagged as non-IdP-managed, with the workspace it applies to.', 'Removing someone from the IdP will not revoke these.'],
+                lookFor: ['Account/Workspace Admin assigned directly to a user or SP.', 'Admin via a group your IdP does not manage.'],
+                example: 'A user is Workspace Admin by direct assignment — move it under an IdP-managed admin group so leaver automation covers it.' },
+            denylistbuilder: { emoji: '📋', title: 'Denylist Builder', nav: 'denylistbuilder',
+                sub: 'Inactive-member groups',
+                whatItIs: 'Finds IdP groups whose members show no recent Databricks activity, ranked so a higher inactive count/percentage is a stronger denylist candidate.',
+                howToRead: ['Each row is a group with its inactive-member count/percentage.', '"Inactive" is a heuristic: no system.access.audit activity in the window.'],
+                lookFor: ['Groups that are mostly inactive — candidates to deny at scale.', 'Review members before applying.'],
+                example: 'A 200-member group with 180 inactive — generate the Entra ID dynamic-group rule to apply one denylist entry at scale.' },
+        };
+        function renderHelpReportCards() {
+            const grid = document.getElementById('help-report-cards');
+            if (!grid || grid.dataset.rendered) return;
+            grid.innerHTML = Object.keys(REPORT_GUIDES).map(k => {
+                const g = REPORT_GUIDES[k];
+                return `<div class="help-card" onclick="openHelpGuide('${k}')" tabindex="0" role="button"
+                            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openHelpGuide('${k}')}">
+                    <span class="help-card-icon">${g.emoji}</span>
+                    <div style="min-width:0;">
+                        <div class="help-card-title">${escapeHtml(g.title)}</div>
+                        <div class="help-card-sub">${escapeHtml(g.sub)}</div>
+                    </div>
+                    <span class="help-card-arrow">→</span>
+                </div>`;
+            }).join('');
+            grid.dataset.rendered = '1';
+        }
+        function openHelpGuide(key) {
+            const g = REPORT_GUIDES[key];
+            if (!g) return;
+            document.getElementById('help-modal-emoji').textContent = g.emoji;
+            document.getElementById('help-modal-title').textContent = g.title;
+            document.getElementById('help-modal-sub').textContent = g.sub;
+            const li = arr => arr.map(x => `<li>${x}</li>`).join('');
+            document.getElementById('help-modal-body').innerHTML = `
+                <h4>What it shows</h4><p>${g.whatItIs}</p>
+                <h4>How to read it</h4><ul>${li(g.howToRead)}</ul>
+                <h4>What to look for</h4><ul>${li(g.lookFor)}</ul>
+                <h4>Example</h4><div class="help-modal-example">${g.example}</div>
+                <button class="help-modal-cta" onclick="closeHelpGuide(); navigateToPage('${g.nav}')">Open ${escapeHtml(g.title)} →</button>`;
+            document.getElementById('help-modal-overlay').classList.add('show');
+        }
+        function closeHelpGuide() {
+            const o = document.getElementById('help-modal-overlay');
+            if (o) o.classList.remove('show');
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHelpGuide(); });
+
         // Which scope each page's data has. 'account' = account-wide identity/admin
         // data; 'workspace' = resources scoped to the scanned workspace(s); 'mixed'
         // = identities account-wide but resource reach limited to scanned workspaces.
@@ -4902,6 +5100,7 @@ def get_main_html():
             else if (page === 'privilegednonidp') loadPrivilegedNonIdp();
             else if (page === 'denylistbuilder') loadDenylistBuilder();
             else if (page === 'collection') loadCollectionPanel();
+            else if (page === 'help') renderHelpReportCards();
             else if (page === 'secretsoverview') loadSecretsExposure();
             else if (page === 'secretsalerts') loadSecretsAlerts();
             else if (page === 'impersonation') {
