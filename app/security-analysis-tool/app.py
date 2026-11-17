@@ -5904,6 +5904,18 @@ def get_main_html():
         }
 
         // Browse Resources by Type
+        // Pretty plural label for a resource node type (avoids "Directorys").
+        function resourceTypeLabel(type) {
+            const map = {
+                'Directory': 'Folders', 'Notebook': 'Notebooks', 'Repo': 'Repos',
+                'SecretScope': 'Secret Scopes', 'ServingEndpoint': 'Serving Endpoints',
+                'ClusterPolicy': 'Cluster Policies'
+            };
+            if (map[type]) return map[type];
+            if (type && type.endsWith('y')) return type.slice(0, -1) + 'ies';
+            return (type || 'Resource') + 's';
+        }
+
         async function browseResourcesByType(resourceType) {
             showLoading('resource-results');
             
@@ -5924,16 +5936,17 @@ def get_main_html():
                 }
                 
                 const resources = result.resources || [];
+                const typeLabelPlural = resourceTypeLabel(resourceType);
                 if (resources.length === 0) {
-                    showEmpty('resource-results', `No ${resourceType}s found in this collection`);
+                    showEmpty('resource-results', `No ${typeLabelPlural} found in this collection`);
                     return;
                 }
-                
+
                 // Display the list of resources
                 let html = `
                     <div class="card">
                         <div class="results-header">
-                            <span class="results-title">${resourceType}s</span>
+                            <span class="results-title">${typeLabelPlural}</span>
                             <span class="results-count">${resources.length} resource${resources.length !== 1 ? 's' : ''}</span>
                         </div>
                         <div class="results-body" style="padding: 0;">
