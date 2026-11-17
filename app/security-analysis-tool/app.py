@@ -16021,7 +16021,7 @@ def _alert_templates():
     """
     return {
         'total_findings': {
-            'label': 'Hardcoded credentials exposed',
+            'label': 'Hardcoded Credentials Detected',
             'description': (
                 'The latest scan found hardcoded secrets in notebook source or '
                 'cluster configuration.'
@@ -16036,7 +16036,7 @@ WHERE secret_sha256 IS NOT NULL
   AND run_id = (SELECT MAX(run_id) FROM {NOTEBOOK_SECRETS_TABLE})""",
         },
         'new_findings': {
-            'label': 'Findings increased since previous scan',
+            'label': 'Findings Increased Since Previous Scan',
             'description': (
                 'The latest scan found more hardcoded secrets than the previous '
                 'scan — exposure is growing.'
@@ -16061,7 +16061,7 @@ SELECT COALESCE(MAX(CASE WHEN rn = 1 THEN findings END), 0)
 FROM counts""",
         },
         'stale_scan': {
-            'label': 'Scanner has not run recently',
+            'label': 'Scanner Has Not Run Recently',
             'description': (
                 'The secret scanner has not completed a run within the threshold — '
                 'its schedule may be broken and results may be stale.'
