@@ -4209,7 +4209,7 @@ def get_main_html():
                         <details><summary>How do I enable account-wide data?</summary>
                             <div class="help-faq-body">In the account console, grant a service principal the <strong>Account admin</strong> role (the app's own SP or any other). Then in <strong>Settings → Re-run setup</strong> add the Account ID and that SP's client ID + secret. The scope banner will switch to "Account-wide: ON".</div></details>
                         <details><summary>How do I include notebooks and folders?</summary>
-                            <div class="help-faq-body">In <strong>Data Collection → Manage</strong>, enable <strong>"Also scan notebook &amp; folder permissions"</strong> and click <strong>Apply &amp; redeploy</strong>. It's off by default because it walks the whole workspace tree and runs slower. Notebooks/folders then appear in Resource Analysis.</div></details>
+                            <div class="help-faq-body">In <strong>Data Collection → Manage</strong>, enable <strong>"Also scan notebook &amp; folder permissions"</strong> and click <strong>Apply &amp; redeploy</strong>. It's off by default because it walks the whole workspace tree, which adds to each collection run's time. Notebooks/folders then appear in Resource Analysis.</div></details>
                         <details><summary>Why is "Classic" compute greyed out?</summary>
                             <div class="help-faq-body">This workspace is <strong>serverless-only</strong> (its <code>compute_mode</code> is <code>SERVERLESS</code>), so it has no classic compute to run jobs on — use serverless. Note: classic is greyed out only for a genuinely serverless-only workspace. If classic is offered but a run fails to start a cluster, the app's service principal just needs the <code>allow-cluster-create</code> permission in this workspace.</div></details>
                         <details><summary>Do I need to re-run after adding a workspace?</summary>
@@ -5583,7 +5583,7 @@ def get_main_html():
                             <input type="checkbox" id="setup-collect-notebooks" style="margin-top: 3px;"${cur.collect_notebooks ? ' checked' : ''}>
                             <span>
                                 <span class="field-label" style="display: block;">Scan notebook &amp; folder permissions</span>
-                                <span class="field-help">Off by default. Adds notebooks, folders, and repos (with their access) to Resource Analysis. This walks the whole workspace tree and reads per-object ACLs, so it makes collection noticeably slower — turn it on only if you need notebook-level visibility.</span>
+                                <span class="field-help">Off by default. Adds notebooks, folders, and repos (with their access) to Resource Analysis. This walks the whole workspace tree and reads per-object ACLs, so each collection run takes longer to complete — turn it on only if you need notebook-level visibility.</span>
                             </span>
                         </label>
                     </div>
@@ -7503,7 +7503,7 @@ def get_main_html():
                                     <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.85em; color: var(--text-secondary); cursor: pointer; max-width: 440px;">
                                         <input type="checkbox" id="collect-notebooks-check" style="margin-top: 3px;">
                                         <span>Also scan notebook &amp; folder permissions
-                                            <span style="display: block; color: var(--text-muted); font-size: 0.95em; margin-top: 2px; font-weight: 400;">Adds notebooks, folders, and repos — and who can access them — to Resource Analysis. It walks the whole workspace tree reading per-object permissions, so collection runs noticeably slower. This choice is saved and takes effect on the next collection run only after you click <strong>Apply &amp; redeploy</strong>.</span>
+                                            <span style="display: block; color: var(--text-muted); font-size: 0.95em; margin-top: 2px; font-weight: 400;">Adds notebooks, folders, and repos — and who can access them — to Resource Analysis. It walks the whole workspace tree reading per-object permissions, so each collection run takes longer to complete. This choice is saved and takes effect on the next collection run only after you click <strong>Apply &amp; redeploy</strong>.</span>
                                         </span>
                                     </label>
                                     <button class="btn btn-sm" id="collect-compute-apply" onclick="applyComputeControl(this)">Apply &amp; redeploy</button>
