@@ -64,7 +64,7 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
-from core.scan_http import AdaptiveRateLimiter, request_with_retry, TokenProvider
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, TokenProvider, completeness_verdict
 
 # Account API credentials. The SAT app stores these as Unity Catalog secrets in
 # the results schema ({catalog}.{schema}.<key>) and passes analysis_schema_name as
@@ -144,9 +144,10 @@ import json
 import subprocess
 import time
 import hashlib
+import random
 import logging
 import concurrent.futures
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -210,6 +211,12 @@ class Config:
     # distinct set is scanned (see select_clusters_to_scan). Set to True to
     # fetch and scan every job cluster individually.
     SCAN_ALL_JOB_CLUSTERS = False
+
+    # Unscanned-cluster tolerance before a run is failed as incomplete, mirroring
+    # the notebook scanner. A few cluster config fetches can legitimately fail on
+    # a busy workspace; only a large gap (sustained throttling) should fail the run.
+    INCOMPLETE_SCAN_FRACTION = 0.02
+    INCOMPLETE_SCAN_MIN = 25
 
 # Create temporary directories if they don't exist
 try:
@@ -655,69 +662,139 @@ print("✅ Scanning functions defined successfully!")
 
 # COMMAND ----------
 
+# Table setup runs once per scan rather than once per finding.
+_results_table_ready = False
+
+# Findings attempted vs. actually persisted. Used to detect a partial write so a
+# finding dropped on a Delta conflict fails the run instead of silently reading
+# as a clean cluster.
+insert_stats = {"attempted": 0, "written": 0, "failed": 0}
+
+
+def ensure_results_table() -> None:
+    """Create the results table once per scan (loaded via %run ../../Utils/common)."""
+    global _results_table_ready
+    if _results_table_ready:
+        return
+    create_clusters_secret_scan_results_table()
+    _results_table_ready = True
+
+
+def _sql_str(value: Any) -> str:
+    """Render a value as a single-quoted SQL literal, escaping embedded quotes."""
+    return "'" + str(value or "").replace("'", "''") + "'"
+
+
+def _insert_cluster_values(rows: List[str]) -> None:
+    """Run a single INSERT for the given VALUES tuples. Raises on failure."""
+    spark.sql(
+        f"""
+        INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
+        (workspace_id, cluster_id, cluster_name, config_field, config_key,
+         detector_name, secret_sha256, source_file, verified, secrets_found,
+         run_id, scan_time)
+        VALUES {", ".join(rows)}
+        """
+    )
+
+
+def _persist_cluster_rows(rows: List[str]) -> Tuple[int, int]:
+    """Persist finding rows durably, returning (written, failed).
+
+    Tries the whole batch with a few retries, then falls back to inserting each
+    row on its own. The retries handle transient Spark errors and -- the reason
+    this matters under load -- Delta concurrent-write conflicts
+    (ConcurrentAppendException / ConcurrentWriteException / MetadataChangedException)
+    raised when several workspace scans insert into this shared results table at
+    once. Row-by-row fallback isolates a single unpersistable row so one bad
+    finding can't drop the whole batch.
+    """
+    max_batch_attempts = 3
+    for attempt in range(max_batch_attempts):
+        try:
+            _insert_cluster_values(rows)
+            return len(rows), 0
+        except Exception as e:
+            if attempt == max_batch_attempts - 1:
+                logger.warning(
+                    f"Batch insert of {len(rows)} cluster finding(s) failed after "
+                    f"{max_batch_attempts} attempts ({str(e)}); falling back to row-by-row"
+                )
+                break
+            backoff = 1.0 * (2 ** attempt) + random.uniform(0, 1)
+            logger.warning(
+                f"Batch insert attempt {attempt + 1}/{max_batch_attempts} failed "
+                f"({str(e)}); retrying in {backoff:.1f}s"
+            )
+            time.sleep(backoff)
+
+    written = 0
+    for row in rows:
+        for attempt in range(2):
+            try:
+                _insert_cluster_values([row])
+                written += 1
+                break
+            except Exception as e:
+                if attempt == 1:
+                    logger.error(f"Dropping unpersistable cluster finding after retries: {str(e)}")
+                else:
+                    time.sleep(0.5 + random.uniform(0, 0.5))
+    return written, len(rows) - written
+
+
 def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict[str, Any], run_id: int) -> None:
-    """
-    Insert cluster secret scan results into the clusters_secret_scan_results table.
-    Only inserts records when secrets are actually found to avoid database bloat.
+    """Insert all secret findings for a single cluster in one statement.
 
-    Args:
-        workspace_id (str): Workspace ID being scanned
-        cluster_metadata (Dict[str, Any]): Cluster metadata with secret details
-        run_id (int): SAT run ID for tracking
+    Only clusters with secrets are persisted, to avoid table bloat. Rows go
+    through _persist_cluster_rows so a Delta concurrent-write conflict is retried
+    rather than silently dropping the finding, and the attempted/written counts
+    feed the completeness check so a lost finding fails the run.
     """
-    import time
-
-    # Extract metadata FIRST so variables are always defined (even if exception occurs)
     cluster_id = cluster_metadata.get("cluster_id", "Unknown")
     cluster_name = cluster_metadata.get("cluster_name", "Unknown")
     config_field = cluster_metadata.get("config_field", Config.CONFIG_FIELD)
     secrets_found = cluster_metadata.get("secrets_found", 0)
+    if secrets_found <= 0:
+        logger.debug(f"No secrets found in cluster {cluster_id}, skipping database insert")
+        return
 
+    scan_time = time.time()
+    rows: List[str] = []
+    for secret in cluster_metadata.get("secret_details", []):
+        rows.append(
+            "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, cast({} as timestamp))".format(
+                _sql_str(workspace_id),
+                _sql_str(cluster_id),
+                _sql_str(cluster_name),
+                _sql_str(config_field),
+                _sql_str(secret.get("ConfigKey", "Unknown")),
+                _sql_str(secret.get("DetectorName", "Unknown")),
+                _sql_str(secret.get("Raw_SHA", "")),
+                _sql_str(secret.get("SourceFile", "")),
+                "true" if secret.get("Verified", False) else "false",
+                int(secrets_found),
+                int(run_id),
+                scan_time,
+            )
+        )
+
+    if not rows:
+        return
+
+    insert_stats["attempted"] += len(rows)
     try:
-        # Create the table if it doesn't exist (function loaded via %run ../../Utils/common)
-        create_clusters_secret_scan_results_table()
-
-        scan_time = time.time()
-
-        if secrets_found > 0:
-            # Only insert records when secrets are found
-            secret_details = cluster_metadata.get("secret_details", [])
-
-            for idx, secret in enumerate(secret_details, 1):
-                detector_name = secret.get("DetectorName", "Unknown")
-                secret_sha256 = secret.get("Raw_SHA", "")
-                source_file = secret.get("SourceFile", "")
-                verified = secret.get("Verified", False)
-                config_key = secret.get("ConfigKey", "Unknown")
-
-                # Escape single quotes in string values for SQL (replace ' with '')
-                workspace_id_escaped = workspace_id.replace("'", "''")
-                cluster_id_escaped = cluster_id.replace("'", "''")
-                cluster_name_escaped = cluster_name.replace("'", "''")
-                config_field_escaped = config_field.replace("'", "''")
-                config_key_escaped = config_key.replace("'", "''")
-                detector_name_escaped = detector_name.replace("'", "''")
-                secret_sha256_escaped = secret_sha256.replace("'", "''")
-                source_file_escaped = source_file.replace("'", "''")
-
-                # Insert individual secret record
-                sql = f"""
-                INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
-                (workspace_id, cluster_id, cluster_name, config_field, config_key, detector_name,
-                 secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-                VALUES ('{workspace_id_escaped}', '{cluster_id_escaped}', '{cluster_name_escaped}', '{config_field_escaped}',
-                        '{config_key_escaped}', '{detector_name_escaped}', '{secret_sha256_escaped}', '{source_file_escaped}',
-                        {verified}, {secrets_found}, {run_id}, cast({scan_time} as timestamp))
-                """
-
-                spark.sql(sql)
-        else:
-            # Don't insert anything for clean clusters to avoid database bloat
-            logger.debug(f"No secrets found in cluster {cluster_id}, skipping database insert")
-
+        ensure_results_table()
     except Exception as e:
-        logger.error(f"Failed to insert cluster secret scan results for cluster {cluster_id}: {str(e)}")
-        # Don't raise exception to avoid stopping the scan process
+        insert_stats["failed"] += len(rows)
+        logger.error(f"Could not ensure results table exists; dropping {len(rows)} finding(s): {str(e)}")
+        return
+
+    written, failed = _persist_cluster_rows(rows)
+    insert_stats["written"] += written
+    insert_stats["failed"] += failed
+    if written:
+        logger.info(f"Persisted {written} cluster secret finding(s) for cluster {cluster_id}")
 
 
 def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
@@ -726,8 +803,7 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     Ensures only one row per run_id exists.
     """
     try:
-        # Ensure table exists (function loaded via %run ../../Utils/common)
-        create_clusters_secret_scan_results_table()
+        ensure_results_table()
 
         logger.info(f"Inserting no-secrets tracking row for workspace_id: {workspace_id}, run_id: {run_id}")
 
@@ -735,23 +811,20 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
         existing = spark.sql(f"""
             SELECT COUNT(*) as cnt
             FROM {json_["analysis_schema_name"]}.clusters_secret_scan_results
-            WHERE run_id = {run_id}
+            WHERE run_id = {int(run_id)}
         """).collect()[0]["cnt"]
 
         if existing > 0:
             logger.info(f"No-secrets row already exists for run_id {run_id}, skipping insert")
             return
 
-        # Escape single quotes in workspace_id for SQL
-        workspace_id_escaped = workspace_id.replace("'", "''")
-
-        # Insert placeholder row
-        spark.sql(f"""
-            INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
-            (workspace_id, cluster_id, cluster_name, config_field, config_key, detector_name,
-             secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-            VALUES ('{workspace_id_escaped}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
-        """)
+        # Insert placeholder row (retried through the shared helper for
+        # concurrent-write safety).
+        _persist_cluster_rows([
+            "({}, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {}, current_timestamp())".format(
+                _sql_str(workspace_id), int(run_id)
+            )
+        ])
         logger.info(f"No-secrets tracking row inserted successfully for run_id: {run_id}")
 
     except Exception as e:
@@ -780,12 +853,18 @@ def _scan_one_cluster_for_secrets(cluster: Dict[str, Any]) -> Dict[str, Any]:
     """
     cluster_id = cluster.get('cluster_id')
     cluster_name = cluster.get('cluster_name', 'Unknown')
-    result = {"cluster_id": cluster_id, "cluster_name": cluster_name, "scanned": False, "secrets": []}
+    result = {"cluster_id": cluster_id, "cluster_name": cluster_name,
+              "scanned": False, "config_fetch_failed": False, "secrets": []}
 
     try:
         cluster_config = get_cluster_config(cluster_id)
         if not cluster_config:
+            # Config could not be fetched (non-200 or throttled past retries).
+            # Count it as a coverage gap so a workspace that is silently losing
+            # clusters to sustained throttling fails the completeness check
+            # rather than reporting a clean scan.
             logger.warning(f"Failed to get config for cluster {cluster_id}, skipping")
+            result["config_fetch_failed"] = True
             return result
 
         env_vars = extract_spark_env_vars(cluster_config)
@@ -833,6 +912,7 @@ def main_cluster_scanning_workflow():
     clusters_scanned = 0
     clusters_with_secrets = 0
     total_secrets_found = 0
+    insert_stats.update({"attempted": 0, "written": 0, "failed": 0})
 
     try:
         # Get all clusters, then collapse job clusters that share env vars so a
@@ -852,9 +932,12 @@ def main_cluster_scanning_workflow():
         # are independent). The previous version scanned serially with a fixed
         # API_SLEEP_SECONDS pause between every cluster — that sleep is gone;
         # DB inserts are kept on the main thread for Spark safety.
+        config_fetch_failures = 0
         max_workers = min(Config.MAX_WORKERS, max(1, total_clusters))
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             for res in pool.map(_scan_one_cluster_for_secrets, clusters):
+                if res.get("config_fetch_failed"):
+                    config_fetch_failures += 1
                 if not res["scanned"]:
                     continue
 
@@ -883,6 +966,39 @@ def main_cluster_scanning_workflow():
                         logger.error(f"Database insertion failed for cluster {res['cluster_id']}: {str(insert_error)}")
                         print(f"  ❌ Database insertion failed: {str(insert_error)}")
 
+        # Completeness check BEFORE recording a clean result, so an incomplete
+        # scan never writes a "no secrets" tracking row that reads as clean.
+        # A finding that failed to persist, or a large fraction of clusters whose
+        # config could not be fetched (sustained throttling), means the results
+        # are incomplete -- fail loudly rather than report a clean run.
+        unwritten = insert_stats["attempted"] - insert_stats["written"]
+        coverage_gap, tolerance, _partial, _fatal = completeness_verdict(
+            total_clusters, config_fetch_failures, 0, unwritten,
+            min_failures=Config.INCOMPLETE_SCAN_MIN,
+            max_fraction=Config.INCOMPLETE_SCAN_FRACTION,
+        )
+        if coverage_gap > 0:
+            note = (f"PARTIAL CLUSTER SCAN for workspace {workspace_id}: "
+                    f"{config_fetch_failures} of {total_clusters} cluster config(s) "
+                    f"could not be fetched; tolerance={tolerance}.")
+            print(f"⚠️  {note}")
+            logger.warning(note)
+        if _fatal:
+            problems = []
+            if coverage_gap > tolerance:
+                problems.append(
+                    f"{config_fetch_failures} of {total_clusters} cluster config(s) could not be "
+                    f"fetched (exceeds tolerance {tolerance}) — likely sustained throttling"
+                )
+            if unwritten > 0:
+                problems.append(
+                    f"{unwritten} of {insert_stats['attempted']} finding(s) failed to persist"
+                )
+            message = f"INCOMPLETE CLUSTER SCAN for workspace {workspace_id}: " + "; ".join(problems)
+            print(f"❌ {message}")
+            logger.error(message)
+            raise RuntimeError(message)
+
         # Insert tracking row if no secrets found anywhere
         if total_secrets_found == 0:
             insert_no_secrets_tracking_row(workspace_id, current_run_id)
@@ -894,6 +1010,7 @@ def main_cluster_scanning_workflow():
         print(f"🔍 Clusters scanned: {clusters_scanned}")
         print(f"🚨 Clusters with secrets: {clusters_with_secrets}")
         print(f"🔑 Total secrets detected: {total_secrets_found}")
+        print(f"💾 Findings written to table: {insert_stats['written']} of {insert_stats['attempted']}")
 
         if clusters_with_secrets > 0:
             print(f"⚠️  Security Alert: {clusters_with_secrets} cluster(s) contain potential secrets!")
@@ -904,6 +1021,8 @@ def main_cluster_scanning_workflow():
             "clusters_scanned": clusters_scanned,
             "clusters_with_secrets": clusters_with_secrets,
             "total_secrets_found": total_secrets_found,
+            "findings_written": insert_stats["written"],
+            "config_fetch_failures": config_fetch_failures,
             "run_id": current_run_id
         }
 
