@@ -2338,6 +2338,10 @@ def get_main_html():
         .scope-badge.warn { background: rgba(245,158,11,0.15); color:#fcd34d; border-color: rgba(245,158,11,0.35); }
         .scope-banner-text { color: rgba(255,255,255,0.75); }
         .scope-banner-text strong { color: rgba(255,255,255,0.92); font-weight: 650; }
+        .scope-banner-text code, .scope-banner code {
+            background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px;
+            font-size: 0.92em; word-break: break-all;
+        }
         .scope-help { margin-top: 6px; }
         .scope-help summary {
             cursor: pointer; color: var(--text-secondary);
@@ -4638,18 +4642,23 @@ def get_main_html():
             const warnIcon = '<svg class="scope-banner-icon" viewBox="0 0 24 24" fill="none" stroke="#fcd34d" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
             let cls = '', icon = infoIcon, badge = '', text = '', help = '';
 
+            const spTxt = aw.service_principal ? ` via service principal <code>${escapeHtml(aw.service_principal)}</code>` : '';
+            const acctTxt = s.account_id ? `, account <code>${escapeHtml(s.account_id)}</code>` : '';
             if (scopeType === 'account') {
                 if (aw.active) {
                     cls = 'ok';
-                    badge = '<span class="scope-badge account">Account-wide</span>';
-                    text = `Covers your entire account — <strong>${c.workspaces_total||0}</strong> workspaces, <strong>${c.account_groups||0}</strong> account groups, <strong>${c.account_admins||0}</strong> account admins.`;
-                    help = _scopeHelp('Already on. ' + (aw.enable_guidance||''), aw.disable_guidance||'');
+                    badge = '<span class="scope-badge account">Account-wide: ON</span>';
+                    text = `This page covers your <strong>entire account</strong>${spTxt}${acctTxt} — <strong>${c.workspaces_total||0}</strong> workspaces, <strong>${c.account_groups||0}</strong> account groups, <strong>${c.account_admins||0}</strong> account admins.`;
+                    help = _scopeHelp('Account-wide scanning is already on' + (aw.service_principal ? ' (service principal ' + aw.service_principal + ').' : '.'), aw.disable_guidance||'');
+                } else if (aw.configured) {
+                    cls = 'warn'; icon = warnIcon;
+                    badge = '<span class="scope-badge warn">Account-wide: set up, no data yet</span>';
+                    text = `Account credentials are configured${spTxt}${acctTxt}, but no account-wide data has been collected yet. Run the collection jobs, and confirm that service principal has the <strong>Account admin</strong> role.`;
+                    help = _scopeHelp(aw.enable_guidance||'', aw.disable_guidance||'');
                 } else {
                     cls = 'warn'; icon = warnIcon;
-                    badge = '<span class="scope-badge warn">Account-wide not enabled</span>';
-                    text = aw.account_id_present && aw.credentials_present
-                        ? `Account credentials are set but no account-wide data was collected yet. Run the collection jobs, and confirm the service principal has the <strong>Account admin</strong> role.`
-                        : `This page needs account-wide data, which isn't enabled yet — so it may be empty or partial.`;
+                    badge = '<span class="scope-badge warn">Account-wide: OFF</span>';
+                    text = `Account-wide scanning isn't set up, so this page is empty or partial. Turning it on surfaces account admins, account users &amp; groups, and account-level findings across every workspace.`;
                     help = _scopeHelp(aw.enable_guidance||'', aw.disable_guidance||'');
                 }
             } else if (scopeType === 'workspace') {
@@ -4669,12 +4678,12 @@ def get_main_html():
                 help = _scopeHelp(rs.enable_guidance||'', rs.disable_guidance||'');
             } else { // mixed
                 const multi = (rs.scope === 'all');
-                badge = '<span class="scope-badge account">Identities: account-wide</span>' +
+                badge = `<span class="scope-badge account">Identities: account-wide${aw.active ? '' : ' (off)'}</span>` +
                         (multi ? '<span class="scope-badge workspace">Resources: all workspaces</span>'
                                : '<span class="scope-badge workspace">Resources: this workspace</span>');
-                text = `Identities and admin roles are <strong>account-wide</strong>. The resources a principal can reach are limited to the <strong>${multi?'scanned':'current'}</strong> workspace(s).`;
-                if (!aw.active) { cls = 'warn'; icon = warnIcon; text += ` Account-wide identity data isn't fully enabled yet.`; }
-                help = _scopeHelp((aw.enable_guidance||'') + ' ' + (rs.enable_guidance||''), rs.disable_guidance||'');
+                text = `Identities and admin roles are <strong>account-wide</strong>${aw.active ? spTxt + acctTxt : ''}; the resources a principal can reach are limited to the <strong>${multi ? 'scanned' : 'current'}</strong> workspace(s).`;
+                if (!aw.active) { cls = 'warn'; icon = warnIcon; text += ` Account-wide identity data isn't enabled yet, so identities and roles may be incomplete.`; }
+                help = _scopeHelp((aw.enable_guidance || '') + ' ' + (rs.enable_guidance || ''), (aw.disable_guidance || '') + ' ' + (rs.disable_guidance || ''));
             }
 
             const header = pageEl.querySelector(':scope > .page-header');
@@ -9655,9 +9664,7 @@ def get_main_html():
                         </div>
                         <div style="margin-top: 12px; font-size: 0.8em; color: var(--text-muted);">
                             Includes effective privileges via nested group membership (up to 2 levels deep).
-                            Roles are detected <strong>account-wide</strong>: a Workspace Admin administers some
-                            workspace in the account (named in each row's "via"), not necessarily this one, and
-                            a Metastore Admin administers the named metastore.
+                            Each row's "via" names the workspace / metastore / group the role comes from.
                         </div>
                     </div>
 
@@ -15110,6 +15117,15 @@ def api_scope():
     except Exception:  # noqa: BLE001
         creds_present = False
     account_configured = bool(account_id and creds_present)
+    # The account-credential service principal's application id (the stored
+    # client-id). It's an identifier, not a secret, so it's safe to surface -- it
+    # gives customers visibility into which SP is used for account-wide scanning.
+    account_sp = ''
+    if creds_present:
+        try:
+            account_sp = (uc_secret_value('client-id') or '').strip()
+        except Exception:  # noqa: BLE001
+            account_sp = ''
 
     # Live counts from the current run prove whether account-wide data actually
     # landed (the account SP authenticated and had the Account Admin role).
@@ -15160,7 +15176,9 @@ def api_scope():
     disable_account = (
         'To turn account-wide scanning off, remove the account credentials in '
         'Settings → Re-run setup (leave Account ID / client ID / secret blank). '
-        'The app then reports on this workspace only.')
+        'The app then reports on this workspace only: Account/Metastore/Workspace '
+        'Admin detection, account users & groups, Shared to All Users, Privileged '
+        'Non-IdP and Denylist stop populating. Already-collected data is kept.')
     enable_multi = (
         'Multi-workspace resource scanning needs the app service principal added '
         'as a workspace admin on each workspace you want scanned. Set scope to '
@@ -15183,6 +15201,7 @@ def api_scope():
             'account_id_present': bool(account_id),
             'configured': account_configured,
             'active': account_active,
+            'service_principal': account_sp,
             'counts': counts,
             'enable_guidance': enable_account,
             'disable_guidance': disable_account,
