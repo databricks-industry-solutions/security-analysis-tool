@@ -5064,7 +5064,7 @@ def get_main_html():
                             <li><strong>Shared to All Users</strong> — detects dashboards, Genie spaces, and apps shared with everyone from <code>system.access.audit</code> + <code>system.access.workspaces_latest</code>.</li>
                             <li><strong>Privileged Non-IdP</strong> — enumerates workspaces from <code>system.access.workspaces_latest</code> to attribute findings.</li>
                         </ul>
-                        Grant with <code>GRANT USE SCHEMA, SELECT ON SCHEMA system.access TO `&lt;service-principal&gt;`</code> (the <code>system.access</code> schema must be enabled for the metastore).
+                        Grant with <code>GRANT USE SCHEMA, SELECT ON SCHEMA system.access TO &lt;service-principal&gt;</code> (the <code>system.access</code> schema must be enabled for the metastore).
                     </div>
                 </details>
 
