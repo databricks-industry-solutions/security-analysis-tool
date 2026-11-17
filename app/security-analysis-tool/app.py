@@ -16075,6 +16075,7 @@ FROM {NOTEBOOK_SECRETS_TABLE}""",
 
 def _alert_schedule_presets():
     return [
+        {'label': 'Every minute (for testing — switch back after)', 'cron': '0 * * * * ?'},
         {'label': 'Every hour', 'cron': '0 0 * * * ?'},
         {'label': 'Every 6 hours', 'cron': '0 0 0/6 * * ?'},
         {'label': 'Daily at 08:00', 'cron': '0 0 8 * * ?'},
