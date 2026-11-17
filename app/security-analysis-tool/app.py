@@ -2378,7 +2378,8 @@ def get_main_html():
         .setup-guide-body li { margin: 3px 0; }
         .setup-guide-body code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
         .setup-guide-docs {
-            display: inline-flex; align-items: center; gap: 8px; margin-top: 16px;
+            display: flex; width: fit-content; margin: 16px auto 0;
+            align-items: center; gap: 8px;
             padding: 8px 14px; border-radius: 8px; text-decoration: none;
             font-weight: 600; font-size: 0.95em; color: #c4b5fd;
             background: rgba(102,126,234,0.12); border: 1px solid rgba(102,126,234,0.35);
