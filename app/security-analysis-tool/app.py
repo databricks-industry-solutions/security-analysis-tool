@@ -1090,7 +1090,10 @@ def get_main_html():
            collapsed. */
         .nav-collapse-btn {
             position: absolute;
-            top: 33px;
+            /* Centre the toggle on the sidebar's right edge, clear of the sticky
+               collection bar at the top (which previously overlapped it). */
+            top: 50%;
+            transform: translateY(-50%);
             right: -13px;
             /* Above the page's sticky stats header (z 100) so the edge pill is
                never painted over by page content; stays below modals/overlays. */
@@ -1108,8 +1111,6 @@ def get_main_html():
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
             transition: background 0.15s, color 0.15s;
         }
-        /* Collapsed header is shorter; nudge the pill up to stay level with the logo. */
-        .sidebar.collapsed .nav-collapse-btn { top: 24px; }
         .nav-collapse-btn:hover { background: var(--bg-input); color: var(--text-primary); }
         .nav-collapse-btn svg { width: 14px; height: 14px; transition: transform 0.2s; }
         .sidebar.collapsed .nav-collapse-btn svg { transform: rotate(180deg); }
