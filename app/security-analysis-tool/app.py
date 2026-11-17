@@ -4215,6 +4215,9 @@ def get_main_html():
                             <button class="resource-type-filter" data-type="Warehouse" onclick="browseResourcesByType('Warehouse')">Warehouses</button>
                             <button class="resource-type-filter" data-type="ServingEndpoint" onclick="browseResourcesByType('ServingEndpoint')">Endpoints</button>
                             <button class="resource-type-filter" data-type="SecretScope" onclick="browseResourcesByType('SecretScope')">Secrets</button>
+                            <button class="resource-type-filter" data-type="Notebook" onclick="browseResourcesByType('Notebook')">Notebooks</button>
+                            <button class="resource-type-filter" data-type="Directory" onclick="browseResourcesByType('Directory')">Folders</button>
+                            <button class="resource-type-filter" data-type="Repo" onclick="browseResourcesByType('Repo')">Repos</button>
                         </div>
                     </div>
                 </div>
