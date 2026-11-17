@@ -4643,17 +4643,16 @@ def get_main_html():
             let cls = '', icon = infoIcon, badge = '', text = '', help = '';
 
             const spTxt = aw.service_principal ? ` via service principal <code>${escapeHtml(aw.service_principal)}</code>` : '';
-            const acctTxt = s.account_id ? `, account <code>${escapeHtml(s.account_id)}</code>` : '';
             if (scopeType === 'account') {
                 if (aw.active) {
                     cls = 'ok';
                     badge = '<span class="scope-badge account">Account-wide: ON</span>';
-                    text = `This page covers your <strong>entire account</strong>${spTxt}${acctTxt} — <strong>${c.workspaces_total||0}</strong> workspaces, <strong>${c.account_groups||0}</strong> account groups, <strong>${c.account_admins||0}</strong> account admins.`;
+                    text = `This page covers your <strong>entire account</strong>${spTxt} — <strong>${c.workspaces_total||0}</strong> workspaces, <strong>${c.account_groups||0}</strong> account groups, <strong>${c.account_admins||0}</strong> account admins.`;
                     help = _scopeHelp('Account-wide scanning is already on' + (aw.service_principal ? ' (service principal ' + aw.service_principal + ').' : '.'), aw.disable_guidance||'');
                 } else if (aw.configured) {
                     cls = 'warn'; icon = warnIcon;
                     badge = '<span class="scope-badge warn">Account-wide: set up, no data yet</span>';
-                    text = `Account credentials are configured${spTxt}${acctTxt}, but no account-wide data has been collected yet. Run the collection jobs, and confirm that service principal has the <strong>Account admin</strong> role.`;
+                    text = `Account credentials are configured${spTxt}, but no account-wide data has been collected yet. Run the collection jobs, and confirm that service principal has the <strong>Account admin</strong> role.`;
                     help = _scopeHelp(aw.enable_guidance||'', aw.disable_guidance||'');
                 } else {
                     cls = 'warn'; icon = warnIcon;
@@ -4681,7 +4680,7 @@ def get_main_html():
                 badge = `<span class="scope-badge account">Identities: account-wide${aw.active ? '' : ' (off)'}</span>` +
                         (multi ? '<span class="scope-badge workspace">Resources: all workspaces</span>'
                                : '<span class="scope-badge workspace">Resources: this workspace</span>');
-                text = `Identities and admin roles are <strong>account-wide</strong>${aw.active ? spTxt + acctTxt : ''}; the resources a principal can reach are limited to the <strong>${multi ? 'scanned' : 'current'}</strong> workspace(s).`;
+                text = `Identities and admin roles are <strong>account-wide</strong>${aw.active ? spTxt : ''}; the resources a principal can reach are limited to the <strong>${multi ? 'scanned' : 'current'}</strong> workspace(s).`;
                 if (!aw.active) { cls = 'warn'; icon = warnIcon; text += ` Account-wide identity data isn't enabled yet, so identities and roles may be incomplete.`; }
                 help = _scopeHelp((aw.enable_guidance || '') + ' ' + (rs.enable_guidance || ''), (aw.disable_guidance || '') + ' ' + (rs.disable_guidance || ''));
             }
@@ -5057,8 +5056,14 @@ def get_main_html():
                         <h4>Adding workspaces later</h4>
                         Just add the service principal as a workspace admin on the new workspace. The next collection run discovers it automatically — <strong>no re-setup and no initializer re-run needed</strong>.
 
-                        <h4>Optional</h4>
-                        <code>SELECT</code> on <code>system.access</code> for the app SP enables a few extra account-level detections.
+                        <h4>Optional — system tables access</h4>
+                        <code>SELECT</code> on <code>system.access</code> for the app service principal powers the activity- and audit-based features. Without it they stay empty; everything else still works. Specifically:
+                        <ul>
+                            <li><strong>Denylist Candidates</strong> — ranks inactive identities using <code>system.access.audit</code> (no sign-in/query activity in the look-back window).</li>
+                            <li><strong>Shared to All Users</strong> — detects dashboards, Genie spaces, and apps shared with everyone from <code>system.access.audit</code> + <code>system.access.workspaces_latest</code>.</li>
+                            <li><strong>Privileged Non-IdP</strong> — enumerates workspaces from <code>system.access.workspaces_latest</code> to attribute findings.</li>
+                        </ul>
+                        Grant with <code>GRANT USE SCHEMA, SELECT ON SCHEMA system.access TO `&lt;service-principal&gt;`</code> (the <code>system.access</code> schema must be enabled for the metastore).
                     </div>
                 </details>
 
@@ -5086,7 +5091,7 @@ def get_main_html():
                     <div class="field">
                         <span class="field-label">Account ID</span>
                         <input class="field-input" id="setup-account-id" type="text" autocomplete="off" placeholder="Account console UUID" value="${escapeHtml(cur.account_id || '')}">
-                        <span class="field-help">Required only for account-level scans (Shared to All Users, Privileged Non-IdP, Denylist). Find it in the account console.</span>
+                        <span class="field-help">Required for all account-wide data: Account/Workspace/Metastore Admin detection, account users &amp; groups, High Privilege, Shared to All Users, Privileged Non-IdP, and Denylist. Without it, SAT reports on this workspace only. Find it in the account console.</span>
                     </div>
                     <div class="field">
                         <span class="field-label">Client ID</span>
@@ -15072,8 +15077,10 @@ def api_setup_requirements():
     add('Account credentials', bool(acct_id and has_creds),
         'Account ID and credentials are set.' if (acct_id and has_creds)
         else 'Account ID and/or service principal credentials are not set.',
-        'Add them in Settings -> Re-run setup (Account credentials). Needed only for '
-        'the account-level scans: Shared to All Users, Privileged Non-IdP, Denylist.',
+        'Add them in Settings -> Re-run setup (Account credentials). Needed for all '
+        'account-wide data: Account/Workspace/Metastore Admin detection, account '
+        'users & groups, High Privilege, Shared to All Users, Privileged Non-IdP, '
+        'and Denylist. Without them SAT reports on this workspace only.',
         optional=True)
 
     # 5. Account admin: verified against the stored credentials when present.
