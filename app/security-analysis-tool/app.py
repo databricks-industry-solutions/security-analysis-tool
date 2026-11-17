@@ -15067,12 +15067,27 @@ _ACCOUNT_WS_NAMES_TTL = 3600.0
 
 
 def _account_host():
-    host = (os.getenv('DATABRICKS_HOST') or '').lower()
-    if 'azuredatabricks.net' in host:
-        return 'https://accounts.azuredatabricks.net'
-    if 'gcp.databricks.com' in host:
-        return 'https://accounts.gcp.databricks.com'
-    return 'https://accounts.cloud.databricks.com'
+    """Account console host for this workspace's cloud, gov clouds included.
+
+    Derived from the workspace host's domain suffix (TLD) rather than hardcoded
+    hosts, so government clouds resolve correctly: AWS commercial and gov share
+    the accounts.cloud.databricks.<tld> shape (.com commercial, .us GovCloud/
+    FedRAMP, .mil DoD, .com.br etc.), Azure uses accounts.azuredatabricks.<tld>,
+    GCP uses accounts.gcp.databricks.<tld>. Mirrors the collection notebooks'
+    resolve_accounts_host. An explicit ACCOUNT_CONSOLE_HOST env override wins —
+    the escape hatch for any isolated/special environment."""
+    override = (os.getenv('ACCOUNT_CONSOLE_HOST') or '').strip()
+    if override:
+        return override.rstrip('/')
+    host = (os.getenv('DATABRICKS_HOST') or '').strip().lower()
+    # TLD after 'databricks.' (e.g. com, net, us, mil, com.br); fall back by cloud.
+    m = re.search(r"databricks\.([a-z][a-z.]*?)(?:[:/]|$)", host)
+    tld = m.group(1) if m else ('net' if 'azure' in host else 'com')
+    if 'azuredatabricks' in host:
+        return f"https://accounts.azuredatabricks.{tld}"
+    if 'gcp.databricks' in host:
+        return f"https://accounts.gcp.databricks.{tld}"
+    return f"https://accounts.cloud.databricks.{tld}"
 
 
 def _account_workspace_names():
