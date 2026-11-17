@@ -2386,6 +2386,40 @@ def get_main_html():
         .scope-help-body .enable { color:#6ee7b7; }
         .scope-help-body .disable { color: rgba(255,255,255,0.6); }
 
+        /* Help & Support page */
+        .help-section {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 20px 24px; margin-bottom: 16px;
+        }
+        .help-section h2 {
+            font-size: 1.02em; margin: 0 0 6px; color: var(--text-primary); font-weight: 650;
+        }
+        .help-section .help-sub { font-size: 0.86em; color: var(--text-muted); margin: 0 0 14px; }
+        .help-steps { margin: 0; padding-left: 20px; color: var(--text-secondary); font-size: 0.9em; line-height: 1.7; }
+        .help-steps li { margin: 2px 0; }
+        .help-faq details { border-top: 1px solid var(--border); }
+        .help-faq details:last-child { border-bottom: 1px solid var(--border); }
+        .help-faq summary {
+            cursor: pointer; padding: 13px 0; font-weight: 600; font-size: 0.9em;
+            color: var(--text-primary); list-style: none;
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+        }
+        .help-faq summary::-webkit-details-marker { display: none; }
+        .help-faq summary::after { content: '+'; color: var(--text-muted); font-weight: 700; font-size: 1.1em; }
+        .help-faq details[open] summary::after { content: '\\2212'; }
+        .help-faq summary:hover { color: #c4b5fd; }
+        .help-faq-body { padding: 0 0 15px; color: var(--text-secondary); font-size: 0.88em; line-height: 1.65; }
+        .help-faq-body code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
+        .help-faq-body strong { color: rgba(255,255,255,0.9); }
+        .help-links { display: flex; flex-wrap: wrap; gap: 12px; }
+        .help-link-card {
+            display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+            border: 1px solid var(--border); border-radius: 10px; color: var(--text-primary);
+            text-decoration: none; background: var(--bg-input); font-size: 0.9em; transition: border-color 0.15s, transform 0.15s;
+        }
+        .help-link-card:hover { border-color: #667eea; transform: translateY(-1px); }
+        .help-link-card svg { width: 17px; height: 17px; color: #a78bfa; flex-shrink: 0; }
+
         /* Search Box */
         .search-container {
             background: var(--bg-card);
@@ -3924,6 +3958,11 @@ def get_main_html():
             </nav>
 
             <div class="sidebar-footer">
+                <button class="footer-link" id="help-link" title="Help &amp; Support"
+                        aria-label="Help and support" onclick="navigateToPage('help')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>Help &amp; Support</span>
+                </button>
                 <button class="footer-link" id="settings-gear" title="Settings"
                         aria-label="Settings" onclick="openSettingsPanel()">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -3970,7 +4009,7 @@ def get_main_html():
                             // links to these pages briefly flash the graph-collection
                             // bar before the main script hides it.
                             const noStatsBar = ['home', 'sharedtoaccount', 'privilegednonidp',
-                                                'denylistbuilder', 'collection',
+                                                'denylistbuilder', 'collection', 'help',
                                                 'secretsoverview', 'secretsalerts'];
                             const bar = document.getElementById('stats-header-bar');
                             if (bar && noStatsBar.includes(hash)) bar.style.display = 'none';
@@ -4026,6 +4065,84 @@ def get_main_html():
 
             <!-- Home/About Page -->
             <!-- Data Collection: run and schedule the jobs that populate this app. -->
+            <div class="page" id="page-help">
+                <div class="page-header">
+                    <h1 class="page-title">Help &amp; Support</h1>
+                    <p class="page-desc">How SAT works, answers to common questions, and where to get help.</p>
+                </div>
+
+                <div class="help-section">
+                    <h2>Getting started</h2>
+                    <p class="help-sub">Four steps from a fresh install to results.</p>
+                    <ol class="help-steps">
+                        <li><strong>Complete setup</strong> — pick a catalog/schema for results and a SQL warehouse. Optionally add an Account ID + a service principal (with the <strong>Account admin</strong> role) to unlock account-wide data.</li>
+                        <li><strong>Run Data Collection</strong> — provision and run the collection jobs; they build the permission graph and findings.</li>
+                        <li><strong>Read the scope banner</strong> — every page shows whether its data is account-wide or limited to this workspace, and how to change that.</li>
+                        <li><strong>Explore</strong> — use Principal / Resource Analysis and the Security Reports to review access.</li>
+                    </ol>
+                </div>
+
+                <div class="help-section">
+                    <h2>Frequently asked questions</h2>
+                    <div class="help-faq">
+                        <details><summary>A page is empty or says "no data" — why?</summary>
+                            <div class="help-faq-body">Either collection hasn't run yet, or the page needs data that isn't enabled. Check <strong>Data Collection</strong> for a recent successful run, and read the page's <strong>scope banner</strong> — it states whether account-wide data is on and, if not, exactly what to enable.</div></details>
+                        <details><summary>What's the difference between "this workspace" and "multiple workspaces"?</summary>
+                            <div class="help-faq-body">Resource findings (clusters, jobs, grants, secret scopes, notebooks) are collected per workspace. <strong>This workspace</strong> scans only where the app runs; <strong>multiple workspaces</strong> scans every workspace the service principal can reach. Set it in <strong>Data Collection → Manage</strong>. Identities and admin roles are always account-wide when account credentials are configured.</div></details>
+                        <details><summary>Why do I see admins or identities from other workspaces?</summary>
+                            <div class="help-faq-body">Identity and admin data (Account / Workspace / Metastore Admin, account users &amp; groups) is <strong>account-wide</strong>, collected via the account API. So a "Workspace Admin" may administer other workspaces — Principal Analysis and High Privilege name exactly which workspaces/metastores.</div></details>
+                        <details><summary>How do I enable account-wide data?</summary>
+                            <div class="help-faq-body">In the account console, grant a service principal the <strong>Account admin</strong> role (the app's own SP or any other). Then in <strong>Settings → Re-run setup</strong> add the Account ID and that SP's client ID + secret. The scope banner will switch to "Account-wide: ON".</div></details>
+                        <details><summary>How do I include notebooks and folders?</summary>
+                            <div class="help-faq-body">In <strong>Data Collection → Manage</strong>, enable <strong>"Also scan notebook &amp; folder permissions"</strong> and click <strong>Apply &amp; redeploy</strong>. It's off by default because it walks the whole workspace tree and runs slower. Notebooks/folders then appear in Resource Analysis.</div></details>
+                        <details><summary>Why is "Classic" compute greyed out?</summary>
+                            <div class="help-faq-body">The app's service principal can't create clusters here (no <code>allow-cluster-create</code> entitlement — e.g. a serverless-only workspace), so classic job compute isn't available. Use serverless, or grant the SP cluster-create.</div></details>
+                        <details><summary>Do I need to re-run after adding a workspace?</summary>
+                            <div class="help-faq-body">No. Add the service principal as a <strong>workspace admin</strong> on the new workspace; the next collection run discovers it automatically. No re-setup or initializer re-run needed.</div></details>
+                        <details><summary>How often does data refresh?</summary>
+                            <div class="help-faq-body">On whatever schedule you set for the collection jobs in <strong>Data Collection</strong>. You can also run any job on demand there. Each page's header shows the collection run it's displaying.</div></details>
+                        <details><summary>Which service principal is used, and what access does it need?</summary>
+                            <div class="help-faq-body">The app's own SP runs the jobs: it needs <code>CAN USE</code> on the warehouse and owns the results schema. Account-wide data uses an account-credential SP with the <strong>Account admin</strong> role. Multi-workspace resource scanning needs the SP added as a <strong>workspace admin</strong> on each workspace. Optional: <code>SELECT</code> on <code>system.access</code> for activity-based reports.</div></details>
+                    </div>
+                </div>
+
+                <div class="help-section">
+                    <h2>Troubleshooting</h2>
+                    <div class="help-faq">
+                        <details><summary>Account-wide data is missing</summary>
+                            <div class="help-faq-body">Confirm the Account ID + credentials are set (Settings → Re-run setup) and that the service principal holds the <strong>Account admin</strong> role, then run the collection jobs. The scope banner reports "set up, no data yet" when credentials exist but a run hasn't produced data.</div></details>
+                        <details><summary>A collection job failed</summary>
+                            <div class="help-faq-body">Open <strong>Data Collection</strong> and check the job's last run. Common causes: the SP lacks <code>CAN MANAGE</code> on jobs or <code>CAN USE</code> on the warehouse, or the results schema isn't readable. Re-run the initializer from Manage if the schema/tables look incomplete.</div></details>
+                        <details><summary>Notebooks aren't showing in Resource Analysis</summary>
+                            <div class="help-faq-body">Enable notebook scanning in <strong>Data Collection → Manage</strong>, click <strong>Apply &amp; redeploy</strong>, run collection again, then hard-refresh. Use the <strong>Notebooks</strong> / <strong>Folders</strong> browse buttons or search by name.</div></details>
+                        <details><summary>Some workspaces were skipped</summary>
+                            <div class="help-faq-body">The service principal must be a <strong>workspace admin</strong> on each workspace you want scanned. On serverless, scanning remote workspaces needs cross-workspace access — if remote ones are skipped, ask your account team to enroll you, or use classic compute.</div></details>
+                        <details><summary>I get a permission / 403 error viewing results</summary>
+                            <div class="help-faq-body">Results are governed by Unity Catalog. Ask whoever owns the results schema to grant you <code>USE SCHEMA</code> + <code>SELECT</code> on it.</div></details>
+                    </div>
+                </div>
+
+                <div class="help-section">
+                    <h2>More help</h2>
+                    <p class="help-sub">Documentation, source, and a place to report problems.</p>
+                    <div class="help-links">
+                        <a class="help-link-card" href="https://github.com/databricks-industry-solutions/security-analysis-tool" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                            Documentation &amp; source
+                        </a>
+                        <a class="help-link-card" href="https://github.com/databricks-industry-solutions/security-analysis-tool/issues" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            Report an issue
+                        </a>
+                        <a class="help-link-card" href="https://www.databricks.com/trust" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            Databricks Trust Center
+                        </a>
+                    </div>
+                    <p class="help-sub" style="margin-top:14px; margin-bottom:0;">Tip: the <strong>scope banner</strong> on each page and the requirements checklist in setup tell you, live, what's configured and what to change.</p>
+                </div>
+            </div>
+
             <div class="page" id="page-collection">
                 <div class="page-header">
                     <h1 class="page-title">Data Collection</h1>
@@ -4768,7 +4885,7 @@ def get_main_html():
             // secret scanning pages (different dataset entirely), and Data
             // Collection, which reports freshness for every job itself.
             const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder',
-                                       'collection', 'secretsoverview', 'secretsalerts'];
+                                       'collection', 'help', 'secretsoverview', 'secretsalerts'];
             const statsBar = document.getElementById('stats-header-bar');
             if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
 
