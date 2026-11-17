@@ -16021,7 +16021,7 @@ def _alert_templates():
     """
     return {
         'total_findings': {
-            'label': 'Any hardcoded secret found',
+            'label': 'Hardcoded credentials exposed',
             'description': (
                 'The latest scan found hardcoded secrets in notebook source or '
                 'cluster configuration.'
