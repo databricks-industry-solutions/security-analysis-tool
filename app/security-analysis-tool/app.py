@@ -2377,6 +2377,16 @@ def get_main_html():
         .setup-guide-body ul { margin: 4px 0 4px 18px; padding: 0; }
         .setup-guide-body li { margin: 3px 0; }
         .setup-guide-body code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+        .setup-guide-docs {
+            display: inline-flex; align-items: center; gap: 8px; margin-top: 16px;
+            padding: 8px 14px; border-radius: 8px; text-decoration: none;
+            font-weight: 600; font-size: 0.95em; color: #c4b5fd;
+            background: rgba(102,126,234,0.12); border: 1px solid rgba(102,126,234,0.35);
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .setup-guide-docs:hover { background: rgba(102,126,234,0.2); border-color: rgba(102,126,234,0.55); }
+        .setup-guide-docs svg { width: 15px; height: 15px; flex: 0 0 auto; }
+        .setup-guide-docs-ext { opacity: 0.7; }
         .setup-guide-body .tag {
             display: inline-block; font-size: 0.72em; font-weight: 700; text-transform: uppercase;
             letter-spacing: 0.4px; padding: 1px 7px; border-radius: 999px; margin-right: 6px;
@@ -4201,7 +4211,7 @@ def get_main_html():
                         <details><summary>How do I include notebooks and folders?</summary>
                             <div class="help-faq-body">In <strong>Data Collection → Manage</strong>, enable <strong>"Also scan notebook &amp; folder permissions"</strong> and click <strong>Apply &amp; redeploy</strong>. It's off by default because it walks the whole workspace tree and runs slower. Notebooks/folders then appear in Resource Analysis.</div></details>
                         <details><summary>Why is "Classic" compute greyed out?</summary>
-                            <div class="help-faq-body">The app's service principal can't create clusters here (no <code>allow-cluster-create</code> entitlement — e.g. a serverless-only workspace), so classic job compute isn't available. Use serverless, or grant the SP cluster-create.</div></details>
+                            <div class="help-faq-body">This workspace is <strong>serverless-only</strong> (its <code>compute_mode</code> is <code>SERVERLESS</code>), so it has no classic compute to run jobs on — use serverless. Note: classic is greyed out only for a genuinely serverless-only workspace. If classic is offered but a run fails to start a cluster, the app's service principal just needs the <code>allow-cluster-create</code> permission in this workspace.</div></details>
                         <details><summary>Do I need to re-run after adding a workspace?</summary>
                             <div class="help-faq-body">No. Add the service principal as a <strong>workspace admin</strong> on the new workspace; the next collection run discovers it automatically. No re-setup or initializer re-run needed.</div></details>
                         <details><summary>How often does data refresh?</summary>
@@ -5450,6 +5460,20 @@ def get_main_html():
             return `<input class="field-input" id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(selected)}">`;
         }
 
+        function setupCombo(id, options, placeholder, selected) {
+            // Text input backed by a native <datalist>: the customer can pick from
+            // the catalogs the app can see, or type any catalog name (useful when
+            // the app SP can't enumerate a catalog the customer knows exists).
+            selected = selected || '';
+            const listId = id + '-list';
+            const opts = (options || [])
+                .map(o => `<option value="${escapeHtml(o.value)}">`).join('');
+            return `<input class="field-input" id="${id}" type="text" list="${listId}"
+                        autocomplete="off" placeholder="${escapeHtml(placeholder)}"
+                        value="${escapeHtml(selected)}">
+                    <datalist id="${listId}">${opts}</datalist>`;
+        }
+
         function renderSetupForm(opts) {
             const catalogs = (opts.catalogs || []).map(c => ({ value: c, label: c }));
             const warehouses = (opts.warehouses || []).map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` }));
@@ -5484,6 +5508,12 @@ def get_main_html():
                             <li><strong>Privileged Non-IdP</strong> — enumerates workspaces from <code>system.access.workspaces_latest</code> to attribute findings.</li>
                         </ul>
                         Grant with <code>GRANT USE SCHEMA, SELECT ON SCHEMA system.access TO &lt;service-principal&gt;</code> (the <code>system.access</code> schema must be enabled for the metastore).
+
+                        <a class="setup-guide-docs" href="https://databricks-industry-solutions.github.io/security-analysis-tool/" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                            Full SAT documentation
+                            <svg class="setup-guide-docs-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+                        </a>
                     </div>
                 </details>
 
@@ -5491,8 +5521,8 @@ def get_main_html():
                     <div class="setup-group-title">Results storage</div>
                     <div class="field">
                         <span class="field-label">Catalog</span>
-                        ${setupPicker('setup-catalog', catalogs, 'Choose a catalog', cur.catalog)}
-                        <span class="field-help">The results schema is created in this catalog.</span>
+                        ${setupCombo('setup-catalog', catalogs, 'Choose a catalog you can access, or type a name', cur.catalog)}
+                        <span class="field-help">The results schema is created in this catalog. Pick from the catalogs you have access to, or type any catalog name.</span>
                     </div>
                     <div class="field">
                         <span class="field-label">Schema name</span>
@@ -5544,9 +5574,9 @@ def get_main_html():
                         <span class="field-label">Job compute</span>
                         <select class="field-input" id="setup-job-compute">
                             <option value="serverless"${(opts.classic_available === false || (cur.job_compute || 'serverless') !== 'classic') ? ' selected' : ''}>Serverless (recommended)</option>
-                            <option value="classic"${opts.classic_available === false ? ' disabled' : ((cur.job_compute || 'serverless') === 'classic' ? ' selected' : '')}>Classic (single-node cluster)${opts.classic_available === false ? ' — not available in this workspace' : ''}</option>
+                            <option value="classic"${opts.classic_available === false ? ' disabled' : ((cur.job_compute || 'serverless') === 'classic' ? ' selected' : '')}>Classic (single-node cluster)${opts.classic_available === false ? ' — serverless-only workspace (no classic compute)' : ''}</option>
                         </select>
-                        <span class="field-help">Serverless starts instantly and needs no cluster. Classic runs jobs on an ephemeral single-node job cluster; use it to scan multiple workspaces when your account isn't yet enrolled in serverless cross-workspace access. Changing this re-creates the collection jobs.</span>
+                        <span class="field-help">Serverless starts instantly and needs no cluster. Classic runs jobs on an ephemeral single-node job cluster; use it to scan multiple workspaces when your account isn't yet enrolled in serverless cross-workspace access. Classic also requires the app's service principal to have cluster-create permission in this workspace. Changing this re-creates the collection jobs.</span>
                     </div>
                     <div class="field">
                         <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
@@ -17473,27 +17503,57 @@ def api_collection_provision():
 _classic_available_cache = None
 
 
-def _classic_compute_available(client=None):
-    """Whether the app can run classic (job-cluster) compute here.
+def _workspace_compute_mode():
+    """This workspace's compute_mode via the Account API: 'SERVERLESS', 'HYBRID',
+    or None when it can't be determined (account credentials not set yet, or the
+    lookup failed).
 
-    The real signal is the app service principal's ``allow-cluster-create``
-    entitlement: without it no classic cluster can launch, which is exactly the
-    case on a serverless-only workspace (the create API returns "no associated
-    worker environments"). The node-type / Spark-version listings are NOT a
-    signal -- they return the full catalog even on serverless-only workspaces.
-    Cached per process; any error is treated as not available."""
+    This is the authoritative signal for whether classic compute exists in the
+    workspace at all. A principal's allow-cluster-create entitlement is NOT that
+    signal -- it is a grantable per-principal permission, so a freshly created app
+    service principal lacks it even in a classic-capable (HYBRID) workspace."""
+    try:
+        account_id = (_app_config.get('account_id') or os.getenv('ACCOUNT_ID') or '').strip()
+        client_id = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+        client_secret = uc_secret_value(CREDENTIAL_KEYS['client_secret'])
+        this_ws = (os.getenv('WORKSPACE_ID') or '').strip()
+        if not (account_id and client_id and client_secret and this_ws):
+            return None
+        from databricks.sdk import AccountClient
+        ac = AccountClient(host=_account_host(), account_id=account_id,
+                           client_id=client_id, client_secret=client_secret)
+        # Raw call so the field is read regardless of the installed SDK version.
+        resp = ac.api_client.do(
+            'GET', f'/api/2.0/accounts/{account_id}/workspaces/{this_ws}')
+        cm = (resp or {}).get('compute_mode')
+        return str(cm).upper() if cm else None
+    except Exception:  # noqa: BLE001
+        logger.info('workspace compute_mode lookup failed', exc_info=True)
+        return None
+
+
+def _classic_compute_available(client=None):
+    """Whether classic (job-cluster) compute can be offered for collection jobs.
+
+    The authoritative signal is the workspace's compute_mode: a SERVERLESS
+    (serverless-only) workspace has no classic compute; a HYBRID one does. The app
+    service principal's allow-cluster-create entitlement is deliberately NOT used
+    -- it is a grantable permission, so a fresh app SP lacks it even in a
+    classic-capable workspace, which is what made classic wrongly show as
+    unavailable. When compute_mode can't be read (no account credentials yet, e.g.
+    during first-run setup) default to available rather than hiding a valid option;
+    if the workspace turns out to be serverless-only, provisioning a classic job
+    surfaces the platform's own clear error.
+
+    A definitive answer is cached per process; an optimistic (unknown) answer is
+    not, so it is re-checked once account credentials are available."""
     global _classic_available_cache
     if _classic_available_cache is not None:
         return _classic_available_cache
-    ok = False
-    try:
-        client = client or _sp_workspace_client()
-        me = client.current_user.me()
-        entitlements = {str(getattr(e, 'value', '') or '')
-                        for e in (getattr(me, 'entitlements', None) or [])}
-        ok = 'allow-cluster-create' in entitlements
-    except Exception:  # noqa: BLE001
-        ok = False
+    mode = _workspace_compute_mode()
+    if mode is None:
+        return True  # optimistic, uncached: re-check once credentials exist
+    ok = mode != 'SERVERLESS'
     _classic_available_cache = ok
     return ok
 
@@ -17521,11 +17581,9 @@ def api_collection_compute():
     scan_scope = 'all' if payload.get('scan_scope') == 'all' else 'current'
     collect_notebooks = bool(payload.get('collect_notebooks'))
     if compute == 'classic' and not _classic_compute_available():
-        return jsonify({'error': "Classic compute isn't available here: the app's "
-                                 "service principal can't create clusters (it lacks the "
-                                 "allow-cluster-create entitlement, e.g. a serverless-only "
-                                 "workspace). Use serverless, or grant the service principal "
-                                 "cluster-create and try again."}), 400
+        return jsonify({'error': "Classic compute isn't available here: this workspace is "
+                                 "serverless-only (compute_mode SERVERLESS), so it has no "
+                                 "classic compute. Use serverless."}), 400
 
     config = dict(_app_config)
     config['job_compute'] = compute
