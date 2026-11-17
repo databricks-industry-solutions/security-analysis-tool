@@ -4687,6 +4687,8 @@ def get_main_html():
             let cls = '', icon = infoIcon, badge = '', text = '', help = '';
 
             const spTxt = aw.service_principal ? ` via service principal <code>${escapeHtml(aw.service_principal)}</code>` : '';
+            const wsCount = rs.workspace_count;  // live count of workspaces with resource data
+            const switchHint = ` To include your other workspaces, set collection scope to <strong>Multiple workspaces</strong> (Data Collection → Manage, or Settings → Re-run setup).`;
             if (scopeType === 'account') {
                 if (aw.active) {
                     cls = 'ok';
@@ -4711,8 +4713,8 @@ def get_main_html():
                     ? `<span class="scope-badge workspace">${nScanned>0?nScanned+' workspaces':'All workspaces'}</span>`
                     : '<span class="scope-badge workspace">This workspace</span>';
                 text = multi
-                    ? `Resource findings are scanned from <strong>all reachable workspaces</strong>${nScanned>0?' ('+nScanned+' collected)':''}. Compute: <strong>${escapeHtml(rs.compute||'serverless')}</strong>.`
-                    : `Resource findings here are from <strong>this workspace only</strong>. Other workspaces aren't included.`;
+                    ? `Resource findings are scanned from <strong>${wsCount ? wsCount + ' workspace' + (wsCount === 1 ? '' : 's') : 'all reachable workspaces'}</strong>. Compute: <strong>${escapeHtml(rs.compute||'serverless')}</strong>.`
+                    : `Resource findings here are from <strong>this workspace only</strong>${wsCount ? ' (' + wsCount + ' workspace' + (wsCount === 1 ? '' : 's') + ' with data)' : ''}.` + switchHint;
                 const failed = (rs.workspaces_failed||[]).length;
                 if (multi && failed > 0) {
                     cls = 'warn'; icon = warnIcon;
@@ -4724,7 +4726,9 @@ def get_main_html():
                 badge = `<span class="scope-badge account">Identities: account-wide${aw.active ? '' : ' (off)'}</span>` +
                         (multi ? '<span class="scope-badge workspace">Resources: all workspaces</span>'
                                : '<span class="scope-badge workspace">Resources: this workspace</span>');
-                text = `Identities and admin roles are <strong>account-wide</strong>${aw.active ? spTxt : ''}; the resources a principal can reach are limited to the <strong>${multi ? 'scanned' : 'current'}</strong> workspace(s).`;
+                text = multi
+                    ? `Identities and admin roles are <strong>account-wide</strong>${aw.active ? spTxt : ''}; resource reach spans the <strong>${wsCount ? wsCount + ' scanned workspace' + (wsCount === 1 ? '' : 's') : 'scanned workspaces'}</strong>.`
+                    : `Identities and admin roles are <strong>account-wide</strong>${aw.active ? spTxt : ''}; the resources a principal can reach are from <strong>this workspace only</strong>${wsCount ? ' (' + wsCount + ' workspace' + (wsCount === 1 ? '' : 's') + ' with data)' : ''}.` + switchHint;
                 if (!aw.active) { cls = 'warn'; icon = warnIcon; text += ` Account-wide identity data isn't enabled yet, so identities and roles may be incomplete.`; }
                 help = _scopeHelp((aw.enable_guidance || '') + ' ' + (rs.enable_guidance || ''), (aw.disable_guidance || '') + ' ' + (rs.disable_guidance || ''));
             }
@@ -15224,6 +15228,25 @@ def api_scope():
     ws_collected = (coverage or {}).get('workspaces_collected') or []
     ws_failed = (coverage or {}).get('workspaces_failed') or []
 
+    # Live count of workspaces that actually have resource data in this run --
+    # read from the data (distinct workspace_id tagged on resources), not just the
+    # config, so the UI can truthfully say "1 workspace" vs "N workspaces".
+    resource_ws_count = None
+    if run_id:
+        try:
+            r = exec_query_df(f"""
+                SELECT COUNT(DISTINCT get_json_object(properties, '$.workspace_id')) AS c
+                FROM {VERTICES_TABLE}
+                WHERE run_id = '{run_id}'
+                  AND get_json_object(properties, '$.workspace_id') IS NOT NULL
+            """)
+            if r:
+                resource_ws_count = int(r[0].get('c') or 0)
+        except Exception:  # noqa: BLE001
+            resource_ws_count = None
+    if not resource_ws_count:
+        resource_ws_count = len(ws_collected) if ws_collected else (1 if mode == 'single-workspace' else None)
+
     enable_account = (
         'Account-wide data is collected using account API credentials — a service '
         'principal with the Account admin role (the app\'s own service principal, '
@@ -15267,6 +15290,7 @@ def api_scope():
             'scope': scan_scope,
             'compute': compute,
             'collection_mode': mode,
+            'workspace_count': resource_ws_count,
             'workspaces_scanned': ws_collected,
             'workspaces_failed': ws_failed,
             'enable_guidance': enable_multi,
