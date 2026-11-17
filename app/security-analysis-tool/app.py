@@ -2393,9 +2393,10 @@ def get_main_html():
             border-radius: 12px; padding: 20px 24px; margin-bottom: 16px;
         }
         .help-section h2 {
-            font-size: 1.02em; margin: 0 0 6px; color: var(--text-primary); font-weight: 650;
+            font-size: 1.15em; margin: 0 0 4px; color: #ffffff; font-weight: 700;
+            letter-spacing: -0.01em;
         }
-        .help-section .help-sub { font-size: 0.86em; color: var(--text-muted); margin: 0 0 14px; }
+        .help-section .help-sub { font-size: 0.86em; color: var(--text-muted); margin: 0 0 16px; }
         .help-steps { margin: 0; padding-left: 20px; color: var(--text-secondary); font-size: 0.9em; line-height: 1.7; }
         .help-steps li { margin: 2px 0; }
         .help-faq details { border-top: 1px solid var(--border); }
@@ -2422,17 +2423,19 @@ def get_main_html():
         .help-link-card svg { width: 17px; height: 17px; color: #a78bfa; flex-shrink: 0; }
 
         /* Interactive report-guide cards + modal */
-        .help-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(234px, 1fr)); gap: 12px; }
+        .help-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-items: stretch; }
         .help-card {
             text-align: left; background: var(--bg-input); border: 1px solid var(--border);
             border-radius: 10px; padding: 14px 16px; cursor: pointer; display: flex; gap: 12px;
-            align-items: flex-start; transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+            align-items: center; min-height: 66px; box-sizing: border-box;
+            transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
         }
         .help-card:hover { border-color: #667eea; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.28); }
-        .help-card-icon { font-size: 1.4em; flex: 0 0 auto; line-height: 1; margin-top: 1px; }
+        .help-card-icon { font-size: 1.5em; flex: 0 0 28px; text-align: center; line-height: 1; }
+        .help-card-text { flex: 1 1 auto; min-width: 0; }
         .help-card-title { font-weight: 650; font-size: 0.9em; color: var(--text-primary); margin-bottom: 3px; }
-        .help-card-sub { font-size: 0.78em; color: var(--text-muted); line-height: 1.45; }
-        .help-card-arrow { margin-left: auto; color: var(--text-muted); align-self: center; transition: transform 0.15s; }
+        .help-card-sub { font-size: 0.78em; color: var(--text-muted); line-height: 1.4; }
+        .help-card-arrow { flex: 0 0 auto; color: var(--text-muted); transition: transform 0.15s; }
         .help-card:hover .help-card-arrow { transform: translateX(3px); color: #a78bfa; }
 
         .help-modal-overlay {
@@ -4135,13 +4138,13 @@ def get_main_html():
                 </div>
 
                 <div class="help-section">
-                    <h2>Understanding the reports</h2>
+                    <h2>Understanding the Reports</h2>
                     <p class="help-sub">Click any analysis to learn what it shows, how to read it, what to look for, and an example.</p>
                     <div class="help-card-grid" id="help-report-cards"></div>
                 </div>
 
                 <div class="help-section">
-                    <h2>Getting started</h2>
+                    <h2>Getting Started</h2>
                     <p class="help-sub">Four steps from a fresh install to results.</p>
                     <ol class="help-steps">
                         <li><strong>Complete setup</strong> — pick a catalog/schema for results and a SQL warehouse. Optionally add an Account ID + a service principal (with the <strong>Account admin</strong> role) to unlock account-wide data.</li>
@@ -4152,7 +4155,7 @@ def get_main_html():
                 </div>
 
                 <div class="help-section">
-                    <h2>Frequently asked questions</h2>
+                    <h2>Frequently Asked Questions</h2>
                     <div class="help-faq">
                         <details><summary>A page is empty or says "no data" — why?</summary>
                             <div class="help-faq-body">Either collection hasn't run yet, or the page needs data that isn't enabled. Check <strong>Data Collection</strong> for a recent successful run, and read the page's <strong>scope banner</strong> — it states whether account-wide data is on and, if not, exactly what to enable.</div></details>
@@ -4192,7 +4195,7 @@ def get_main_html():
                 </div>
 
                 <div class="help-section">
-                    <h2>More help</h2>
+                    <h2>More Help</h2>
                     <p class="help-sub">Documentation, source, and a place to report problems.</p>
                     <div class="help-links">
                         <a class="help-link-card" href="https://github.com/databricks-industry-solutions/security-analysis-tool" target="_blank" rel="noopener noreferrer">
@@ -4878,7 +4881,7 @@ def get_main_html():
                 return `<div class="help-card" onclick="openHelpGuide('${k}')" tabindex="0" role="button"
                             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openHelpGuide('${k}')}">
                     <span class="help-card-icon">${g.emoji}</span>
-                    <div style="min-width:0;">
+                    <div class="help-card-text">
                         <div class="help-card-title">${escapeHtml(g.title)}</div>
                         <div class="help-card-sub">${escapeHtml(g.sub)}</div>
                     </div>
