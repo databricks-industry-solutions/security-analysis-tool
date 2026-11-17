@@ -2348,6 +2348,34 @@ def get_main_html():
         .scope-help summary:hover { color: var(--text-primary); }
         .scope-help-caret { width: 12px; height: 12px; flex: 0 0 auto; transition: transform 0.15s ease; }
         .scope-help[open] .scope-help-caret { transform: rotate(90deg); }
+
+        /* Collapsible setup & access guide shown in the first-run / reconfigure form. */
+        .setup-guide {
+            margin-bottom: 22px;
+            border: 1px solid rgba(102,126,234,0.3);
+            background: rgba(102,126,234,0.06);
+            border-radius: 10px;
+            padding: 0;
+        }
+        .setup-guide > summary {
+            cursor: pointer; list-style: none; user-select: none;
+            display: flex; align-items: center; gap: 8px;
+            padding: 12px 16px; font-weight: 600; font-size: 0.92em; color: #c4b5fd;
+        }
+        .setup-guide > summary::-webkit-details-marker { display: none; }
+        .setup-guide-caret { width: 13px; height: 13px; transition: transform 0.15s ease; }
+        .setup-guide[open] .setup-guide-caret { transform: rotate(90deg); }
+        .setup-guide-body { padding: 4px 18px 16px; font-size: 0.86em; color: rgba(255,255,255,0.72); line-height: 1.6; }
+        .setup-guide-body h4 { color: rgba(255,255,255,0.9); font-size: 0.95em; margin: 14px 0 4px; }
+        .setup-guide-body h4:first-child { margin-top: 4px; }
+        .setup-guide-body ul { margin: 4px 0 4px 18px; padding: 0; }
+        .setup-guide-body li { margin: 3px 0; }
+        .setup-guide-body code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+        .setup-guide-body .tag {
+            display: inline-block; font-size: 0.72em; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.4px; padding: 1px 7px; border-radius: 999px; margin-right: 6px;
+            background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3);
+        }
         .scope-help-body { margin-top: 8px; color: rgba(255,255,255,0.65); }
         .scope-help-body p { margin: 0 0 8px; }
         .scope-help-body .enable { color:#6ee7b7; }
@@ -4994,6 +5022,27 @@ def get_main_html():
                 : 'Service principal for account-level scans. You can add this later in Settings.';
 
             document.getElementById('setup-body').innerHTML = `
+                <details class="setup-guide">
+                    <summary><svg class="setup-guide-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Setup &amp; access guide — identities, permissions, and scope</summary>
+                    <div class="setup-guide-body">
+                        <h4>Two identities</h4>
+                        SAT runs everything as the <strong>app's service principal</strong> (the app's own identity; its jobs run as this principal). For account-wide data it also uses <strong>account API credentials</strong> — a service principal's OAuth client ID + secret. These can be the <em>same</em> service principal.
+
+                        <h4>Choose what you need</h4>
+                        <ul>
+                            <li><span class="tag">Default</span><strong>This workspace, basic.</strong> The app SP needs <code>CAN USE</code> on the SQL warehouse and it owns the results schema it creates (so it can store secrets). Scans resources — clusters, jobs, grants, secret scopes — in this one workspace. No account credentials required.</li>
+                            <li><span class="tag">Account-wide</span><strong>Account identities &amp; admins.</strong> Powers Account/Workspace/Metastore Admin detection, account users &amp; groups, Shared-to-All-Users, Privileged Non-IdP, and Denylist. Enter the <strong>Account ID</strong> and the service principal's <strong>client ID + secret</strong> below, and grant that service principal the <strong>Account admin</strong> role in the account console. Works on serverless.</li>
+                            <li><span class="tag">Multi-workspace</span><strong>Resources across many workspaces.</strong> Add the app's service principal as a <strong>workspace admin</strong> on every workspace you want scanned, then set scope to <em>Multiple workspaces</em>. Use <strong>Classic</strong> compute, or <strong>Serverless</strong> if your account has cross-workspace serverless access (otherwise unreachable workspaces are skipped and reported — ask your account team to enroll you).</li>
+                        </ul>
+
+                        <h4>Adding workspaces later</h4>
+                        Just add the service principal as a workspace admin on the new workspace. The next collection run discovers it automatically — <strong>no re-setup and no initializer re-run needed</strong>.
+
+                        <h4>Optional</h4>
+                        <code>SELECT</code> on <code>system.access</code> for the app SP enables a few extra account-level detections.
+                    </div>
+                </details>
+
                 <div class="setup-group">
                     <div class="setup-group-title">Results storage</div>
                     <div class="field">
@@ -5043,9 +5092,9 @@ def get_main_html():
                         <span class="field-label">Workspaces to scan</span>
                         <select class="field-input" id="setup-scan-scope">
                             <option value="current"${(cur.scan_scope || 'current') !== 'all' ? ' selected' : ''}>This workspace only</option>
-                            <option value="all"${(cur.scan_scope || 'current') === 'all' ? ' selected' : ''}>All workspaces in the account</option>
+                            <option value="all"${(cur.scan_scope || 'current') === 'all' ? ' selected' : ''}>Multiple workspaces (every workspace the service principal can access)</option>
                         </select>
-                        <span class="field-help">Resource findings (clusters, jobs, grants, secret scopes) are scanned per workspace. Identity/admin data is always account-wide when account credentials are set. "All workspaces" needs the service principal added to each workspace.</span>
+                        <span class="field-help">Resource findings (clusters, jobs, grants, secret scopes) are scanned per workspace. Identity/admin data is always account-wide when account credentials are set. For multiple workspaces, add the app's service principal as a <strong>workspace admin</strong> on each workspace you want scanned — new workspaces are picked up automatically on the next collection run, with no re-setup needed.</span>
                     </div>
                     <div class="field">
                         <span class="field-label">Job compute</span>
@@ -6907,7 +6956,7 @@ def get_main_html():
                                     </select>
                                     <select id="collect-scope-select" class="field-input">
                                         <option value="current">Scan this workspace only</option>
-                                        <option value="all">Scan all workspaces</option>
+                                        <option value="all">Scan multiple workspaces</option>
                                     </select>
                                     <button class="btn btn-sm" id="collect-compute-apply" onclick="applyComputeControl(this)">Apply &amp; redeploy</button>
                                 </div>
@@ -14864,13 +14913,17 @@ def api_scope():
         'Settings → Re-run setup (leave Account ID / client ID / secret blank). '
         'The app then reports on this workspace only.')
     enable_multi = (
-        'Multi-workspace resource scanning needs the service principal added to '
-        'each target workspace. Choose "All workspaces" in setup. On classic '
-        'compute this works today; on serverless it needs cross-workspace access '
-        '(if remote workspaces are skipped, ask your account team to enroll you).')
+        'Multi-workspace resource scanning needs the app service principal added '
+        'as a workspace admin on each workspace you want scanned. Set scope to '
+        '"Multiple workspaces" (Data Collection → Manage, or Settings → Re-run '
+        'setup). On classic compute this works today; on serverless it needs '
+        'cross-workspace access (unreachable workspaces are skipped and reported '
+        '— ask your account team to enroll you). New workspaces are picked up '
+        'automatically on the next collection run; no re-setup or initializer '
+        're-run is needed.')
     disable_multi = (
-        'To scan this workspace only, choose "This workspace" for the collection '
-        'scope in Settings → Re-run setup.')
+        'To scan this workspace only, set the collection scope to "This '
+        'workspace" (Data Collection → Manage, or Settings → Re-run setup).')
 
     return jsonify({
         'configured': True,
