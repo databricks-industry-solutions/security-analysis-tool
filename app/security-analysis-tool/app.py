@@ -4682,7 +4682,7 @@ def get_main_html():
             if (!s || !s.configured) return;
             const aw = s.account_wide || {}, rs = s.resource_scan || {};
             const c = aw.counts || {};
-            const infoIcon = '<svg class="scope-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
+            const infoIcon = '<svg class="scope-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>';
             const warnIcon = '<svg class="scope-banner-icon" viewBox="0 0 24 24" fill="none" stroke="#fcd34d" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
             let cls = '', icon = infoIcon, badge = '', text = '', help = '';
 
