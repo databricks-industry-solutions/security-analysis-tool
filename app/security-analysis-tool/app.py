@@ -4964,7 +4964,9 @@ def get_main_html():
             sharedtoaccount: 'account', denylistbuilder: 'account',
             principal: 'mixed', paths: 'mixed', impersonation: 'mixed', isolated: 'mixed',
             resource: 'workspace', orphaned: 'workspace', overprivileged: 'workspace',
-            secretscopes: 'workspace', secretsoverview: 'workspace', secretsalerts: 'workspace',
+            secretscopes: 'workspace',
+            // Secrets Overview and Alerts are the secret-scanner dataset / config,
+            // not the permission graph the scope banner describes, so no banner.
         };
         let _scopeCache = null;
         async function loadScope(force) {
