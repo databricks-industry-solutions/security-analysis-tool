@@ -4696,7 +4696,7 @@ def get_main_html():
             <!-- Credential Exposure (secret scanning overview) -->
             <div class="page" id="page-secretsoverview">
                 <div class="page-header">
-                    <h1 class="page-title">Credential Exposure <span class="help-tip" tabindex="0" aria-label="About this page" data-help="The secret scanner inspects notebook source and cluster environment variables for hardcoded credentials (API keys, tokens, passwords). 'Verified' means the credential was validated as live. Rotate the unique secrets and remove them from the code/config. Run and schedule the scan from Data Collection.">i</span></h1>
+                    <h1 class="page-title">Credential Exposure <span class="help-tip" tabindex="0" aria-label="About this page" data-help="The secret scanner inspects notebook source and cluster environment variables for hardcoded credentials such as API keys and tokens. Remove them from the code/config and store them in Unity Catalog secrets instead of hardcoding. Run and schedule the scan from Data Collection.">i</span></h1>
                     <p class="page-desc">Secrets &mdash; API keys and tokens &mdash; found hardcoded in notebook source and cluster configurations, where anyone with access to the code can read them.</p>
                 </div>
                 <div id="secretsoverview-results"></div>
