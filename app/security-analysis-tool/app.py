@@ -4139,7 +4139,6 @@ def get_main_html():
 
                 <div class="help-section">
                     <h2>Understanding the Reports</h2>
-                    <p class="help-sub">Click any analysis to learn what it shows, how to read it, what to look for, and an example.</p>
                     <div class="help-card-grid" id="help-report-cards"></div>
                 </div>
 
@@ -4196,11 +4195,14 @@ def get_main_html():
 
                 <div class="help-section">
                     <h2>More Help</h2>
-                    <p class="help-sub">Documentation, source, and a place to report problems.</p>
                     <div class="help-links">
+                        <a class="help-link-card" href="https://databricks-industry-solutions.github.io/security-analysis-tool/" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                            Documentation
+                        </a>
                         <a class="help-link-card" href="https://github.com/databricks-industry-solutions/security-analysis-tool" target="_blank" rel="noopener noreferrer">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                            Documentation &amp; source
+                            Source
                         </a>
                         <a class="help-link-card" href="https://github.com/databricks-industry-solutions/security-analysis-tool/issues" target="_blank" rel="noopener noreferrer">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -4211,7 +4213,6 @@ def get_main_html():
                             Databricks Trust Center
                         </a>
                     </div>
-                    <p class="help-sub" style="margin-top:14px; margin-bottom:0;">Tip: the <strong>scope banner</strong> on each page and the requirements checklist in setup tell you, live, what's configured and what to change.</p>
                 </div>
 
                 <!-- Report guide modal (populated by openHelpGuide) -->
