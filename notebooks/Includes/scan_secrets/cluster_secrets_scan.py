@@ -122,7 +122,7 @@ db_client = SatDBClient(json_)
 # MAGIC   done
 # MAGIC fi
 # MAGIC if [ ! -x "$THBIN" ]; then
-# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Allow HTTPS (443) egress to raw.githubusercontent.com, github.com, release-assets.githubusercontent.com and objects.githubusercontent.com (the download redirects across them), or use an internal mirror."
 # MAGIC   exit 1
 # MAGIC fi
 # MAGIC echo "✅ TruffleHog setup verified at $THBIN!"

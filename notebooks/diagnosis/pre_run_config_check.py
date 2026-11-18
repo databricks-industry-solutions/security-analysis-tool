@@ -60,9 +60,11 @@ else:
     print("2. Manual installation:")
     print("   %sh curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp")
     print()
-    print("Network Requirements:")
-    print("- Access to raw.githubusercontent.com (install script)")
-    print("- Access to github.com/trufflesecurity (binary download)")
+    print("Network Requirements (HTTPS/443 — the binary download redirects across these):")
+    print("- raw.githubusercontent.com            (install script)")
+    print("- github.com                           (release download URL / redirect)")
+    print("- release-assets.githubusercontent.com (the binary; current asset host)")
+    print("- objects.githubusercontent.com        (legacy asset host / fallback)")
 
 print()
 
@@ -77,15 +79,19 @@ print("=" * 80)
 print("NETWORK ACCESS CHECK (TRUFFLEHOG)")
 print("=" * 80)
 
-# Test access to GitHub raw content
+# Exercise the full install path. The install script lives on
+# raw.githubusercontent.com; the binary download starts at github.com and
+# redirects to the release-asset host (release-assets.githubusercontent.com),
+# so following redirects validates that host too -- the one most allowlists miss.
+_TH_VERSION = "v3.94.3"
 github_urls = [
     "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh",
-    "https://github.com/trufflesecurity/trufflehog/releases"
+    f"https://github.com/trufflesecurity/trufflehog/releases/download/{_TH_VERSION}/trufflehog_{_TH_VERSION[1:]}_linux_amd64.tar.gz",
 ]
 
 for url in github_urls:
     try:
-        response = requests.head(url, timeout=10)
+        response = requests.head(url, timeout=10, allow_redirects=True)
         if response.status_code == 200:
             print(f"✅ Access OK: {url}")
         else:

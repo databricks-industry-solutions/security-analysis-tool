@@ -126,7 +126,7 @@ db_client = SatDBClient(json_)
 # MAGIC   done
 # MAGIC fi
 # MAGIC if [ ! -x "$THBIN" ]; then
-# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Allow HTTPS (443) egress to raw.githubusercontent.com, github.com, release-assets.githubusercontent.com and objects.githubusercontent.com (the download redirects across them), or use an internal mirror."
 # MAGIC   exit 1
 # MAGIC fi
 # MAGIC echo "✅ TruffleHog setup verified at $THBIN!"
@@ -368,9 +368,13 @@ if not os.path.exists(Config.TRUFFLEHOG_BINARY):
     This could be due to network restrictions or firewall policies.
 
     ACTION REQUIRED:
-    Please contact your IT/Security team to allowlist access to:
-      - raw.githubusercontent.com
-      - github.com/trufflesecurity
+    Please contact your IT/Security team to allowlist HTTPS (443) egress to
+    all of these -- the download redirects across them, so an incomplete list
+    still fails:
+      - raw.githubusercontent.com            (install script)
+      - github.com                           (release download URL / redirect)
+      - release-assets.githubusercontent.com (the binary; current asset host)
+      - objects.githubusercontent.com        (legacy asset host / fallback)
 
     Or configure a proxy/mirror for downloading TruffleHog.
     ==========================================

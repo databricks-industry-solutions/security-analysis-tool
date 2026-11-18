@@ -119,8 +119,10 @@ The SAT SDK wheel ships inside the app (under `lib/`) and is installed with
 reach out, and only matter for the features that use them:
 
 - **Secret scanning** downloads the TruffleHog binary from GitHub. In a
-  restricted-egress environment, allow-list `raw.githubusercontent.com` and
-  `github.com` (see the [Secret Scanning](./functionality/cluster-secrets-scanning.mdx)
+  restricted-egress environment, allow-list `raw.githubusercontent.com`,
+  `github.com`, `release-assets.githubusercontent.com` and
+  `objects.githubusercontent.com` (all HTTPS/443 — the download redirects across
+  them, so an incomplete list still fails; see the [Secret Scanning](./functionality/cluster-secrets-scanning.mdx)
   firewall list) or provide an internal mirror.
 - **Classic compute** pip-installs `requests` and `PyYAML` from PyPI for the
   scanners (serverless already has them). On classic compute without PyPI access,
