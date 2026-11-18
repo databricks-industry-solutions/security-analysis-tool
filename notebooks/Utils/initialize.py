@@ -116,7 +116,7 @@ json_.update(
         #   - GovCloud (FedRAMP): "https://accounts.cloud.databricks.us"
         #   - DoD (IL4/IL5): See https://docs.databricks.com/aws/en/security/privacy/gov-cloud
         "accounts_console": "",
-        "sat_version": "0.7.0",
+        "sat_version": "1.0.0",
     }
 )
 

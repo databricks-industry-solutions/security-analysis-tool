@@ -6,7 +6,7 @@ import Admonition from '@theme/Admonition';
 
 # Usage
 
-Once the SAT app is deployed (see [Installation](./installation/)), everything is
+Once the SAT app is deployed (see [Installation](./installation/index.mdx)), everything is
 driven from the app itself — there are no notebooks to import or dashboards to
 publish.
 
@@ -63,9 +63,9 @@ from the app.
 All results are in the app:
 
 - **Principal Analysis / Resource Analysis** — who can access what, with
-  escalation and impersonation risk. See [Permissions Analysis](./functionality/permissions-analysis).
+  escalation and impersonation risk. See [Permissions Analysis](./functionality/permissions-analysis.mdx).
 - **Credential Exposure** — hardcoded secrets in notebooks and cluster configs.
-  See [Secret Scanning](./functionality/cluster-secrets-scanning).
+  See [Secret Scanning](./functionality/cluster-secrets-scanning.mdx).
 
 Because the app queries **as the signed-in user**, Unity Catalog enforces each
 viewer's own grants — people see only the results they are entitled to.
@@ -87,7 +87,7 @@ Rules** to:
 
 Changes are saved to the scanner's config and take effect on the **next scan
 run** — no redeploy and no editing notebooks. More detail on the
-[Secret Scanning](./functionality/cluster-secrets-scanning) page.
+[Secret Scanning](./functionality/cluster-secrets-scanning.mdx) page.
 
 ## Step 5 — Set up alerts *(optional)*
 
