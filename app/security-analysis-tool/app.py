@@ -5750,6 +5750,17 @@ def get_main_html():
                     btn.textContent = originalLabel;
                     return;
                 }
+                if (result.reprovision_error) {
+                    // Setup saved, but re-pointing existing jobs at the new schema
+                    // failed. Show it, then still reload so they can fix it from
+                    // Data Collection.
+                    err.textContent = 'Setup saved, but updating the collection jobs to the new '
+                        + 'schema failed: ' + result.reprovision_error
+                        + ' Re-provision them from the Data Collection page.';
+                    btn.textContent = 'Continuing…';
+                    setTimeout(() => window.location.reload(), 4500);
+                    return;
+                }
                 // Configured now — reload into the fully-initialised app.
                 window.location.reload();
             } catch (e) {
@@ -8954,6 +8965,20 @@ def get_main_html():
                 }
                 settingsState.saving = false;
                 await loadSettings();
+                // loadSettings() re-renders the panel (a fresh status node), so
+                // surface what happened to the collection jobs afterwards: on a
+                // schema change they are re-pointed at the new schema automatically.
+                const after = document.getElementById('settings-saveerr');
+                if (after && result.reprovision_error) {
+                    after.textContent = 'Saved, but updating the collection jobs to the new '
+                        + 'schema failed: ' + result.reprovision_error
+                        + ' Re-provision them from the Data Collection page.';
+                    after.className = 'savebar-text is-error';
+                } else if (after && typeof result.reprovisioned === 'number' && result.reprovisioned > 0) {
+                    after.textContent = '✓ Saved — re-pointed ' + result.reprovisioned
+                        + ' collection job(s) at the new schema.';
+                    after.className = 'savebar-text';
+                }
             } catch (e) {
                 status.textContent = e.message;
                 status.className = 'savebar-text is-error';
@@ -15834,15 +15859,44 @@ def api_settings_update():
     if errors:
         return jsonify({'errors': errors}), 400
 
+    # Captured before applying, so a real schema change can be detected and the
+    # collection jobs re-pointed at the new schema.
+    previous_schema = (_app_config.get('schema') or '').strip()
+
     for key, value in payload.items():
         _apply_setting(key, value)
+
+    response = {'saved': True, 'changed': sorted(payload)}
+
+    # A schema change must persist and take effect process-wide, not just set the
+    # env var: CATALOG/SCHEMA and every derived table name are module globals that
+    # only _apply_runtime_config refreshes, and the change has to survive a
+    # restart. Then re-point the collection jobs (which bake the schema into their
+    # parameters at provision time) at the new schema.
+    if 'schema' in payload:
+        new_schema = '.'.join(
+            p.strip().strip('`').strip('"')
+            for p in str(payload['schema'] or '').split('.') if p.strip())
+        config = dict(_app_config)
+        config['schema'] = new_schema
+        try:
+            write_persisted_config(config)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('settings schema persist failed')
+            return jsonify({'error': f'Could not save the schema: {str(exc)[:180]}'}), 500
+        _apply_runtime_config(config)
+        resync = _resync_jobs_on_schema_change(previous_schema)
+        if resync and 'reprovisioned' in resync:
+            response['reprovisioned'] = resync['reprovisioned']
+        elif resync and 'error' in resync:
+            response['reprovision_error'] = resync['error']
 
     # A new warehouse or schema invalidates cached run state.
     if 'warehouse_id' in payload or 'schema' in payload:
         _invalidate_collection_cache()
 
     logger.info("settings changed by %s: %s", _assistant_user(), sorted(payload))
-    return jsonify({'saved': True, 'changed': sorted(payload)})
+    return jsonify(response)
 
 
 # Account API credentials, stored as Unity Catalog secrets in the SAT schema and
@@ -16269,6 +16323,9 @@ def api_setup_complete():
     that would strand the app: the schema and config come first, credentials last.
     """
     payload = request.get_json(silent=True) or {}
+    # Captured before anything mutates config, so an actual catalog/schema change
+    # can be detected and the collection jobs re-pointed at the new schema.
+    previous_schema = (_app_config.get('schema') or '').strip()
     catalog = (payload.get('catalog') or '').strip().strip('`')
     schema = (payload.get('schema') or 'security_analysis').strip().strip('`')
     warehouse_id = (payload.get('warehouse_id') or '').strip()
@@ -16364,8 +16421,18 @@ def api_setup_complete():
     _invalidate_collection_cache()
     logger.info('first-run setup completed by %s: %s.%s (schema %s)',
                 _assistant_user(), catalog, schema, schema_state)
-    return jsonify({'configured': True, 'catalog': catalog, 'schema': schema,
-                    'schema_state': schema_state})
+
+    # If the catalog/schema changed and jobs already exist, re-point them now so
+    # the next run targets the new schema instead of the old one. No-op on a
+    # first-run setup (no jobs yet) -- those are created from Data Collection.
+    response = {'configured': True, 'catalog': catalog, 'schema': schema,
+                'schema_state': schema_state}
+    resync = _resync_jobs_on_schema_change(previous_schema)
+    if resync and 'reprovisioned' in resync:
+        response['reprovisioned'] = resync['reprovisioned']
+    elif resync and 'error' in resync:
+        response['reprovision_error'] = resync['error']
+    return jsonify(response)
 
 
 @app.route('/api/settings/choices')
@@ -17775,6 +17842,56 @@ def _provision_collection(run_initializer=True):
     _discover_collection_jobs(force=True)
     return {'notebooks_dir': notebooks_dir, 'jobs': results,
             'initializer_run_id': init_run}
+
+
+def _normalise_schema_ref(value):
+    """Canonical catalog.schema for comparing two configured values: backticks,
+    quotes, surrounding whitespace and case removed. UC folds identifiers to
+    lowercase, so `SAT`.x and sat.x are the same schema and must compare equal --
+    otherwise a pure case edit would trigger a pointless re-provision."""
+    parts = [p.strip().strip('`').strip('"').lower()
+             for p in str(value or '').split('.') if p.strip()]
+    return '.'.join(parts)
+
+
+def _resync_jobs_on_schema_change(previous_schema):
+    """Re-point the already-provisioned collection jobs at the current
+    catalog.schema after the configured value changes.
+
+    The jobs bake ``analysis_schema_name`` into their parameters when they are
+    provisioned, so a catalog/schema change in setup or settings does not reach
+    them until they are re-provisioned -- until then they keep running against the
+    old schema (and fail if it no longer exists). This closes that gap.
+
+    No-op when the schema did not actually change (case-insensitively) or when no
+    jobs exist yet -- a fresh install has nothing to re-point, and the operator
+    creates those jobs from Data Collection, which already uses the new schema.
+    Re-provisioning is idempotent and the initializer's DDL is CREATE ... IF NOT
+    EXISTS, so it is safe whether or not the new schema is already initialized.
+
+    Must be called after CATALOG/SCHEMA have been refreshed for the new value.
+    Never raises: the config change it follows has already been saved, so a
+    re-provision failure is reported to the caller, not thrown. Returns one of:
+    ``None`` (nothing to do), ``{'reprovisioned': n}``, or ``{'error': msg}``.
+    """
+    current = f'{CATALOG}.{SCHEMA}' if (CATALOG and SCHEMA) else ''
+    if not current or _normalise_schema_ref(previous_schema) == _normalise_schema_ref(current):
+        return None
+    try:
+        if not _discover_collection_jobs(force=True):
+            return None
+    except Exception:  # noqa: BLE001
+        logger.info('job discovery failed during schema-change resync', exc_info=True)
+        return None
+    try:
+        result = _provision_collection(run_initializer=True)
+        count = len(result.get('jobs', {}) or {})
+        logger.info('re-provisioned %d job(s) after schema change %r -> %r',
+                    count, previous_schema, current)
+        return {'reprovisioned': count}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('auto re-provision after schema change failed')
+        return {'error': str(exc)[:220]}
 
 
 def _normalise_run(run):
