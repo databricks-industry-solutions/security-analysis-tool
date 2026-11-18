@@ -65,13 +65,13 @@ Add the app's service principal as a **workspace admin** on the new workspace an
 
 <AccordionItem question="Can I use one deployment of SAT to monitor all my workspaces across different clouds, like AWS and Azure?">
 
-A single SAT deployment in AWS can monitor all workspaces within the same AWS account. Similarly, a single SAT deployment in Azure can monitor all workspaces within the same Azure subscription. Monitoring workspaces across multiple cloud platforms with a single SAT deployment is currently not supported.
+A single SAT app monitors all workspaces in the same **Databricks account** — on AWS, Azure, or GCP. (On Azure this is per Databricks account, not per subscription.) A different Databricks account — for example a separate AWS account and Azure account — needs its own SAT app.
 
 </AccordionItem>
 
 <AccordionItem question="Do I need different SAT deployment to monitor workspaces in different regions?">
 
-A single SAT deployment in AWS can monitor all workspaces — regardless of region — within the same AWS account. Similarly, a single SAT deployment in Azure can monitor all workspaces across any region within the same Azure subscription.
+A single SAT app monitors all workspaces in the same **Databricks account** regardless of region, on any cloud.
 
 </AccordionItem>
 
