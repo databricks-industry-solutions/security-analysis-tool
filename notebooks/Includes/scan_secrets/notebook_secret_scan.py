@@ -275,17 +275,25 @@ def load_config_from_file():
 
     return _merge_custom_detectors(config_data, config_folder)
 
+# A unique, process-owned temp directory for everything this scan writes. A fixed
+# /tmp path is unsafe on serverless: warm containers are reused across runs, so a
+# file left by an earlier run under a different OS user can't be reopened for write
+# (sticky /tmp) and fails with "Permission denied". mkdtemp always returns a fresh
+# directory owned by this process.
+_SAT_SCAN_TMP = tempfile.mkdtemp(prefix="sat_nb_scan_")
+
+
 def create_trufflehog_config(config_data: Dict[str, Any]) -> str:
     """Create TruffleHog configuration file from loaded config data."""
-    config_file_path = "/tmp/trufflehog_config.yaml"
-    
+    config_file_path = os.path.join(_SAT_SCAN_TMP, "trufflehog_config.yaml")
+
     # Extract just the detectors section for TruffleHog
     trufflehog_config = {"detectors": config_data.get("detectors", [])}
-    
+
     try:
         with open(config_file_path, 'w') as file:
             yaml.dump(trufflehog_config, file, default_flow_style=False)
-        
+
         logger.info(f"TruffleHog configuration created at: {config_file_path}")
         return config_file_path
     except Exception as e:
@@ -299,11 +307,15 @@ config_data = load_config_from_file()
 class Config:
     """Configuration class for TruffleHog scanning parameters"""
     
-    # File paths
+    # File paths. Writable files live under the process-owned temp dir (see
+    # _SAT_SCAN_TMP) so a stale file from an earlier run on a warm serverless
+    # container can never block them. The binary stays at a fixed path -- it is
+    # only ever read/executed (never rewritten in place), and the installer skips
+    # the download when an executable copy is already present.
     TRUFFLEHOG_BINARY = "/tmp/trufflehog_notebook"
     TRUFFLEHOG_CONFIG = create_trufflehog_config(config_data)
-    TEMP_NOTEBOOKS_DIR = config_data.get("settings", {}).get("file_paths", {}).get("temp_notebooks", "/tmp/notebooks")
-    RESULTS_LOG_FILE = config_data.get("settings", {}).get("file_paths", {}).get("results_log", "/tmp/trufflehog_scan_results.json")
+    TEMP_NOTEBOOKS_DIR = config_data.get("settings", {}).get("file_paths", {}).get("temp_notebooks", os.path.join(_SAT_SCAN_TMP, "notebooks"))
+    RESULTS_LOG_FILE = config_data.get("settings", {}).get("file_paths", {}).get("results_log", os.path.join(_SAT_SCAN_TMP, "trufflehog_scan_results.json"))
     
     # API settings from config
     API_SLEEP_SECONDS = config_data.get("settings", {}).get("rate_limiting", {}).get("api_sleep_seconds", 10)
@@ -319,7 +331,7 @@ class Config:
     MAX_WORKERS = config_data.get("settings", {}).get("performance", {}).get("max_workers", 16)
     # Directory where a batch of notebooks is materialized so TruffleHog can
     # scan them all in a single invocation instead of once per file.
-    SCAN_BATCH_DIR = config_data.get("settings", {}).get("file_paths", {}).get("scan_batch_dir", "/tmp/notebook_scan_batch")
+    SCAN_BATCH_DIR = config_data.get("settings", {}).get("file_paths", {}).get("scan_batch_dir", os.path.join(_SAT_SCAN_TMP, "notebook_scan_batch"))
     # Unscanned-object tolerance before a run is failed as incomplete.
     INCOMPLETE_SCAN_FRACTION = config_data.get("settings", {}).get("completeness", {}).get("max_unscanned_fraction", 0.02)
     INCOMPLETE_SCAN_MIN = config_data.get("settings", {}).get("completeness", {}).get("min_unscanned_to_fail", 25)
@@ -1606,7 +1618,7 @@ print("🧹 Cleanup Operations")
 print("=" * 30)
 
 # List temporary files created
-print("📁 Temporary files in /tmp/notebooks:")
+print(f"📁 Temporary files in {Config.TEMP_NOTEBOOKS_DIR}:")
 
 if notebooks_by_secrets:
     print(f"{len(notebooks_by_secrets)} notebook(s) with secrets — see the results table.")

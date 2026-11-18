@@ -145,10 +145,18 @@ import hashlib
 import random
 import logging
 import yaml
+import tempfile
 import concurrent.futures
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timezone
 from urllib.parse import urlparse
+
+# A unique, process-owned temp directory for everything this scan writes. A fixed
+# /tmp path is unsafe on serverless: warm containers are reused across runs, so a
+# file left by an earlier run under a different OS user can't be reopened for write
+# (sticky /tmp) and fails with "Permission denied". mkdtemp always returns a fresh
+# directory owned by this process.
+_SAT_SCAN_TMP = tempfile.mkdtemp(prefix="sat_cluster_scan_")
 
 # db_client (initialized in common setup) is used only to mint a single OAuth
 # token; cluster API calls are issued directly (see get_all_clusters below) so
@@ -192,11 +200,15 @@ print(f"🆔 Run ID: {run_id}")
 class Config:
     """Configuration class for cluster secret scanning"""
 
-    # File paths
+    # File paths. Writable files live under the process-owned temp dir (see
+    # _SAT_SCAN_TMP) so a stale file from an earlier run on a warm serverless
+    # container can never block them. The binary stays at a fixed path -- it is
+    # only ever read/executed, and the installer skips the download when an
+    # executable copy is already present.
     TRUFFLEHOG_BINARY = "/tmp/trufflehog_cluster"
-    TRUFFLEHOG_CONFIG = "/tmp/trufflehog_config.yaml"  # Shared with notebook scanner
-    TEMP_CLUSTERS_DIR = "/tmp/clusters"
-    RESULTS_LOG_FILE = "/tmp/cluster_secrets_scan_results.json"
+    TRUFFLEHOG_CONFIG = os.path.join(_SAT_SCAN_TMP, "trufflehog_config.yaml")
+    TEMP_CLUSTERS_DIR = os.path.join(_SAT_SCAN_TMP, "clusters")
+    RESULTS_LOG_FILE = os.path.join(_SAT_SCAN_TMP, "cluster_secrets_scan_results.json")
 
     # API settings
     API_SLEEP_SECONDS = 10  # Rate limiting between cluster API calls
@@ -299,7 +311,7 @@ def _load_cluster_detector_config():
                         excluded.append(x)
                 logger.info("Merged customer custom detectors into the cluster scan config")
 
-        out_path = "/tmp/trufflehog_config_cluster.yaml"
+        out_path = os.path.join(_SAT_SCAN_TMP, "trufflehog_config_cluster.yaml")
         with open(out_path, "w") as fh:
             yaml.dump({"detectors": list(detectors.values())}, fh, default_flow_style=False)
         logger.info(f"Cluster detector config written to {out_path} ({len(detectors)} detector(s))")
@@ -1153,7 +1165,7 @@ print("📄 TruffleHog binary and config files:")
 # COMMAND ----------
 
 print("✅ Cleanup information:")
-print("   - Temporary cluster config files are stored in /tmp/clusters/")
+print(f"   - Temporary cluster config files are stored in {Config.TEMP_CLUSTERS_DIR}")
 print("   - These files will be automatically removed when the cluster terminates")
 print("   - TruffleHog binary installed at /tmp/trufflehog_cluster")
 
