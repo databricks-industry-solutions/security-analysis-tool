@@ -16,9 +16,11 @@ import Admonition from '@theme/Admonition';
   
 * **Networking and Access Considerations**
 
-  * SAT running on Serverless or Classic Compute cannot analyze account and destination workspaces with IP Access Control Lists (ACLs) enabled unless those ACLs are updated to allow access from the SAT workspace.
-    * If IP Access Control Lists (ACLs) are enabled at the account level and you are running SAT on serverless, contact your account team if you need to allowlist account-level APIs. 
-  * SAT running on Serverless Compute cannot access other workspaces if egress controls are configured in the SAT workspace. In this case, you must configure a separate SAT in the target workspace to perform the analysis.
+  SAT's collection jobs run as the app's service principal and reach the Databricks **account API** and each monitored workspace's **REST API** over the network. The usual constraint is reachability, not the tool itself:
+
+  * **Workspace IP access lists** — to collect a workspace's resource-level findings, the SAT job compute must be able to reach that workspace's API. If the workspace has IP access lists, allow the SAT compute's egress; otherwise that workspace is skipped and recorded as unreachable (collection of the other workspaces continues).
+  * **Account-level IP access lists** — the account-wide collectors call the account console API. If account-level IP access lists are in force and SAT runs on serverless (whose egress is not a fixed workspace IP), ask your account team about allowlisting access to the account-level APIs.
+  * **Serverless egress controls / network-isolated workspaces** — if the SAT workspace's serverless egress is restricted, or a target workspace is otherwise network-isolated, SAT can't collect that workspace remotely. Leave the app's **collection scope** on the **current workspace** (the default) and deploy a SAT app inside each such workspace to analyze it locally. Multi-workspace collection from serverless otherwise relies on **serverless cross-workspace access** (a preview — ask your account team to enable it); unreachable workspaces fail soft and are recorded rather than failing the run.
 
 * **Review and Compliance**
 
