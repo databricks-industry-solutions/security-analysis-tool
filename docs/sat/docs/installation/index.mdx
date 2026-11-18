@@ -8,7 +8,7 @@ import Admonition from '@theme/Admonition';
 
 <Admonition type="note" title="Note">
 
-* **SAT v0.2.0** or higher introduces full support for Unity Catalog. You can now pick your own catalog instead of being limited to the hive_metastore. Additionally, you have the flexibility to choose your own schema name.
+* **Unity Catalog:** SAT stores its results in a Unity Catalog schema — you choose the catalog and schema name during the app's in-app setup.
 
 * **Deployment Requirements**
   * **AWS/GCP:** At least one SAT setup in a workspace per **Databricks account**.
@@ -44,11 +44,11 @@ SAT is especially beneficial to customers on Databricks **Premium** or **Enterpr
 
 Before proceeding with the installation, make sure you have the following prerequisites:
 
-- Python 3.9 or higher
-- Databricks CLI installed with a profile logged (See [here](https://docs.databricks.com/en/dev-tools/cli/install.html).)
-- Databricks Account ID
-- Databricks SQL Warehouse (To run the SQL dashboard)
-- PyPI access from your workspace (To install the SAT utility library)
+- Python 3.9 or higher (to run the installer locally)
+- Databricks CLI installed with a logged-in profile (See [here](https://docs.databricks.com/en/dev-tools/cli/install.html).)
+- A Databricks SQL warehouse (the app uses it to run analysis queries and alerts; the installer can create one)
+- *(Optional, for account-wide data)* a Databricks **Account ID** and a service principal with the **Account admin** role — you enter these in the app's setup, not at install time
+- PyPI access on the machine running the installer (to install the installer's Python dependencies)
 
 
 
@@ -93,13 +93,9 @@ SAT creates a new **security_analysis** schema along with Delta tables. If you a
 </Admonition>
 ### Standard Setup
 
-
-
-* Delete the **/Workspace/Applications/SAT** folder
-* Delete the following workflows:
-  * **SAT Initializer Notebook**
-  * **SAT Driver Notebook**
-* Delete the **SAT** Dashboards
+* Delete the **security-analysis** app (**Compute → Apps**).
+* Delete the SAT-provisioned collection jobs (they are tagged **Application: SAT** — e.g. *SAT Initializer*, *SAT Permissions Analysis - Data Collection*, the account-report jobs, and *SAT Secrets Scanner*).
+* Delete the **/Workspace/Applications/SAT** folder.
 
 ### Terraform Setup
-* Run the **terraform destroy** command
+* Run the **terraform destroy** command (then remove any jobs the app provisioned, as above).

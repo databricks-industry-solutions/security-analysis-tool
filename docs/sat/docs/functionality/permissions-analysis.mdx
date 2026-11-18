@@ -61,20 +61,22 @@ Permissions Analysis transforms the Databricks permissions into a queryable grap
 
 ### Step 1: Run Data Collection
 
-SAT automatically creates a "SAT Permissions Analysis - Data Collection" job when you consent to “Deploy Permissions Analysis”  during your  SAT installation and runs automatically on a schedule. 
-**To run it manually:**
-1. Navigate to **Jobs & Pipelines**
-2. Locate **"SAT Permissions Analysis - Data Collection"**
-3. Select **"Run Now"**
-4. Allow 10-30 minutes for completion (varies by account size)
+The SAT app provisions a **"SAT Permissions Analysis - Data Collection"** job and runs it on a schedule.
+**To run it on demand:**
+1. Open the app and go to the **Data Collection** page
+2. Run **"SAT Permissions Analysis - Data Collection"**
+3. Allow 10-30 minutes for completion (varies by account size)
 
 The collection job queries Databricks APIs to build a complete graph of your environment's identities, resources, and permission relationships.
 
-### Step 2: Analyze Permissions - notebooks
+### Step 2: What the collection builds
 
-Once data collection completes, use the pre-built interactive notebooks in `/notebooks/brickhound/`:
+Data collection and the account reports are produced by the `/notebooks/brickhound/`
+notebooks, which the app runs as **jobs** — you don't open or run them by hand.
+They populate the graph and `brickhound_*` tables that the app reads. For
+reference, here's what each produces:
 
-| Notebook | Purpose | Sample Query |
+| Notebook (collection engine) | Purpose | Example question answered |
 |----------|---------|--------------|
 | `01_principal_resource_analysis.py` | Query access patterns | "What tables can john.doe@company.com access?"<br/>"Who can access XYZ resource" |
 | `02_escalation_paths.py` | Find privilege escalation paths | "Can this contractor reach Account Admin?" |
@@ -92,13 +94,13 @@ Once data collection completes, use the pre-built interactive notebooks in `/not
 - **`07_denylist_candidates.py`** → `brickhound_denylist_candidates`. Ranks **IdP-managed (external)** account groups by inactive-member count (inactive = no `system.access.audit` activity in the look-back window — a heuristic for the Automatic Identity Management "Inactive: No usage" status). Feeds the **Account Denylist Builder** tab. **AIM caveat:** under Automatic Identity Management, external group memberships are resolved just-in-time and are not returned by the account SCIM Groups API, so member-based ranking can be empty even for populated groups; in that case use the Entra ID dynamic-group rule builder in the app tab instead.
 :::
 
-### Step 3: Web UI (Recommended)
+### Step 3: Explore in the app
 
-For a user-friendly interface, deploy the Permissions Analysis Databricks App:
+Permissions Analysis is built into the SAT app — no separate app to deploy.
 
-**Access at:** `https://<workspace-url>/apps/sat-permissions-exp`
+**Open it at:** `https://<workspace-url>/apps/security-analysis` (or **Compute → Apps → security-analysis**), then use the **Principal Analysis** and **Resource Analysis** pages.
 
-The web UI provides:
+The app provides:
 
 - Interactive search for principals and resources
 - Escalation paths visualization
@@ -144,7 +146,7 @@ the missing tables instead of a generic error.
 
 > **Manual override.** If you need to add or remove scopes manually,
 > open the app in the Databricks UI (**Compute → Apps →
-> sat-permissions-exp** → **Edit** → **User authorization**) and edit
+> security-analysis** → **Edit** → **User authorization**) and edit
 > the scope list. The IaC default of `["sql"]` is sufficient for
 > normal use.
 >
@@ -153,25 +155,16 @@ the missing tables instead of a generic error.
 > principal identity and a one-time warning is logged. Functionality
 > is unchanged. Re-add the `sql` scope to restore per-user enforcement.
 
-#### Upgrading from SAT 0.7.x
+#### Re-consent after an upgrade
 
-If you are upgrading an existing SAT install (where the Permissions Analysis app
-ran without user authorization), each user who had previously opened
-the app needs to re-consent once. They will see the friendly "missing
-the `sql` scope" banner until they do. Three workarounds, easiest first:
-
-1. **Open the app URL in a private/incognito window** — fresh session,
-   no cached consent, the platform prompts for consent immediately.
-2. **Clear cookies for the workspace domain** in the regular browser
-   (Chrome → site cookies for `<workspace>.cloud.databricks.com` →
-   delete), then reopen the app.
-3. **Revoke the prior authorization** from the user's profile settings
-   if your workspace exposes a connected-apps list, then reopen the
-   app.
-
-New installs do not hit this — fresh installs declare
-`user_api_scopes: ["sql"]` from the start, so the first user open
-prompts for the right scope set automatically.
+If you upgrade an install where the app previously ran without user
+authorization, each user who had already opened the app re-consents once — they
+see the friendly "missing the `sql` scope" banner until they do. The quickest
+fix is to open the app URL in a private/incognito window (fresh session, the
+platform prompts for consent immediately); clearing cookies for the workspace
+domain or revoking the prior authorization from the user's connected-apps list
+work too. Fresh installs declare `user_api_scopes: ["sql"]` from the start, so a
+first open prompts for the right scope automatically.
 
 ## Key Capabilities
 

@@ -61,33 +61,18 @@ terraform plan
 ```sh
 terraform apply
 ```
-### Step 6: Run Databricks Jobs
-1. Run "SAT Initializer Notebook":
-* This must be run successfully once. While it can be run multiple times, a single successful run is sufficient.
-2. Run "SAT Driver Notebook":
-* This notebook can be scheduled to run periodically (e.g., every Monday, Wednesday, and Friday).
-3. Run "SAT Secrets Scanner Notebook" (Optional):
-* This notebook scans workspace notebooks for exposed secrets using TruffleHog. Can be run on-demand or scheduled based on security requirements.
-
-### Step 7: Access the SAT Dashboard
-1. Navigate to the <b>SQL > Dashboard </b> in the left menu from the Databricks workspace.
-2. Select the <b>SAT Dashboard</b>, choose a Workspace from the dropdown, and refresh the dashboard.
+### Step 6: Open the SAT app and complete setup
+1. In the workspace, go to <b>Compute → Apps → security-analysis</b> and click <b>Open</b>.
+2. Complete the in-app setup — results catalog/schema, SQL warehouse, and (optionally) an Account ID + service-principal credentials for account-wide data, plus scan scope and compute. See the [Usage Guide](../../usage).
+3. The app provisions and schedules its own collection jobs; run them on demand from the <b>Data Collection</b> page. Results appear in the app — there is no separate dashboard to publish.
 
 ### Supplemental Documentation
 
 * [Databricks Documentation Terraform](https://docs.databricks.com/dev-tools/terraform/index.html)
 * [Databricks Terraform Provider Docs](https://registry.terraform.io/providers/databricks/databricks/latest/docs)
 
-### Additional Considerations:
-
-If a pre-existing secret scope named `sat_scope` causes jobs to fail:
-1. Rename the secret scope in `secrets.tf`
-2. Re-run `terraform apply`.
-3. Update the secret scope name in 6 locations (`CMD 4` and `CMD 5`) of `Workspace -> Applications -> SAT-TF/notebooks/Utils/initialize`.
-4. Re-run failed jobs
-
-<Admonition type="note" title="Permissions Analysis App Setup">
-To set up the Permissions Analysis app and make it execute correctly, refer to the [Permissions Analysis Setup](./index.mdx#permissions-analysis-setup) section.
+<Admonition type="note" title="Account credentials">
+SAT no longer uses a `sat_scope` secret scope. Account credentials (for account-wide data) are entered in the app's setup flow and stored as Unity Catalog secrets. Permissions Analysis is built into the app — no separate app to configure.
 </Admonition>
 
 Congratulations! 🎉 You are now ready to start using the SAT. Please click [here](../../../functionality) for a detailed description on how to run and use it.
