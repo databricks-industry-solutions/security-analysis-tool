@@ -67,11 +67,6 @@ The App Registration allows SAT to authenticate with Azure services and Databric
 4. Select an expiry date
 5. Click `Add`
 6. **Copy and save the secret value immediately** (you won't be able to see it again!)
-7. Add the app with "Reader" role to your subscription:
-   - Navigate to your [subscription's Access control (IAM) section](https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal#step-2-open-the-add-role-assignment-page)
-   - Click `Add role assignment`
-   - Select the "Reader" role
-   - Assign it to your App Registration
 
 </AccordionItem>
 
@@ -117,7 +112,6 @@ Have these ready for the app's **in-app setup** (you enter them in the app after
 
 - 🔑 **Databricks Account ID**
 - 🔑 **Azure Tenant ID**
-- 🔑 **Azure Subscription ID**
 - 🔑 **Azure App Client ID** (from Step 1)
 - 🔑 **Azure App Client Secret** (from Step 2)
 </Admonition>
@@ -181,7 +175,6 @@ If you encounter problems during installation:
 - ✓ Verify you have the required permissions in your Azure and Databricks environments
 - ✓ Ensure the Service Principal has been added to all workspaces
 - ✓ Confirm the metastore is attached to your workspace
-- ✓ Verify the App Registration has the "Reader" role on your subscription
 
 **Resources:**
 - Review our [FAQ page](../../faq.mdx) for common questions
