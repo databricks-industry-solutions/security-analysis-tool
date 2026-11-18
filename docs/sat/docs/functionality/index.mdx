@@ -8,15 +8,15 @@ import FeatureCards from '@site/src/components/FeatureCards';
 
 # Functionality
 
-The **Security Analysis Tool (SAT)** is an observability utility designed to improve the security posture of Databricks deployments. It helps you identify deviations from established security best practices and monitor the security health of your Databricks workspaces.
+The **Security Analysis Tool (SAT)** is a security-posture app for Databricks. It helps you see **who can access what** across your account — and where that access is risky — and find **hardcoded secrets** exposed in notebook source and cluster configurations, all from a single Databricks App.
 
 <Admonition type="tip" title="What's new in 1.0">
 
-- **One Databricks App** — setup, data collection, findings, permissions analysis, secret scanning, alerts, and the security assistant are now a single app. The classic Lakeview dashboards and Initializer/Driver notebooks are retired.
+- **One Databricks App** — setup, data collection, permissions analysis, secret scanning, alerts, and the security assistant are now a single app.
 - **In-app setup & job provisioning** — pick your catalog/schema and warehouse in the app; it creates and schedules its own collection jobs. No notebooks to import.
 - **In-app controls** — set scan scope, serverless vs. classic compute, notebook/folder collection, and secret-scan coverage and custom detection rules, all from the UI.
 - **Per-user authorization (OBO)** — queries run as the signed-in user, so Unity Catalog enforces each viewer's grants. Alert management is restricted to admins.
-- See the [Upgrade Guide](../upgrade) for what changes when moving from a pre-1.0 install.
+- **Retired** — the classic dashboards (General and Executive), the Initializer/Driver notebook workflow, and the configuration-vs-best-practice security checks are no longer part of SAT. See the [Upgrade Guide](../upgrade).
 
 </Admonition>
 
@@ -32,7 +32,7 @@ The **Security Analysis Tool (SAT)** is an observability utility designed to imp
   {
     title: 'The SAT App',
     href: 'the-app',
-    description: 'The single app interface — security findings across all categories plus permissions, secrets, alerts, and the assistant, all in one place.'
+    description: 'The single app interface — permissions analysis, secret scanning, alerts, and the security assistant, all in one place.'
   },
   {
     title: 'Permissions Analysis',
@@ -53,45 +53,18 @@ The **Security Analysis Tool (SAT)** is an observability utility designed to imp
 The app provisions its own collection jobs and runs them on a schedule (you can also run them on demand):
 
 * **Data Collection**  
-  The app's collection jobs gather configuration details from Databricks accounts and workspaces via REST APIs.
+  The collection jobs query Databricks account and workspace APIs to build a graph of your identities, resources, and permission relationships, and scan notebook source and cluster configurations for exposed secrets.
 
 * **Historical Tracking**  
-  Persists results in Delta tables in your chosen Unity Catalog schema for historical tracking and trend analysis.
+  Results persist in Delta tables in your chosen Unity Catalog schema, for historical tracking and trend analysis.
 
-* **Centralized Reporting**  
-  Surfaces results in the app, categorized into five distinct sections to help stakeholders review relevant workspace settings — no separate dashboard to publish or share.
-
----
-
-## Security Categories
-
-SAT evaluates **65+ security best practices** across five key categories:
-
-* **Network Security** - Network policies, VPC configurations, and network isolation (includes live egress testing from compute)
-* **Identity & Access** - User management, group memberships, and access controls
-* **Data Protection** - Encryption, data classification, and data governance
-* **Governance** - Compliance, audit logging, and policy enforcement
-* **Informational** - Observations and recommendations for continuous improvement
-
-Cloud applicability for each check is recorded in `configs/security_best_practices.csv` — a small number of checks are AWS-only or AWS+GCP-only where the underlying API is not available on every cloud.
-
-**Severity Levels:**
-* **High** - Critical issues requiring immediate attention
-* **Medium** - Important issues to address soon
-* **Low** - Minor issues for continuous improvement
-
-### Live behavior tests
-
-Most SAT checks inspect configuration and report deviations. **NS-14** is the first SAT check that exercises real behavior — it runs from the SAT collection compute and probes a small set of public destinations to verify that egress controls actually block outbound traffic.
-
-* On a workspace with restrictive egress controls, the probes are *expected* to fail. NS-14 reports "egress blocked" — that's the **pass** state.
-* On a workspace with no egress restriction, the probes succeed and NS-14 reports the destinations as reachable.
-
-This makes NS-14 useful as a real-world spot check for egress configuration: it tells you whether your network controls are doing their job, not just whether they exist on paper.
+* **In-app Reporting**  
+  You explore everything in the app — as the signed-in user, so Unity Catalog enforces your own grants on what you can see. No separate dashboard to publish or share.
 
 ---
 
 ## Getting Started
 
+* [**The SAT App**](./the-app) - How the app is organized
 * [**Installation Guides**](../installation/) - Deploy the SAT app using the standard installer or Terraform
 * [**Usage Guide**](../usage) - Complete in-app setup, run collection, view results, and configure alerts

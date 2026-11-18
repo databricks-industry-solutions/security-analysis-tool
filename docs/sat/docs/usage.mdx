@@ -62,9 +62,6 @@ from the app.
 
 All results are in the app:
 
-- **Overview & findings** — security best-practice findings across Network
-  Security, Identity & Access, Data Protection, Governance, and Informational,
-  ranked by severity, each linking to Databricks documentation.
 - **Principal Analysis / Resource Analysis** — who can access what, with
   escalation and impersonation risk. See [Permissions Analysis](./functionality/permissions-analysis).
 - **Credential Exposure** — hardcoded secrets in notebooks and cluster configs.
@@ -106,11 +103,3 @@ admins**. Other users can view alerts and run the read-only "test condition"
 check, but the create/edit/delete controls are hidden for them.
 </Admonition>
 
-## Customizing the security checks *(advanced)*
-
-Which best-practice checks run, their per-cloud applicability, and the values for
-manual/self-assessment checks (for example SSO or SCIM enablement) are driven by
-the configuration files SAT ships in its `configs/` folder
-(`security_best_practices.csv`, `self_assessment_checks.yaml`). Edit these in the
-app's workspace files if you need to change the defaults for your environment;
-the next collection run picks up the changes.

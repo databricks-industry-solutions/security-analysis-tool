@@ -116,14 +116,6 @@ GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata  TO 
 
 </AccordionItem>
 
-<AccordionItem question="NS-14 (egress control) reports 'egress blocked' on workspaces with restricted egress">
-
-NS-14 is a live behavior check — it runs from the SAT driver compute and probes a small list of public destinations to confirm whether outbound traffic is reachable. On a properly egress-restricted network the probes are *expected* to fail, and **that's the pass state for the check**: egress controls are doing their job.
-
-If you see NS-14 reporting "egress blocked" on a workspace where you've configured network policies or firewall rules to restrict outbound traffic, no action is required.
-
-</AccordionItem>
-
 <AccordionItem question="Offline Library Install - No PyPI Access">
 
 If your workspace does not have access to PyPI, follow these steps to install the required libraries manually:

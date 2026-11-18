@@ -89,39 +89,11 @@ Yes. SAT supports AWS GovCloud (FedRAMP) and AWS DoD IL5 — it resolves the cor
 
 ---
 
-## SAT Checks
-
-<AccordionItem question="Does SAT test for all of the Databricks Security best practices?">
-
-We are continuously improving SAT, with most checks aligned to security best practices. However, not all recommendations are included — some are cloud-specific, and others cannot be automated due to the lack of supporting REST APIs.
-
-</AccordionItem>
-
-<AccordionItem question="What do the severity labels specifically mean on the SAT configs? How does one interpret them?">
-
-The severity levels in the SAT report reflect our general assessment of the potential impact of each check, helping most customers prioritize remediation—starting with those marked as **High** severity. However, individual organizations should evaluate the relevance of each finding and adjust prioritization based on their specific security requirements.
-
-</AccordionItem>
-
-<AccordionItem question="Can I disable a check for my assessment?">
-
-Yes. Which checks run (and their per-cloud applicability and alert values) is driven by SAT's configuration file `configs/security_best_practices.csv`. Edit it in the app's workspace files to enable or disable individual checks; the next collection run reflects your changes.
-
-</AccordionItem>
-
----
-
 ## SAT Reports
 
-<AccordionItem question="Do we need to address all of the deviations reported by SAT?">
+<AccordionItem question="Do we need to address every finding SAT reports?">
 
-Please review the SAT report with your business stakeholders, administrators, security team and auditors. Assess your organizational security requirements carefully before making changes based on the report - not all deviations require mitigation. Some recommendations may have cost implications, and some of the security recommendations may have dependency limitations. Always thoroughly review the associated feature documentation before modifying your security configurations.
-
-</AccordionItem>
-
-<AccordionItem question="Why are SSO, SCIM, Table ACLs etc not properly reflected in the SAT report?">
-
-There are a few checks that rely on self-assessment due to the lack of REST APIs to automatically check them. Edit `configs/self_assessment_checks.yaml` in the app's workspace files and set the `enabled` values to reflect your environment (`true`/`false`) for the listed manual checks. SAT automatically checks the rest. Then run data collection again from the app's **Data Collection** page.
+Review SAT's findings with your business stakeholders, administrators, security team, and auditors, and assess them against your organizational security requirements — not every finding requires action, and some remediations have cost or dependency implications. Always review the associated feature documentation before making changes.
 
 </AccordionItem>
 

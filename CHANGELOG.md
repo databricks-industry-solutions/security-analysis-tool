@@ -4,10 +4,11 @@ All notable changes to this project will be documented in this file.
 ## [1.0.0]
 
 The first fully **app-based** release of SAT. SAT is now a single Databricks App
-that owns the whole experience — setup, data collection, findings, permissions
-analysis, secret scanning, alerts, and the security assistant. The classic
-Lakeview dashboards and the standalone Initializer/Driver notebook workflow are
-retired; everything is configured and viewed in the app.
+that owns the whole experience — setup, data collection, permissions analysis,
+secret scanning, alerts, and the security assistant. The classic dashboards, the
+standalone Initializer/Driver notebook workflow, and the configuration-vs-best-
+practice security checks are retired; 1.0 focuses on access/permissions risk and
+exposed secrets, all configured and viewed in the app.
 
 ### Added
 

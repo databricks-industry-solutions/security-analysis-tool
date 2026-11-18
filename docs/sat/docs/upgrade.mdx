@@ -34,11 +34,13 @@ app (not just redeploy) so the new network settings take effect.
 ## Moving from a pre-1.0 (classic) install
 
 Versions before 1.0 ran SAT as a set of notebooks (Initializer + Driver) with
-standalone Lakeview dashboards. **1.0 replaces both with the single SAT app.**
-After deploying 1.0:
+standalone dashboards and configuration-vs-best-practice checks. **1.0 replaces
+them with the single SAT app**, focused on access/permissions risk and exposed
+secrets. After deploying 1.0:
 
-- Use the app for everything — findings, permissions, secrets, and alerts. The
-  old **General** and **Executive** Lakeview dashboards are retired.
+- Use the app for everything — permissions, secrets, and alerts. The old
+  **General** and **Executive** dashboards and the best-practice security checks
+  are retired.
 - Complete the app's first-run setup (catalog/schema, warehouse, and optionally
   account credentials). You can point it at your existing results schema.
 - Retire the old **SAT Initializer Notebook** / **SAT Driver Notebook** workflows
