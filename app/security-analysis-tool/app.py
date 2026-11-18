@@ -222,6 +222,43 @@ def uc_secret_put(key, value, comment=None, client=None):
         client.secrets_uc.create_secret(secret)
 
 
+# Explicit-schema variants of the secret read/write above. The functions above
+# address the *current* schema via the CATALOG/SCHEMA globals; these take the
+# catalog and schema outright, so a schema change can copy secrets out of the old
+# schema (no longer the current one) into the new one.
+def _uc_secret_read_at(client, catalog, schema, key):
+    """A secret's plaintext from an explicit schema, or None if absent/unreadable."""
+    from databricks.sdk.errors import NotFound
+    try:
+        got = client.secrets_uc.get_secret(
+            full_name=f"{catalog}.{schema}.{key}", include_value=True)
+        return got.effective_value if got.effective_value is not None else got.value
+    except NotFound:
+        return None
+    except Exception:  # noqa: BLE001 - unreadable counts as absent for a copy
+        return None
+
+
+def _uc_secret_write_at(client, catalog, schema, key, value, comment=None):
+    """Create or replace a secret in an explicit schema."""
+    from databricks.sdk.errors import NotFound
+    from databricks.sdk.service.catalog import Secret
+    from google.protobuf.field_mask_pb2 import FieldMask
+    full = f"{catalog}.{schema}.{key}"
+    secret = Secret(name=key, catalog_name=catalog, schema_name=schema,
+                    value=str(value), comment=comment)
+    try:
+        client.secrets_uc.get_secret(full_name=full)
+        exists = True
+    except NotFound:
+        exists = False
+    if exists:
+        client.secrets_uc.update_secret(
+            full_name=full, secret=secret, update_mask=FieldMask(paths=["value"]))
+    else:
+        client.secrets_uc.create_secret(secret)
+
+
 # --- First-run setup -------------------------------------------------------
 # The app can be deployed with nothing configured. On first open the welcome
 # screen collects the catalog, schema, warehouse and account credentials; the
@@ -8969,14 +9006,17 @@ def get_main_html():
                 // surface what happened to the collection jobs afterwards: on a
                 // schema change they are re-pointed at the new schema automatically.
                 const after = document.getElementById('settings-saveerr');
+                const migrated = (result.migrated_secrets || []).length;
                 if (after && result.reprovision_error) {
                     after.textContent = 'Saved, but updating the collection jobs to the new '
                         + 'schema failed: ' + result.reprovision_error
                         + ' Re-provision them from the Data Collection page.';
                     after.className = 'savebar-text is-error';
-                } else if (after && typeof result.reprovisioned === 'number' && result.reprovisioned > 0) {
-                    after.textContent = '✓ Saved — re-pointed ' + result.reprovisioned
-                        + ' collection job(s) at the new schema.';
+                } else if (after && ((typeof result.reprovisioned === 'number' && result.reprovisioned > 0) || migrated)) {
+                    const parts = [];
+                    if (result.reprovisioned > 0) parts.push('re-pointed ' + result.reprovisioned + ' collection job(s)');
+                    if (migrated) parts.push('carried your account credentials over');
+                    after.textContent = '✓ Saved — ' + parts.join(' and ') + ' to the new schema.';
                     after.className = 'savebar-text';
                 }
             } catch (e) {
@@ -15885,11 +15925,9 @@ def api_settings_update():
             logger.exception('settings schema persist failed')
             return jsonify({'error': f'Could not save the schema: {str(exc)[:180]}'}), 500
         _apply_runtime_config(config)
-        resync = _resync_jobs_on_schema_change(previous_schema)
-        if resync and 'reprovisioned' in resync:
-            response['reprovisioned'] = resync['reprovisioned']
-        elif resync and 'error' in resync:
-            response['reprovision_error'] = resync['error']
+        change = _on_schema_change(previous_schema)
+        if change:
+            response.update(change)
 
     # A new warehouse or schema invalidates cached run state.
     if 'warehouse_id' in payload or 'schema' in payload:
@@ -16422,16 +16460,15 @@ def api_setup_complete():
     logger.info('first-run setup completed by %s: %s.%s (schema %s)',
                 _assistant_user(), catalog, schema, schema_state)
 
-    # If the catalog/schema changed and jobs already exist, re-point them now so
-    # the next run targets the new schema instead of the old one. No-op on a
-    # first-run setup (no jobs yet) -- those are created from Data Collection.
+    # If the catalog/schema changed, carry the account credentials into the new
+    # schema and re-point the existing jobs at it, so the change is seamless. No-op
+    # on a first-run setup (no prior schema, no jobs yet) -- the jobs are created
+    # from Data Collection and the credentials entered above already land here.
     response = {'configured': True, 'catalog': catalog, 'schema': schema,
                 'schema_state': schema_state}
-    resync = _resync_jobs_on_schema_change(previous_schema)
-    if resync and 'reprovisioned' in resync:
-        response['reprovisioned'] = resync['reprovisioned']
-    elif resync and 'error' in resync:
-        response['reprovision_error'] = resync['error']
+    change = _on_schema_change(previous_schema)
+    if change:
+        response.update(change)
     return jsonify(response)
 
 
@@ -17892,6 +17929,89 @@ def _resync_jobs_on_schema_change(previous_schema):
     except Exception as exc:  # noqa: BLE001
         logger.exception('auto re-provision after schema change failed')
         return {'error': str(exc)[:220]}
+
+
+# Account-credential secrets the jobs read from the results schema. The app writes
+# only client-id/client-secret today; the rest are read by the collectors on some
+# clouds and may have been set by hand, so a migration carries them too when
+# present. Copying a key that does not exist is a harmless no-op.
+_MIGRATABLE_SECRET_KEYS = (
+    'client-id', 'client-secret', 'tenant-id', 'subscription-id', 'use-sp-auth')
+
+
+def _migrate_account_secrets(previous_schema):
+    """Copy the app-managed account credential secrets from the previous results
+    schema into the current one after a schema change.
+
+    Account credentials live as Unity Catalog secrets *inside* the results schema
+    ({catalog}.{schema}.<key>), and the collection jobs read them from the schema
+    they are pointed at. So changing the schema would otherwise strand the
+    credentials in the old schema and the account-wide jobs would fail until the
+    operator re-entered them. This carries them across so the change is seamless.
+
+    Best-effort and never raises: an unreadable old secret or an unwritable new
+    schema just means that key is skipped (the operator can still re-enter it).
+    A value already present in the new schema is left untouched -- an explicit
+    entry there wins over a copy. Returns the list of keys copied.
+
+    Must be called after CATALOG/SCHEMA have been refreshed to the new value.
+    """
+    parts = [p.strip().strip('`').strip('"')
+             for p in str(previous_schema or '').split('.') if p.strip()]
+    if len(parts) != 2 or not (CATALOG and SCHEMA):
+        return []
+    old_catalog, old_schema = parts
+    if _normalise_schema_ref(previous_schema) == _normalise_schema_ref(f'{CATALOG}.{SCHEMA}'):
+        return []
+    try:
+        client = _config_client()
+    except Exception:  # noqa: BLE001
+        logger.info('secret migration skipped: no config client', exc_info=True)
+        return []
+
+    copied = []
+    for key in _MIGRATABLE_SECRET_KEYS:
+        try:
+            # An explicit value already in the new schema wins; don't clobber it.
+            if _uc_secret_read_at(client, CATALOG, SCHEMA, key) is not None:
+                continue
+            value = _uc_secret_read_at(client, old_catalog, old_schema, key)
+            if value is None:
+                continue
+            _uc_secret_write_at(client, CATALOG, SCHEMA, key, value,
+                                comment='Carried over by SAT on a results-schema change')
+            copied.append(key)
+        except Exception:  # noqa: BLE001
+            logger.info('secret migration skipped for %s', key, exc_info=True)
+    if copied:
+        logger.info('migrated %d account secret(s) from %s.%s to %s.%s',
+                    len(copied), old_catalog, old_schema, CATALOG, SCHEMA)
+    return copied
+
+
+def _on_schema_change(previous_schema):
+    """Apply everything a configured catalog/schema change needs to stay seamless:
+    carry the account-credential secrets into the new schema, then re-point the
+    existing collection jobs at it (which also runs the initializer to create the
+    new schema's tables). Order matters -- secrets are copied before the jobs run.
+
+    Returns None when nothing changed, else a dict with any of ``migrated_secrets``
+    (list of keys), ``reprovisioned`` (count), and ``reprovision_error`` (message).
+    Never raises.
+    """
+    current = f'{CATALOG}.{SCHEMA}' if (CATALOG and SCHEMA) else ''
+    if not current or _normalise_schema_ref(previous_schema) == _normalise_schema_ref(current):
+        return None
+    result = {}
+    migrated = _migrate_account_secrets(previous_schema)
+    if migrated:
+        result['migrated_secrets'] = migrated
+    resync = _resync_jobs_on_schema_change(previous_schema)
+    if resync and 'reprovisioned' in resync:
+        result['reprovisioned'] = resync['reprovisioned']
+    elif resync and 'error' in resync:
+        result['reprovision_error'] = resync['error']
+    return result
 
 
 def _normalise_run(run):
