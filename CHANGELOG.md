@@ -14,7 +14,7 @@ exposed secrets, all configured and viewed in the app.
 
 - **Single Security Analysis app** — a unified UI for findings, Principal &
   Resource Analysis, Credential Exposure (secret scanning), alerts, and the
-  security assistant. Replaces the General and Executive Lakeview dashboards.
+  security assistant. Replaces the General and Executive dashboards.
 - **In-app first-run setup** — pick the results catalog/schema and SQL warehouse,
   and (optionally) enter an account ID + service-principal credentials for
   account-wide data. Credentials are stored as Unity Catalog secrets; no secret
