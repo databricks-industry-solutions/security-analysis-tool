@@ -4404,7 +4404,7 @@ def get_main_html():
                         for hardcoded credentials; and answers questions about any of it in plain language.
                     </p>
                     <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.86em;">
-                        Core security posture checks are available natively in the Databricks Governance Hub (Security section).
+                        Core security posture checks are available natively in the <a href="https://docs.databricks.com/aws/en/admin/governance-hub/security" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">Databricks Governance Hub (Security section)</a>.
                     </p>
 
                     <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🎯 Key Features</h3>
