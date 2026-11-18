@@ -2424,6 +2424,27 @@ def get_main_html():
         .ss-status { font-size: 0.86em; }
         .ss-status.ok { color: #6ee7b7; }
         .ss-status.err { color: #fca5a5; }
+
+        /* Custom combobox (type-or-pick), used by the setup catalog field */
+        .combo { position: relative; }
+        .combo-input { padding-right: 34px; }
+        .combo-toggle {
+            position: absolute; top: 0; right: 0; height: 100%; width: 32px;
+            display: flex; align-items: center; justify-content: center;
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+        }
+        .combo-toggle:hover { color: #fff; }
+        .combo-toggle svg { width: 16px; height: 16px; }
+        .combo-menu {
+            position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 60;
+            max-height: 220px; overflow-y: auto;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+        }
+        .combo-menu[hidden] { display: none; }
+        .combo-item { padding: 8px 12px; cursor: pointer; font-size: 0.9em; color: rgba(255,255,255,0.85); }
+        .combo-item:hover { background: rgba(102,126,234,0.18); color: #fff; }
+        .combo-empty { padding: 8px 12px; color: var(--text-muted); font-size: 0.85em; }
         .setup-guide-body .tag {
             display: inline-block; font-size: 0.72em; font-weight: 700; text-transform: uppercase;
             letter-spacing: 0.4px; padding: 1px 7px; border-radius: 999px; margin-right: 6px;
@@ -5498,19 +5519,71 @@ def get_main_html():
             return `<input class="field-input" id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(selected)}">`;
         }
 
+        // Options registry for the custom comboboxes, keyed by input id.
+        const _comboOpts = {};
+
         function setupCombo(id, options, placeholder, selected) {
-            // Text input backed by a native <datalist>: the customer can pick from
-            // the catalogs the app can see, or type any catalog name (useful when
-            // the app SP can't enumerate a catalog the customer knows exists).
+            // A text box you can type in, plus a clickable, filterable dropdown of
+            // known values. We render our own dropdown rather than a native
+            // <datalist> because datalist support is inconsistent across browsers
+            // (notably Safari, where no list appears at all).
             selected = selected || '';
-            const listId = id + '-list';
-            const opts = (options || [])
-                .map(o => `<option value="${escapeHtml(o.value)}">`).join('');
-            return `<input class="field-input" id="${id}" type="text" list="${listId}"
-                        autocomplete="off" placeholder="${escapeHtml(placeholder)}"
-                        value="${escapeHtml(selected)}">
-                    <datalist id="${listId}">${opts}</datalist>`;
+            _comboOpts[id] = (options || []).map(o => (o && o.value != null) ? String(o.value) : String(o));
+            return `<div class="combo">
+                <input class="field-input combo-input" id="${id}" type="text" autocomplete="off"
+                       placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(selected)}"
+                       oninput="comboShow('${id}')" onfocus="comboShow('${id}')"
+                       onkeydown="comboKey(event, '${id}')">
+                <button type="button" class="combo-toggle" tabindex="-1" aria-label="Show choices"
+                        onmousedown="event.preventDefault()" onclick="comboToggle('${id}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="combo-menu" id="${id}-menu" role="listbox" hidden></div>
+            </div>`;
         }
+
+        function comboShow(id) {
+            const menu = document.getElementById(id + '-menu');
+            const input = document.getElementById(id);
+            if (!menu || !input) return;
+            const q = (input.value || '').trim().toLowerCase();
+            const all = _comboOpts[id] || [];
+            const matches = q ? all.filter(v => v.toLowerCase().includes(q)) : all;
+            menu.innerHTML = matches.length
+                ? matches.map(v => `<div class="combo-item" role="option" data-value="${escapeHtml(v)}">${escapeHtml(v)}</div>`).join('')
+                : `<div class="combo-empty">${all.length ? 'No match — press Enter to use what you typed' : 'No catalogs the app can access — type any catalog name'}</div>`;
+            // onmousedown fires before the input's blur, so the pick lands before the menu closes.
+            menu.onmousedown = (e) => {
+                const item = e.target.closest('.combo-item');
+                if (!item) return;
+                e.preventDefault();
+                input.value = item.getAttribute('data-value');
+                menu.hidden = true;
+            };
+            menu.hidden = false;
+        }
+
+        function comboToggle(id) {
+            const menu = document.getElementById(id + '-menu');
+            if (!menu) return;
+            if (menu.hidden) { comboShow(id); const i = document.getElementById(id); if (i) i.focus(); }
+            else { menu.hidden = true; }
+        }
+
+        function comboKey(event, id) {
+            if (event.key === 'Escape') {
+                const menu = document.getElementById(id + '-menu');
+                if (menu) menu.hidden = true;
+            }
+        }
+
+        // Close any open combobox when clicking outside it.
+        document.addEventListener('click', (e) => {
+            document.querySelectorAll('.combo-menu').forEach(menu => {
+                const combo = menu.closest('.combo');
+                if (!menu.hidden && combo && !combo.contains(e.target)) menu.hidden = true;
+            });
+        });
 
         function renderSetupForm(opts) {
             const catalogs = (opts.catalogs || []).map(c => ({ value: c, label: c }));
