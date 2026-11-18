@@ -8942,6 +8942,7 @@ def get_main_html():
                 if (list.error) { showEmpty('secretsalerts-results', list.error); return; }
                 alertState.options = options;
                 alertState.alerts = list.alerts || [];
+                alertState.canManage = list.can_manage !== false;
                 renderSecretsAlerts();
             } catch (e) {
                 showEmpty('secretsalerts-results', 'Failed to load alerts: ' + e.message);
@@ -8952,6 +8953,7 @@ def get_main_html():
             const container = document.getElementById('secretsalerts-results');
             const alerts = alertState.alerts;
             const options = alertState.options || {};
+            const canManage = alertState.canManage !== false;
 
             if (!options.warehouse_configured) {
                 container.innerHTML = `
@@ -8968,8 +8970,9 @@ def get_main_html():
                         ${alerts.length
                             ? alerts.length + ' alert' + (alerts.length === 1 ? '' : 's') + ' configured'
                             : 'No alerts configured yet'}
+                        ${canManage ? '' : ' &middot; view only — only workspace or account admins can create or change alerts'}
                     </div>
-                    <button class="btn btn-sm" onclick="openAlertEditor()">New alert</button>
+                    ${canManage ? '<button class="btn btn-sm" onclick="openAlertEditor()">New alert</button>' : ''}
                 </div>
                 <div id="alert-editor-slot"></div>`;
 
@@ -8982,7 +8985,9 @@ def get_main_html():
                             Alerts are standard Databricks SQL alerts, so they also appear under
                             Alerts in the workspace and keep working if this app is removed.
                         </div>
-                        <button class="btn btn-sm" onclick="openAlertEditor()">Create your first alert</button>
+                        ${canManage
+                            ? '<button class="btn btn-sm" onclick="openAlertEditor()">Create your first alert</button>'
+                            : '<div class="alert-empty-sub">Only workspace or account admins can create alerts.</div>'}
                     </div>`;
             } else {
                 html += '<div class="alert-list">';
@@ -9010,11 +9015,12 @@ def get_main_html():
                             </div>
                             <div class="alert-actions">
                                 ${a.url ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">Open</a>` : ''}
+                                ${canManage ? `
                                 <button class="btn btn-sm btn-ghost" onclick="toggleAlertPause('${escapeHtml(a.id)}', ${a.paused ? 'false' : 'true'})">
                                     ${a.paused ? 'Resume' : 'Pause'}
                                 </button>
                                 <button class="btn btn-sm btn-ghost" onclick="openAlertEditor('${escapeHtml(a.id)}')">Edit</button>
-                                <button class="btn btn-sm btn-stop" onclick="deleteAlert('${escapeHtml(a.id)}')">Delete</button>
+                                <button class="btn btn-sm btn-stop" onclick="deleteAlert('${escapeHtml(a.id)}')">Delete</button>` : ''}
                             </div>
                         </div>`;
                 });
@@ -16628,6 +16634,68 @@ def _alert_error_message(exc):
     return f"Could not save the alert: {raw}"
 
 
+def _caller_is_admin():
+    """Whether the signed-in user may manage alerts: True only for a workspace
+    admin or an account admin.
+
+    Workspace admin = member of the workspace ``admins`` group, checked live as
+    the user via their forwarded OBO token. Account admin = holds the
+    ``account_admin`` role, checked via the account API (the same signal the
+    collector uses), best-effort and only when account credentials are set.
+
+    Fails closed: alert management runs as the app service principal, so without
+    this gate any app viewer could create/modify/delete alerts. If the caller's
+    identity cannot be verified (no OBO token on the request), return False so the
+    privileged action is refused rather than silently allowed.
+    """
+    try:
+        user_token = request.headers.get('x-forwarded-access-token')
+    except RuntimeError:
+        user_token = None
+    if not user_token:
+        return False
+
+    email = ''
+    # 1) Workspace admin — membership in the workspace 'admins' group, as the user.
+    try:
+        uc = WorkspaceClient(host=os.getenv('DATABRICKS_HOST'),
+                             token=user_token, auth_type='pat')
+        me = uc.current_user.me()
+        for g in (me.groups or []):
+            if (getattr(g, 'display', '') or '').strip().lower() == 'admins':
+                return True
+        email = (me.user_name or '').strip()
+    except Exception:  # noqa: BLE001
+        logger.info('workspace-admin check failed', exc_info=True)
+    if not email:
+        email = (get_user_email() or '').strip()
+
+    # 2) Account admin — account_admin role on the account SCIM user. Best-effort;
+    # only possible when account credentials are configured.
+    if '@' in email:
+        try:
+            account_id = (_app_config.get('account_id') or os.getenv('ACCOUNT_ID') or '').strip()
+            client_id = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+            client_secret = uc_secret_value(CREDENTIAL_KEYS['client_secret'])
+            if account_id and client_id and client_secret:
+                from databricks.sdk import AccountClient
+                ac = AccountClient(host=_account_host(), account_id=account_id,
+                                   client_id=client_id, client_secret=client_secret)
+                for u in ac.users.list(filter=f'userName eq "{email}"'):
+                    full = ac.users.get(u.id)
+                    roles = [str(getattr(r, 'value', '') or '') for r in (full.roles or [])]
+                    if 'account_admin' in roles:
+                        return True
+        except Exception:  # noqa: BLE001
+            logger.info('account-admin check failed', exc_info=True)
+    return False
+
+
+_ALERT_ADMIN_ONLY = ("Only workspace admins or account admins can create or change "
+                     "alerts. If you are an admin and see this, make sure the app has "
+                     "user authorization (OBO) enabled so it can verify your role.")
+
+
 @app.route('/api/secrets/alerts/options')
 def api_secrets_alert_options():
     """Templates, schedule presets and destinations for the alert editor."""
@@ -16702,12 +16770,16 @@ def api_secrets_alerts_list():
         return jsonify({'error': str(exc)}), 500
 
     alerts.sort(key=lambda a: (a['paused'], a['display_name'] or ''))
-    return jsonify({'alerts': alerts, 'count': len(alerts)})
+    # can_manage lets the UI hide the create/edit/delete controls for non-admins;
+    # the write endpoints enforce the same check server-side regardless.
+    return jsonify({'alerts': alerts, 'count': len(alerts), 'can_manage': _caller_is_admin()})
 
 
 @app.route('/api/secrets/alerts', methods=['POST'])
 def api_secrets_alerts_create():
     """Create a Databricks SQL alert from one of the secret-scanning templates."""
+    if not _caller_is_admin():
+        return jsonify({'error': _ALERT_ADMIN_ONLY}), 403
     payload = request.get_json(silent=True) or {}
     template_id = (payload.get('template_id') or '').strip()
     templates = _alert_templates()
@@ -16739,6 +16811,8 @@ def api_secrets_alerts_update(alert_id):
     everything else untouched, so the list view's switch does not have to
     round-trip the whole definition.
     """
+    if not _caller_is_admin():
+        return jsonify({'error': _ALERT_ADMIN_ONLY}), 403
     payload = request.get_json(silent=True) or {}
     try:
         client = _sp_workspace_client()
@@ -16794,6 +16868,8 @@ def api_secrets_alerts_update(alert_id):
 @app.route('/api/secrets/alerts/<alert_id>', methods=['DELETE'])
 def api_secrets_alerts_delete(alert_id):
     """Move an alert to trash. Recoverable in the workspace UI."""
+    if not _caller_is_admin():
+        return jsonify({'error': _ALERT_ADMIN_ONLY}), 403
     try:
         client = _sp_workspace_client()
         client.alerts_v2.trash_alert(id=alert_id)
