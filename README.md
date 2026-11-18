@@ -2,7 +2,7 @@
 
 The **Security Analysis Tool (SAT)** analyzes your Databricks account and workspace configurations, providing recommendations to help you follow Databricks' security best practices.
 
-**Latest version:** [v0.8.0](https://github.com/databricks-industry-solutions/security-analysis-tool/releases) — live egress testing, per-user identity in Permissions Analysis, expanded secret scanning, and 11 new checks. See the [Upgrade Guide](https://databricks-industry-solutions.github.io/security-analysis-tool/docs/upgrade) for behavior changes when upgrading from 0.7.x.
+**Latest version:** [v1.0.0](https://github.com/databricks-industry-solutions/security-analysis-tool/releases) — SAT is now a single Databricks App: in-app setup and job provisioning, findings, permissions analysis, secret scanning (with in-app scan settings and custom detection rules), and admin-only alerts, with per-user authorization. The classic Lakeview dashboards and Initializer/Driver notebooks are retired. See the [Upgrade Guide](https://databricks-industry-solutions.github.io/security-analysis-tool/docs/upgrade) for what changes when moving from a pre-1.0 install.
 
 ## Documentation
 
