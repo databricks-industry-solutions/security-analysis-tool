@@ -64,6 +64,10 @@ Configuration (catalog/schema, SQL warehouse, account id) and account credential
 
 The app creates and re-creates its own serverless jobs from `PROVISION_SPECS` in `app.py`: the initializer plus five collection jobs (permissions, secrets, shared-to-account, privileged-non-IdP, denylist). Each job receives its configuration as **job parameters** (notably `analysis_schema_name`), so the notebooks need no secret scope. Jobs that read Unity Catalog secrets run on serverless environment **client ≥ 4** (client 3 cannot read them).
 
+### Changing the results schema
+
+The collection jobs bake `analysis_schema_name` (`{catalog}.{schema}`) into their parameters at provision time, so a catalog/schema change does not reach already-created jobs on its own. When the schema changes (setup or Settings), `app.py`'s `_on_schema_change` automatically (1) **migrates the account-credential UC secrets** (`client-id`/`client-secret`) into the new schema — they live *in* the schema, so they'd otherwise be stranded — and (2) **re-provisions the jobs** so they target the new schema (running the initializer to create its tables). The compare is case-insensitive (UC folds names to lowercase) and it won't clobber a credential already present in the new schema.
+
 ### Collection notebooks → Unity Catalog
 
 Results land in the results schema: `brickhound_vertices` / `brickhound_edges` / `brickhound_collection_metadata` (plus `brickhound_shared_to_account`, `brickhound_privileged_non_idp`, `brickhound_denylist_candidates`) and `notebooks_secret_scan_results` / `clusters_secret_scan_results`. The app queries these through the SQL warehouse.
@@ -74,7 +78,7 @@ Both installers **deploy the app only** and grant it the SQL warehouse; the app 
 
 ### Authentication
 
-The collection notebooks authenticate to the Databricks REST APIs as the account service principal (`client-id`/`client-secret` read from UC secrets). `SatDBClient` handles AWS/GCP OAuth and Azure MSAL. On serverless compute, collection is scoped to the current workspace.
+The collection notebooks authenticate to the Databricks REST APIs as the account service principal (`client-id`/`client-secret` read from UC secrets), using **Databricks OAuth (M2M) on every cloud** — account token from `{accounts-host}/oidc/accounts/{account_id}/v1/token`, workspace token from `{host}/oidc/v1/token`. There is **no Microsoft Entra / MSAL path and no Azure tenant or subscription**: SAT reads only the Databricks account and workspace APIs (no Azure Resource Manager calls). On Azure the service principal therefore needs a **Databricks OAuth secret** (generated in the account console), not an Azure AD app client secret. Both `SatDBClient` (the wheel) and the notebook-level `AccountClient`/`WorkspaceClient` (`auth_type="oauth-m2m"`) use this. On serverless compute, collection scope defaults to the current workspace.
 
 ## Code Patterns
 
@@ -158,9 +162,8 @@ This gives users complete visibility into what changed and whether they need to 
 - Accounts URL: `https://accounts.cloud.databricks.{domain}`
 
 ### Azure
-- Requires `tenant_id`, `subscription_id`, `client_id`, `client_secret`.
-- Two token endpoints: Databricks Accounts API + Azure Management API.
-- Accounts URL: `https://accounts.azuredatabricks.{domain}`; Management URL: `https://management.azure.com`
+- Databricks OAuth service principal with `client_id`/`client_secret` — a **Databricks OAuth secret** generated in the account console, **not** an Azure AD app secret. No `tenant_id`, `subscription_id`, MSAL, or Azure Management API (SAT makes no ARM calls).
+- Accounts URL: `https://accounts.azuredatabricks.{domain}`
 
 ### GCP
 - Service principal with client ID/secret.
