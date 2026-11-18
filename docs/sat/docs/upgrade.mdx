@@ -34,17 +34,17 @@ app (not just redeploy) so the new network settings take effect.
 ## Moving from a pre-1.0 (classic) install
 
 Versions before 1.0 ran SAT as a set of notebooks (Initializer + Driver) with
-standalone dashboards and configuration-vs-best-practice checks. **1.0 replaces
+standalone dashboards and core security posture checks. **1.0 replaces
 them with the single SAT app**, focused on access/permissions risk and exposed
-secrets. The best-practice checks are now native in the
+secrets. The core security posture checks are now native in the
 [Databricks Governance Hub Security tab](https://docs.databricks.com/aws/en/admin/governance-hub/security).
 After deploying 1.0:
 
 - Use the app for everything — permissions, secrets, and alerts. The old
-  **General** and **Executive** dashboards and the best-practice security checks
+  **General** and **Executive** dashboards and the core security posture checks
   are retired (the checks live in the Governance Hub now).
 - If Governance Hub isn't available in your environment (e.g. AWS GovCloud) and
-  you still need the best-practice checks, use **SAT v0.9.1**.
+  you still need the core security posture checks, use **SAT v0.9.1**.
 - Complete the app's first-run setup (catalog/schema, warehouse, and optionally
   account credentials). You can point it at your existing results schema.
 - Retire the old **SAT Initializer Notebook** / **SAT Driver Notebook** workflows
