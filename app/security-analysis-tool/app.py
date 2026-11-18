@@ -8145,7 +8145,7 @@ def get_main_html():
 
                     <div class="ss-group">
                         <div class="ss-group-title">What's scanned</div>
-                        <label class="ss-radio"><input type="checkbox" id="ss-scan-clusters"${scanClusters ? ' checked' : ''}> <span><strong>Scan cluster configurations</strong> — also scan cluster <code>spark_env_vars</code> and init scripts for hardcoded secrets, alongside notebook source. Turn this off to scan notebook source only (for example if cluster scanning isn't needed in your environment). Notebook scanning always runs.</span></label>
+                        <label class="ss-radio"><input type="checkbox" id="ss-scan-clusters"${scanClusters ? ' checked' : ''}> <span><strong>Scan cluster configurations</strong> — also check cluster <code>spark_env_vars</code> and init scripts for secrets. Off scans notebook source only.</span></label>
                     </div>
 
                     <div class="ss-group">
