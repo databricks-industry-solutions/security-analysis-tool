@@ -2408,6 +2408,8 @@ def get_main_html():
         .ss-group-title { font-weight: 650; font-size: 0.95em; margin-bottom: 10px; color: #ffffff; }
         .ss-help { color: var(--text-muted); font-size: 0.85em; line-height: 1.55; margin: 0 0 12px; }
         .ss-help code, .ss-intro code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+        .ss-rules-state { font-size: 0.86em; color: rgba(255,255,255,0.8); margin: 0 0 12px; }
+        .ss-rules-empty { color: var(--text-muted); }
         .ss-radio { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; font-size: 0.88em; color: rgba(255,255,255,0.8); line-height: 1.5; cursor: pointer; }
         .ss-radio input[type="radio"] { margin-top: 3px; flex: 0 0 auto; }
         .ss-days-input { display: inline-block; width: 64px; padding: 2px 6px; margin: 0 4px; }
@@ -8050,7 +8052,11 @@ def get_main_html():
             const cfg = secretsScanCfg;
             const all = (cfg.days_back || 0) === 0;
             const nDays = all ? 7 : cfg.days_back;
+            const ruleCount = (cfg.custom_detectors || []).length;
             const rules = (cfg.custom_detectors || []).map(secretsDetectorRow).join('');
+            const rulesState = ruleCount
+                ? `<p class="ss-rules-state">You have <strong>${ruleCount}</strong> custom rule${ruleCount === 1 ? '' : 's'} configured. Edit any field to change a rule, or <em>Remove rule</em> to delete it — then click <strong>Save scan settings</strong>.</p>`
+                : `<p class="ss-rules-state ss-rules-empty">No custom rules configured yet. Click <strong>+ Add rule</strong> below to create one.</p>`;
             el.innerHTML = `
             <details class="ss-settings">
                 <summary><svg class="ss-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Scan Settings &amp; Custom Detection Rules</summary>
@@ -8066,6 +8072,7 @@ def get_main_html():
                     <div class="ss-group">
                         <div class="ss-group-title">Custom detection rules <span class="setup-optional">optional</span></div>
                         <p class="ss-help">Add your own patterns (e.g. an internal token format) on top of SAT's built-in detectors. Each rule needs a <strong>name</strong>, one or more <strong>keywords</strong> (TruffleHog only inspects text containing a keyword — keep them specific), and a <strong>regex</strong> that matches the secret. Example regex: <code>(?i)\\b(acme_[a-z0-9]{32})\\b</code>. Patterns use RE2 (TruffleHog/Go) syntax. Rules apply to both notebook and cluster scans.</p>
+                        ${rulesState}
                         <div id="ssd-rules">${rules}</div>
                         <button type="button" class="btn btn-ghost" onclick="document.getElementById('ssd-rules').insertAdjacentHTML('beforeend', secretsDetectorRow())">+ Add rule</button>
                     </div>
@@ -15138,16 +15145,46 @@ _DEFAULT_EXCLUDED_DETECTORS = ['DatabricksToken']
 
 
 def _secrets_scan_config():
-    """Current secret-scan settings for the UI, from the app config."""
-    sc = _app_config.get('secrets_scan') or {}
+    """Current secret-scan settings for the UI, read back from the scanner's own
+    config file (custom_trufflehog_detectors.yaml). That file is the single source
+    of truth — the same bytes the collection jobs read — so the panel always shows
+    exactly what the next scan will use, with no drift between the UI and the
+    scanner. Absent file (nothing customised yet) → shipped defaults."""
+    days_back, custom_detectors, excluded = 0, [], []
     try:
-        days_back = int(sc.get('days_back', 0))
-    except (TypeError, ValueError):
-        days_back = 0
+        import yaml
+        raw = _config_client().workspace.download(_custom_detectors_path()).read()
+        doc = yaml.safe_load(raw) or {}
+        settings = (doc.get('settings') or {}) if isinstance(doc, dict) else {}
+        ss = settings.get('search_settings') or {}
+        try:
+            days_back = max(0, int(ss.get('days_back', 0)))
+        except (TypeError, ValueError):
+            days_back = 0
+        excluded = [str(x) for x in (settings.get('excluded_detectors') or [])]
+        for d in (doc.get('detectors') or []):
+            if not isinstance(d, dict) or not d.get('name'):
+                continue
+            rx = d.get('regex')
+            if isinstance(rx, dict) and rx:
+                pattern = str(next(iter(rx.values())) or '')
+            else:
+                pattern = str(rx or '')
+            kws = d.get('keywords') or []
+            if isinstance(kws, str):
+                kws = [k.strip() for k in kws.split(',') if k.strip()]
+            custom_detectors.append({
+                'name': d.get('name'),
+                'keywords': list(kws),
+                'regex': pattern,
+                'description': d.get('description', ''),
+            })
+    except Exception:  # noqa: BLE001 - file absent (nothing customised) or unreadable
+        pass
     return {
-        'days_back': max(0, days_back),
-        'custom_detectors': sc.get('custom_detectors') or [],
-        'excluded_detectors': sc.get('excluded_detectors') or [],
+        'days_back': days_back,
+        'custom_detectors': custom_detectors,
+        'excluded_detectors': excluded,
         'default_excluded': _DEFAULT_EXCLUDED_DETECTORS,
     }
 
@@ -15179,9 +15216,10 @@ def _write_custom_detectors_file(days_back, detectors, excluded):
 @app.route('/api/secrets/config', methods=['GET', 'POST'])
 def api_secrets_config():
     """Read or update the secret-scan settings (coverage window + custom detection
-    rules). On save, persists to the app config and writes the scanner config file
-    the collection jobs read at run time, so changes take effect on the next scan
-    without a redeploy."""
+    rules). Both read and write go through the scanner's own config file
+    (custom_trufflehog_detectors.yaml) in the app SP's home — one source of truth,
+    read back by this GET and by the collection jobs at run time — so a saved
+    setting persists and takes effect on the next scan without a redeploy."""
     if not is_configured():
         return jsonify({'error': 'Complete first-run setup first.'}), 409
 
@@ -15245,23 +15283,9 @@ def api_secrets_config():
         logger.exception('failed to write custom detector config')
         return jsonify({'error': f'Could not save scanner config: {exc}'}), 500
 
-    # Mirror the canonical state in the app config for the UI (stores the raw
-    # pattern per rule so the editor round-trips).
-    cfg = dict(_app_config)
-    cfg['secrets_scan'] = {
-        'days_back': days_back,
-        'custom_detectors': [
-            {'name': e['name'], 'keywords': e['keywords'],
-             'regex': e['regex']['id'], 'description': e.get('description', '')}
-            for e in detectors],
-        'excluded_detectors': excluded,
-    }
-    try:
-        write_persisted_config(cfg)
-        _apply_runtime_config(cfg)
-    except Exception:  # noqa: BLE001
-        logger.exception('failed to persist secrets_scan config')
-
+    # The config file is the single source of truth (read back by the GET and by
+    # the scanners), so there is nothing else to persist — re-read it so the
+    # response reflects exactly what was written.
     return jsonify({'ok': True, **_secrets_scan_config()})
 
 
