@@ -33,62 +33,27 @@ Before you begin, ensure you have:
 
 ---
 
-## Step 1: Create Azure App Registration
+## Step 1: Create Service Principal
 
-The App Registration allows SAT to authenticate with Azure services and Databricks.
+The service principal lets SAT authenticate to the Databricks account and workspace APIs to collect security information.
 
-<AccordionItem question="How to create an App Registration">
+<Admonition type="info" title="Databricks OAuth — no Microsoft Entra / tenant needed">
+SAT authenticates with **Databricks OAuth**, the same way it does on AWS and GCP. It reads only the Databricks account and workspace APIs, so there is **no Microsoft Entra (Azure AD) token, no tenant ID, and no Azure subscription** involved. You give the service principal a **Databricks OAuth secret** (not an Azure AD app client secret).
+</Admonition>
 
-**Follow these steps in the Azure Portal:**
+<AccordionItem question="How to create a Service Principal">
 
-1. Open the Azure portal and navigate to **Microsoft Entra ID**
-2. Click on `App registrations` → `New registration`
-3. Enter a name for the App Registration (e.g., "SAT-App")
-4. Select the appropriate permissions (minimum requirement: single tenant access)
-5. Click `Register`
-
-<div className='bg-gray-100 p-4 rounded-lg mb-6'>
-  <img src={useBaseUrl('/img/azure_app_reg.png')} alt="Azure App Registration" />
-</div>
-
-</AccordionItem>
-
----
-
-## Step 2: Create Client Secret
-
-<AccordionItem question="How to create an App Client Secret">
-
-**After creating the App Registration:**
-
-1. Open the App Registration you just created
-2. Click on `Certificates & secrets` → `New client secret`
-3. Enter a description for the client secret
-4. Select an expiry date
-5. Click `Add`
-6. **Copy and save the secret value immediately** (you won't be able to see it again!)
-
-</AccordionItem>
-
----
-
-## Step 3: Add Service Principal to Databricks
-
-Now you'll connect your Azure App Registration to Databricks as a Service Principal.
-
-<AccordionItem question="How to add the Service Principal">
-
-**Follow these steps in Databricks Account Console:**
+**Follow these steps in the Databricks Account Console:**
 
 1. Navigate to the [Databricks Account Console](https://accounts.azuredatabricks.net/)
 2. Click on `User management` in the left sidebar
-3. Select `Service Principal` → `Add service principal`
-4. Paste the **App Client ID** (Application ID from Azure)
-5. Create a name for the service principal
-6. Click `Add`
-7. Grant the `Account Admin` role
-8. Assign the `Workspace Admin` role for each workspace to be monitored
-9. Add to the `Metastore Admin` group or role
+3. Select `Service principals` → `Add service principal`
+4. Choose **Databricks managed**, enter a name (e.g., "SAT-Service-Principal"), and click `Add`
+   - If you prefer to use an existing **Microsoft Entra ID** application, choose *Microsoft Entra ID managed* instead and paste its Application (client) ID. Either kind works — SAT only needs the Databricks OAuth secret created in Step 2.
+5. Grant the `Account Admin` role
+6. Assign the `Workspace Admin` role for each workspace to be monitored
+7. Add to the `Metastore Admin` group or role
+8. Add the Service Principal to each workspace you want to analyze
 
 <div className='bg-gray-100 p-4 rounded-lg mb-6'>
   <img src={useBaseUrl('/img/azure_role_assignment.png')} alt="Role Assignment" />
@@ -99,21 +64,38 @@ Now you'll connect your Azure App Registration to Databricks as a Service Princi
 - [Workspace Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace**
 - [Metastore admin group](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges#who-has-metastore-admin-privileges) membership
 
-📚 [Learn more about Service Principals](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals)
+</AccordionItem>
+
+---
+
+## Step 2: Create a Databricks OAuth Secret
+
+<AccordionItem question="How to create the OAuth secret">
+
+**In the Databricks Account Console:**
+
+1. Open the service principal you created in Step 1
+2. Go to the `Secrets` section → under **OAuth secrets**, click `Generate secret`
+3. **Copy and save the `Secret` and the `Client ID`** immediately (the secret is shown only once)
+
+This is a **Databricks** OAuth secret, used with the standard `client_id` / `client_secret` OAuth flow — the same model as AWS and GCP. You do **not** create an Azure AD "Certificates & secrets" client secret.
+
+📚 [Learn more about Databricks OAuth (M2M) for service principals](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth/oauth-m2m)
 
 </AccordionItem>
 
 ---
 
-## Step 4: Run Installation
+## Step 3: Run Installation
 
 <Admonition type="note" title="Credentials Required">
 Have these ready for the app's **in-app setup** (you enter them in the app after install, not during `install.sh`):
 
 - 🔑 **Databricks Account ID**
-- 🔑 **Azure Tenant ID**
-- 🔑 **Azure App Client ID** (from Step 1)
-- 🔑 **Azure App Client Secret** (from Step 2)
+- 🔑 **Service Principal Client ID** (from Step 1)
+- 🔑 **Databricks OAuth Secret** (from Step 2)
+
+No Azure tenant ID or subscription ID is needed.
 </Admonition>
 
 ### Installation Steps
@@ -171,8 +153,8 @@ SAT is now ready to analyze your Databricks workspaces. Click [here](../../../fu
 If you encounter problems during installation:
 
 **Common Issues:**
-- ✓ Double-check your credentials are correct
-- ✓ Verify you have the required permissions in your Azure and Databricks environments
+- ✓ Double-check your credentials are correct — the client secret must be a **Databricks OAuth secret** (Step 2), not an Azure AD "Certificates & secrets" client secret
+- ✓ Verify the Service Principal has **Account Admin** (and **Workspace Admin** on each workspace)
 - ✓ Ensure the Service Principal has been added to all workspaces
 - ✓ Confirm the metastore is attached to your workspace
 
@@ -189,5 +171,5 @@ If you encounter problems during installation:
 
 ## References
 
-- [Azure App Registration](https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)
+- [Databricks OAuth (M2M) for service principals](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/auth/oauth-m2m)
 - [Databricks Service Principals on Azure](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--databricks-and-microsoft-entra-id-formerly-azure-active-directory-service-principals)

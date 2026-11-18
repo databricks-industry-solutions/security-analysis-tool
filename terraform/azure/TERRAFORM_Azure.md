@@ -2,7 +2,7 @@
 
 Terraform deploys the **Security Analysis Tool app** and the SQL warehouse it uses, and registers the SAT service principal. Everything else — catalog/schema, account id, and account credentials — is configured in the app's own setup flow after it is deployed, and the app provisions its own collection jobs and Genie space. There is no secret scope and no Terraform-created jobs.
 
-> **Note**: SAT requires at least one SAT setup per Azure **subscription**.
+> **Note**: One SAT app per Databricks **account** monitors all its workspaces, across subscriptions — a separate per-subscription deployment is not needed.
 
 ### Step 1: Install Required Tools
 1. Install [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli).
@@ -26,8 +26,7 @@ Create `terraform.tfvars` from `template.tfvars` (descriptions are in `variables
 - `sqlw_id` *(optional)* — `new` to create a warehouse, or an existing 16-character warehouse id.
 
 #### Service Principal Role Requirements
-The SAT service principal (the account credentials you later enter in the app) needs:
-* "Reader" role at the subscription level via Access control (IAM).
+The SAT service principal (the account credentials you later enter in the app) authenticates with **Databricks OAuth** — it needs a **Databricks OAuth secret** (generated in the Databricks account console), used as `client_id` / `client_secret`. There is no Microsoft Entra token, tenant id, or Azure subscription "Reader" role involved; SAT reads only the Databricks account and workspace APIs. The service principal needs:
 * [Account Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#--assign-account-admin-roles-to-a-service-principal).
 * [Workspace Admin role](https://learn.microsoft.com/en-us/azure/databricks/admin/users-groups/service-principals#assign-a-service-principal-to-a-workspace-using-the-account-console) for **each workspace**.
 * Member of the [metastore admin group](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-privileges/admin-privileges#who-has-metastore-admin-privileges).
