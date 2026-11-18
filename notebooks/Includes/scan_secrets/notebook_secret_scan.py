@@ -1116,8 +1116,19 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Dict[str, 
                 return {"outcome": "error"}
             content = export_response.get("content")
             if not content:
-                logger.warning(f"No content found in notebook: {temp_path}")
-                return {"outcome": "error"}
+                # The export succeeded (HTTP 200) but the object has no content:
+                # a legitimately empty file -- a blank/untitled notebook, a
+                # .gitkeep, an empty __init__.py or py.typed marker, etc. There is
+                # simply nothing to scan, which is NOT a failure. Materialize an
+                # empty file so it counts as scanned (zero findings) rather than as
+                # a coverage gap -- otherwise workspaces with empty marker files
+                # trip a false INCOMPLETE SCAN (GitHub #390).
+                try:
+                    open(scan_file, "w").close()
+                except OSError as e:
+                    logger.error(f"Failed to create empty scan file {scan_file}: {e}")
+                    return {"outcome": "error"}
+                return {"outcome": "ok", "scan_file": scan_file, "metadata": metadata}
             if not decode_and_write_content(content, scan_file):
                 logger.error(f"Failed to write notebook content to file: {scan_file}")
                 return {"outcome": "error"}
