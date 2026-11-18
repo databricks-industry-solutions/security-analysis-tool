@@ -9,7 +9,7 @@ const config: Config = {
   tagline: ' Security Analysis Tool (SAT) analyzes customer\'s Databricks account and workspace security configurations',
   favicon: 'img/logo.svg',
 
-  url: 'https://databrickslabs.github.io',
+  url: 'https://databricks-industry-solutions.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/security-analysis-tool/',

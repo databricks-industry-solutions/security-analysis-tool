@@ -28,7 +28,7 @@ const Hero = () => {
 
       {/* Description */}
       <p className="text-lg text-center text-balance mb-8">
-        SAT analyzes your Databricks account and workspace configurations, providing recommendations to help you follow Databricks' security best practices.
+        SAT provides additional security analysis capabilities for your Databricks environment, including secrets scanning, permissions and resource analysis, and other specialized utilities. For core security posture management and recommendations based on Databricks security best practices, use the <a href="https://docs.databricks.com/aws/en/admin/governance-hub/security" className="underline text-blue-500 hover:text-blue-700">Security tab in Governance Hub</a>. Governance Hub Security Posture Management is currently in Private Preview. Please reach out to your Databricks account team to gain access.
       </p>
 
       {/* Call to Action Buttons */}
