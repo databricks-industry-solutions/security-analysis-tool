@@ -1,6 +1,7 @@
 ---
 sidebar_position: 3
 ---
+import useBaseUrl from '@docusaurus/useBaseUrl';
 import Admonition from '@theme/Admonition';
 import AccordionItem from '@site/src/components/AccordionItem';
 import FeatureCards from '@site/src/components/FeatureCards';
@@ -18,6 +19,10 @@ The **Security Analysis Tool (SAT)** is a security-posture app for Databricks. I
 - **Retired** — the core security posture checks are now native in the [Databricks Governance Hub Security tab](https://docs.databricks.com/aws/en/admin/governance-hub/security), so they, the classic dashboards (General and Executive), and the Initializer/Driver notebook workflow are no longer part of SAT. See the [Upgrade Guide](../upgrade).
 
 </Admonition>
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/sat_app_home.png')} alt="SAT app home page" />
+</div>
 
 ---
 
