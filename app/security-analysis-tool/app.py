@@ -8125,6 +8125,7 @@ def get_main_html():
             const cfg = secretsScanCfg;
             const all = (cfg.days_back || 0) === 0;
             const nDays = all ? 7 : cfg.days_back;
+            const scanClusters = cfg.scan_clusters !== false;
             const ruleCount = (cfg.custom_detectors || []).length;
             const rules = (cfg.custom_detectors || []).map(secretsDetectorRow).join('');
             const rulesState = ruleCount
@@ -8140,6 +8141,11 @@ def get_main_html():
                         <div class="ss-group-title">Scan coverage</div>
                         <label class="ss-radio"><input type="radio" name="ss-coverage" value="all"${all ? ' checked' : ''} onchange="secretsCoverageToggle()"> <span><strong>All notebooks (recommended)</strong> — scans every notebook each run, so the dashboard always shows your complete current exposure. Secrets you remove stop showing once the next scan confirms they're gone.</span></label>
                         <label class="ss-radio"><input type="radio" name="ss-coverage" value="recent"${all ? '' : ' checked'} onchange="secretsCoverageToggle()"> <span><strong>Only recently modified</strong> — scans just notebooks changed in the last <input type="number" id="ss-days" min="1" max="3650" value="${nDays}" class="field-input ss-days-input"${all ? ' disabled' : ''}> day(s). Faster on very large workspaces, but the dashboard then shows only that window — secrets in untouched notebooks won't appear even if they're still there.</span></label>
+                    </div>
+
+                    <div class="ss-group">
+                        <div class="ss-group-title">What's scanned</div>
+                        <label class="ss-radio"><input type="checkbox" id="ss-scan-clusters"${scanClusters ? ' checked' : ''}> <span><strong>Scan cluster configurations</strong> — also scan cluster <code>spark_env_vars</code> and init scripts for hardcoded secrets, alongside notebook source. Turn this off to scan notebook source only (for example if cluster scanning isn't needed in your environment). Notebook scanning always runs.</span></label>
                     </div>
 
                     <div class="ss-group">
@@ -8180,11 +8186,12 @@ def get_main_html():
                 description: r.querySelector('.ssd-desc').value.trim(),
             })).filter(d => d.name || d.regex || d.keywords);
 
+            const scan_clusters = document.getElementById('ss-scan-clusters').checked;
             btn.disabled = true; status.textContent = 'Saving…'; status.className = 'ss-status';
             try {
                 const r = await fetch('/api/secrets/config', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ days_back, custom_detectors, excluded_detectors: secretsScanCfg.excluded_detectors || [] }),
+                    body: JSON.stringify({ days_back, custom_detectors, scan_clusters, excluded_detectors: secretsScanCfg.excluded_detectors || [] }),
                 });
                 const j = await r.json();
                 if (!r.ok) { status.textContent = j.error || 'Save failed.'; status.className = 'ss-status err'; btn.disabled = false; return; }
@@ -15229,7 +15236,7 @@ def _secrets_scan_config():
     of truth — the same bytes the collection jobs read — so the panel always shows
     exactly what the next scan will use, with no drift between the UI and the
     scanner. Absent file (nothing customised yet) → shipped defaults."""
-    days_back, custom_detectors, excluded = 0, [], []
+    days_back, custom_detectors, excluded, scan_clusters = 0, [], [], True
     try:
         import yaml
         raw = _config_client().workspace.download(_custom_detectors_path()).read()
@@ -15240,6 +15247,8 @@ def _secrets_scan_config():
             days_back = max(0, int(ss.get('days_back', 0)))
         except (TypeError, ValueError):
             days_back = 0
+        sc_val = settings.get('scan_clusters')
+        scan_clusters = True if sc_val is None else bool(sc_val)
         excluded = [str(x) for x in (settings.get('excluded_detectors') or [])]
         for d in (doc.get('detectors') or []):
             if not isinstance(d, dict) or not d.get('name'):
@@ -15264,19 +15273,22 @@ def _secrets_scan_config():
         'days_back': days_back,
         'custom_detectors': custom_detectors,
         'excluded_detectors': excluded,
+        'scan_clusters': scan_clusters,
         'default_excluded': _DEFAULT_EXCLUDED_DETECTORS,
     }
 
 
-def _write_custom_detectors_file(days_back, detectors, excluded):
+def _write_custom_detectors_file(days_back, detectors, excluded, scan_clusters=True):
     """Write custom_trufflehog_detectors.yaml to the SP-home configs folder so the
-    next scan picks up the coverage window and custom rules — no redeploy, no
-    notebook edit. Writing an empty rule set still writes the file so a cleared
-    setting reverts to shipped defaults on the next run."""
+    next scan picks up the coverage window, custom rules, and whether cluster
+    configs are scanned — no redeploy, no notebook edit. Writing an empty rule set
+    still writes the file so a cleared setting reverts to shipped defaults on the
+    next run."""
     import io
     import yaml
     from databricks.sdk.service.workspace import ImportFormat
-    settings = {'search_settings': {'days_back': int(days_back)}}
+    settings = {'search_settings': {'days_back': int(days_back)},
+                'scan_clusters': bool(scan_clusters)}
     if excluded:
         settings['excluded_detectors'] = list(excluded)
     doc = {'settings': settings}
@@ -15315,6 +15327,10 @@ def api_secrets_config():
         return jsonify({'error': 'Coverage days must be a whole number.'}), 400
     if days_back < 0 or days_back > 3650:
         return jsonify({'error': 'Coverage days must be between 0 and 3650 (0 = all notebooks).'}), 400
+
+    # Whether cluster configurations are scanned (default on). When off, the
+    # orchestrator skips the cluster sub-scan and only scans notebooks.
+    scan_clusters = payload.get('scan_clusters', True) is not False
 
     # Custom detectors. Each needs a name, at least one keyword (TruffleHog uses
     # keywords to prefilter), and a regex that compiles.
@@ -15357,7 +15373,7 @@ def api_secrets_config():
     excluded = [str(x).strip() for x in (payload.get('excluded_detectors') or []) if str(x).strip()]
 
     try:
-        _write_custom_detectors_file(days_back, detectors, excluded)
+        _write_custom_detectors_file(days_back, detectors, excluded, scan_clusters)
     except Exception as exc:  # noqa: BLE001
         logger.exception('failed to write custom detector config')
         return jsonify({'error': f'Could not save scanner config: {exc}'}), 500

@@ -229,6 +229,28 @@ def processClusterScan(wsrow, run_id):
     return scan_result
 
 
+def _scan_clusters_enabled():
+    """Whether cluster-config secret scanning runs this session.
+
+    Read from the customer's scan settings
+    (configs/custom_trufflehog_detectors.yaml -> settings.scan_clusters, written
+    by the app's Secrets scan settings), default True. Lets the app's toggle take
+    effect on the next run with no redeploy. Notebook scanning always runs.
+    """
+    try:
+        import os
+        import yaml
+        path = f"{getConfigPath()}/custom_trufflehog_detectors.yaml"
+        if os.path.exists(path):
+            doc = yaml.safe_load(open(path)) or {}
+            val = (doc.get("settings") or {}).get("scan_clusters")
+            if val is not None:
+                return bool(val)
+    except Exception as e:  # noqa: BLE001
+        loggr.warning(f"Could not read scan_clusters setting ({e}); defaulting to on")
+    return True
+
+
 def runTruffleHogScanForAllWorkspaces():
     """
     Run secret scanning (notebooks + clusters) for all configured workspaces.
@@ -254,6 +276,13 @@ def runTruffleHogScanForAllWorkspaces():
         )
 
     loggr.info(f"Running secret scans on {len(scan_workspaces)} workspace(s)")
+
+    # Cluster-config scanning can be turned off in the app's Secrets scan settings;
+    # notebook scanning always runs.
+    scan_clusters = _scan_clusters_enabled()
+    if not scan_clusters:
+        loggr.info("Cluster-config scanning is OFF (scan settings); scanning notebook source only.")
+        print("ℹ️  Cluster-config scanning is OFF (scan settings) — scanning notebook source only.")
 
     # Pre-allocate a shared run_id per workspace sequentially on the main thread.
     # generate_shared_run_id() does INSERT + SELECT max(runID), which would race
@@ -289,9 +318,13 @@ def runTruffleHogScanForAllWorkspaces():
                 print(f"  ❌ Cluster scan failed for {ws_label}: {str(e)}")
                 local_failures.append(f"{ws_label}/clusters: {str(e)}")
 
-        # Notebook and cluster scans are independent — run them concurrently.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as inner:
-            for f in [inner.submit(notebook_scan), inner.submit(cluster_scan)]:
+        # Notebook scanning always runs; the cluster sub-scan runs only when
+        # enabled in the app's scan settings. Independent, so run concurrently.
+        tasks = [notebook_scan]
+        if scan_clusters:
+            tasks.append(cluster_scan)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as inner:
+            for f in [inner.submit(t) for t in tasks]:
                 f.result()
         if local_failures:
             print(f"⚠️  Scans finished WITH FAILURES for workspace: {ws_label}")
