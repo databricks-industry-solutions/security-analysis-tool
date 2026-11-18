@@ -10,17 +10,15 @@ import AccordionItem from '@site/src/components/AccordionItem';
 This guide will walk you through setting up the **Security Analysis Tool (SAT)** on AWS Databricks.
 
 <Admonition type="warning" title="Unity Catalog Required">
-**SAT v0.5.0 and higher requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT.
+**SAT requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT.
 </Admonition>
 
-<Admonition type="info" title="AWS GovCloud Support">
-SAT is compatible with **AWS GovCloud** for the Civilian Shard. To install and run SAT on AWS GovCloud, please use classic compute resources.
-
-**Note:** DoD Shard compatibility will be coming soon.
+<Admonition type="info" title="AWS GovCloud & DoD Support">
+SAT supports **AWS GovCloud** (FedRAMP) and **AWS DoD IL5** — it resolves the correct account-console host for each (`accounts.cloud.databricks.us` for GovCloud, `accounts-dod.cloud.databricks.mil` for DoD). On GovCloud/DoD, use classic compute for cross-workspace collection.
 </Admonition>
 
 <Admonition type="tip" title="Best for Premium & Enterprise Tiers">
-SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers, as most checks and recommendations involve security features only available in these tiers.
+SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers, where Unity Catalog and the richer access controls SAT analyzes are available.
 </Admonition>
 
 ## Prerequisites
@@ -31,7 +29,7 @@ Before you begin, ensure you have:
 - ✅ Appropriate permissions in your Databricks Account Console
 - ✅ A metastore attached to your installation workspace
 - ✅ Databricks CLI installed and configured
-- ✅ **Python version lower than 3.12** (for local installation using install.sh)
+- ✅ **Python 3.9 or higher** (3.9–3.12, for running the local installer)
 
 ---
 
@@ -70,7 +68,7 @@ The Service Principal allows SAT to authenticate with your Databricks workspaces
 ## Step 2: Run Installation
 
 <Admonition type="note" title="Credentials Required">
-Have these credentials ready before starting:
+Have these ready for the app's **in-app setup** (you enter them in the app after install, not during `install.sh`):
 
 - 🔑 **Databricks Account ID**
 - 🔑 **Databricks Service Principal ID** (Client ID from Step 1)
@@ -113,8 +111,8 @@ The installation script will guide you through the setup process. Here's what it
 
 ---
 
-<Admonition type="note" title="Permissions Analysis App Setup">
-To set up the Permissions Analysis app and make it execute correctly, refer to the [Permissions Analysis Setup](../terraform/index.mdx#permissions-analysis-setup) section.
+<Admonition type="note" title="Finish setup in the app">
+After `install.sh` deploys the app, open it (**Compute → Apps → security-analysis**) and complete the in-app setup — results catalog/schema, SQL warehouse, and (optionally) account credentials for account-wide data. Permissions Analysis is built into the app; there is no separate app to configure.
 </Admonition>
 
 Congratulations! 🎉 You've successfully installed SAT on AWS Databricks.
@@ -140,7 +138,7 @@ If you encounter problems during installation:
 
 **Resources:**
 - Review our [FAQ page](../../faq.mdx) for common questions
-- Use the [diagnostic notebook](../../troubleshooting.mdx) to verify your setup
+- Use the in-app requirements check (**Settings → Re-run setup**) to verify your setup
 - Check the [troubleshooting guide](../../troubleshooting.mdx) for specific errors
 
 **Still need help?** Contact us at sat@databricks.com

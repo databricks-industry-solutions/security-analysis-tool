@@ -8,19 +8,15 @@ import Admonition from '@theme/Admonition';
 
 Having issues with SAT? This guide will help you resolve common problems. Click on any issue below to see the solution.
 
-## Diagnostic Notebooks
+## Checking your setup
 
-<Admonition type="tip" title="Quick Diagnosis">
-Diagnosis notebooks for each cloud platform are available to help troubleshoot your SAT setup.
-
-**To run the appropriate diagnostic notebook:**
-1. Navigate to Workspace → Applications → SAT → files → notebooks → diagnosis folder
-2. Open and run the notebook corresponding to your cloud provider
-
-**Available diagnostic notebooks:**
-- [SAT AWS troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_aws.py)
-- [SAT Azure troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_azure.py)
-- [SAT GCP troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_gcp.py)
+<Admonition type="tip" title="Built-in requirements check">
+Instead of standalone diagnosis notebooks, the app has a built-in **requirements
+check**. Open **Settings → Re-run setup** (or the first-run setup screen) and
+review the requirements checklist — it verifies, live, the account connection and
+the service principal's **Account admin** role, and flags configuration gaps so
+you can fix them before running collection. For a failed collection, open the
+**Data Collection** page and inspect the job's last run.
 </Admonition>
 
 ---
@@ -116,42 +112,19 @@ GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata  TO 
 
 </AccordionItem>
 
-<AccordionItem question="Offline Library Install - No PyPI Access">
+<AccordionItem question="Restricted egress / no PyPI access">
 
-If your workspace does not have access to PyPI, follow these steps to install the required libraries manually:
+The SAT SDK wheel ships inside the app (under `lib/`) and is installed with
+`--no-deps`, so **no PyPI access is needed for the SDK itself**. Two things still
+reach out, and only matter for the features that use them:
 
-**Steps:**
-
-1. Download the `dbl_sat_sdk` version specified in the notebook `notebooks/utils/initialize` from PyPi:
-   ```
-   https://pypi.org/project/dbl-sat-sdk/
-   ```
-
-2. Upload the `dbl_sat_sdk-w.x.y-py3-none-any.whl` to a `dbfs` location. You can use the `databricks-cli` as one mechanism to upload. For example:
-   ```bash
-   databricks --profile e2-satfs cp /localdrive/whlfile/dbl_sat_sdk-w.x.y-py3-none-any.whl dbfs:/FileStore/wheels/
-   ```
-
-3. Additionally, download the following wheel files and upload them to the `dbfs` location as above:
-   ```
-   https://github.com/databricks-industry-solutions/security-analysis-tool/tree/main/docs/wheels
-   ```
-
-4. Upload all wheel files to `/FileStore/wheels` in your workspace.
-
-5. Verify all files are there by running:
-   ```python
-   %fs ls /FileStore/wheels
-   ```
-
-6. Then change the cell in your notebook `install_sat_sdk` to this:
-   ```python
-   %pip install msal --find-links /Volumes/{catalog}/{schema}/{volume_name}/msal-1.22.0-py2.py3-none-any.whl
-   
-   %pip install dbl-sat-sdk==0.1.37 --find-links /Volumes/{catalog}/{schema}/{volume_name}/dbl_sat_sdk-0.1.37-py3-none-any.whl
-   ```
-
-7. Make sure the versions for the above libraries match.
+- **Secret scanning** downloads the TruffleHog binary from GitHub. In a
+  restricted-egress environment, allow-list `raw.githubusercontent.com` and
+  `github.com` (see the [Secret Scanning](./functionality/cluster-secrets-scanning.mdx)
+  firewall list) or provide an internal mirror.
+- **Classic compute** pip-installs `requests` and `PyYAML` from PyPI for the
+  scanners (serverless already has them). On classic compute without PyPI access,
+  make those available from an internal package index.
 
 </AccordionItem>
 

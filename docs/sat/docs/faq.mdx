@@ -35,13 +35,13 @@ SAT is frequently updated and the latest versions are made available in the offi
 
 <AccordionItem question="Can SAT make modifications to my workspaces and account?">
 
-SAT is meant to be a read-only analysis tool - it does not make changes to your workspace or account configurations.
+SAT is read-only by default — it analyzes and reports, and does not change your workspace or account configurations. The only changes it can make are ones you explicitly opt into: creating SQL alerts, and the opt-in remediation in a few account reports (for example removing an over-broad "shared to all account users" grant or an unexpected admin role), which run only when you turn them on.
 
 </AccordionItem>
 
 <AccordionItem question="I am seeing errors when I run the SAT. How can I validate my SAT configuration?">
 
-There are diagnostic notebooks available to help you verify if your SAT setup has the necessary configurations, permissions, and network paths to run the REST API calls. Please use "Workspace → Applications → SAT/TF → Files → Notebooks → Diagnosis" to find the appropriate notebook for your cloud provider.
+Use the app's built-in requirements check: open **Settings → Re-run setup** and review the requirements checklist, which verifies the account connection and the service principal's **Account admin** role live and flags configuration gaps. For a failed collection job, open the **Data Collection** page and inspect that job's last run. See [Troubleshooting](./troubleshooting.mdx).
 
 </AccordionItem>
 
@@ -77,7 +77,7 @@ A single SAT deployment in AWS can monitor all workspaces — regardless of regi
 
 <AccordionItem question="Can SAT be integrated with other cloud based monitoring tools?">
 
-This is not currently supported. SAT is a security monitoring tool designed specifically for Databricks workspaces. However, you can use the provided export notebook to extract SAT results, which may be used with other tools as needed.
+SAT is designed specifically for Databricks. Its results live as Delta tables in your chosen Unity Catalog schema, so you can query or export them with any tool that reads Unity Catalog (DBSQL, BI tools, pipelines) and feed them into other systems as needed.
 
 </AccordionItem>
 
