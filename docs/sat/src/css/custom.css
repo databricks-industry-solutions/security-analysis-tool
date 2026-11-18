@@ -86,8 +86,11 @@ button {
 }
 
 /* Pagination Navigation Cards */
+/* Use theme-adaptive colors so the Previous/Next cards and their page titles
+   stay readable in both light and dark mode (the previous hardcoded #000 was
+   invisible on the dark background). */
 .pagination-nav__link {
-  color: #000000;
+  color: var(--ifm-font-color-base);
   text-decoration: none;
   border-width: 2px;
   transition: border-color 0.2s ease;
@@ -96,22 +99,22 @@ button {
 .pagination-nav__link:hover {
   border-color: #ff6b35;
   border-width: 2px;
-  color: #000000;
+  color: var(--ifm-font-color-base);
   text-decoration: none;
 }
 
 .pagination-nav__link .pagination-nav__label {
-  color: #000000;
+  color: var(--ifm-font-color-base);
 }
 
 .pagination-nav__link:hover .pagination-nav__label {
-  color: #000000;
+  color: var(--ifm-font-color-base);
 }
 
 .pagination-nav__link .pagination-nav__sublabel {
-  color: #666;
+  color: var(--ifm-color-emphasis-700);
 }
 
 .pagination-nav__link:hover .pagination-nav__sublabel {
-  color: #666;
+  color: var(--ifm-color-emphasis-700);
 }
