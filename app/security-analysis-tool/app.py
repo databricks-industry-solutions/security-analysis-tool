@@ -4403,7 +4403,10 @@ def get_main_html():
                         and complex access relationships across workspaces; scans notebooks and cluster configurations
                         for hardcoded credentials; and answers questions about any of it in plain language.
                     </p>
-                    
+                    <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.86em;">
+                        Core security posture checks are available natively in the Databricks Governance Hub (Security section).
+                    </p>
+
                     <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🎯 Key Features</h3>
                     <ul style="line-height: 1.5; color: var(--text-secondary); list-style-position: inside; margin-bottom: 13px; font-size: 0.88em;">
                         <li><strong>Principal Analysis</strong> - Discover what a user, group, or service principal can access</li>
