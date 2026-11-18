@@ -63,6 +63,11 @@ settings:
 
   search_settings:
     page_size: 50
-    days_back: 1  # Number of days back to search for modified notebooks
-                  # Set to 0 to scan ALL notebooks (no time filter)
-                  # Can be overridden by TIME environment variable (epoch milliseconds)
+    days_back: 0  # 0 = scan ALL notebooks (complete current state — the default,
+                  # so the dashboard reflects every exposed secret, not just those
+                  # in notebooks edited recently). Set to N > 0 to scan only
+                  # notebooks modified in the last N days (a faster delta scan;
+                  # note the dashboard then shows only that delta). Customers can
+                  # change this from the app (Secrets page → Scan settings), which
+                  # writes custom_trufflehog_detectors.yaml; can also be overridden
+                  # by the TIME environment variable (epoch milliseconds).

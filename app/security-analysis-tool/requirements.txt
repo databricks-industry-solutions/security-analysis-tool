@@ -16,3 +16,7 @@ databricks-sdk>=0.105,<1.0
 # Security assistant — calls the workspace's model serving endpoint via the
 # OpenAI-compatible API that Databricks Foundation Model serving exposes.
 openai~=1.40
+
+# Writes the customer-managed secret-scanner config (custom_trufflehog_detectors.yaml)
+# the collection jobs read at run time, from the in-app Secrets scan settings.
+PyYAML~=6.0

@@ -225,12 +225,27 @@ def _merge_custom_detectors(config_data: Dict[str, Any], config_folder: str) -> 
         config_data["detectors"] = list(by_name.values())
         logger.info(f"Merged {len(custom_detectors)} custom detector(s) from {custom_path}")
 
-    custom_excluded = (custom.get("settings") or {}).get("excluded_detectors") or []
+    custom_settings = custom.get("settings") or {}
+
+    custom_excluded = custom_settings.get("excluded_detectors") or []
     if custom_excluded:
         existing = config_data.setdefault("settings", {}).setdefault("excluded_detectors", [])
         for x in custom_excluded:
             if x not in existing:
                 existing.append(x)
+
+    # Scan-behaviour overrides the customer set from the app (Secrets -> Scan
+    # settings), so a settings change takes effect on the next run without any
+    # notebook edit. Only the keys present are overridden; the rest keep the
+    # shipped defaults. search_settings.days_back is the scan coverage window
+    # (0 = all notebooks).
+    for section in ("search_settings", "rate_limiting", "performance"):
+        overrides = custom_settings.get(section) or {}
+        if isinstance(overrides, dict) and overrides:
+            target = config_data.setdefault("settings", {}).setdefault(section, {})
+            for k, v in overrides.items():
+                target[k] = v
+            logger.info(f"Applied custom settings override for {section}: {overrides}")
 
     return config_data
 

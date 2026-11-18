@@ -146,6 +146,7 @@ import time
 import hashlib
 import random
 import logging
+import yaml
 import concurrent.futures
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timezone
@@ -267,9 +268,55 @@ if not os.path.exists(Config.TRUFFLEHOG_BINARY):
 
 logger.info(f"✓ TruffleHog binary verified at: {Config.TRUFFLEHOG_BINARY}")
 
+
+def _load_cluster_detector_config():
+    """Build the cluster scanner's own TruffleHog detector config.
+
+    Loads the shipped configs/trufflehog_detectors.yaml and merges the optional,
+    customer-supplied configs/custom_trufflehog_detectors.yaml (the same file the
+    app writes from Secrets -> Scan settings), then writes the combined detector
+    set to a cluster-local file. Done independently of the notebook scanner so
+    custom detection rules apply to cluster configs reliably -- previously the
+    cluster scanner reused the notebook scanner's /tmp file, which races when the
+    two run concurrently. Returns (config_path, excluded_detectors). Falls back to
+    the shared file + DatabricksToken exclusion if anything fails.
+    """
+    try:
+        cfg_dir = getConfigPath()
+        with open(f"{cfg_dir}/trufflehog_detectors.yaml", "r") as fh:
+            data = yaml.safe_load(fh) or {}
+        detectors = {d.get("name"): d for d in (data.get("detectors") or []) if isinstance(d, dict) and d.get("name")}
+        excluded = list((data.get("settings") or {}).get("excluded_detectors") or ["DatabricksToken"])
+
+        custom_path = f"{cfg_dir}/custom_trufflehog_detectors.yaml"
+        if os.path.exists(custom_path):
+            with open(custom_path, "r") as fh:
+                custom = yaml.safe_load(fh) or {}
+            if isinstance(custom, dict):
+                for d in (custom.get("detectors") or []):
+                    if isinstance(d, dict) and d.get("name"):
+                        detectors[d["name"]] = d  # custom overrides shipped on name clash
+                for x in ((custom.get("settings") or {}).get("excluded_detectors") or []):
+                    if x not in excluded:
+                        excluded.append(x)
+                logger.info("Merged customer custom detectors into the cluster scan config")
+
+        out_path = "/tmp/trufflehog_config_cluster.yaml"
+        with open(out_path, "w") as fh:
+            yaml.dump({"detectors": list(detectors.values())}, fh, default_flow_style=False)
+        logger.info(f"Cluster detector config written to {out_path} ({len(detectors)} detector(s))")
+        return out_path, excluded
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not build cluster detector config ({e}); using shared config + default exclusion")
+        return Config.TRUFFLEHOG_CONFIG, ["DatabricksToken"]
+
+
+Config.TRUFFLEHOG_CONFIG, Config.EXCLUDED_DETECTORS = _load_cluster_detector_config()
+
 print("✅ Configuration loaded and directories setup successfully!")
 print(f"📁 Temp directory: {Config.TEMP_CLUSTERS_DIR}")
 print(f"🔧 Config field to scan: {Config.CONFIG_FIELD}")
+print(f"🔧 Detector config: {Config.TRUFFLEHOG_CONFIG}; excluding {Config.EXCLUDED_DETECTORS}")
 
 # COMMAND ----------
 
@@ -522,13 +569,14 @@ def scan_cluster_config_for_secrets(file_path: str) -> List[Dict]:
     Returns:
         List[Dict]: TruffleHog findings as a list of dicts
     """
+    excluded = ",".join(getattr(Config, "EXCLUDED_DETECTORS", ["DatabricksToken"]))
     cmd = [
         Config.TRUFFLEHOG_BINARY,
         "filesystem",
         file_path,
         "--config",
         Config.TRUFFLEHOG_CONFIG,
-        "--exclude-detectors=DatabricksToken",
+        f"--exclude-detectors={excluded}",
         "--no-update",
         "--no-verification",
         "-j",

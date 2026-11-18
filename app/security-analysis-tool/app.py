@@ -2388,6 +2388,40 @@ def get_main_html():
         .setup-guide-docs:hover { background: rgba(102,126,234,0.2); border-color: rgba(102,126,234,0.55); }
         .setup-guide-docs svg { width: 15px; height: 15px; flex: 0 0 auto; }
         .setup-guide-docs-ext { opacity: 0.7; }
+
+        /* Secret-scan settings panel (Secrets page) */
+        .ss-settings {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; margin-bottom: 18px; padding: 0;
+        }
+        .ss-settings > summary {
+            list-style: none; cursor: pointer; user-select: none;
+            display: flex; align-items: center; gap: 10px;
+            padding: 16px 22px; font-weight: 650; font-size: 1.02em; color: #ffffff;
+        }
+        .ss-settings > summary::-webkit-details-marker { display: none; }
+        .ss-caret { width: 15px; height: 15px; flex: 0 0 auto; color: var(--text-muted); transition: transform 0.18s ease; }
+        .ss-settings[open] > summary .ss-caret { transform: rotate(90deg); }
+        .ss-settings-body { padding: 0 22px 20px; }
+        .ss-intro { color: var(--text-muted); font-size: 0.9em; line-height: 1.55; margin: 0 0 16px; }
+        .ss-group { padding: 14px 0; border-top: 1px solid var(--border); }
+        .ss-group-title { font-weight: 650; font-size: 0.95em; margin-bottom: 10px; color: #ffffff; }
+        .ss-help { color: var(--text-muted); font-size: 0.85em; line-height: 1.55; margin: 0 0 12px; }
+        .ss-help code, .ss-intro code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+        .ss-radio { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; font-size: 0.88em; color: rgba(255,255,255,0.8); line-height: 1.5; cursor: pointer; }
+        .ss-radio input[type="radio"] { margin-top: 3px; flex: 0 0 auto; }
+        .ss-days-input { display: inline-block; width: 64px; padding: 2px 6px; margin: 0 4px; }
+        .ssd-rule { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; background: rgba(255,255,255,0.02); }
+        .ssd-rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .ssd-rule-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 0.8em; font-weight: 600; color: var(--text-muted); }
+        .ssd-rule-grid .field-input { font-weight: 400; }
+        .ssd-regex-field { grid-column: 1 / -1; }
+        .ssd-regex-field .field-input { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; }
+        .ssd-remove { margin-top: 10px; font-size: 0.82em; padding: 5px 12px; }
+        .ss-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding-top: 16px; border-top: 1px solid var(--border); }
+        .ss-status { font-size: 0.86em; }
+        .ss-status.ok { color: #6ee7b7; }
+        .ss-status.err { color: #fca5a5; }
         .setup-guide-body .tag {
             display: inline-block; font-size: 0.72em; font-weight: 700; text-transform: uppercase;
             letter-spacing: 0.4px; padding: 1px 7px; border-radius: 999px; margin-right: 6px;
@@ -4710,6 +4744,7 @@ def get_main_html():
                     <h1 class="page-title">Credential Exposure <span class="help-tip" tabindex="0" aria-label="About this page" data-help="The secret scanner inspects notebook source and cluster environment variables for hardcoded credentials such as API keys and tokens. Remove them from the code/config and store them in Unity Catalog secrets instead of hardcoding. Run and schedule the scan from Data Collection.">i</span></h1>
                     <p class="page-desc">Secrets &mdash; API keys and tokens &mdash; found hardcoded in notebook source and cluster configurations, where anyone with access to the code can read them.</p>
                 </div>
+                <div id="secrets-scan-settings"></div>
                 <div id="secretsoverview-results"></div>
             </div>
 
@@ -5164,7 +5199,7 @@ def get_main_html():
             else if (page === 'denylistbuilder') loadDenylistBuilder();
             else if (page === 'collection') loadCollectionPanel();
             else if (page === 'help') renderHelpReportCards();
-            else if (page === 'secretsoverview') loadSecretsExposure();
+            else if (page === 'secretsoverview') { loadSecretsScanSettings(); loadSecretsExposure(); }
             else if (page === 'secretsalerts') loadSecretsAlerts();
             else if (page === 'impersonation') {
                 // Load principals for both dropdowns
@@ -7977,6 +8012,109 @@ def get_main_html():
             rows: [], truncated: false,
             filters: { search: '', source: '', detectors: [], workspaces: [] },
         };
+
+        // ── Secret-scan settings & custom detection rules ──────────────────
+        // Lets customers change the scan coverage window and add their own
+        // detection rules from the app; saving writes the scanner config the
+        // collection jobs read at run time, so it takes effect on the next scan
+        // with no redeploy and no notebook edits.
+        let secretsScanCfg = { days_back: 0, custom_detectors: [], excluded_detectors: [], default_excluded: [] };
+
+        async function loadSecretsScanSettings() {
+            const el = document.getElementById('secrets-scan-settings');
+            if (!el) return;
+            try {
+                const r = await fetch('/api/secrets/config');
+                if (!r.ok) { el.innerHTML = ''; return; }
+                secretsScanCfg = await r.json();
+            } catch (e) { el.innerHTML = ''; return; }
+            renderSecretsScanSettings();
+        }
+
+        function secretsDetectorRow(d) {
+            d = d || { name: '', keywords: '', regex: '', description: '' };
+            const kw = Array.isArray(d.keywords) ? d.keywords.join(', ') : (d.keywords || '');
+            return `<div class="ssd-rule">
+                <div class="ssd-rule-grid">
+                    <label>Name<input type="text" class="field-input ssd-name" value="${escapeHtml(d.name || '')}" placeholder="AcmeApiKey"></label>
+                    <label>Keywords (comma-separated)<input type="text" class="field-input ssd-kw" value="${escapeHtml(kw)}" placeholder="acme, acme_key"></label>
+                    <label class="ssd-regex-field">Regex<input type="text" class="field-input ssd-regex" value="${escapeHtml(d.regex || '')}" placeholder="(?i)\\b(acme_[a-z0-9]{32})\\b"></label>
+                    <label>Description (optional)<input type="text" class="field-input ssd-desc" value="${escapeHtml(d.description || '')}" placeholder="Acme Corp API key"></label>
+                </div>
+                <button type="button" class="btn btn-ghost ssd-remove" onclick="this.closest('.ssd-rule').remove()">Remove rule</button>
+            </div>`;
+        }
+
+        function renderSecretsScanSettings() {
+            const el = document.getElementById('secrets-scan-settings');
+            const cfg = secretsScanCfg;
+            const all = (cfg.days_back || 0) === 0;
+            const nDays = all ? 7 : cfg.days_back;
+            const rules = (cfg.custom_detectors || []).map(secretsDetectorRow).join('');
+            el.innerHTML = `
+            <details class="ss-settings">
+                <summary><svg class="ss-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Scan settings &amp; custom detection rules</summary>
+                <div class="ss-settings-body">
+                    <p class="ss-intro">These control how the secret scanner runs. Changes are saved to the scanner's config and take effect on the <strong>next scan run</strong> — no redeploy and no editing notebooks. Run a scan from <strong>Data Collection</strong> after saving.</p>
+
+                    <div class="ss-group">
+                        <div class="ss-group-title">Scan coverage</div>
+                        <label class="ss-radio"><input type="radio" name="ss-coverage" value="all"${all ? ' checked' : ''} onchange="secretsCoverageToggle()"> <span><strong>All notebooks (recommended)</strong> — scans every notebook each run, so the dashboard always shows your complete current exposure. Secrets you remove stop showing once the next scan confirms they're gone.</span></label>
+                        <label class="ss-radio"><input type="radio" name="ss-coverage" value="recent"${all ? '' : ' checked'} onchange="secretsCoverageToggle()"> <span><strong>Only recently modified</strong> — scans just notebooks changed in the last <input type="number" id="ss-days" min="1" max="3650" value="${nDays}" class="field-input ss-days-input"${all ? ' disabled' : ''}> day(s). Faster on very large workspaces, but the dashboard then shows only that window — secrets in untouched notebooks won't appear even if they're still there.</span></label>
+                    </div>
+
+                    <div class="ss-group">
+                        <div class="ss-group-title">Custom detection rules <span class="setup-optional">optional</span></div>
+                        <p class="ss-help">Add your own patterns (e.g. an internal token format) on top of SAT's built-in detectors. Each rule needs a <strong>name</strong>, one or more <strong>keywords</strong> (TruffleHog only inspects text containing a keyword — keep them specific), and a <strong>regex</strong> that matches the secret. Example regex: <code>(?i)\\b(acme_[a-z0-9]{32})\\b</code>. Patterns use RE2 (TruffleHog/Go) syntax. Rules apply to both notebook and cluster scans.</p>
+                        <div id="ssd-rules">${rules}</div>
+                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('ssd-rules').insertAdjacentHTML('beforeend', secretsDetectorRow())">+ Add rule</button>
+                    </div>
+
+                    <div class="ss-actions">
+                        <span class="ss-status" id="ss-status"></span>
+                        <button type="button" class="btn" id="ss-save" onclick="secretsSaveScanSettings()">Save scan settings</button>
+                    </div>
+                </div>
+            </details>`;
+        }
+
+        function secretsCoverageToggle() {
+            const recent = document.querySelector('input[name="ss-coverage"][value="recent"]').checked;
+            const days = document.getElementById('ss-days');
+            if (days) days.disabled = !recent;
+        }
+
+        async function secretsSaveScanSettings() {
+            const status = document.getElementById('ss-status');
+            const btn = document.getElementById('ss-save');
+            const recent = document.querySelector('input[name="ss-coverage"][value="recent"]').checked;
+            let days_back = 0;
+            if (recent) {
+                days_back = parseInt(document.getElementById('ss-days').value, 10);
+                if (!(days_back >= 1)) { status.textContent = 'Enter a valid number of days (1 or more).'; status.className = 'ss-status err'; return; }
+            }
+            const custom_detectors = [...document.querySelectorAll('#ssd-rules .ssd-rule')].map(r => ({
+                name: r.querySelector('.ssd-name').value.trim(),
+                keywords: r.querySelector('.ssd-kw').value,
+                regex: r.querySelector('.ssd-regex').value.trim(),
+                description: r.querySelector('.ssd-desc').value.trim(),
+            })).filter(d => d.name || d.regex || d.keywords);
+
+            btn.disabled = true; status.textContent = 'Saving…'; status.className = 'ss-status';
+            try {
+                const r = await fetch('/api/secrets/config', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ days_back, custom_detectors, excluded_detectors: secretsScanCfg.excluded_detectors || [] }),
+                });
+                const j = await r.json();
+                if (!r.ok) { status.textContent = j.error || 'Save failed.'; status.className = 'ss-status err'; btn.disabled = false; return; }
+                secretsScanCfg = j;
+                status.textContent = '✓ Saved — applies on the next scan run.'; status.className = 'ss-status ok';
+            } catch (e) {
+                status.textContent = 'Save failed: ' + e.message; status.className = 'ss-status err';
+            }
+            btn.disabled = false;
+        }
 
         async function loadSecretsExposure() {
             const container = document.getElementById('secretsoverview-results');
@@ -14983,6 +15121,148 @@ def _findings_cte(has_nb, has_cl):
                           AND s.run_id = r.latest_run_id
         WHERE s.secret_sha256 IS NOT NULL""")
     return "findings AS (" + "\n        UNION ALL".join(parts) + "\n    )"
+
+
+def _custom_detectors_path():
+    """Workspace path of the customer-managed detector/settings file the scanners
+    read at run time. Lives beside the shipped configs in the app SP's home, which
+    the SP can write and which survives redeploys (the bundle never ships this
+    name)."""
+    base = _config_file_path().rsplit('/', 1)[0]  # /Users/<sp>/.sat
+    return f'{base}/configs/custom_trufflehog_detectors.yaml'
+
+
+# Built-in TruffleHog detectors SAT always excludes (shown in the UI, not editable
+# here); customer additions are appended.
+_DEFAULT_EXCLUDED_DETECTORS = ['DatabricksToken']
+
+
+def _secrets_scan_config():
+    """Current secret-scan settings for the UI, from the app config."""
+    sc = _app_config.get('secrets_scan') or {}
+    try:
+        days_back = int(sc.get('days_back', 0))
+    except (TypeError, ValueError):
+        days_back = 0
+    return {
+        'days_back': max(0, days_back),
+        'custom_detectors': sc.get('custom_detectors') or [],
+        'excluded_detectors': sc.get('excluded_detectors') or [],
+        'default_excluded': _DEFAULT_EXCLUDED_DETECTORS,
+    }
+
+
+def _write_custom_detectors_file(days_back, detectors, excluded):
+    """Write custom_trufflehog_detectors.yaml to the SP-home configs folder so the
+    next scan picks up the coverage window and custom rules — no redeploy, no
+    notebook edit. Writing an empty rule set still writes the file so a cleared
+    setting reverts to shipped defaults on the next run."""
+    import io
+    import yaml
+    from databricks.sdk.service.workspace import ImportFormat
+    settings = {'search_settings': {'days_back': int(days_back)}}
+    if excluded:
+        settings['excluded_detectors'] = list(excluded)
+    doc = {'settings': settings}
+    if detectors:
+        doc['detectors'] = detectors
+    body = ("# Managed by the SAT app (Secrets -> Scan settings). Edits here are\n"
+            "# overwritten the next time it is saved from the app.\n"
+            + yaml.safe_dump(doc, default_flow_style=False, sort_keys=False))
+    client = _config_client()
+    path = _custom_detectors_path()
+    client.workspace.mkdirs(path.rsplit('/', 1)[0])
+    client.workspace.upload(path, io.BytesIO(body.encode()),
+                            format=ImportFormat.RAW, overwrite=True)
+
+
+@app.route('/api/secrets/config', methods=['GET', 'POST'])
+def api_secrets_config():
+    """Read or update the secret-scan settings (coverage window + custom detection
+    rules). On save, persists to the app config and writes the scanner config file
+    the collection jobs read at run time, so changes take effect on the next scan
+    without a redeploy."""
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup first.'}), 409
+
+    if request.method == 'GET':
+        return jsonify(_secrets_scan_config())
+
+    payload = request.get_json(silent=True) or {}
+
+    # Coverage window. 0 = scan all notebooks (complete); N > 0 = only those
+    # modified in the last N days.
+    try:
+        days_back = int(payload.get('days_back', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Coverage days must be a whole number.'}), 400
+    if days_back < 0 or days_back > 3650:
+        return jsonify({'error': 'Coverage days must be between 0 and 3650 (0 = all notebooks).'}), 400
+
+    # Custom detectors. Each needs a name, at least one keyword (TruffleHog uses
+    # keywords to prefilter), and a regex that compiles.
+    raw = payload.get('custom_detectors') or []
+    if not isinstance(raw, list):
+        return jsonify({'error': 'custom_detectors must be a list.'}), 400
+    if len(raw) > 100:
+        return jsonify({'error': 'At most 100 custom detectors.'}), 400
+
+    detectors = []
+    seen = set()
+    for i, d in enumerate(raw, 1):
+        if not isinstance(d, dict):
+            return jsonify({'error': f'Rule {i} is malformed.'}), 400
+        name = (d.get('name') or '').strip()
+        if not re.match(r'^[A-Za-z0-9_\- ]{1,64}$', name):
+            return jsonify({'error': f'Rule {i}: name must be 1–64 chars (letters, numbers, space, _ or -).'}), 400
+        if name.lower() in seen:
+            return jsonify({'error': f'Duplicate rule name "{name}".'}), 400
+        seen.add(name.lower())
+        pattern = (d.get('regex') or '').strip()
+        if not pattern:
+            return jsonify({'error': f'Rule "{name}": a regex is required.'}), 400
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            return jsonify({'error': f'Rule "{name}": invalid regex — {exc}'}), 400
+        kws = d.get('keywords')
+        if isinstance(kws, str):
+            kws = [k.strip() for k in kws.split(',')]
+        kws = [k for k in (kws or []) if k]
+        if not kws:
+            return jsonify({'error': f'Rule "{name}": at least one keyword is required (TruffleHog uses it to prefilter).'}), 400
+        entry = {'name': name, 'keywords': kws, 'regex': {'id': pattern}}
+        desc = (d.get('description') or '').strip()
+        if desc:
+            entry['description'] = desc
+        detectors.append(entry)
+
+    excluded = [str(x).strip() for x in (payload.get('excluded_detectors') or []) if str(x).strip()]
+
+    try:
+        _write_custom_detectors_file(days_back, detectors, excluded)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('failed to write custom detector config')
+        return jsonify({'error': f'Could not save scanner config: {exc}'}), 500
+
+    # Mirror the canonical state in the app config for the UI (stores the raw
+    # pattern per rule so the editor round-trips).
+    cfg = dict(_app_config)
+    cfg['secrets_scan'] = {
+        'days_back': days_back,
+        'custom_detectors': [
+            {'name': e['name'], 'keywords': e['keywords'],
+             'regex': e['regex']['id'], 'description': e.get('description', '')}
+            for e in detectors],
+        'excluded_detectors': excluded,
+    }
+    try:
+        write_persisted_config(cfg)
+        _apply_runtime_config(cfg)
+    except Exception:  # noqa: BLE001
+        logger.exception('failed to persist secrets_scan config')
+
+    return jsonify({'ok': True, **_secrets_scan_config()})
 
 
 @app.route('/api/secrets/summary')
