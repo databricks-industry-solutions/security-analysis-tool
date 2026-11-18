@@ -8053,7 +8053,7 @@ def get_main_html():
             const rules = (cfg.custom_detectors || []).map(secretsDetectorRow).join('');
             el.innerHTML = `
             <details class="ss-settings">
-                <summary><svg class="ss-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Scan settings &amp; custom detection rules</summary>
+                <summary><svg class="ss-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Scan Settings &amp; Custom Detection Rules</summary>
                 <div class="ss-settings-body">
                     <p class="ss-intro">These control how the secret scanner runs. Changes are saved to the scanner's config and take effect on the <strong>next scan run</strong> — no redeploy and no editing notebooks. Run a scan from <strong>Data Collection</strong> after saving.</p>
 
