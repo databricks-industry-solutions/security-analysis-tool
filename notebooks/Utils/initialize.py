@@ -139,11 +139,12 @@ if cloud_type == "gcp":
 
 # DBTITLE 1,Azure configurations
 if cloud_type == "azure":
+    # Azure authenticates with Databricks OAuth (M2M), same as AWS/GCP -- no
+    # Microsoft Entra / tenant / subscription. The service principal needs a
+    # Databricks OAuth secret (client-id / client-secret in the results schema).
     json_.update(
         {
-            "subscription_id": _uc_secret("subscription-id"),  # Azure subscriptionId
-            "tenant_id": _uc_secret("tenant-id"),  # Directory (tenant) ID of the Azure AD app
-            "client_id": _uc_secret("client-id"),  # Application (client) ID of the Azure AD app
+            "client_id": _uc_secret("client-id"),  # Databricks SP application (client) ID
             "client_secret_key": "client-secret",  # Key of the client secret in UC
             "use_mastercreds": True,
         }

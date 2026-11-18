@@ -45,9 +45,8 @@
 # MAGIC - The service principal must have **Account Admin** and be a member of any workspace you want to
 # MAGIC   remediate.
 # MAGIC - Access to `system.access.audit` and `system.access.workspaces_latest` system tables.
-# MAGIC - **Azure only:** the compute running this notebook needs network egress to
-# MAGIC   `login.microsoftonline.com` (Entra ID) to mint the account token via MSAL. If serverless egress
-# MAGIC   is restricted, run this on a classic cluster (or allowlist that host).
+# MAGIC - All clouds authenticate with Databricks OAuth (M2M) against the account console; the service
+# MAGIC   principal needs a Databricks OAuth secret. No Microsoft Entra / Azure AD step on Azure.
 
 # COMMAND ----------
 
@@ -135,11 +134,6 @@ def _sat_cred(key):
 CLIENT_ID     = _sat_cred("client-id")
 CLIENT_SECRET = _sat_cred("client-secret")
 
-# tenant-id is required for Azure (Entra/MSAL auth); absent on AWS/GCP.
-TENANT_ID = None
-if cloud_type == "azure":
-    TENANT_ID = json_.get("tenant_id") or _sat_cred("tenant-id")
-
 SHARED_TO_ACCOUNT_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_shared_to_account"
 
 print(f"Cloud type:     {cloud_type}")
@@ -192,35 +186,19 @@ class ResourceShareAuditor:
     }
 
     def __init__(self, accounts_host: str, account_id: str, client_id: str,
-                 client_secret: str, cloud_type: str, tenant_id: Optional[str] = None,
+                 client_secret: str, cloud_type: str,
                  proxies: Optional[dict] = None) -> None:
         self._accounts_host = accounts_host.rstrip("/")
         self._account_id    = account_id
         self._client_id     = client_id
         self._client_secret = client_secret
         self._cloud_type    = cloud_type
-        self._tenant_id     = tenant_id
         self._proxies       = proxies or {}
         self._acct_token    = self._mint_account_token()
         self._acct_hdrs     = {"Authorization": f"Bearer {self._acct_token}"}
         self.group_id, self.group_name = self._resolve_group()
 
     # ── Token / group helpers ──────────────────────────────────────────────
-
-    def _mint_azure_msal_token(self) -> str:
-        """AAD token for the Databricks resource — valid for account SCIM and
-        workspace REST calls on Azure (matches SatDBClient.getAzureTokenWithMSAL)."""
-        import msal
-        app = msal.ConfidentialClientApplication(
-            client_id=self._client_id,
-            client_credential=self._client_secret,
-            authority=f"https://login.microsoftonline.com/{self._tenant_id}",
-        )
-        # Databricks programmatic scope.
-        token = app.acquire_token_for_client(scopes=["2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default"])
-        if not token or not token.get("access_token"):
-            raise Exception(f"MSAL token acquisition failed: {token.get('error_description') if token else 'no token'}")
-        return token["access_token"]
 
     def _mint_account_token(self) -> str:
         # Account-level scans need an Account ID and account-admin SP credentials;
@@ -229,9 +207,7 @@ class ResourceShareAuditor:
             raise Exception("Account-level scan requires an Account ID and account-admin "
                             "service principal credentials. Add them in the app: "
                             "Settings -> Re-run setup.")
-        # Azure authenticates via Entra/MSAL; AWS/GCP via the Databricks OIDC path.
-        if self._cloud_type == "azure":
-            return self._mint_azure_msal_token()
+        # Databricks OAuth (M2M) for every cloud, including Azure.
         resp = requests.post(
             f"{self._accounts_host}/oidc/accounts/{self._account_id}/v1/token",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -268,10 +244,7 @@ class ResourceShareAuditor:
         return groups[0]["id"], groups[0]["displayName"]
 
     def _mint_workspace_token(self, host: str) -> Optional[str]:
-        # On Azure the Databricks-scoped MSAL token is valid for workspace REST
-        # calls too, so reuse it. AWS/GCP mint a per-workspace OIDC token.
-        if self._cloud_type == "azure":
-            return self._acct_token
+        # Per-workspace Databricks OIDC token, every cloud including Azure.
         resp = requests.post(
             f"{host}/oidc/v1/token",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -548,7 +521,6 @@ auditor = ResourceShareAuditor(
     client_id     = CLIENT_ID,
     client_secret = CLIENT_SECRET,
     cloud_type    = cloud_type,
-    tenant_id     = TENANT_ID,
     proxies       = json_.get("proxies", {}),
 )
 print(f"Group: '{auditor.group_name}'  (id={auditor.group_id})")

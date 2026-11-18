@@ -265,15 +265,7 @@ print("\n" + "="*80 + "\n")
 import sys
 import os
 
-# Add conditional MSAL import for Azure authentication
-try:
-    import msal
-    MSAL_AVAILABLE = True
-except ImportError:
-    MSAL_AVAILABLE = False
-    print("Warning: msal library not available. Azure authentication will not work.")
-
-# Add conditional import for useragent (matches MSAL pattern above)
+# Add conditional import for useragent
 try:
     from databricks.sdk import WorkspaceClient, AccountClient, useragent
     USERAGENT_AVAILABLE = True
@@ -371,7 +363,6 @@ SP_CREDENTIALS = {
     'client_id': None,
     'client_secret': None,
     'account_host': None,
-    'tenant_id': None  # Required for Azure authentication
 }
 MULTI_WORKSPACE_MODE = False
 
@@ -456,14 +447,6 @@ try:
     SP_CREDENTIALS['client_id'] = _bh_cred("client-id")
     SP_CREDENTIALS['client_secret'] = _bh_cred("client-secret")
 
-    # tenant_id is only required for Azure authentication.
-    tenant_id = _bh_cred("tenant-id")
-    if tenant_id:
-        SP_CREDENTIALS['tenant_id'] = tenant_id
-        print(f"   ✓ Loaded tenant-id for Azure authentication")
-    else:
-        print(f"   ℹ Note: tenant-id not found in secrets (only required for Azure)")
-
     if SP_CREDENTIALS['account_id'] and SP_CREDENTIALS['client_id'] and SP_CREDENTIALS['client_secret']:
         print(f"   ✓ Loaded Service Principal credentials")
         print(f"   Account ID: {SP_CREDENTIALS['account_id'][:8]}...")
@@ -495,61 +478,6 @@ except Exception as e:
     print(f"   ⚠ Could not load SP credentials: {e}")
     print(f"   → Will collect from CURRENT WORKSPACE ONLY")
     MULTI_WORKSPACE_MODE = False
-
-# ============================================================================
-# AZURE AUTHENTICATION HELPER
-# ============================================================================
-def get_azure_databricks_token(client_id, client_secret, tenant_id):
-    """
-    Generate Databricks access token for Azure using MSAL.
-
-    This is required for Azure Service Principals which must authenticate
-    through Azure AD to obtain Databricks API access tokens.
-
-    Args:
-        client_id: Azure SP Application ID
-        client_secret: Azure SP Secret
-        tenant_id: Azure AD Tenant ID
-
-    Returns:
-        str: Access token for Databricks APIs
-
-    Raises:
-        Exception: If token generation fails
-    """
-    if not MSAL_AVAILABLE:
-        raise Exception("msal library is required for Azure authentication. Install with: pip install msal")
-
-    try:
-        # Create MSAL confidential client application
-        authority = f"https://login.microsoftonline.com/{tenant_id}"
-        app = msal.ConfidentialClientApplication(
-            client_id=client_id,
-            authority=authority,
-            client_credential=client_secret
-        )
-
-        # Databricks scope for Azure AD
-        scopes = ['2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default']
-
-        # Try cached token first (performance optimization)
-        token_result = app.acquire_token_silent(scopes=scopes, account=None)
-
-        # If no cached token, acquire new token
-        if not token_result:
-            token_result = app.acquire_token_for_client(scopes=scopes)
-
-        # Validate token response
-        if "access_token" not in token_result:
-            error_msg = token_result.get("error", "Unknown error")
-            error_desc = token_result.get("error_description", "No description")
-            raise Exception(f"MSAL token acquisition failed: {error_msg} - {error_desc}")
-
-        return token_result["access_token"]
-
-    except Exception as e:
-        print(f"Error generating Azure token: {str(e)}")
-        raise
 
 # ============================================================================
 # INITIALIZE CLIENTS
@@ -608,33 +536,17 @@ if ACCOUNT_MODE:
             http_test_error = f"HTTP Request Error: {str(req_err)}"
 
     try:
-        # CONDITIONAL AUTHENTICATION: Azure uses MSAL tokens, AWS/GCP use oauth-m2m
-        if cloud_type == 'azure':
-            # Azure: Generate MSAL token and pass to AccountClient
-            if not SP_CREDENTIALS['tenant_id']:
-                raise Exception("tenant-id secret is required for Azure authentication")
-
-            print(f"   Generating Azure MSAL token...")
-            azure_token = get_azure_databricks_token(
-                client_id=SP_CREDENTIALS['client_id'],
-                client_secret=SP_CREDENTIALS['client_secret'],
-                tenant_id=SP_CREDENTIALS['tenant_id']
-            )
-
-            account_client = AccountClient(
-                host=SP_CREDENTIALS['account_host'],
-                account_id=SP_CREDENTIALS['account_id'],
-                token=azure_token  # Pass MSAL-generated token
-            )
-        else:
-            # AWS/GCP: Use oauth-m2m (Databricks Service Principal)
-            account_client = AccountClient(
-                host=SP_CREDENTIALS['account_host'],
-                account_id=SP_CREDENTIALS['account_id'],
-                client_id=SP_CREDENTIALS['client_id'],
-                client_secret=SP_CREDENTIALS['client_secret'],
-                auth_type="oauth-m2m"
-            )
+        # All clouds authenticate with Databricks OAuth (M2M). The Databricks
+        # account API accepts Databricks-issued tokens on Azure too, so there is no
+        # Microsoft Entra / MSAL step and no tenant id -- the service principal just
+        # needs a Databricks OAuth secret.
+        account_client = AccountClient(
+            host=SP_CREDENTIALS['account_host'],
+            account_id=SP_CREDENTIALS['account_id'],
+            client_id=SP_CREDENTIALS['client_id'],
+            client_secret=SP_CREDENTIALS['client_secret'],
+            auth_type="oauth-m2m"
+        )
 
         # Test connection and get list of workspaces
         workspaces_list = list(account_client.workspaces.list())
@@ -724,9 +636,7 @@ if ACCOUNT_MODE:
         print(f"\n   Required secrets in scope '{secrets_scope}':")
         print("   • account-console-id: Your Databricks Account UUID")
         print("   • client-id: Service Principal Application ID")
-        print("   • client-secret: Service Principal OAuth Secret")
-        if cloud_type == 'azure':
-            print("   • tenant-id: Azure AD Tenant ID (REQUIRED for Azure)")
+        print("   • client-secret: Service Principal Databricks OAuth Secret")
         print(f"\n" + "="*80)
         print("⛔ EXITING: Cannot proceed without Accounts Console access")
         print("   Please fix the configuration and re-run this notebook.")
@@ -772,26 +682,13 @@ if MULTI_WORKSPACE_MODE and workspaces_to_collect:
             ws_cloud_type = 'aws'
 
         try:
-            # CONDITIONAL AUTHENTICATION for connectivity test
-            if ws_cloud_type == 'azure':
-                # Azure: Use MSAL token
-                if not SP_CREDENTIALS['tenant_id']:
-                    raise Exception(f"tenant-id required for Azure workspace {ws_name}")
-
-                azure_token = get_azure_databricks_token(
-                    client_id=SP_CREDENTIALS['client_id'],
-                    client_secret=SP_CREDENTIALS['client_secret'],
-                    tenant_id=SP_CREDENTIALS['tenant_id']
-                )
-                test_client = WorkspaceClient(host=ws_host, token=azure_token)
-            else:
-                # AWS/GCP: Use oauth-m2m
-                test_client = WorkspaceClient(
-                    host=ws_host,
-                    client_id=SP_CREDENTIALS['client_id'],
-                    client_secret=SP_CREDENTIALS['client_secret'],
-                    auth_type="oauth-m2m"
-                )
+            # Databricks OAuth (M2M) for every cloud, including Azure.
+            test_client = WorkspaceClient(
+                host=ws_host,
+                client_id=SP_CREDENTIALS['client_id'],
+                client_secret=SP_CREDENTIALS['client_secret'],
+                auth_type="oauth-m2m"
+            )
 
             # Simple API call to verify connectivity
             test_client.current_user.me()
@@ -938,30 +835,13 @@ def get_workspace_client(workspace):
         ws_cloud_type = 'aws'
 
     try:
-        # CONDITIONAL AUTHENTICATION
-        if ws_cloud_type == 'azure':
-            # Azure: Generate MSAL token
-            if not SP_CREDENTIALS['tenant_id']:
-                raise Exception(f"tenant-id required for Azure workspace {workspace.workspace_name}")
-
-            azure_token = get_azure_databricks_token(
-                client_id=SP_CREDENTIALS['client_id'],
-                client_secret=SP_CREDENTIALS['client_secret'],
-                tenant_id=SP_CREDENTIALS['tenant_id']
-            )
-
-            ws_client = WorkspaceClient(
-                host=ws_host,
-                token=azure_token  # Pass MSAL-generated token
-            )
-        else:
-            # AWS/GCP: Use oauth-m2m
-            ws_client = WorkspaceClient(
-                host=ws_host,
-                client_id=SP_CREDENTIALS['client_id'],
-                client_secret=SP_CREDENTIALS['client_secret'],
-                auth_type="oauth-m2m"
-            )
+        # Databricks OAuth (M2M) for every cloud, including Azure.
+        ws_client = WorkspaceClient(
+            host=ws_host,
+            client_id=SP_CREDENTIALS['client_id'],
+            client_secret=SP_CREDENTIALS['client_secret'],
+            auth_type="oauth-m2m"
+        )
 
         return ws_client
     except Exception as e:

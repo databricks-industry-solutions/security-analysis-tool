@@ -41,8 +41,8 @@
 # MAGIC
 # MAGIC - SAT app installed; service principal with **Account Admin**.
 # MAGIC - Access to `system.access.audit`.
-# MAGIC - **Azure only:** the compute needs network egress to `login.microsoftonline.com` (Entra ID) for
-# MAGIC   MSAL token minting. If serverless egress is restricted, run on a classic cluster.
+# MAGIC - All clouds authenticate with Databricks OAuth (M2M) against the account console; the service
+# MAGIC   principal needs a Databricks OAuth secret. No Microsoft Entra / Azure AD step on Azure.
 
 # COMMAND ----------
 
@@ -98,11 +98,6 @@ def _sat_cred(key):
 CLIENT_ID     = _sat_cred("client-id")
 CLIENT_SECRET = _sat_cred("client-secret")
 
-# tenant-id is required for Azure (Entra/MSAL auth); absent on AWS/GCP.
-TENANT_ID = None
-if cloud_type == "azure":
-    TENANT_ID = json_.get("tenant_id") or _sat_cred("tenant-id")
-
 DENYLIST_CANDIDATES_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_denylist_candidates"
 print(f"Accounts host: {ACCOUNTS_HOST}")
 print(f"Output table:  {DENYLIST_CANDIDATES_TABLE}")
@@ -124,18 +119,7 @@ def mint_account_token() -> str:
     if not ACCOUNT_ID or not CLIENT_ID or not CLIENT_SECRET:
         raise Exception("Account-level scan requires an Account ID and account-admin "
                         "service principal credentials. Add them in the app: Settings -> Re-run setup.")
-    # Azure authenticates via Entra/MSAL; AWS/GCP via the Databricks OIDC path.
-    if cloud_type == "azure":
-        import msal
-        app = msal.ConfidentialClientApplication(
-            client_id=CLIENT_ID,
-            client_credential=CLIENT_SECRET,
-            authority=f"https://login.microsoftonline.com/{TENANT_ID}",
-        )
-        token = app.acquire_token_for_client(scopes=["2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default"])
-        if not token or not token.get("access_token"):
-            raise Exception(f"MSAL token acquisition failed: {token.get('error_description') if token else 'no token'}")
-        return token["access_token"]
+    # Databricks OAuth (M2M) for every cloud, including Azure.
     resp = requests.post(
         f"{ACCOUNTS_HOST}/oidc/accounts/{ACCOUNT_ID}/v1/token",
         headers={"Content-Type": "application/x-www-form-urlencoded"},

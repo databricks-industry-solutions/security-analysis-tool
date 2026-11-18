@@ -91,8 +91,6 @@ json_.update({
     "mastername": " ",
     "masterpwd": " ",
 })
-if cloud_type == "azure":
-    json_.setdefault("tenant_id", _sat_cred("tenant-id"))
 
 db_client = SatDBClient(json_)
 

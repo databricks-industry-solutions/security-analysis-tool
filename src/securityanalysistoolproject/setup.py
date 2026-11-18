@@ -28,7 +28,7 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "requests", "msal"
+        "requests"
     ],
     classifiers=[
         'Programming Language :: Python :: 3',

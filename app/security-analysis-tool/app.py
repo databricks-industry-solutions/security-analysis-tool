@@ -17931,12 +17931,11 @@ def _resync_jobs_on_schema_change(previous_schema):
         return {'error': str(exc)[:220]}
 
 
-# Account-credential secrets the jobs read from the results schema. The app writes
-# only client-id/client-secret today; the rest are read by the collectors on some
-# clouds and may have been set by hand, so a migration carries them too when
-# present. Copying a key that does not exist is a harmless no-op.
-_MIGRATABLE_SECRET_KEYS = (
-    'client-id', 'client-secret', 'tenant-id', 'subscription-id', 'use-sp-auth')
+# Account-credential secrets the jobs read from the results schema. All clouds
+# use Databricks OAuth (client-id / client-secret) -- there is no Microsoft Entra
+# tenant or Azure subscription secret. Copying a key that does not exist is a
+# harmless no-op.
+_MIGRATABLE_SECRET_KEYS = ('client-id', 'client-secret')
 
 
 def _migrate_account_secrets(previous_schema):
