@@ -16406,14 +16406,15 @@ def api_scope():
         'Admin detection, account users & groups, Shared to All Users, Privileged '
         'Non-IdP and Denylist stop populating. Already-collected data is kept.')
     enable_multi = (
-        'Multi-workspace resource scanning needs the app service principal added '
-        'as a workspace admin on each workspace you want scanned. Set scope to '
+        'Multi-workspace scanning needs the app service principal added as a '
+        'workspace admin on each workspace you want scanned. Set scope to '
         '"Multiple workspaces" (Data Collection → Manage, or Settings → Re-run '
-        'setup). On classic compute this works today; on serverless it needs '
-        'cross-workspace access (unreachable workspaces are skipped and reported '
-        '— ask your account team to enroll you). New workspaces are picked up '
-        'automatically on the next collection run; no re-setup or initializer '
-        're-run is needed.')
+        'setup) — switching to Multiple runs a workspace sync for you. On classic '
+        'compute this works today; on serverless it needs cross-workspace access '
+        '(unreachable workspaces are skipped and reported — ask your account team '
+        'to enroll you). To add or remove a workspace later, add or remove the '
+        'service principal as a workspace admin there and run Data Collection → '
+        'Manage → Sync workspaces; no re-setup or initializer re-run is needed.')
     disable_multi = (
         'To scan this workspace only, set the collection scope to "This '
         'workspace" (Data Collection → Manage, or Settings → Re-run setup).')
