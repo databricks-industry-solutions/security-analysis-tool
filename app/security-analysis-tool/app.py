@@ -8563,7 +8563,9 @@ def get_main_html():
                     <td class="sx-src">${escapeHtml(r.source_type)}</td>
                     <td class="sx-wrap">${escapeHtml(r.detector_name)}</td>
                     <td>
-                        <div class="sx-obj-name">${escapeHtml(r.object_name)}</div>
+                        <div class="sx-obj-name">${r.object_url
+                            ? `<a href="${escapeHtml(r.object_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent);" title="Open in workspace">${escapeHtml(r.object_name)}</a>`
+                            : escapeHtml(r.object_name)}</div>
                         <div class="sx-obj-path">${escapeHtml(r.object_path)}</div>
                     </td>
                     <td class="mono sx-break">${escapeHtml(String(r.secret_sha256 || ''))}</td>
@@ -15623,6 +15625,28 @@ def api_secrets_by_workspace():
     return jsonify({'ready': True, 'rows': rows})
 
 
+def _secret_object_url(row):
+    """Deep link to the scanned object in its OWN workspace, or None if we can't
+    build one. Uses that workspace's deployment_url (so findings from other
+    workspaces point at the right host, not the app's), the object id when present
+    (robust against odd paths), else the notebook path.
+    """
+    dep = str(row.get('deployment_url') or '').strip().rstrip('/')
+    if not dep:
+        return None
+    host = dep if dep.startswith('http') else 'https://' + dep
+    oid = str(row.get('object_id') or '').strip()
+    if row.get('source_type') == 'cluster':
+        return f'{host}/compute/clusters/{oid}' if oid else None
+    # notebook
+    if oid:
+        return f'{host}/#notebook/{oid}'
+    path = str(row.get('object_path') or '').strip()
+    if path:
+        return f'{host}/#workspace{path if path.startswith("/") else "/" + path}'
+    return None
+
+
 @app.route('/api/secrets/findings')
 def api_secrets_findings():
     """Detail table. Filters: workspace_id, source_type, detector, verified_only."""
@@ -15653,16 +15677,24 @@ def api_secrets_findings():
         where.append("verified")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
+    acct_ws = f"`{CATALOG}`.`{SCHEMA}`.account_workspaces"
     rows = exec_query_df(f"""
     WITH {_latest_runs_cte(has_nb, has_cl)},
     {_findings_cte(has_nb, has_cl)}
-    SELECT source_type, workspace_id, run_id, object_name, object_path,
-           detector_name, secret_sha256, verified, scan_time
-    FROM findings
+    SELECT f.source_type, f.workspace_id, f.run_id, f.object_id, f.object_name, f.object_path,
+           f.detector_name, f.secret_sha256, f.verified, f.scan_time,
+           (SELECT aw.deployment_url FROM {acct_ws} aw
+            WHERE aw.workspace_id = f.workspace_id LIMIT 1) AS deployment_url
+    FROM findings f
     {where_sql}
-    ORDER BY verified DESC, workspace_id, source_type, object_name
+    ORDER BY f.verified DESC, f.workspace_id, f.source_type, f.object_name
     LIMIT {limit}
     """, params or None)
+    # Deep-link each finding to its object in the owning workspace (built here so
+    # cross-workspace findings use the right host). Drop the helper column.
+    for _r in rows:
+        _r['object_url'] = _secret_object_url(_r)
+        _r.pop('deployment_url', None)
     return jsonify({
         'ready': True,
         'rows': rows,
