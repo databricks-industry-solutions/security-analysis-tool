@@ -627,19 +627,25 @@ def export_notebook_content(notebook_path: str) -> Optional[Dict[str, Any]]:
 
 def decode_and_write_content(content: str, output_path: str) -> bool:
     """
-    Decode base64 content and write to file.
-    
+    Decode base64 notebook content and write it to a file for scanning.
+
+    Written as raw bytes, not decoded as UTF-8 text: notebook source can contain
+    non-UTF-8 bytes (source in another encoding, embedded binary, etc.), and
+    decoding as UTF-8 would raise UnicodeDecodeError ("'utf-8' codec can't decode
+    byte ...") and drop the whole notebook from the scan — on a large workspace
+    that silently loses coverage and can trip the incomplete-scan threshold.
+    TruffleHog reads the file bytewise, so the raw bytes are exactly what we want.
+
     Args:
         content (str): Base64 encoded content
         output_path (str): Path to write decoded content
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     try:
-        decoded_content = base64.b64decode(content).decode("utf-8")
-        with open(output_path, "w", encoding="utf-8") as file:
-            file.write(decoded_content)
+        with open(output_path, "wb") as file:
+            file.write(base64.b64decode(content))
         return True
     except Exception as e:
         logger.error(f"Error writing content to {output_path}: {str(e)}")
