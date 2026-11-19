@@ -29,8 +29,14 @@ The first time you open the app it shows a setup screen. Provide:
   stored as **Unity Catalog secrets** — no secret scope required. Without them,
   SAT reports on the current workspace only.
 - **Collection scope & compute** —
-  - **Workspaces to scan:** this workspace only, or every workspace the service
-    principal can reach.
+  - **Workspaces to scan:** this workspace only, or multiple workspaces. This
+    governs **both** resource-permission collection and secret scanning: *this
+    workspace only* restricts both to the current workspace; *multiple workspaces*
+    covers every workspace the service principal **administers**. To add a
+    workspace to the multi-workspace set, make the service principal a **workspace
+    admin** there, then run **Data Collection → Manage → Sync workspaces** (see
+    below). Identity and admin data is always account-wide when account
+    credentials are set.
   - **Job compute:** serverless (recommended) or classic. Classic is offered when
     the workspace supports it; a genuinely serverless-only workspace shows classic
     as unavailable.
@@ -42,6 +48,16 @@ You can change any of these later from **Settings** (catalog/schema, warehouse,
 model, credentials) and **Data Collection → Manage** (scope, compute,
 notebook/folder collection). The collection jobs are re-provisioned automatically
 when you change compute or scope.
+</Admonition>
+
+<Admonition type="note" title="Adding or removing workspaces — Sync workspaces">
+Which workspaces SAT scans is driven by whether its service principal is a
+**workspace admin** of each one. After adding (or removing) the service principal
+as a workspace admin, open **Data Collection → Manage → Sync workspaces**: SAT
+lists the account's workspaces and enables the ones the service principal
+administers. It's an explicit, in-app action — no manual SQL and no re-running a
+collection job. Set scope to **Multiple workspaces** for the scans to cover more
+than the current workspace.
 </Admonition>
 
 ## Step 2 — Run data collection

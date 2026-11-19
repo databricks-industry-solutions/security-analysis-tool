@@ -12,7 +12,7 @@ import Admonition from '@theme/Admonition';
 
 * **Deployment Requirements**
   * **One SAT app per Databricks account** monitors every workspace in that account — on **AWS**, **Azure**, and **GCP**. On Azure this is per **Databricks account**, not per subscription (a separate per-subscription deployment is no longer needed). A different Databricks account needs its own SAT app.
-  * For account-wide data, give a service principal the **Account admin** role (you enter its credentials in the app's setup). For resource-level findings in a workspace, add the app's service principal as a **workspace admin** on that workspace; to exclude a workspace, simply don't add the service principal to it.
+  * For account-wide data, give a service principal the **Account admin** role (you enter its credentials in the app's setup). For resource-level findings and secret scanning in a workspace, add the app's service principal as a **workspace admin** on that workspace, then run **Data Collection → Manage → Sync workspaces** in the app to pick it up; to exclude a workspace, remove the service principal (or don't add it) and sync again.
   
 * **Networking and Access Considerations**
 

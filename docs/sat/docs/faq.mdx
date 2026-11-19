@@ -47,19 +47,19 @@ Use the app's built-in requirements check: open **Settings → Re-run setup** an
 
 <AccordionItem question="If SAT is already configured, how do we add/remove other workspaces in the same account/subscription?">
 
-If the service principal configured for SAT has access to any workspaces in the account or subscription, SAT will automatically collect data from those workspaces. To include or exclude workspaces, simply add or remove the service principal from the desired workspaces and rerun the initialization job to update SAT's workspace list.
+Scan coverage is driven by whether the SAT service principal is a **workspace admin** of each workspace. To include a workspace, add the service principal as a workspace admin on it; to exclude one, remove it. Then open **Data Collection → Manage → Sync workspaces** in the app — Sync discovers the account's workspaces and enables the ones the service principal administers (`analysis_enabled` in the `account_workspaces` table). No manual SQL, no re-running a heavy collection job. Make sure collection scope is **Multiple workspaces** for the scanners to cover more than the current workspace.
 
 </AccordionItem>
 
 <AccordionItem question="A workspace was deleted after SAT was set up — how do I stop it from erroring?">
 
-A workspace that can no longer be reached simply fails its connection test on the next collection run and drops out of future assessments — no reinstall needed. You can re-run the initializer from the app's **Data Collection** page to refresh that state.
+A workspace that can no longer be reached fails its connection test on the next scan and is **skipped and recorded**, not failed — no reinstall needed. To drop it from the registry entirely, run **Data Collection → Manage → Sync workspaces** (Sync only keeps **RUNNING** account workspaces the service principal administers).
 
 </AccordionItem>
 
 <AccordionItem question="I added a new workspace — how do I get it included?">
 
-Add the app's service principal as a **workspace admin** on the new workspace and make sure your collection scope is **Multiple workspaces** (Data Collection → Manage). The next collection run discovers it automatically and it appears in the app — there's no dashboard pulldown or cache to refresh.
+Add the app's service principal as a **workspace admin** on the new workspace, then run **Data Collection → Manage → Sync workspaces** so SAT discovers it and enables it for scanning. Set collection scope to **Multiple workspaces** so the scanners cover it. No re-setup, no initializer re-run, and no dashboard pulldown or cache to refresh. (Removing the service principal as admin and syncing again drops the workspace.)
 
 </AccordionItem>
 

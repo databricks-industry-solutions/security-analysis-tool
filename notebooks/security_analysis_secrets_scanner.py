@@ -43,23 +43,56 @@ json_.update(
 
 # COMMAND ----------
 
-dfexist = getWorkspaceConfig()
-dfexist.filter(dfexist.analysis_enabled == True ).createOrReplaceTempView(
-    "all_workspaces"
-)
-
-# COMMAND ----------
-
 import json
 from dbruntime.databricks_repl_context import get_context
 current_workspace = get_context().workspaceId
 
+# scan_scope ("current" = this workspace only; "all" = every analysis_enabled
+# workspace the service principal administers) is passed by the app as a job
+# parameter -- the same control the permissions collector honors. The secret scan
+# honors it too, so the app's "This workspace only" truly scopes secret scanning to
+# the current workspace, not just resource collection. The workspaces enabled in
+# account_workspaces (maintained by the app's Sync workspaces action) are the
+# candidate set; scan_scope decides how many of them this run actually scans.
+# Default is current-workspace.
+def _secrets_scan_scope():
+    try:
+        v = (json_.get("scan_scope") or "").strip().lower()
+        if v:
+            return v
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        return (dbutils.widgets.get("scan_scope") or "current").strip().lower()
+    except Exception:  # noqa: BLE001
+        return "current"
+
+SCAN_ALL_WORKSPACES = _secrets_scan_scope() in ("all", "all-workspaces", "multi")
+
+
+def _build_all_workspaces_view():
+    """Eligible workspaces = analysis_enabled, narrowed to the current workspace
+    unless scan_scope is 'all'. Shared by the initial build and the self-register
+    fallback so both honor the scope."""
+    d = getWorkspaceConfig()
+    e = d.filter(d.analysis_enabled == True)
+    if not SCAN_ALL_WORKSPACES:
+        e = e.filter(d.workspace_id == str(current_workspace))
+    e.createOrReplaceTempView("all_workspaces")
+
+
+_build_all_workspaces_view()
+if not SCAN_ALL_WORKSPACES:
+    loggr.info("scan_scope=current: secret scanning is limited to the current "
+               "workspace (%s). Set scope to 'Multiple workspaces' in the app to scan "
+               "every workspace the service principal administers.", current_workspace)
+
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### The analysis executes across the workspaces registered in the **`account_workspaces`** table with **`analysis_enabled = True`**. That table is maintained from the app: **Data Collection → Manage → Sync workspaces** discovers the account's workspaces and enables the ones the SAT service principal is a **workspace admin** of.
-# MAGIC ##### If a workspace does not appear in the results, add the service principal as a **workspace admin** there and re-run **Sync workspaces** in the app.
-# MAGIC ##### Every eligible workspace is scanned on any compute. On **Serverless Compute**, reaching other workspaces requires the account to be enrolled in **serverless cross-workspace access** and the SAT service principal to be a **workspace admin** on each target; workspaces that can't be reached are **skipped and recorded** (not failed). **Classic Compute** can reach any workspace the service principal administers.
+# MAGIC ##### The candidate workspaces are those registered in the **`account_workspaces`** table with **`analysis_enabled = True`**. That table is maintained from the app: **Data Collection → Manage → Sync workspaces** discovers the account's workspaces and enables the ones the SAT service principal is a **workspace admin** of.
+# MAGIC ##### The app's collection scope then decides how many of those are scanned: **This workspace only** scans just the current workspace; **Multiple workspaces** scans every enabled (service-principal-administered) workspace. If a workspace does not appear in the results, add the service principal as a **workspace admin** there, re-run **Sync workspaces**, and make sure scope is **Multiple workspaces**.
+# MAGIC ##### On **Serverless Compute**, reaching other workspaces requires the account to be enrolled in **serverless cross-workspace access** and the SAT service principal to be a **workspace admin** on each target; workspaces that can't be reached are **skipped and recorded** (not failed). **Classic Compute** can reach any workspace the service principal administers.
 
 # COMMAND ----------
 
@@ -95,8 +128,7 @@ if workspaces is None or len(workspaces) == 0:
             WHERE workspace_id = '{current_workspace}'
         )
     """)
-    dfexist = getWorkspaceConfig()
-    dfexist.filter(dfexist.analysis_enabled == True).createOrReplaceTempView("all_workspaces")
+    _build_all_workspaces_view()
     workspacesdf = spark.sql("select * from `all_workspaces`")
     workspaces = workspacesdf.collect()
     loggr.info("Self-registered current workspace; %d workspace(s) now eligible", len(workspaces))

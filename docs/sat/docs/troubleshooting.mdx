@@ -38,6 +38,19 @@ Credentials are verified before they're stored, so a failed save points to one o
 
 </AccordionItem>
 
+<AccordionItem question="A workspace isn't being scanned (or was skipped)">
+
+**Symptom:** A workspace you expect to see has no findings, or a scan run reports it as skipped.
+
+**Resolution:** SAT scans a workspace only when **both** are true:
+
+1. **The service principal is a workspace admin there, and the workspace is enabled.** Scan coverage is keyed on the SP being a **workspace admin** of each workspace. Add the SP as a workspace admin on the target, then run **Data Collection → Manage → Sync workspaces** — Sync lists the account's workspaces and sets `analysis_enabled` on the ones the SP administers (`account_workspaces` table). Removing the SP as admin and syncing again drops the workspace.
+2. **Collection scope is Multiple workspaces.** With scope set to **This workspace only**, both resource collection and secret scanning stay on the current workspace regardless of what's enabled. Set scope to **Multiple workspaces** in **Data Collection → Manage**.
+
+On **serverless** compute, reaching a remote workspace also requires the account to be enrolled in **serverless cross-workspace access** (a preview — ask your account team). Workspaces that still can't be reached are **skipped and recorded**, not failed. **Classic** compute can reach any workspace the SP administers.
+
+</AccordionItem>
+
 <AccordionItem question="Firewall Blocking Databricks Accounts Console - Connection Reset Error">
 
 **Error:**
