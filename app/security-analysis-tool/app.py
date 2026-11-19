@@ -8190,7 +8190,7 @@ def get_main_html():
 
                     <div class="ss-group">
                         <div class="ss-group-title">Scan coverage</div>
-                        <label class="ss-radio"><input type="radio" name="ss-coverage" value="all"${all ? ' checked' : ''} onchange="secretsCoverageToggle()"> <span><strong>All notebooks (recommended)</strong> — scans every notebook each run, so the dashboard always shows your complete current exposure. Secrets you remove stop showing once the next scan confirms they're gone.</span></label>
+                        <label class="ss-radio"><input type="radio" name="ss-coverage" value="all"${all ? ' checked' : ''} onchange="secretsCoverageToggle()"> <span><strong>All objects (recommended)</strong> — scans every notebook and file each run, so the dashboard always shows your complete current exposure. Secrets you remove stop showing once the next scan confirms they're gone.</span></label>
                         <label class="ss-radio"><input type="radio" name="ss-coverage" value="recent"${all ? '' : ' checked'} onchange="secretsCoverageToggle()"> <span><strong>Only recently modified</strong> — scans just notebooks and files changed in the last <input type="number" id="ss-days" min="1" max="3650" value="${nDays}" class="field-input ss-days-input"${all ? ' disabled' : ''}> day(s). Faster on very large workspaces, but the dashboard then shows only that window — secrets in untouched objects won't appear even if they're still there.</span></label>
                     </div>
 
@@ -15396,14 +15396,14 @@ def api_secrets_config():
 
     payload = request.get_json(silent=True) or {}
 
-    # Coverage window. 0 = scan all notebooks (complete); N > 0 = only those
+    # Coverage window. 0 = scan all objects (complete); N > 0 = only those
     # modified in the last N days.
     try:
         days_back = int(payload.get('days_back', 0))
     except (TypeError, ValueError):
         return jsonify({'error': 'Coverage days must be a whole number.'}), 400
     if days_back < 0 or days_back > 3650:
-        return jsonify({'error': 'Coverage days must be between 0 and 3650 (0 = all notebooks).'}), 400
+        return jsonify({'error': 'Coverage days must be between 0 and 3650 (0 = all objects).'}), 400
 
     # Whether cluster configurations are scanned (default on). When off, the
     # orchestrator skips the cluster sub-scan and only scans notebooks.
