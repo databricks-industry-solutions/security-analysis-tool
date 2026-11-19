@@ -8136,7 +8136,7 @@ def get_main_html():
         const secretsExposure = {
             summary: {}, byDetector: [], byWorkspace: [],
             rows: [], truncated: false,
-            filters: { search: '', source: '', detectors: [], workspaces: [] },
+            filters: { search: '', sources: [], detectors: [], workspaces: [] },
         };
 
         // ── Secret-scan settings & custom detection rules ──────────────────
@@ -8275,7 +8275,7 @@ def get_main_html():
                 secretsExposure.byWorkspace = (ws && ws.rows) || [];
                 secretsExposure.rows = (find && find.rows) || [];
                 secretsExposure.truncated = !!(find && find.truncated);
-                secretsExposure.filters = { search: '', source: '', detectors: [], workspaces: [] };
+                secretsExposure.filters = { search: '', sources: [], detectors: [], workspaces: [] };
                 renderSecretsExposure();
             } catch (e) {
                 showEmpty('secretsoverview-results', 'Failed to load scan results: ' + e.message);
@@ -8374,6 +8374,14 @@ def get_main_html():
                 det.map(r => ({ value: r.detector_name, label: r.detector_name, count: Number(r.findings) || 0 }))) : '';
             const wsMs = ws.length ? secretsMultiselect('workspaces', 'All workspaces',
                 ws.map(r => ({ value: String(r.workspace_id), label: secretsWsLabel(r.workspace_name, r.workspace_id), count: Number(r.findings) || 0 }))) : '';
+            // Object-type multi-select, same control as detectors/workspaces; only
+            // types actually present (count > 0) are offered.
+            const typeItems = [
+                { value: 'notebook', label: 'Notebooks', count: nb },
+                { value: 'file', label: 'Files', count: fi },
+                { value: 'cluster', label: 'Cluster configs', count: cl },
+            ].filter(t => t.count > 0);
+            const srcMs = typeItems.length ? secretsMultiselect('sources', 'All types', typeItems) : '';
             html += `
                 <div class="card secret-table-card" style="padding:0;">
                     <div class="sx-toolbar">
@@ -8381,12 +8389,7 @@ def get_main_html():
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
                             <input id="sx-search" type="text" placeholder="Search object, path, detector or hash…" autocomplete="off">
                         </div>
-                        <select id="sx-source">
-                            <option value="">All types</option>
-                            <option value="notebook">Notebooks</option>
-                            <option value="file">Files</option>
-                            <option value="cluster">Cluster configs</option>
-                        </select>
+                        ${srcMs}
                         ${detMs}
                         ${wsMs}
                         <span class="sx-count" id="sx-count"></span>
@@ -8411,10 +8414,6 @@ def get_main_html():
             if (search) search.addEventListener('input', e => {
                 secretsExposure.filters.search = e.target.value.trim().toLowerCase();
                 secretsRenderTable();
-            });
-            const srcSel = document.getElementById('sx-source');
-            if (srcSel) srcSel.addEventListener('change', e => {
-                secretsExposure.filters.source = e.target.value; secretsRenderTable();
             });
             // Facets (breakdown rows) toggle membership in the same arrays the
             // multi-selects drive, so clicking a bar or ticking a box is one filter.
@@ -8509,9 +8508,11 @@ def get_main_html():
                     const w = secretsExposure.byWorkspace.find(x => String(x.workspace_id) === String(arr[0]));
                     return w ? secretsWsLabel(w.workspace_name, w.workspace_id) : arr[0];
                 }
+                if (kind === 'sources') return ({notebook:'Notebooks',file:'Files',cluster:'Cluster configs'})[arr[0]] || arr[0];
                 return arr[0];
             }
-            return `${arr.length} ${kind === 'workspaces' ? 'workspaces' : 'detectors'}`;
+            const noun = kind === 'workspaces' ? 'workspaces' : kind === 'sources' ? 'types' : 'detectors';
+            return `${arr.length} ${noun}`;
         }
 
         // Reflect filter state onto every control (facets + multi-selects), then
@@ -8535,7 +8536,7 @@ def get_main_html():
         function secretsFilteredRows() {
             const f = secretsExposure.filters;
             return secretsExposure.rows.filter(r => {
-                if (f.source && r.source_type !== f.source) return false;
+                if (f.sources.length && !f.sources.includes(r.source_type)) return false;
                 if (f.detectors.length && !f.detectors.includes(r.detector_name)) return false;
                 if (f.workspaces.length && !f.workspaces.includes(String(r.workspace_id))) return false;
                 if (f.search) {
