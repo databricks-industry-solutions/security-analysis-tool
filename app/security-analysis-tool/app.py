@@ -7750,7 +7750,7 @@ def get_main_html():
             const en = r.enabled_workspaces;   // null when unknown
             const total = r.registered_workspaces;
             const serverlessNote = (r.compute !== 'classic')
-                ? ' On serverless, any the service principal can\'t reach are skipped and recorded.' : '';
+                ? ' On serverless, workspaces the service principal cannot reach are skipped and recorded.' : '';
             if (scope !== 'all') {
                 el.innerHTML = '<strong>Will scan: this workspace only (1).</strong>' +
                     (en != null && en > 1
