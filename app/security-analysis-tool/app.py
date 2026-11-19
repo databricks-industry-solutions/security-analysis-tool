@@ -8294,7 +8294,7 @@ def get_main_html():
             const cl = Number(s.cluster_findings || 0);
             html += `
                 <div class="card secret-summary">
-                    <div class="secret-section-title">Exposure summary</div>
+                    <div class="secret-section-title">Exposure Summary</div>
                     <div class="secret-stat-grid">
                         ${secretStatBlock('Total findings', total, total > 0 ? '#f59e0b' : '#22c55e')}
                         ${secretStatBlock('Unique secrets', s.distinct_secrets || 0, '#3b82f6')}
@@ -8343,7 +8343,7 @@ def get_main_html():
                 const max = Math.max(...det.map(r => Number(r.findings) || 0), 1);
                 cards.push(`
                     <div class="card secret-card">
-                        <div class="secret-section-title">By detector</div>
+                        <div class="secret-section-title">By Detector</div>
                         ${det.map(r => secretsFacet('detectors', r.detector_name, r.detector_name,
                             Number(r.findings) || 0, max)).join('')}
                     </div>`);
@@ -8352,7 +8352,7 @@ def get_main_html():
                 const max = Math.max(...ws.map(r => Number(r.findings) || 0), 1);
                 cards.push(`
                     <div class="card secret-card">
-                        <div class="secret-section-title">By workspace</div>
+                        <div class="secret-section-title">By Workspace</div>
                         ${ws.map(r => secretsFacet('workspaces', r.workspace_id, secretsWsLabel(r.workspace_name, r.workspace_id),
                             Number(r.findings) || 0, max)).join('')}
                     </div>`);
