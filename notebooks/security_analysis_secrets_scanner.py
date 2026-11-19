@@ -57,8 +57,8 @@ current_workspace = get_context().workspaceId
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### The analysis executes across all Databricks workspaces configured for SAT. Eligible workspaces are determined based on entries in **`workspace_configs.csv`** and the **`security_analysis.account_workspaces`** table where the **`analysis_enabled`** flag is set to **`True`**.
-# MAGIC ##### If a workspace does not appear in the results, verify that it is correctly listed and that **`analysis_enabled = True`** in both configuration sources.
+# MAGIC ##### The analysis executes across the workspaces registered in the **`account_workspaces`** table with **`analysis_enabled = True`**. That table is maintained from the app: **Data Collection → Manage → Sync workspaces** discovers the account's workspaces and enables the ones the SAT service principal is a **workspace admin** of.
+# MAGIC ##### If a workspace does not appear in the results, add the service principal as a **workspace admin** there and re-run **Sync workspaces** in the app.
 # MAGIC ##### Every eligible workspace is scanned on any compute. On **Serverless Compute**, reaching other workspaces requires the account to be enrolled in **serverless cross-workspace access** and the SAT service principal to be a **workspace admin** on each target; workspaces that can't be reached are **skipped and recorded** (not failed). **Classic Compute** can reach any workspace the service principal administers.
 
 # COMMAND ----------
@@ -80,8 +80,9 @@ if workspaces is None or len(workspaces) == 0:
     # tool. The multi-workspace path via account_workspaces is unchanged.
     loggr.info(
         "No workspaces configured for analysis; falling back to the current "
-        "workspace (%s). To scan additional workspaces, add them to %s.account_workspaces "
-        "with analysis_enabled = True.",
+        "workspace (%s). To scan additional workspaces, run Data Collection -> Manage "
+        "-> Sync workspaces in the SAT app (it enables each workspace the service "
+        "principal administers in %s.account_workspaces).",
         current_workspace, json_["analysis_schema_name"],
     )
     deployment_url = hostname.replace("https://", "").replace("http://", "").rstrip("/")

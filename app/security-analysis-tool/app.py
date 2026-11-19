@@ -4308,7 +4308,7 @@ def get_main_html():
                         <details><summary>Why is "Classic" compute greyed out?</summary>
                             <div class="help-faq-body">This workspace is <strong>serverless-only</strong> (its <code>compute_mode</code> is <code>SERVERLESS</code>), so it has no classic compute to run jobs on — use serverless. Note: classic is greyed out only for a genuinely serverless-only workspace. If classic is offered but a run fails to start a cluster, the app's service principal just needs the <code>allow-cluster-create</code> permission in this workspace.</div></details>
                         <details><summary>Do I need to re-run after adding a workspace?</summary>
-                            <div class="help-faq-body">No. Add the service principal as a <strong>workspace admin</strong> on the new workspace; the next collection run discovers it automatically. No re-setup or initializer re-run needed.</div></details>
+                            <div class="help-faq-body">No re-setup or initializer re-run. Add the service principal as a <strong>workspace admin</strong> on the new workspace, then open <strong>Data Collection → Manage → Sync workspaces</strong>. Sync discovers the account's workspaces and enables the ones the SP administers; the next scan then covers it. Removing the SP as admin and syncing again drops the workspace.</div></details>
                         <details><summary>How often does data refresh?</summary>
                             <div class="help-faq-body">On whatever schedule you set for the collection jobs in <strong>Data Collection</strong>. You can also run any job on demand there. Each page's header shows the collection run it's displaying.</div></details>
                         <details><summary>Which service principal is used, and what access does it need?</summary>
@@ -4340,7 +4340,7 @@ def get_main_html():
                         <details><summary>Account authentication failed / credentials expired</summary>
                             <div class="help-faq-body">The service principal's OAuth secret has likely expired or been revoked. Create a fresh secret in the account console, then update it in <strong>Settings → Account credentials</strong> → <strong>Update credentials</strong>. The requirements checklist in setup verifies the account connection and the <strong>Account admin</strong> role live, so re-run setup to confirm it's green.</div></details>
                         <details><summary>A new workspace isn't appearing in scans</summary>
-                            <div class="help-faq-body">Add the service principal as a <strong>workspace admin</strong> on that workspace and make sure collection scope is set to <strong>Multiple workspaces</strong> (Data Collection → Manage). The next collection run discovers it automatically — no re-setup needed.</div></details>
+                            <div class="help-faq-body">Add the service principal as a <strong>workspace admin</strong> on that workspace, then run <strong>Data Collection → Manage → Sync workspaces</strong> so SAT discovers it and enables it for scanning. Also make sure collection scope is set to <strong>Multiple workspaces</strong>. If it still doesn't scan, the SP may lack admin there, or (on serverless) the account isn't enrolled in cross-workspace access.</div></details>
                     </div>
                 </details>
 
@@ -5649,7 +5649,7 @@ def get_main_html():
                         </ul>
 
                         <h4>Adding workspaces later</h4>
-                        Just add the service principal as a workspace admin on the new workspace. The next collection run discovers it automatically — <strong>no re-setup and no initializer re-run needed</strong>.
+                        Add the service principal as a workspace admin on the new workspace, then run <strong>Data Collection → Manage → Sync workspaces</strong> — SAT discovers the account's workspaces and enables the ones the SP administers. <strong>No re-setup and no initializer re-run needed.</strong> (Removing the SP as admin and syncing again drops a workspace from scans.)
 
                         <h4>Optional — system tables access</h4>
                         <code>SELECT</code> on <code>system.access</code> for the app service principal powers the activity- and audit-based features. Without it they stay empty; everything else still works. Specifically:
@@ -7680,6 +7680,13 @@ def get_main_html():
                             </div>
                             <div class="manage-action">
                                 <div class="manage-action-text">
+                                    <div class="manage-action-title">Sync workspaces</div>
+                                    <div class="manage-action-sub">Discover the account's workspaces and mark which ones to scan. A workspace is enabled when the SAT service principal is a <strong>workspace admin</strong> there — add it as an admin on a new workspace, then sync to pick it up (remove it and sync to drop the workspace). Requires account credentials.</div>
+                                </div>
+                                <button class="btn btn-sm btn-ghost" onclick="syncWorkspaces(this)">Sync</button>
+                            </div>
+                            <div class="manage-action">
+                                <div class="manage-action-text">
                                     <div class="manage-action-title">Re-run initializer</div>
                                     <div class="manage-action-sub">Rebuild the schema and result tables.</div>
                                 </div>
@@ -7868,6 +7875,23 @@ def get_main_html():
             };
             manageProgress('Initializer running… 0s elapsed');
             setTimeout(tick, 3000);
+        }
+
+        async function syncWorkspaces(btn) {
+            const label = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Syncing…';
+            manageMsg('');
+            manageProgress('Discovering account workspaces and checking admin access…');
+            try {
+                const result = await fetch('/api/collection/sync-workspaces', { method: 'POST' }).then(r => r.json());
+                if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = label; return; }
+                const reg = result.registered || 0, en = result.enabled || 0, und = result.undetermined || 0;
+                let msg = `Synced ${reg} workspace${reg === 1 ? '' : 's'} — ${en} enabled for scanning (SP is a workspace admin or current workspace).`;
+                if (und) msg += ` ${und} could not be checked and were left unchanged.`;
+                manageMsg(msg, 'ok');
+                btn.disabled = false; btn.textContent = label;
+                await loadCollectionPanel({ quiet: true });
+            } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = label; }
         }
 
         // Destructive: a two-step confirm rather than a browser dialog.
@@ -18269,6 +18293,155 @@ def api_collection_provision():
             }), 403
         return jsonify({'error': f'Provisioning failed: {message[:300]}'}), 500
     return jsonify({'provisioned': True, **result})
+
+
+def _ws_deployment_url_from_account(w):
+    """deployment_url for an Account API workspace object, per cloud."""
+    if getattr(w, "azure_workspace_info", None):
+        return f"{w.deployment_name}.azuredatabricks.net"
+    if getattr(w, "gcp_managed_network_config", None):
+        return f"{w.workspace_id}.gcp.databricks.com"
+    return f"{w.deployment_name}.cloud.databricks.com"
+
+
+def _sync_account_workspaces():
+    """Discover the account's workspaces and register them in account_workspaces.
+
+    Runs in-process as the app's service principal: lists the account workspaces,
+    works out which ones the SAT service principal is a *workspace admin* of (that
+    is what the scanner needs to read every user's notebooks and files there), and
+    upserts them. analysis_enabled tracks admin status -- so adding the SP as a
+    workspace admin and re-syncing opts a workspace in, and removing it opts the
+    workspace out. The workspace the app runs in is always enabled. When a
+    workspace's admin status can't be read (a transient assignment-listing error),
+    the row is still registered but its analysis_enabled is left untouched on
+    update (defaults enabled on first insert) so a blip can't silently drop it.
+
+    Returns a summary dict; raises on a hard failure (no credentials, no
+    warehouse, MERGE did not succeed) so the caller can report it.
+    """
+    import concurrent.futures
+
+    account_id = (_app_config.get('account_id') or os.getenv('ACCOUNT_ID') or '').strip()
+    client_id = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+    client_secret = uc_secret_value(CREDENTIAL_KEYS['client_secret'])
+    if not (account_id and client_id and client_secret):
+        raise ValueError(
+            "Account credentials are not set. Add the Account ID and the service "
+            "principal's client ID + secret in Settings -> Account credentials, then sync.")
+    warehouse_id = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID')
+    if not warehouse_id:
+        raise ValueError("No SQL warehouse is configured yet; complete first-run setup.")
+
+    from databricks.sdk import AccountClient
+    ac = AccountClient(host=_account_host(), account_id=account_id,
+                       client_id=client_id, client_secret=client_secret)
+
+    this_ws = (os.getenv('WORKSPACE_ID') or '').strip()
+    sat_client_id = (client_id or '').lower()
+
+    def _sp_is_workspace_admin(ws_id):
+        """True / False if determinable, None if the assignment listing failed."""
+        try:
+            for a in ac.workspace_assignment.list(workspace_id=ws_id):
+                spn = (getattr(a.principal, 'service_principal_name', '') or '').lower()
+                if spn and spn == sat_client_id:
+                    perms = getattr(a, 'permissions', None) or []
+                    if any(str(getattr(p, 'value', p)).upper() == 'ADMIN' for p in perms):
+                        return True
+            return False
+        except Exception:  # noqa: BLE001
+            return None
+
+    # RUNNING workspaces are the scan candidates.
+    running = []
+    for w in ac.workspaces.list():
+        status = getattr(w, 'workspace_status', None)
+        status_val = getattr(status, 'value', None) or (str(status) if status else 'RUNNING')
+        if status_val == 'RUNNING':
+            running.append((w, status_val))
+
+    # The admin check is one API call per workspace -- the costly part at scale --
+    # so fan it out. Bounded so a large account does not hammer the account API.
+    admin_of = {}
+    remote = [w for (w, _) in running if not (this_ws and str(w.workspace_id) == this_ws)]
+    if remote:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(remote))) as pool:
+            fut = {pool.submit(_sp_is_workspace_admin, w.workspace_id): w for w in remote}
+            for f in concurrent.futures.as_completed(fut):
+                admin_of[str(fut[f].workspace_id)] = f.result()
+
+    rows, enabled, undetermined = [], 0, 0
+    for (w, status_val) in running:
+        wid = str(w.workspace_id)
+        name = (w.workspace_name or '')
+        dep = _ws_deployment_url_from_account(w)
+        if this_ws and wid == this_ws:
+            en, setf = True, True  # current workspace: always on
+        else:
+            admin = admin_of.get(wid)
+            if admin is None:
+                en, setf, undetermined = True, False, undetermined + 1
+            else:
+                en, setf = admin, True
+        if en:
+            enabled += 1
+        rows.append((wid, dep, name, status_val, en, setf))
+
+    if not rows:
+        return {'registered': 0, 'enabled': 0, 'undetermined': 0}
+
+    def _q(s):
+        return str(s).replace("'", "''")
+    values = ", ".join(
+        f"('{_q(wid)}', '{_q(dep)}', '{_q(name)}', '{_q(st)}', "
+        f"{'true' if en else 'false'}, {'true' if setf else 'false'})"
+        for (wid, dep, name, st, en, setf) in rows
+    )
+    acct_ws = f"`{CATALOG}`.`{SCHEMA}`.account_workspaces"
+    merge = f"""
+        MERGE INTO {acct_ws} t
+        USING (SELECT * FROM VALUES {values}
+               AS s(workspace_id, deployment_url, workspace_name, workspace_status, analysis_enabled, set_enabled))
+        ON t.workspace_id = s.workspace_id
+        WHEN MATCHED AND s.set_enabled THEN UPDATE SET
+            t.deployment_url = s.deployment_url, t.workspace_name = s.workspace_name,
+            t.workspace_status = s.workspace_status, t.analysis_enabled = s.analysis_enabled
+        WHEN MATCHED AND NOT s.set_enabled THEN UPDATE SET
+            t.deployment_url = s.deployment_url, t.workspace_name = s.workspace_name,
+            t.workspace_status = s.workspace_status
+        WHEN NOT MATCHED THEN INSERT
+            (workspace_id, deployment_url, workspace_name, workspace_status, analysis_enabled)
+            VALUES (s.workspace_id, s.deployment_url, s.workspace_name, s.workspace_status, s.analysis_enabled)
+    """
+    result = _sql_rows(_sp_workspace_client(), warehouse_id, merge)
+    if result is None:
+        raise RuntimeError("Could not update account_workspaces (the MERGE did not succeed).")
+    # Bust the name cache so the UI reflects any new workspaces immediately.
+    with _account_ws_names_lock:
+        _account_ws_names_cache.update({'names': None, 'ts': 0.0})
+    return {'registered': len(rows), 'enabled': enabled, 'undetermined': undetermined}
+
+
+@app.route('/api/collection/sync-workspaces', methods=['POST'])
+def api_collection_sync_workspaces():
+    """Discover account workspaces and register which ones to scan.
+
+    Gated to workspace/account admins: it changes which workspaces the secret
+    scanner covers, and runs the MERGE as the app service principal, so an
+    ungated caller could otherwise widen scan scope. Idempotent."""
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup before syncing workspaces.'}), 409
+    if not _caller_is_admin():
+        return jsonify({'error': 'Only a workspace or account admin can sync workspaces.'}), 403
+    try:
+        result = _sync_account_workspaces()
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('workspace sync failed')
+        return jsonify({'error': f'Sync failed: {str(exc)[:300]}'}), 500
+    return jsonify({'synced': True, **result})
 
 
 _classic_available_cache = None
