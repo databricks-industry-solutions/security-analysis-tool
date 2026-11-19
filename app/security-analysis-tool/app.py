@@ -4400,8 +4400,8 @@ def get_main_html():
                     <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.92em;">
                         The Security Analysis Tool is a security observability platform for Databricks environments.
                         It maps the permissions graph to surface privilege escalation paths, over-privileged principals,
-                        and complex access relationships across workspaces; scans notebooks and cluster configurations
-                        for hardcoded credentials; and answers questions about any of it in plain language.
+                        and complex access relationships across workspaces; scans notebook source, workspace files,
+                        and cluster configurations for hardcoded credentials; and answers questions about any of it in plain language.
                     </p>
                     <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.86em;">
                         Core security posture checks are available natively in the <a href="https://docs.databricks.com/aws/en/admin/governance-hub/security" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">Databricks Governance Hub (Security section)</a>.
@@ -4804,8 +4804,8 @@ def get_main_html():
             <!-- Credential Exposure (secret scanning overview) -->
             <div class="page" id="page-secretsoverview">
                 <div class="page-header">
-                    <h1 class="page-title">Credential Exposure <span class="help-tip" tabindex="0" aria-label="About this page" data-help="The secret scanner inspects notebook source and cluster environment variables for hardcoded credentials such as API keys and tokens. Remove them from the code/config and store them in Unity Catalog secrets instead of hardcoding. Run and schedule the scan from Data Collection.">i</span></h1>
-                    <p class="page-desc">Secrets &mdash; API keys and tokens &mdash; found hardcoded in notebook source and cluster configurations, where anyone with access to the code can read them.</p>
+                    <h1 class="page-title">Credential Exposure <span class="help-tip" tabindex="0" aria-label="About this page" data-help="The secret scanner inspects notebook source, workspace files (.py, .sql, config, etc.), and cluster environment variables for hardcoded credentials such as API keys and tokens. Remove them from the code/config and store them in Unity Catalog secrets instead of hardcoding. Run and schedule the scan from Data Collection.">i</span></h1>
+                    <p class="page-desc">Secrets &mdash; API keys and tokens &mdash; found hardcoded in notebook source, workspace files, and cluster configurations, where anyone with access to the code can read them.</p>
                 </div>
                 <div id="secrets-scan-settings"></div>
                 <div id="secretsoverview-results"></div>
@@ -8191,12 +8191,12 @@ def get_main_html():
                     <div class="ss-group">
                         <div class="ss-group-title">Scan coverage</div>
                         <label class="ss-radio"><input type="radio" name="ss-coverage" value="all"${all ? ' checked' : ''} onchange="secretsCoverageToggle()"> <span><strong>All notebooks (recommended)</strong> — scans every notebook each run, so the dashboard always shows your complete current exposure. Secrets you remove stop showing once the next scan confirms they're gone.</span></label>
-                        <label class="ss-radio"><input type="radio" name="ss-coverage" value="recent"${all ? '' : ' checked'} onchange="secretsCoverageToggle()"> <span><strong>Only recently modified</strong> — scans just notebooks changed in the last <input type="number" id="ss-days" min="1" max="3650" value="${nDays}" class="field-input ss-days-input"${all ? ' disabled' : ''}> day(s). Faster on very large workspaces, but the dashboard then shows only that window — secrets in untouched notebooks won't appear even if they're still there.</span></label>
+                        <label class="ss-radio"><input type="radio" name="ss-coverage" value="recent"${all ? '' : ' checked'} onchange="secretsCoverageToggle()"> <span><strong>Only recently modified</strong> — scans just notebooks and files changed in the last <input type="number" id="ss-days" min="1" max="3650" value="${nDays}" class="field-input ss-days-input"${all ? ' disabled' : ''}> day(s). Faster on very large workspaces, but the dashboard then shows only that window — secrets in untouched objects won't appear even if they're still there.</span></label>
                     </div>
 
                     <div class="ss-group">
                         <div class="ss-group-title">What's scanned</div>
-                        <label class="ss-radio"><input type="checkbox" id="ss-scan-clusters"${scanClusters ? ' checked' : ''}> <span><strong>Scan cluster configurations</strong> — also check cluster <code>spark_env_vars</code> and init scripts for secrets. Off scans notebook source only.</span></label>
+                        <label class="ss-radio"><input type="checkbox" id="ss-scan-clusters"${scanClusters ? ' checked' : ''}> <span><strong>Scan cluster configurations</strong> — also check cluster <code>spark_env_vars</code> and init scripts for secrets. Off scans notebook and workspace-file source only.</span></label>
                     </div>
 
                     <div class="ss-group">
@@ -8291,6 +8291,7 @@ def get_main_html():
             // distinct credentials behind them (the unit you rotate), and the
             // objects to clean up.
             const nb = Number(s.notebook_findings || 0);
+            const fi = Number(s.file_findings || 0);
             const cl = Number(s.cluster_findings || 0);
             html += `
                 <div class="card secret-summary">
@@ -8318,6 +8319,10 @@ def get_main_html():
                         <div class="sx-meta">
                             <div class="sx-meta-val">${nb}</div>
                             <div class="sx-meta-label">In notebooks</div>
+                        </div>
+                        <div class="sx-meta">
+                            <div class="sx-meta-val">${fi}</div>
+                            <div class="sx-meta-label">In files</div>
                         </div>
                         <div class="sx-meta">
                             <div class="sx-meta-val">${cl}</div>
@@ -8377,8 +8382,9 @@ def get_main_html():
                             <input id="sx-search" type="text" placeholder="Search object, path, detector or hash…" autocomplete="off">
                         </div>
                         <select id="sx-source">
-                            <option value="">Notebooks &amp; clusters</option>
+                            <option value="">All types</option>
                             <option value="notebook">Notebooks</option>
+                            <option value="file">Files</option>
                             <option value="cluster">Cluster configs</option>
                         </select>
                         ${detMs}
@@ -8560,7 +8566,7 @@ def get_main_html():
             }
             tbody.innerHTML = rows.map(r => `
                 <tr>
-                    <td class="sx-src">${escapeHtml(r.source_type)}</td>
+                    <td class="sx-src">${escapeHtml({notebook:'Notebook',file:'File',cluster:'Cluster'}[r.source_type] || r.source_type)}</td>
                     <td class="sx-wrap">${escapeHtml(r.detector_name)}</td>
                     <td>
                         <div class="sx-obj-name">${r.object_url
@@ -15265,7 +15271,7 @@ def _findings_cte(has_nb, has_cl):
     parts = []
     if has_nb:
         parts.append(f"""
-        SELECT 'notebook' AS source_type, s.workspace_id, s.run_id,
+        SELECT COALESCE(s.object_type, 'notebook') AS source_type, s.workspace_id, s.run_id,
                s.notebook_id AS object_id, s.notebook_name AS object_name,
                s.notebook_path AS object_path,
                s.detector_name, s.secret_sha256, s.verified, s.scan_time
@@ -15474,6 +15480,7 @@ def api_secrets_summary():
       COUNT(DISTINCT workspace_id)                      AS affected_workspaces,
       SUM(CASE WHEN verified THEN 1 ELSE 0 END)         AS verified_findings,
       SUM(CASE WHEN source_type = 'notebook' THEN 1 ELSE 0 END) AS notebook_findings,
+      SUM(CASE WHEN source_type = 'file'     THEN 1 ELSE 0 END) AS file_findings,
       SUM(CASE WHEN source_type = 'cluster'  THEN 1 ELSE 0 END) AS cluster_findings,
       MAX(scan_time)                                    AS last_scan_time,
       (SELECT COUNT(*) FROM latest_runs)                AS workspaces_scanned
@@ -15636,15 +15643,18 @@ def _secret_object_url(row):
         return None
     host = dep if dep.startswith('http') else 'https://' + dep
     oid = str(row.get('object_id') or '').strip()
-    if row.get('source_type') == 'cluster':
+    stype = row.get('source_type')
+    path = str(row.get('object_path') or '').strip()
+    if stype == 'cluster':
         return f'{host}/compute/clusters/{oid}' if oid else None
+    if stype == 'file':
+        # Workspace file: open by path in the workspace browser, not the notebook
+        # editor (opening a .py/.json file as a notebook is wrong).
+        return f'{host}/#workspace{path if path.startswith("/") else "/" + path}' if path else None
     # notebook
     if oid:
         return f'{host}/#notebook/{oid}'
-    path = str(row.get('object_path') or '').strip()
-    if path:
-        return f'{host}/#workspace{path if path.startswith("/") else "/" + path}'
-    return None
+    return f'{host}/#workspace{path if path.startswith("/") else "/" + path}' if path else None
 
 
 @app.route('/api/secrets/findings')
@@ -15666,7 +15676,7 @@ def api_secrets_findings():
         where.append("workspace_id = :workspace_id")
         params['workspace_id'] = workspace_id
     source_type = request.args.get('source_type')
-    if source_type in ('notebook', 'cluster'):
+    if source_type in ('notebook', 'file', 'cluster'):
         where.append("source_type = :source_type")
         params['source_type'] = source_type
     detector = request.args.get('detector')
@@ -16611,8 +16621,8 @@ def _alert_templates():
         'total_findings': {
             'label': 'Hardcoded Credentials Detected',
             'description': (
-                'The latest scan found hardcoded secrets in notebook source or '
-                'cluster configuration.'
+                'The latest scan found hardcoded secrets in notebook source, '
+                'workspace files, or cluster configuration.'
             ),
             'column': 'total_findings',
             'default_threshold': 0,
@@ -17490,7 +17500,7 @@ COLLECTION_JOBS = {
     'secrets': {
         'label': 'Secret Scanner',
         'group': 'Secrets',
-        'description': 'Scans notebook source and cluster environment variables for credentials.',
+        'description': 'Scans notebook source, workspace files, and cluster environment variables for credentials.',
         'env': ('SECRETS_JOB_ID', 'DATABRICKS_JOB_ID_SECRETS_JOB'),
         'feeds': 'Credential exposure, secret findings',
         'job_name_match': 'Secrets Scanner',

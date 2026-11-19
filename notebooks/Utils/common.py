@@ -246,6 +246,7 @@ def create_notebooks_secret_scan_results_table():
         notebook_id STRING,
         notebook_path STRING,
         notebook_name STRING,
+        object_type STRING,
         detector_name STRING,
         secret_sha256 STRING,
         source_file STRING,
@@ -260,17 +261,24 @@ def create_notebooks_secret_scan_results_table():
     PARTITIONED BY (scan_date)
     """
     )
+    # Migration: add object_type to tables created before it existed (idempotent).
+    try:
+        spark.sql(f"ALTER TABLE {schema}.notebooks_secret_scan_results "
+                  f"ADD COLUMNS IF NOT EXISTS (object_type STRING)")
+    except Exception:
+        pass  # already present, or runtime without IF NOT EXISTS support
     _set_table_comment(
         schema, "notebooks_secret_scan_results",
-        "TruffleHog secret scan results for Databricks notebooks. Identifies potential hardcoded secrets, API keys, "
-        "and credentials in notebook source code. When secrets_found=0 and other fields are NULL, it means the "
-        "workspace was scanned and no secrets were detected."
+        "TruffleHog secret scan results for Databricks notebooks and workspace files. Identifies potential hardcoded "
+        "secrets, API keys, and credentials in notebook source and text/config files (binary files are not scanned). "
+        "When secrets_found=0 and other fields are NULL, it means the workspace was scanned and no secrets were detected."
     )
     _set_column_comments(schema, "notebooks_secret_scan_results", {
-        "workspace_id":  "Databricks workspace ID where the notebook resides",
-        "notebook_id":   "Databricks notebook ID that was scanned",
-        "notebook_path": "Full workspace path to the scanned notebook",
-        "notebook_name": "Display name of the scanned notebook",
+        "workspace_id":  "Databricks workspace ID where the object resides",
+        "notebook_id":   "Databricks object ID that was scanned (notebook or workspace file)",
+        "notebook_path": "Full workspace path to the scanned object",
+        "notebook_name": "Display name of the scanned object",
+        "object_type":   "Kind of object scanned: 'notebook' or 'file' (a workspace file such as a .py, .sql, or config file)",
         "detector_name": "TruffleHog detector that matched (e.g. AWS, Slack, GitHub, GitLab)",
         "secret_sha256": "SHA-256 hash of the detected secret value — the actual secret is never stored",
         "source_file":   "Source file within the notebook where the secret was detected",

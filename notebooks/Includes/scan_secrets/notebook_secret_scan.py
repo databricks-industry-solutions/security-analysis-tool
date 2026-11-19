@@ -355,6 +355,41 @@ except Exception as e:
 os.makedirs(Config.TEMP_NOTEBOOKS_DIR, exist_ok=True)
 logger.info(f"Temporary directory created: {Config.TEMP_NOTEBOOKS_DIR}")
 
+# Binary / opaque object types we do NOT scan. Secrets live in source and config,
+# not compiled artifacts or media; scanning these is low-signal, noisy, and slow
+# on large workspaces. Notebooks (no file extension) and text source/config files
+# (.py, .sql, .json, .yaml, .sh, .txt, ...) are scanned; everything below is skipped.
+_SKIP_EXTENSIONS = frozenset({
+    ".whl", ".jar", ".zip", ".tar", ".gz", ".tgz", ".bz2", ".7z", ".rar",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp", ".pdf",
+    ".parquet", ".orc", ".avro", ".bin", ".so", ".dll", ".dylib", ".class",
+    ".pyc", ".pyo", ".exe", ".o", ".a", ".lib", ".woff", ".woff2", ".ttf",
+    ".eot", ".mp4", ".mov", ".mp3", ".wav", ".db", ".sqlite", ".pkl", ".pickle",
+    ".model", ".pt", ".pth", ".h5", ".onnx", ".npy", ".npz",
+})
+
+
+def _object_ext(name: str) -> str:
+    return os.path.splitext(name or "")[1].lower()
+
+
+def _is_scannable(name: str) -> bool:
+    """False for known binary/opaque object types (skipped at discovery)."""
+    return _object_ext(name) not in _SKIP_EXTENSIONS
+
+
+def _classify_object_type(name: str, raw_type: Optional[str] = None) -> str:
+    """'notebook' or 'file' for the results table.
+
+    Uses the discovery source's explicit object type when available
+    (workspace/list and unified-search both return NOTEBOOK vs FILE); otherwise
+    falls back to the extension — a workspace notebook has no file extension,
+    anything with one is a plain file.
+    """
+    if raw_type:
+        return "notebook" if str(raw_type).upper() == "NOTEBOOK" else "file"
+    return "notebook" if _object_ext(name) == "" else "file"
+
 # Verify TruffleHog binary exists
 if not os.path.exists(Config.TRUFFLEHOG_BINARY):
     error_msg = f"""
@@ -585,12 +620,25 @@ def discover_notebooks_via_workspace_list(time_filter_enabled: bool,
             with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
                 kept.extend(o for o in pool.map(_keep_if_recent, need_meta) if o is not None)
 
-    # Normalize to the {id, name, workspace_path} shape the batch processor expects.
-    return [{
-        "id": str(obj.get("object_id", "")),
-        "name": obj.get("path", "").rsplit("/", 1)[-1],
-        "workspace_path": obj.get("path", "").rsplit("/", 1)[0],
-    } for obj in kept]
+    # Normalize to the {id, name, workspace_path, object_type} shape the batch
+    # processor expects; skip binary/opaque files (not worth scanning for secrets).
+    items = []
+    skipped = 0
+    for obj in kept:
+        full = obj.get("path", "")
+        name = full.rsplit("/", 1)[-1]
+        if not _is_scannable(name):
+            skipped += 1
+            continue
+        items.append({
+            "id": str(obj.get("object_id", "")),
+            "name": name,
+            "workspace_path": full.rsplit("/", 1)[0],
+            "object_type": _classify_object_type(name, obj.get("object_type")),
+        })
+    if skipped:
+        logger.info(f"Skipped {skipped} binary/opaque file(s) from scanning")
+    return items
 
 def get_fuse_path(workspace_path: str) -> Optional[str]:
     """Find the actual file on the FUSE mount by trying common extensions."""
@@ -829,15 +877,17 @@ def insert_secret_scan_results_batch(workspace_id: str,
         notebook_id = notebook_metadata.get("object_id", "")
         notebook_path = notebook_metadata.get("path", "")
         notebook_name = notebook_metadata.get("name", "")
+        object_type = notebook_metadata.get("object_type", "notebook")
         secrets_found = notebook_metadata.get("secrets_found", 0)
 
         for secret in notebook_metadata.get("secret_details", []):
             rows.append(
-                "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, cast({} as timestamp))".format(
+                "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, cast({} as timestamp))".format(
                     _sql_str(workspace_id),
                     _sql_str(notebook_id),
                     _sql_str(notebook_path),
                     _sql_str(notebook_name),
+                    _sql_str(object_type),
                     _sql_str(secret.get("DetectorName", "Unknown")),
                     _sql_str(secret.get("Raw_SHA", "")),
                     _sql_str(secret.get("SourceFile", "")),
@@ -871,7 +921,7 @@ def _insert_values(rows: List[str]) -> None:
     spark.sql(
         f"""
         INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
-        (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
+        (workspace_id, notebook_id, notebook_path, notebook_name, object_type, detector_name,
          secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
         VALUES {", ".join(rows)}
         """
@@ -1115,7 +1165,9 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Dict[str, 
 
     temp_path = f"{parent_path}/{notebook_name}"
     path = quote(temp_path)
-    metadata = {"object_id": notebook_id, "path": path, "name": notebook_name}
+    object_type = notebook.get("object_type") or _classify_object_type(notebook_name)
+    metadata = {"object_id": notebook_id, "path": path, "name": notebook_name,
+                "object_type": object_type}
     scan_file = os.path.join(scan_dir, str(notebook_id))
 
     try:
@@ -1277,7 +1329,21 @@ def process_search_response(response: Dict[str, Any], results_list: List[Dict[st
         logger.warning("Empty response received")
         return None
 
-    _process_notebook_batch(response.get("results", []), results_list,
+    # Skip binary/opaque files and tag each object's type (notebook vs file) so
+    # findings record and display the right kind.
+    items = []
+    skipped = 0
+    for r in response.get("results", []):
+        name = r.get("name", "") or (r.get("workspace_path", "") or "").rsplit("/", 1)[-1]
+        if not _is_scannable(name):
+            skipped += 1
+            continue
+        r["object_type"] = _classify_object_type(name, r.get("type") or r.get("object_type"))
+        items.append(r)
+    if skipped:
+        logger.info(f"Skipped {skipped} binary/opaque file(s) from scanning")
+
+    _process_notebook_batch(items, results_list,
                             output_filename, run_id, workspace_id)
     return response.get("next_page_token")
 
