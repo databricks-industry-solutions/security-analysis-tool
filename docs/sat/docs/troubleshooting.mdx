@@ -122,7 +122,7 @@ reach out, and only matter for the features that use them:
   restricted-egress environment, allow-list `raw.githubusercontent.com`,
   `github.com`, `release-assets.githubusercontent.com` and
   `objects.githubusercontent.com` (all HTTPS/443 — the download redirects across
-  them, so an incomplete list still fails; see the [Secret Scanning](./functionality/cluster-secrets-scanning.mdx)
+  them, so an incomplete list still fails; see the [Secret Scanning](./functionality/secret-scanning.mdx)
   firewall list) or provide an internal mirror.
 - **Classic compute** pip-installs `requests` and `PyYAML` from PyPI for the
   scanners (serverless already has them). On classic compute without PyPI access,

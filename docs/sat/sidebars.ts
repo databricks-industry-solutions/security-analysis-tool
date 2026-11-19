@@ -29,7 +29,7 @@ const sidebars = {
       items: [
         'functionality/the-app',
         'functionality/permissions-analysis',
-        'functionality/cluster-secrets-scanning',
+        'functionality/secret-scanning',
       ],
     },
     {
