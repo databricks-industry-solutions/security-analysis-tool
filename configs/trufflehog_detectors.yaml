@@ -54,12 +54,10 @@ settings:
     max_workers: 16  # Threads for I/O-bound work (workspace/list, get-status,
                      # notebook export/FUSE copy). I/O-bound, so > core count is fine.
 
-  file_paths:
-    temp_config: "/tmp/trufflehog_config.yaml"
-    temp_notebooks: "/tmp/notebooks"
-    results_log: "/tmp/trufflehog_scan_results.json"
-    scan_batch_dir: "/tmp/notebook_scan_batch"  # Dir where a chunk of notebooks is
-                                                # materialized for a single TruffleHog pass
+  # NOTE: scratch file paths are intentionally NOT configured here. The scanners
+  # always write under a process-owned tempfile.mkdtemp() directory, because a
+  # fixed /tmp path breaks on reused serverless containers owned by a different OS
+  # user ("Permission denied"). Do not re-add a file_paths block with /tmp paths.
 
   search_settings:
     page_size: 50
