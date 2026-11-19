@@ -59,15 +59,16 @@ current_workspace = get_context().workspaceId
 # MAGIC %md
 # MAGIC ##### The analysis executes across all Databricks workspaces configured for SAT. Eligible workspaces are determined based on entries in **`workspace_configs.csv`** and the **`security_analysis.account_workspaces`** table where the **`analysis_enabled`** flag is set to **`True`**.
 # MAGIC ##### If a workspace does not appear in the results, verify that it is correctly listed and that **`analysis_enabled = True`** in both configuration sources.
-# MAGIC ##### When running the job/notebook using **Serverless Compute**, the analysis is limited to the **current workspace**. To scan all eligible workspaces, use a Classic Compute cluster.
+# MAGIC ##### Every eligible workspace is scanned on any compute. On **Serverless Compute**, reaching other workspaces requires the account to be enrolled in **serverless cross-workspace access** and the SAT service principal to be a **workspace admin** on each target; workspaces that can't be reached are **skipped and recorded** (not failed). **Classic Compute** can reach any workspace the service principal administers.
 
 # COMMAND ----------
 
-serverless_filter=""
-if is_serverless:
-    serverless_filter = " where workspace_id = '" + current_workspace + "'"
-
-workspacesdf = spark.sql(f"select * from `all_workspaces` {serverless_filter}")
+# Every analysis_enabled workspace is a candidate, on serverless and classic
+# alike. (This used to hard-limit serverless to the current workspace; serverless
+# can now reach other workspaces when the account is in the cross-workspace access
+# preview and the SP is an admin there. Unreachable workspaces are skipped and
+# recorded below, not failed -- the same soft-skip the permissions collector uses.)
+workspacesdf = spark.sql("select * from `all_workspaces`")
 workspaces = workspacesdf.collect()
 
 if workspaces is None or len(workspaces) == 0:
@@ -95,7 +96,7 @@ if workspaces is None or len(workspaces) == 0:
     """)
     dfexist = getWorkspaceConfig()
     dfexist.filter(dfexist.analysis_enabled == True).createOrReplaceTempView("all_workspaces")
-    workspacesdf = spark.sql(f"select * from `all_workspaces` {serverless_filter}")
+    workspacesdf = spark.sql("select * from `all_workspaces`")
     workspaces = workspacesdf.collect()
     loggr.info("Self-registered current workspace; %d workspace(s) now eligible", len(workspaces))
 
@@ -251,6 +252,55 @@ def _scan_clusters_enabled():
     return True
 
 
+# Account service-principal credentials, read once from the UC secrets in the
+# results schema (the same place the child scanners read them). Used only for the
+# per-workspace reachability check below.
+def _sat_cred(key):
+    parts = (json_.get("analysis_schema_name") or "").split(".")
+    if len(parts) >= 2:
+        try:
+            return dbutils.secrets.get(catalog=parts[0].strip("`"), schema=parts[1].strip("`"), key=key)
+        except Exception:  # noqa: BLE001
+            return ""
+    return ""
+
+
+_SCAN_CLIENT_ID = _sat_cred("client-id")
+_SCAN_CLIENT_SECRET = _sat_cred(json_.get("client_secret_key", "client-secret"))
+
+
+def _workspace_reachable(wsrow):
+    """Whether this compute + the SAT service principal can reach wsrow's workspace
+    API. The current workspace (where the job runs) is always reachable. A remote
+    workspace is reachable only when the account has serverless cross-workspace
+    access (or the job runs on classic compute) and the SP is a workspace admin
+    there. Unreachable workspaces are skipped and recorded, not failed -- the same
+    soft-skip the permissions collector uses."""
+    if str(wsrow.workspace_id) == str(current_workspace):
+        return True
+    if not (_SCAN_CLIENT_ID and _SCAN_CLIENT_SECRET):
+        loggr.info("No account SP credentials set; cannot reach remote workspace %s — skipping.",
+                   wsrow.workspace_id)
+        return False
+    hostname = "https://" + wsrow.deployment_url
+    ws_json = dict(json_)
+    ws_json.update({
+        "url": hostname,
+        "workspace_id": wsrow.workspace_id,
+        "cloud_type": getCloudType(hostname),
+        "client_id": _SCAN_CLIENT_ID,
+        "client_secret": _SCAN_CLIENT_SECRET,
+    })
+    try:
+        from core.dbclient import SatDBClient
+        SatDBClient(ws_json).test_connection(master_acct=False)
+        return True
+    except Exception as e:  # noqa: BLE001
+        loggr.warning("Workspace %s (%s) not reachable; skipping: %s",
+                      wsrow.workspace_id, getattr(wsrow, "workspace_name", ""), str(e)[:200])
+        return False
+
+
 def runTruffleHogScanForAllWorkspaces():
     """
     Run secret scanning (notebooks + clusters) for all configured workspaces.
@@ -275,7 +325,28 @@ def runTruffleHogScanForAllWorkspaces():
             "this run proves nothing about the presence of secrets."
         )
 
-    loggr.info(f"Running secret scans on {len(scan_workspaces)} workspace(s)")
+    # Keep only workspaces this compute + SP can actually reach. Unreachable ones
+    # (serverless without cross-workspace access, or the SP not an admin there) are
+    # recorded and skipped, not failed -- consistent with the permissions collector.
+    reachable, unreachable = [], []
+    for ws in scan_workspaces:
+        (reachable if _workspace_reachable(ws) else unreachable).append(ws)
+    if unreachable:
+        labels = ", ".join(f"{(w.workspace_name or 'unknown')} ({w.workspace_id})" for w in unreachable)
+        loggr.warning("Skipping %d unreachable workspace(s): %s", len(unreachable), labels)
+        print(f"⚠️  Skipping {len(unreachable)} unreachable workspace(s) — no cross-workspace "
+              f"access or the service principal is not a workspace admin there: {labels}")
+    scan_workspaces = reachable
+
+    if not scan_workspaces:
+        raise RuntimeError(
+            "No workspaces were reachable for secret scanning. On serverless, enroll the "
+            "account in cross-workspace access and make the SAT service principal a workspace "
+            "admin on each target workspace, or run collection on classic compute. Failing "
+            "rather than reporting an empty scan as a clean result."
+        )
+
+    loggr.info(f"Running secret scans on {len(scan_workspaces)} reachable workspace(s)")
 
     # Cluster-config scanning can be turned off in the app's Secrets scan settings;
     # notebook scanning always runs.
