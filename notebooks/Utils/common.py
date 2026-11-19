@@ -261,12 +261,19 @@ def create_notebooks_secret_scan_results_table():
     PARTITIONED BY (scan_date)
     """
     )
-    # Migration: add object_type to tables created before it existed (idempotent).
+    # Migration: add object_type to tables created before it existed. ADD COLUMNS
+    # does NOT support IF NOT EXISTS on all runtimes (parse error), so check the
+    # live schema first and only add when missing. Log on failure rather than
+    # swallowing it -- a missing column makes every finding INSERT fail.
     try:
-        spark.sql(f"ALTER TABLE {schema}.notebooks_secret_scan_results "
-                  f"ADD COLUMNS IF NOT EXISTS (object_type STRING)")
-    except Exception:
-        pass  # already present, or runtime without IF NOT EXISTS support
+        _cols = [f.name.lower() for f in
+                 spark.table(f"{schema}.notebooks_secret_scan_results").schema.fields]
+        if "object_type" not in _cols:
+            spark.sql(f"ALTER TABLE {schema}.notebooks_secret_scan_results "
+                      f"ADD COLUMNS (object_type STRING)")
+            print("Added object_type column to notebooks_secret_scan_results")
+    except Exception as e:  # noqa: BLE001
+        print(f"WARNING: could not ensure object_type column exists: {e}")
     _set_table_comment(
         schema, "notebooks_secret_scan_results",
         "TruffleHog secret scan results for Databricks notebooks and workspace files. Identifies potential hardcoded "
