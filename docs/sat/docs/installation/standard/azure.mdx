@@ -138,6 +138,10 @@ The installation script will guide you through the setup process. Here's what it
 After `install.sh` deploys the app, open it (**Compute → Apps → security-analysis**) and complete the in-app setup — results catalog/schema, SQL warehouse, and (optionally) account credentials for account-wide data. Permissions Analysis is built into the app; there is no separate app to configure.
 </Admonition>
 
+<Admonition type="tip" title="Scanning multiple workspaces">
+To cover more than the workspace SAT is installed in, add the SAT service principal as a **workspace admin** on each workspace you want scanned, then in the app open **Data Collection → Manage**, set **Compute & scope** to **Multiple workspaces** (switching to Multiple runs a workspace sync for you), and confirm the panel's "Will scan: N workspaces" count. Use **Manage → Sync workspaces** any time you later add or remove the service principal as an admin. See the [usage guide](../../usage.mdx) for the full workflow.
+</Admonition>
+
 Congratulations! 🎉 You've successfully installed SAT on Azure Databricks.
 
 <Admonition type="success" title="Installation Complete">

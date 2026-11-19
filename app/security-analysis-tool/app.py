@@ -7678,10 +7678,11 @@ def get_main_html():
                                 </div>
                                 <button class="btn btn-sm btn-ghost" onclick="redeployCollection(this)">Redeploy</button>
                             </div>
-                            <div class="manage-action">
-                                <div class="manage-action-text">
+                            <div class="manage-action" style="align-items:flex-start;">
+                                <div class="manage-action-text" style="flex:1;">
                                     <div class="manage-action-title">Sync workspaces</div>
                                     <div class="manage-action-sub">Discover the account's workspaces and mark which ones to scan. A workspace is enabled when the SAT service principal is a <strong>workspace admin</strong> there — add it as an admin on a new workspace, then sync to pick it up (remove it and sync to drop the workspace). The enabled set is only scanned when <strong>Compute &amp; scope</strong> above is set to <strong>Multiple workspaces</strong> (switching to that runs a sync for you). Requires account credentials.</div>
+                                    <div id="sync-ws-count" style="font-size:.8em;color:var(--text-muted);margin-top:6px;"></div>
                                 </div>
                                 <button class="btn btn-sm btn-ghost" onclick="syncWorkspaces(this)">Sync</button>
                             </div>
@@ -7732,7 +7733,42 @@ def get_main_html():
                     if (opt) { opt.disabled = true; opt.textContent = 'Classic (not available in this workspace)'; }
                     if (cs.value === 'classic') cs.value = 'serverless';
                 }
+                renderScanTargetCount(r);
             } catch (e) { /* non-fatal */ }
+        }
+
+        // How many workspaces the next scan will cover, given scope + the enabled
+        // (service-principal-administered) set. Edge cases handled explicitly:
+        //  - scope "current": always exactly this workspace, whatever is enabled;
+        //  - scope "all" with N enabled: N (reachable ones; serverless skips the rest);
+        //  - scope "all" with 0 enabled: the scanner self-registers the current one;
+        //  - unknown (no account creds / table not created yet): say how to populate it.
+        function renderScanTargetCount(r) {
+            const el = document.getElementById('sync-ws-count');
+            if (!el) return;
+            const scope = r.scan_scope || 'current';
+            const en = r.enabled_workspaces;   // null when unknown
+            const total = r.registered_workspaces;
+            const serverlessNote = (r.compute !== 'classic')
+                ? ' On serverless, any the service principal can\'t reach are skipped and recorded.' : '';
+            if (scope !== 'all') {
+                el.innerHTML = '<strong>Will scan: this workspace only (1).</strong>' +
+                    (en != null && en > 1
+                        ? ' ' + en + ' workspaces are enabled — switch Compute &amp; scope to <strong>Multiple workspaces</strong> to scan them.'
+                        : '');
+                return;
+            }
+            if (en == null) {
+                el.innerHTML = 'Scope is <strong>Multiple workspaces</strong>. Set account credentials and click <strong>Sync</strong> to populate the workspace list.';
+                return;
+            }
+            if (en === 0) {
+                el.innerHTML = '<strong>Will scan: the current workspace</strong> (no workspaces enabled yet — click <strong>Sync</strong> to enable every workspace the service principal administers).';
+                return;
+            }
+            el.innerHTML = '<strong>Will scan: ' + en + ' workspace' + (en === 1 ? '' : 's') + '</strong>' +
+                (total != null && total > en ? ' of ' + total + ' in the account' : '') +
+                ' (every workspace the service principal administers).' + serverlessNote;
         }
 
         async function applyComputeControl(btn) {
@@ -18488,6 +18524,30 @@ def _auto_sync_workspaces_if_multi():
         return {'error': str(exc)[:200]}
 
 
+def _scan_target_counts():
+    """(enabled, total) workspace counts in account_workspaces, as the app SP.
+
+    Returns (None, None) when it can't be determined yet -- no warehouse, or the
+    account_workspaces table doesn't exist (a fresh install before the initializer
+    has created it). `enabled` is the number with analysis_enabled = true (the set
+    scanned under "Multiple workspaces"); `total` is every registered workspace."""
+    try:
+        wh = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID')
+        if not wh:
+            return (None, None)
+        acct_ws = f"`{CATALOG}`.`{SCHEMA}`.account_workspaces"
+        rows = _sql_rows(
+            _sp_workspace_client(), wh,
+            f"SELECT COUNT_IF(analysis_enabled), COUNT(*) FROM {acct_ws}")
+        if not rows:
+            return (None, None)
+        enabled, total = rows[0][0], rows[0][1]
+        return (int(enabled) if enabled is not None else 0,
+                int(total) if total is not None else 0)
+    except Exception:  # noqa: BLE001
+        return (None, None)
+
+
 _classic_available_cache = None
 
 
@@ -18557,11 +18617,14 @@ def api_collection_compute():
         return jsonify({'error': 'Complete first-run setup first.'}), 409
 
     if request.method == 'GET':
+        enabled_ws, total_ws = _scan_target_counts()
         return jsonify({
             'compute': _job_compute(),
             'scan_scope': _scan_scope(),
             'collect_notebooks': _collect_notebooks(),
             'classic_available': _classic_compute_available(),
+            'enabled_workspaces': enabled_ws,
+            'registered_workspaces': total_ws,
         })
 
     payload = request.get_json(silent=True) or {}
