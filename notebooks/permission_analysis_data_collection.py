@@ -511,7 +511,7 @@ if ACCOUNT_MODE:
     print(f"   Cloud Type: {cloud_type}")
 
     # First, do a direct HTTP test to get raw error messages (SDK swallows details)
-    # Note: Skip this test for Azure since it uses MSAL authentication
+    # Note: skipped for Azure here; the AccountClient OAuth path below covers it.
     import requests
     http_test_error = None
 
@@ -562,6 +562,46 @@ if ACCOUNT_MODE:
                 'status': 'pending',
                 'error': None
             }
+
+        # Register every RUNNING account workspace in account_workspaces so the
+        # secret scanner (and workspace-scoped collection) pick them up
+        # automatically -- no manual SQL. A newly created workspace shows up here
+        # on the next collection run; add the SAT service principal as a workspace
+        # admin and it gets scanned. Reachability (SP access) is the effective
+        # gate, so analysis_enabled defaults true on insert and is NOT overwritten
+        # on update -- an explicit opt-out is preserved.
+        try:
+            def _ws_deployment_url(ws):
+                if getattr(ws, "azure_workspace_info", None):
+                    return f"{ws.deployment_name}.azuredatabricks.net"
+                if getattr(ws, "gcp_managed_network_config", None):
+                    return f"{ws.workspace_id}.gcp.databricks.com"
+                return f"{ws.deployment_name}.cloud.databricks.com"
+
+            _vals = []
+            for ws in workspaces_to_collect:
+                _wid = str(ws.workspace_id).replace("'", "''")
+                _name = (ws.workspace_name or "").replace("'", "''")
+                _dep = _ws_deployment_url(ws).replace("'", "''")
+                _status = ws.workspace_status.value if ws.workspace_status else "RUNNING"
+                _vals.append(f"('{_wid}', '{_dep}', '{_name}', '{_status}', true)")
+            if _vals:
+                spark.sql(f"""
+                    MERGE INTO `{CATALOG}`.`{SCHEMA}`.account_workspaces t
+                    USING (SELECT * FROM VALUES {", ".join(_vals)}
+                           AS s(workspace_id, deployment_url, workspace_name, workspace_status, analysis_enabled))
+                    ON t.workspace_id = s.workspace_id
+                    WHEN MATCHED THEN UPDATE SET
+                        t.deployment_url = s.deployment_url,
+                        t.workspace_name = s.workspace_name,
+                        t.workspace_status = s.workspace_status
+                    WHEN NOT MATCHED THEN INSERT
+                        (workspace_id, deployment_url, workspace_name, workspace_status, analysis_enabled)
+                        VALUES (s.workspace_id, s.deployment_url, s.workspace_name, s.workspace_status, s.analysis_enabled)
+                """)
+                print(f"   ✓ Registered {len(_vals)} workspace(s) in account_workspaces for scanning")
+        except Exception as _reg_err:  # noqa: BLE001
+            print(f"   ⚠ Could not register workspaces in account_workspaces: {_reg_err}")
 
     except Exception as e:
         # Try to extract detailed error message from various exception attributes
