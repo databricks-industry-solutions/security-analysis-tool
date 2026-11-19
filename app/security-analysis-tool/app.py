@@ -7681,7 +7681,7 @@ def get_main_html():
                             <div class="manage-action">
                                 <div class="manage-action-text">
                                     <div class="manage-action-title">Sync workspaces</div>
-                                    <div class="manage-action-sub">Discover the account's workspaces and mark which ones to scan. A workspace is enabled when the SAT service principal is a <strong>workspace admin</strong> there — add it as an admin on a new workspace, then sync to pick it up (remove it and sync to drop the workspace). Requires account credentials.</div>
+                                    <div class="manage-action-sub">Discover the account's workspaces and mark which ones to scan. A workspace is enabled when the SAT service principal is a <strong>workspace admin</strong> there — add it as an admin on a new workspace, then sync to pick it up (remove it and sync to drop the workspace). The enabled set is only scanned when <strong>Compute &amp; scope</strong> above is set to <strong>Multiple workspaces</strong> (switching to that runs a sync for you). Requires account credentials.</div>
                                 </div>
                                 <button class="btn btn-sm btn-ghost" onclick="syncWorkspaces(this)">Sync</button>
                             </div>
@@ -7752,6 +7752,16 @@ def get_main_html():
                     if (note) note.textContent = r.error;
                     if (btn) { btn.disabled = false; btn.textContent = label; }
                     return;
+                }
+                // Switching to Multiple auto-syncs the workspace set; surface what it found.
+                if (note && r.sync) {
+                    if (r.sync.error) {
+                        note.textContent = 'Saved. Could not auto-sync workspaces (' + r.sync.error +
+                            '). Run Manage → Sync workspaces after collection is set up.';
+                    } else if (typeof r.sync.enabled === 'number') {
+                        note.textContent = 'Saved and synced — ' + r.sync.enabled + ' of ' +
+                            r.sync.registered + ' workspace(s) enabled for scanning (SP is a workspace admin).';
+                    }
                 }
                 _scopeCache = null;  // scope changed — refresh page banners on next view
                 await loadCollectionPanel();
@@ -7888,7 +7898,14 @@ def get_main_html():
                 const reg = result.registered || 0, en = result.enabled || 0, und = result.undetermined || 0;
                 let msg = `Synced ${reg} workspace${reg === 1 ? '' : 's'} — ${en} enabled for scanning (SP is a workspace admin or current workspace).`;
                 if (und) msg += ` ${und} could not be checked and were left unchanged.`;
-                manageMsg(msg, 'ok');
+                // Guide, don't flip: if scope is still single-workspace but more than
+                // the current workspace is enabled, tell the customer to switch scope.
+                let tone = 'ok';
+                if (result.scan_scope !== 'all' && en > 1) {
+                    msg += ` Collection scope is “This workspace only”, so only the current workspace is scanned — switch to “Multiple workspaces” above to scan all ${en}.`;
+                    tone = 'warn';
+                }
+                manageMsg(msg, tone);
                 btn.disabled = false; btn.textContent = label;
                 await loadCollectionPanel({ quiet: true });
             } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = label; }
@@ -16539,6 +16556,13 @@ def api_setup_complete():
     change = _on_schema_change(previous_schema)
     if change:
         response.update(change)
+    # If the customer chose "Multiple workspaces", discover and enable the
+    # workspaces the SP administers now. Best-effort: on a first-ever setup the
+    # account_workspaces table may not exist until collection is provisioned, so
+    # this no-ops and the customer Syncs from Data Collection afterwards.
+    sync = _auto_sync_workspaces_if_multi()
+    if sync is not None:
+        response['sync'] = sync
     return jsonify(response)
 
 
@@ -18441,7 +18465,27 @@ def api_collection_sync_workspaces():
     except Exception as exc:  # noqa: BLE001
         logger.exception('workspace sync failed')
         return jsonify({'error': f'Sync failed: {str(exc)[:300]}'}), 500
-    return jsonify({'synced': True, **result})
+    # Scope is returned so the UI can guide: when scope is "current" but the SP
+    # administers other workspaces, Sync enables them but they are not scanned
+    # until the customer switches scope to "Multiple workspaces".
+    return jsonify({'synced': True, 'scan_scope': _scan_scope(), **result})
+
+
+def _auto_sync_workspaces_if_multi():
+    """When collection scope is multi-workspace, refresh account_workspaces so
+    "Multiple workspaces" works without a separate Sync click. Best-effort and
+    never raises: the scope change that triggers this has already been saved, and
+    on a brand-new install the account_workspaces table may not exist yet (the
+    initializer creates it), in which case this simply returns an error summary and
+    the customer can Sync once collection has been provisioned. Returns the sync
+    summary dict, an {'error': ...} summary, or None when scope is not multi."""
+    if _scan_scope() != 'all':
+        return None
+    try:
+        return _sync_account_workspaces()
+    except Exception as exc:  # noqa: BLE001
+        logger.info('auto-sync after scope change skipped/failed', exc_info=True)
+        return {'error': str(exc)[:200]}
 
 
 _classic_available_cache = None
@@ -18548,8 +18592,12 @@ def api_collection_compute():
         logger.exception('re-provision after compute change failed')
         return jsonify({'error': f'Setting saved, but re-creating the jobs failed: '
                                  f'{str(exc)[:220]}'}), 500
+    # Switching to "Multiple workspaces" auto-discovers and enables the workspaces
+    # the SP administers, so the setting works without a separate Sync click.
+    sync = _auto_sync_workspaces_if_multi()
     return jsonify({'saved': True, 'compute': compute, 'scan_scope': scan_scope,
-                    'collect_notebooks': collect_notebooks, 'jobs': result.get('jobs', {})})
+                    'collect_notebooks': collect_notebooks, 'jobs': result.get('jobs', {}),
+                    'sync': sync})
 
 
 def _provisioned_job_names():

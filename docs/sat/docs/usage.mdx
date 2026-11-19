@@ -56,8 +56,14 @@ Which workspaces SAT scans is driven by whether its service principal is a
 as a workspace admin, open **Data Collection → Manage → Sync workspaces**: SAT
 lists the account's workspaces and enables the ones the service principal
 administers. It's an explicit, in-app action — no manual SQL and no re-running a
-collection job. Set scope to **Multiple workspaces** for the scans to cover more
-than the current workspace.
+collection job.
+
+Scope and sync work together: **switching collection scope to "Multiple
+workspaces" runs a sync for you**, so the common first-time path is just picking
+Multiple. The standalone **Sync workspaces** button is for refreshing the set
+afterwards when you add or remove the service principal as an admin. If you Sync
+while scope is still "This workspace only," the extra workspaces are enabled but
+not scanned until you switch to Multiple — the app tells you so.
 </Admonition>
 
 ## Step 2 — Run data collection
