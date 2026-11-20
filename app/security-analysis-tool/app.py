@@ -16714,10 +16714,15 @@ def _alert_templates():
             'default_threshold': 0,
             'default_operator': 'GREATER_THAN',
             'severity': 'high',
-            'query': f"""SELECT COUNT(*) AS total_findings
-FROM {NOTEBOOK_SECRETS_TABLE}
-WHERE secret_sha256 IS NOT NULL
-  AND run_id = (SELECT MAX(run_id) FROM {NOTEBOOK_SECRETS_TABLE})""",
+            'query': f"""SELECT
+  (SELECT COUNT(*) FROM {NOTEBOOK_SECRETS_TABLE}
+    WHERE secret_sha256 IS NOT NULL
+      AND run_id = (SELECT MAX(run_id) FROM {NOTEBOOK_SECRETS_TABLE}))
+  +
+  (SELECT COUNT(*) FROM {CLUSTER_SECRETS_TABLE}
+    WHERE secret_sha256 IS NOT NULL
+      AND run_id = (SELECT MAX(run_id) FROM {CLUSTER_SECRETS_TABLE}))
+  AS total_findings""",
         },
         'new_findings': {
             'label': 'Findings Increased Since Previous Scan',
@@ -16731,13 +16736,22 @@ WHERE secret_sha256 IS NOT NULL
             'severity': 'high',
             'query': f"""WITH runs AS (
   SELECT run_id, ROW_NUMBER() OVER (ORDER BY run_id DESC) AS rn
-  FROM (SELECT DISTINCT run_id FROM {NOTEBOOK_SECRETS_TABLE})
+  FROM (
+    SELECT run_id FROM {NOTEBOOK_SECRETS_TABLE}
+    UNION
+    SELECT run_id FROM {CLUSTER_SECRETS_TABLE}
+  )
+),
+found AS (
+  SELECT run_id, secret_sha256 FROM {NOTEBOOK_SECRETS_TABLE} WHERE secret_sha256 IS NOT NULL
+  UNION ALL
+  SELECT run_id, secret_sha256 FROM {CLUSTER_SECRETS_TABLE} WHERE secret_sha256 IS NOT NULL
 ),
 counts AS (
-  SELECT r.rn, COUNT(*) AS findings
-  FROM {NOTEBOOK_SECRETS_TABLE} s
-  JOIN runs r ON r.run_id = s.run_id
-  WHERE s.secret_sha256 IS NOT NULL AND r.rn <= 2
+  SELECT r.rn, COUNT(f.secret_sha256) AS findings
+  FROM runs r
+  LEFT JOIN found f ON f.run_id = r.run_id
+  WHERE r.rn <= 2
   GROUP BY r.rn
 )
 SELECT COALESCE(MAX(CASE WHEN rn = 1 THEN findings END), 0)
@@ -16758,7 +16772,11 @@ FROM counts""",
          CAST((unix_timestamp(current_timestamp())
                - unix_timestamp(MAX(scan_time))) / 3600 AS DOUBLE), 999999
        ) AS hours_since_scan
-FROM {NOTEBOOK_SECRETS_TABLE}""",
+FROM (
+  SELECT scan_time FROM {NOTEBOOK_SECRETS_TABLE}
+  UNION ALL
+  SELECT scan_time FROM {CLUSTER_SECRETS_TABLE}
+)""",
         },
     }
 

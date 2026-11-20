@@ -13,6 +13,10 @@ import Admonition from '@theme/Admonition';
 `./install.sh` runs locally (Python 3.9+), asks for your CLI profile and a SQL warehouse, and deploys the **security-analysis** app to your workspace. Everything else — catalog/schema, account credentials, scope, and compute — is configured in the app's setup flow after it is deployed.
 </Admonition>
 
+<Admonition type="info" title="App source folder">
+The installer uploads the app code to **`/Workspace/Applications/SAT/files/app/security-analysis-tool`**. If you deploy or redeploy the app from the **Databricks Apps UI** (Compute → Apps → security-analysis → Deploy), choose that folder as the app's **source code path**. From the CLI it's `databricks apps deploy security-analysis --source-code-path /Workspace/Applications/SAT/files/app/security-analysis-tool`.
+</Admonition>
+
 SAT can be set up on any of the cloud platforms where Databricks is hosted. Please follow the setup guide specific to your cloud provider:
 
 - [AWS Setup Guide](./aws.mdx)
