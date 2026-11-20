@@ -20,14 +20,13 @@ Execute the data collection job to build the permissions graph:
 
 ### 2. Analyze Permissions
 
-Use the interactive analysis notebooks:
+Interactive permission analysis (who can access what, escalation paths, and more)
+is provided by the Security Analysis Tool app over the collected graph. The
+detection notebooks below run as scheduled jobs the app provisions, and each
+writes its own `brickhound_*` table:
 
 | Notebook | Purpose |
 |----------|---------|
-| `01_principal_resource_analysis.py` | Query permissions: "Who can access what?" |
-| `02_escalation_paths.py` | Find privilege escalation paths |
-| `03_impersonation_analysis.py` | Analyze impersonation risks |
-| `04_advanced_reports.py` | Generate compliance reports |
 | `05_share_to_account.py` | Detect (and optionally remediate) resources shared with all account users |
 | `06_privileged_non_idp_identities.py` | Detect (and optionally remediate) privileged identities that are not IdP-managed |
 | `07_denylist_candidates.py` | Rank account groups by inactive members as account-denylist candidates |
@@ -35,8 +34,7 @@ Use the interactive analysis notebooks:
 > **Note:** `05`–`07` are **audit-log / account-SCIM based**, not graph based. They read
 > `system.access.audit`, `system.access.workspaces_latest`, and the account SCIM API
 > directly, so they do **not** require the data collection job to have run first. Each writes
-> its own `brickhound_*` table and has a scheduled job (in both `terraform/common/` and the
-> DABS template):
+> its own `brickhound_*` table and runs as a job the app provisions:
 >
 > - `05_share_to_account.py` → `brickhound_shared_to_account`. Detection-only by default; set
 >   `remediate=yes` to auto-remove the "account users" ACL entry (SP must be a member of each
@@ -58,8 +56,8 @@ https://<workspace-url>/apps/brickhound-sat
 ## Configuration
 
 BrickHound automatically uses SAT's configuration:
-- **Credentials**: From `sat_scope` secret scope
-- **Schema**: From SAT's `analysis_schema_name`
+- **Credentials**: Unity Catalog secrets in the results schema (stored by the app)
+- **Schema**: From the `analysis_schema_name` job parameter the app sets
 - **Tables**: `brickhound_vertices`, `brickhound_edges`, `brickhound_collection_metadata`, `brickhound_shared_to_account`
 
 No additional configuration needed if SAT is installed!
@@ -84,7 +82,7 @@ Both write to the same Unity Catalog schema for unified security analysis.
 - Check job logs for errors
 
 **Authentication failed?**
-- Verify SAT is installed (`sat_scope` exists)
+- Verify the app is set up and account credentials are stored (Unity Catalog secrets in the results schema)
 - Check service principal has Account Admin role
 
 **Tables not found?**

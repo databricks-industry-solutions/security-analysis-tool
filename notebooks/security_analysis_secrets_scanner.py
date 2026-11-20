@@ -28,7 +28,10 @@ hostname = (
     .getOrElse(None)
 )
 cloud_type = getCloudType(hostname)
-clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+# SatDBClient (core/dbclient.py) requires a clusterid key. On serverless this
+# resolves to the serverless cluster tag; default to "" so the key is always
+# present (the children inherit it via dict(json_)).
+clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId", "")
 json_.update(
     {
         "url": hostname,
@@ -40,40 +43,103 @@ json_.update(
 
 # COMMAND ----------
 
-dfexist = getWorkspaceConfig()
-dfexist.filter(dfexist.analysis_enabled == True ).createOrReplaceTempView(
-    "all_workspaces"
-)
-
-# COMMAND ----------
-
 import json
 from dbruntime.databricks_repl_context import get_context
 current_workspace = get_context().workspaceId
 
+# scan_scope ("current" = this workspace only; "all" = every analysis_enabled
+# workspace the service principal administers) is passed by the app as a job
+# parameter -- the same control the permissions collector honors. The secret scan
+# honors it too, so the app's "This workspace only" truly scopes secret scanning to
+# the current workspace, not just resource collection. The workspaces enabled in
+# account_workspaces (maintained by the app's Sync workspaces action) are the
+# candidate set; scan_scope decides how many of them this run actually scans.
+# Default is current-workspace.
+def _secrets_scan_scope():
+    try:
+        v = (json_.get("scan_scope") or "").strip().lower()
+        if v:
+            return v
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        return (dbutils.widgets.get("scan_scope") or "current").strip().lower()
+    except Exception:  # noqa: BLE001
+        return "current"
+
+SCAN_ALL_WORKSPACES = _secrets_scan_scope() in ("all", "all-workspaces", "multi")
+
+
+def _build_all_workspaces_view():
+    """Eligible workspaces = analysis_enabled, narrowed to the current workspace
+    unless scan_scope is 'all'. Shared by the initial build and the self-register
+    fallback so both honor the scope."""
+    d = getWorkspaceConfig()
+    e = d.filter(d.analysis_enabled == True)
+    if not SCAN_ALL_WORKSPACES:
+        e = e.filter(d.workspace_id == str(current_workspace))
+    e.createOrReplaceTempView("all_workspaces")
+
+
+_build_all_workspaces_view()
+if not SCAN_ALL_WORKSPACES:
+    loggr.info("scan_scope=current: secret scanning is limited to the current "
+               "workspace (%s). Set scope to 'Multiple workspaces' in the app to scan "
+               "every workspace the service principal administers.", current_workspace)
+
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### The analysis executes across all Databricks workspaces configured for SAT. Eligible workspaces are determined based on entries in **`workspace_configs.csv`** and the **`security_analysis.account_workspaces`** table where the **`analysis_enabled`** flag is set to **`True`**.
-# MAGIC ##### If a workspace does not appear in the results, verify that it is correctly listed and that **`analysis_enabled = True`** in both configuration sources.
-# MAGIC ##### When running the job/notebook using **Serverless Compute**, the analysis is limited to the **current workspace**. To scan all eligible workspaces, use a Classic Compute cluster.
+# MAGIC ##### The candidate workspaces are those registered in the **`account_workspaces`** table with **`analysis_enabled = True`**. That table is maintained from the app: **Data Collection → Manage → Sync workspaces** discovers the account's workspaces and enables the ones the SAT service principal is a **workspace admin** of.
+# MAGIC ##### The app's collection scope then decides how many of those are scanned: **This workspace only** scans just the current workspace; **Multiple workspaces** scans every enabled (service-principal-administered) workspace. If a workspace does not appear in the results, add the service principal as a **workspace admin** there, re-run **Sync workspaces**, and make sure scope is **Multiple workspaces**.
+# MAGIC ##### On **Serverless Compute**, reaching other workspaces requires the account to be enrolled in **serverless cross-workspace access** and the SAT service principal to be a **workspace admin** on each target; workspaces that can't be reached are **skipped and recorded** (not failed). **Classic Compute** can reach any workspace the service principal administers.
 
 # COMMAND ----------
 
-serverless_filter=""
-if is_serverless:
-    serverless_filter = " where workspace_id = '" + current_workspace + "'"
-
-workspacesdf = spark.sql(f"select * from `all_workspaces` {serverless_filter}")
-display(workspacesdf)
+# Every analysis_enabled workspace is a candidate, on serverless and classic
+# alike. (This used to hard-limit serverless to the current workspace; serverless
+# can now reach other workspaces when the account is in the cross-workspace access
+# preview and the SP is an admin there. Unreachable workspaces are skipped and
+# recorded below, not failed -- the same soft-skip the permissions collector uses.)
+workspacesdf = spark.sql("select * from `all_workspaces`")
 workspaces = workspacesdf.collect()
+
 if workspaces is None or len(workspaces) == 0:
+    # Nothing configured. The workspace this job is running in is a valid scan
+    # target on its own -- its id and URL are both available from the runtime --
+    # so register it rather than exiting with no work done. Without this the scan
+    # silently completes having scanned nothing, which reads as "no secrets found"
+    # on the dashboard and is the most misleading possible outcome for a security
+    # tool. The multi-workspace path via account_workspaces is unchanged.
     loggr.info(
-        "Workspaces are not configured for analysis, check the workspace_configs.csv and "
-        + json_["analysis_schema_name"]
-        + ".account_workspaces if analysis_enabled flag is enabled to True. Use security_analysis_initializer to auto configure workspaces for analysis. "
+        "No workspaces configured for analysis; falling back to the current "
+        "workspace (%s). To scan additional workspaces, run Data Collection -> Manage "
+        "-> Sync workspaces in the SAT app (it enables each workspace the service "
+        "principal administers in %s.account_workspaces).",
+        current_workspace, json_["analysis_schema_name"],
     )
-    # dbutils.notebook.exit("Unsuccessful analysis.")
+    deployment_url = hostname.replace("https://", "").replace("http://", "").rstrip("/")
+    spark.sql(f"""
+        INSERT INTO {json_["analysis_schema_name"]}.account_workspaces
+        SELECT '{current_workspace}', '{deployment_url}',
+               'Current workspace', 'RUNNING', True
+        WHERE NOT EXISTS (
+            SELECT 1 FROM {json_["analysis_schema_name"]}.account_workspaces
+            WHERE workspace_id = '{current_workspace}'
+        )
+    """)
+    _build_all_workspaces_view()
+    workspacesdf = spark.sql("select * from `all_workspaces`")
+    workspaces = workspacesdf.collect()
+    loggr.info("Self-registered current workspace; %d workspace(s) now eligible", len(workspaces))
+
+if workspaces is None or len(workspaces) == 0:
+    raise RuntimeError(
+        "No workspaces are eligible for secret scanning, and the current workspace "
+        f"({current_workspace}) could not be registered automatically. Check "
+        f"{json_['analysis_schema_name']}.account_workspaces. Failing rather than "
+        "reporting an empty scan as a clean result."
+    )
 
 # COMMAND ----------
 
@@ -131,7 +197,6 @@ def processTruffleHogScan(wsrow, run_id):
     hostname = "https://" + wsrow.deployment_url
     cloud_type = getCloudType(hostname)
     workspace_id = wsrow.workspace_id
-    clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
     ws_json = dict(json_)
     ws_json.update(
         {
@@ -139,7 +204,6 @@ def processTruffleHogScan(wsrow, run_id):
             "workspace_id": workspace_id,
             "workspace_name": wsrow.workspace_name,
             "cloud_type": cloud_type,
-            "clusterid": clusterid,
             "run_id": run_id,  # Add shared run_id
         }
     )
@@ -151,7 +215,7 @@ def processTruffleHogScan(wsrow, run_id):
     loggr.info(f"Running TruffleHog notebook scan for workspace: {workspace_id}")
     scan_result = dbutils.notebook.run(
         f"{basePath()}/notebooks/Includes/scan_secrets/notebook_secret_scan",
-        14400,  # 4 hour timeout for secrets scanning
+        0,  # no timeout: large workspaces must be allowed to finish
         {"json_": json.dumps(ws_json)},
     )
     loggr.info(f"Notebook scan completed for workspace: {workspace_id}")
@@ -175,7 +239,6 @@ def processClusterScan(wsrow, run_id):
     cloud_type = getCloudType(hostname)
     workspace_id = wsrow.workspace_id
 
-    clusterid = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
     ws_json = dict(json_)
     ws_json.update(
         {
@@ -183,7 +246,6 @@ def processClusterScan(wsrow, run_id):
             "workspace_id": workspace_id,
             "workspace_name": wsrow.workspace_name,
             "cloud_type": cloud_type,
-            "clusterid": clusterid,
             "run_id": run_id,  # Add shared run_id
         }
     )
@@ -194,11 +256,82 @@ def processClusterScan(wsrow, run_id):
     loggr.info(f"Running cluster config scan for workspace: {workspace_id}")
     scan_result = dbutils.notebook.run(
         f"{basePath()}/notebooks/Includes/scan_secrets/cluster_secrets_scan",
-        14400,  # 4 hour timeout for cluster scanning
+        0,  # no timeout: large workspaces must be allowed to finish
         {"json_": json.dumps(ws_json)},
     )
     loggr.info(f"Cluster scan completed for workspace: {workspace_id}")
     return scan_result
+
+
+def _scan_clusters_enabled():
+    """Whether cluster-config secret scanning runs this session.
+
+    Read from the customer's scan settings
+    (configs/custom_trufflehog_detectors.yaml -> settings.scan_clusters, written
+    by the app's Secrets scan settings), default True. Lets the app's toggle take
+    effect on the next run with no redeploy. Notebook scanning always runs.
+    """
+    try:
+        import os
+        import yaml
+        path = f"{getConfigPath()}/custom_trufflehog_detectors.yaml"
+        if os.path.exists(path):
+            doc = yaml.safe_load(open(path)) or {}
+            val = (doc.get("settings") or {}).get("scan_clusters")
+            if val is not None:
+                return bool(val)
+    except Exception as e:  # noqa: BLE001
+        loggr.warning(f"Could not read scan_clusters setting ({e}); defaulting to on")
+    return True
+
+
+# Account service-principal credentials, read once from the UC secrets in the
+# results schema (the same place the child scanners read them). Used only for the
+# per-workspace reachability check below.
+def _sat_cred(key):
+    parts = (json_.get("analysis_schema_name") or "").split(".")
+    if len(parts) >= 2:
+        try:
+            return dbutils.secrets.get(catalog=parts[0].strip("`"), schema=parts[1].strip("`"), key=key)
+        except Exception:  # noqa: BLE001
+            return ""
+    return ""
+
+
+_SCAN_CLIENT_ID = _sat_cred("client-id")
+_SCAN_CLIENT_SECRET = _sat_cred(json_.get("client_secret_key", "client-secret"))
+
+
+def _workspace_reachable(wsrow):
+    """Whether this compute + the SAT service principal can reach wsrow's workspace
+    API. The current workspace (where the job runs) is always reachable. A remote
+    workspace is reachable only when the account has serverless cross-workspace
+    access (or the job runs on classic compute) and the SP is a workspace admin
+    there. Unreachable workspaces are skipped and recorded, not failed -- the same
+    soft-skip the permissions collector uses."""
+    if str(wsrow.workspace_id) == str(current_workspace):
+        return True
+    if not (_SCAN_CLIENT_ID and _SCAN_CLIENT_SECRET):
+        loggr.info("No account SP credentials set; cannot reach remote workspace %s — skipping.",
+                   wsrow.workspace_id)
+        return False
+    hostname = "https://" + wsrow.deployment_url
+    ws_json = dict(json_)
+    ws_json.update({
+        "url": hostname,
+        "workspace_id": wsrow.workspace_id,
+        "cloud_type": getCloudType(hostname),
+        "client_id": _SCAN_CLIENT_ID,
+        "client_secret": _SCAN_CLIENT_SECRET,
+    })
+    try:
+        from core.dbclient import SatDBClient
+        SatDBClient(ws_json).test_connection(master_acct=False)
+        return True
+    except Exception as e:  # noqa: BLE001
+        loggr.warning("Workspace %s (%s) not reachable; skipping: %s",
+                      wsrow.workspace_id, getattr(wsrow, "workspace_name", ""), str(e)[:200])
+        return False
 
 
 def runTruffleHogScanForAllWorkspaces():
@@ -218,10 +351,42 @@ def runTruffleHogScanForAllWorkspaces():
     scan_workspaces = workspaces
 
     if scan_workspaces is None or len(scan_workspaces) == 0:
-        loggr.info("No workspaces configured for secret scanning")
-        return
+        # Returning normally here would mark the job SUCCEEDED having scanned
+        # nothing, which the dashboard renders as "no secrets found".
+        raise RuntimeError(
+            "No workspaces configured for secret scanning. Nothing was scanned, so "
+            "this run proves nothing about the presence of secrets."
+        )
 
-    loggr.info(f"Running secret scans on {len(scan_workspaces)} workspace(s)")
+    # Keep only workspaces this compute + SP can actually reach. Unreachable ones
+    # (serverless without cross-workspace access, or the SP not an admin there) are
+    # recorded and skipped, not failed -- consistent with the permissions collector.
+    reachable, unreachable = [], []
+    for ws in scan_workspaces:
+        (reachable if _workspace_reachable(ws) else unreachable).append(ws)
+    if unreachable:
+        labels = ", ".join(f"{(w.workspace_name or 'unknown')} ({w.workspace_id})" for w in unreachable)
+        loggr.warning("Skipping %d unreachable workspace(s): %s", len(unreachable), labels)
+        print(f"⚠️  Skipping {len(unreachable)} unreachable workspace(s) — no cross-workspace "
+              f"access or the service principal is not a workspace admin there: {labels}")
+    scan_workspaces = reachable
+
+    if not scan_workspaces:
+        raise RuntimeError(
+            "No workspaces were reachable for secret scanning. On serverless, enroll the "
+            "account in cross-workspace access and make the SAT service principal a workspace "
+            "admin on each target workspace, or run collection on classic compute. Failing "
+            "rather than reporting an empty scan as a clean result."
+        )
+
+    loggr.info(f"Running secret scans on {len(scan_workspaces)} reachable workspace(s)")
+
+    # Cluster-config scanning can be turned off in the app's Secrets scan settings;
+    # notebook scanning always runs.
+    scan_clusters = _scan_clusters_enabled()
+    if not scan_clusters:
+        loggr.info("Cluster-config scanning is OFF (scan settings); scanning notebook source only.")
+        print("ℹ️  Cluster-config scanning is OFF (scan settings) — scanning notebook source only.")
 
     # Pre-allocate a shared run_id per workspace sequentially on the main thread.
     # generate_shared_run_id() does INSERT + SELECT max(runID), which would race
@@ -257,9 +422,13 @@ def runTruffleHogScanForAllWorkspaces():
                 print(f"  ❌ Cluster scan failed for {ws_label}: {str(e)}")
                 local_failures.append(f"{ws_label}/clusters: {str(e)}")
 
-        # Notebook and cluster scans are independent — run them concurrently.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as inner:
-            for f in [inner.submit(notebook_scan), inner.submit(cluster_scan)]:
+        # Notebook scanning always runs; the cluster sub-scan runs only when
+        # enabled in the app's scan settings. Independent, so run concurrently.
+        tasks = [notebook_scan]
+        if scan_clusters:
+            tasks.append(cluster_scan)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as inner:
+            for f in [inner.submit(t) for t in tasks]:
                 f.result()
         if local_failures:
             print(f"⚠️  Scans finished WITH FAILURES for workspace: {ws_label}")
@@ -292,10 +461,11 @@ def runTruffleHogScanForAllWorkspaces():
         print(f"❌ Secret scanning completed with {len(failures)} failure(s):")
         for failure in failures:
             print(f"   • {failure}")
+        detail = "; ".join(failures)
         message = (
             f"Secret scanning failed for {len(failures)} workspace scan(s). "
             f"Results in the table are INCOMPLETE — do not treat the totals as a "
-            f"clean bill of health. See the failures listed above."
+            f"clean bill of health. Failures: {detail}"
         )
         loggr.error(message)
         raise RuntimeError(message)

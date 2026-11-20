@@ -6,10 +6,10 @@ import Admonition from '@theme/Admonition';
 
 # Overview
 
-**Security Analysis Tool (SAT)** is a comprehensive security assessment solution that analyzes your Databricks account and workspace configurations, providing actionable recommendations to help you follow Databricks security best practices.
+**Security Analysis Tool (SAT)** is a security-posture app for Databricks. It reveals **who can access what** across your account — and where that access is risky — and finds **hardcoded secrets** exposed in notebook source and cluster configurations.
 
 <Admonition type="tip" title="SAT Capabilities">
-SAT compares your workspace configurations against a curated set of security best practices and delivers detailed reports for your Databricks workspaces on **AWS**, **Azure**, and **GCP**.
+SAT builds a queryable graph of your identities, resources, and permissions across your Databricks workspaces on **AWS**, **Azure**, and **GCP**, and scans notebooks and cluster configurations for exposed credentials — surfacing access risk and secret exposure in one app.
 </Admonition>
 
 ---
@@ -24,29 +24,29 @@ Databricks has worked with thousands of customers to securely deploy its platfor
 
 <div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
 
-**🔍 Identify Security Gaps**  
-Automatically scan your Databricks environment to find deviations from security best practices.
+**🔍 See Who Can Access What**  
+Build a complete graph of users, groups, and service principals and the resources each can reach — directly or inherited through groups.
 
 </div>
 
 <div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
 
-**📊 Prioritize Risks**  
-Get recommendations ranked by severity (High, Medium, Low) to focus on the most critical issues first.
+**🧭 Spot Risky Access**  
+Surface privilege-escalation paths to admin roles and impersonation / lateral-movement risk via jobs and clusters.
 
 </div>
 
 <div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
 
-**📚 Access Documentation**  
-Each recommendation includes direct links to relevant Databricks documentation for easy implementation.
+**🔑 Find Exposed Secrets**  
+Detect hardcoded credentials in notebook source and cluster configurations, with your own custom detection rules.
 
 </div>
 
 <div style={{padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px'}}>
 
-**✅ Verify Compliance**  
-Ensure your configurations align with industry standards and organizational security policies.
+**📋 Audit-Ready Reports**  
+Over-privileged users, orphaned resources, high-risk principals, and resources shared to all account users.
 
 </div>
 
@@ -56,22 +56,23 @@ Ensure your configurations align with industry standards and organizational secu
 
 ## What SAT Analyzes
 
-SAT performs comprehensive security checks across multiple dimensions:
+SAT focuses on access and secret exposure:
 
-- **🛡️ Network Security** - Firewall rules, IP access controls, VPC configurations
-- **👥 Identity & Access** - Authentication, authorization, user management
-- **🔐 Data Protection** - Encryption, data access controls, secrets management
-- **⚖️ Governance** - Audit logging, workspace settings, policies
-- **ℹ️ Informational** - Configuration insights and recommendations
+- **👥 Identities & Access** - Users, groups, and service principals; admin roles (Account / Workspace / Metastore Admin, Catalog Owner); and the full access graph, including access inherited through groups.
+- **🗄️ Resource Access** - Who can reach catalogs, schemas, tables, clusters, jobs, warehouses, secret scopes, notebooks, and folders.
+- **🧭 Escalation & Impersonation** - Paths from any principal to admin roles, and lateral movement via jobs or clusters that run as elevated service principals.
+- **🔑 Exposed Secrets** - Hardcoded credentials in notebook source and cluster configurations.
 
-Each check identifies opportunities to harden your Databricks configurations, services, and resources, with clear explanations and remediation guidance.
+<Admonition type="note" title="Best-practice checks retired">
+Earlier versions of SAT also ran core security posture checks (severity-ranked findings across Network Security, Data Protection, Governance, and so on) and rendered them in dashboards. Those checks are now available **natively in the Databricks platform** — the [Governance Hub Security tab](https://docs.databricks.com/aws/en/admin/governance-hub/security) — so they and the dashboards are **retired** from SAT; 1.0 focuses on the capabilities Governance Hub doesn't cover: access/permissions risk and secret exposure. (If Governance Hub isn't available in your environment, e.g. AWS GovCloud, use SAT v0.9.1 for the checks.)
+</Admonition>
 
 ---
 
 ## Important Considerations
 
 <Admonition type="warning" title="Assessment Tool">
-SAT is a **productivity tool** designed to help verify your security configurations against Databricks best practices. It is *not* intended to serve as a certification or formal attestation of your deployment's security posture.
+SAT is a **productivity tool** that helps you understand access risk and find exposed secrets across your Databricks account. It is *not* intended to serve as a certification or formal attestation of your deployment's security posture.
 </Admonition>
 
 ### Before Making Changes
@@ -83,7 +84,7 @@ Please review the SAT report with your:
 - ✓ Compliance auditors
 
 **Key points to consider:**
-- 📌 Not all deviations require immediate mitigation
+- 📌 Not every finding requires immediate action
 - 💰 Some recommendations may have cost implications
 - 🔗 Some security features may have dependency limitations
 - 📖 Always review the associated documentation before making changes
@@ -99,8 +100,7 @@ For more security guidance, visit the Databricks [Security and Trust Center](htt
 ### Continuous Improvement
 
 The SAT project is **regularly updated** to:
-- ✨ Improve check accuracy
-- 🆕 Add new security checks
+- 🆕 Add new analyses and detections
 - 🐛 Fix bugs and issues
 - 📈 Enhance reporting features
 

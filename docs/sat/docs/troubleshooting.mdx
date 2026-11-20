@@ -8,40 +8,61 @@ import Admonition from '@theme/Admonition';
 
 Having issues with SAT? This guide will help you resolve common problems. Click on any issue below to see the solution.
 
-## Diagnostic Notebooks
+## Checking your setup
 
-<Admonition type="tip" title="Quick Diagnosis">
-Diagnosis notebooks for each cloud platform are available to help troubleshoot your SAT setup.
-
-**To run the appropriate diagnostic notebook:**
-1. Navigate to Workspace → Applications → SAT → files → notebooks → diagnosis folder
-2. Open and run the notebook corresponding to your cloud provider
-
-**Available diagnostic notebooks:**
-- [SAT AWS troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_aws.py)
-- [SAT Azure troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_azure.py)
-- [SAT GCP troubleshooting notebook](https://github.com/databricks-industry-solutions/security-analysis-tool/blob/main/notebooks/diagnosis/sat_diagnosis_gcp.py)
+<Admonition type="tip" title="Built-in requirements check">
+Instead of standalone diagnosis notebooks, the app has a built-in **requirements
+check**. Open **Settings → Re-run setup** (or the first-run setup screen) and
+review the requirements checklist — it verifies, live, the account connection and
+the service principal's **Account admin** role, and flags configuration gaps so
+you can fix them before running collection. For a failed collection, open the
+**Data Collection** page and inspect the job's last run.
 </Admonition>
 
 ---
 
 ## Common Issues
 
-<AccordionItem question="Misconfigured Secrets - Secret does not exist with scope">
+<AccordionItem question="Account-wide data is missing or credentials failed">
 
-**Error:**
-
-```
-Secret does not exist with scope: sat_scope and key: sat_tokens
-```
+**Symptom:** Account/Workspace/Metastore Admin detection, account users & groups, and other account-wide reports are empty, or the setup screen reports the credentials didn't verify.
 
 **Resolution:**
 
-Check if the tokens are configured with the correct names by listing and comparing with the configuration.
+Account credentials are stored as **Unity Catalog secrets** (SAT no longer uses a `sat_scope` secret scope). In the app, open **Settings → Account credentials** (or re-run setup) and confirm:
 
-```bash
-databricks --profile e2-sat secrets list-secrets sat_scope
-```
+- the **Account ID** is correct, and
+- the service principal's **client ID + secret** are valid and that SP holds the **Account admin** role.
+
+Credentials are verified before they're stored, so a failed save points to one of the above. After updating them, run data collection again from the **Data Collection** page.
+
+</AccordionItem>
+
+<AccordionItem question="Account authentication failed / the OAuth secret expired or was revoked">
+
+**Symptom:** account-wide reports stop updating, or a collection run fails authenticating to the account API — the service principal's **OAuth secret** has most likely expired or been revoked.
+
+**Resolution:**
+
+1. In the account console, create a **new OAuth secret** for the service principal.
+2. In SAT, open **Settings → Account credentials**, paste the **client ID** and the **new secret**, and click **Update credentials** (verified before being stored as Unity Catalog secrets).
+3. Run data collection again. The jobs read the secret at run time, so the next run uses the new value — **no redeploy or re-provision needed**.
+4. Revoke the old secret in the account console.
+
+The setup requirements check (**Settings → Re-run setup**) verifies the account connection and the **Account admin** role live, so re-run it to confirm the fix is green.
+
+</AccordionItem>
+
+<AccordionItem question="A workspace isn't being scanned (or was skipped)">
+
+**Symptom:** A workspace you expect to see has no findings, or a scan run reports it as skipped.
+
+**Resolution:** SAT scans a workspace only when **both** are true:
+
+1. **The service principal is a workspace admin there, and the workspace is enabled.** Scan coverage is keyed on the SP being a **workspace admin** of each workspace. Add the SP as a workspace admin on the target, then run **Data Collection → Manage → Sync workspaces** — Sync lists the account's workspaces and sets `analysis_enabled` on the ones the SP administers (`account_workspaces` table). Removing the SP as admin and syncing again drops the workspace.
+2. **Collection scope is Multiple workspaces.** With scope set to **This workspace only**, both resource collection and secret scanning stay on the current workspace regardless of what's enabled. Set scope to **Multiple workspaces** in **Data Collection → Manage**.
+
+On **serverless** compute, reaching a remote workspace also requires the account to be enrolled in **serverless cross-workspace access** (a preview — ask your account team). Workspaces that still can't be reached are **skipped and recorded**, not failed. **Classic** compute can reach any workspace the SP administers.
 
 </AccordionItem>
 
@@ -91,9 +112,9 @@ If you don't see a JSON with a clean listing of workspaces, you are likely havin
 
 </AccordionItem>
 
-<AccordionItem question="Permissions Analysis app shows 'missing sql scope' banner after upgrading to v0.9.0">
+<AccordionItem question="Permissions Analysis app shows 'missing sql scope' banner after an upgrade">
 
-The Permissions Analysis app uses on-behalf-of-user (OBO) authentication in v0.8.0 and above. The required `sql` scope is declared in the SAT install templates, but each user must consent to the scope on first open after the upgrade. If you opened the app before upgrading, your browser session has a cached consent grant without `sql` and you'll see the banner.
+The Permissions Analysis app uses on-behalf-of-user (OBO) authentication. The required `sql` scope is declared in the SAT install templates, but each user must consent to the scope on first open after the upgrade. If you opened the app before upgrading, your browser session has a cached consent grant without `sql` and you'll see the banner.
 
 **Resolution (try in order):**
 
@@ -107,7 +128,7 @@ The full background and permanent setup is on the [Permissions Analysis page](./
 
 <AccordionItem question="Permissions Analysis app shows 'You don't have permission to read the SAT permissions analysis schema'">
 
-In 0.8.0 and above, the app runs Statement Execution as the calling user, so Unity Catalog enforces the user's grants on the Permissions Analysis tables. If the user does not have `SELECT` on those tables, the app renders a friendly banner instead of a SQL error.
+The app runs Statement Execution as the calling user, so Unity Catalog enforces the user's grants on the Permissions Analysis tables. If the user does not have `SELECT` on those tables, the app renders a friendly banner instead of a SQL error.
 
 **Resolution:** an admin grants `SELECT` on the three tables to the user or group that needs to use the app. Replace `<catalog>` and `<schema>` with the values used during your SAT install:
 
@@ -119,50 +140,21 @@ GRANT SELECT ON TABLE `<catalog>`.`<schema>`.brickhound_collection_metadata  TO 
 
 </AccordionItem>
 
-<AccordionItem question="NS-14 (egress control) reports 'egress blocked' on workspaces with restricted egress">
+<AccordionItem question="Restricted egress / no PyPI access">
 
-NS-14 is a live behavior check — it runs from the SAT driver compute and probes a small list of public destinations to confirm whether outbound traffic is reachable. On a properly egress-restricted network the probes are *expected* to fail, and **that's the pass state for the check**: egress controls are doing their job.
+The SAT SDK wheel ships inside the app (under `lib/`) and is installed with
+`--no-deps`, so **no PyPI access is needed for the SDK itself**. Two things still
+reach out, and only matter for the features that use them:
 
-If you see NS-14 reporting "egress blocked" on a workspace where you've configured network policies or firewall rules to restrict outbound traffic, no action is required.
-
-</AccordionItem>
-
-<AccordionItem question="Offline Library Install - No PyPI Access">
-
-If your workspace does not have access to PyPI, follow these steps to install the required libraries manually:
-
-**Steps:**
-
-1. Download the `dbl_sat_sdk` version specified in the notebook `notebooks/utils/initialize` from PyPi:
-   ```
-   https://pypi.org/project/dbl-sat-sdk/
-   ```
-
-2. Upload the `dbl_sat_sdk-w.x.y-py3-none-any.whl` to a `dbfs` location. You can use the `databricks-cli` as one mechanism to upload. For example:
-   ```bash
-   databricks --profile e2-satfs cp /localdrive/whlfile/dbl_sat_sdk-w.x.y-py3-none-any.whl dbfs:/FileStore/wheels/
-   ```
-
-3. Additionally, download the following wheel files and upload them to the `dbfs` location as above:
-   ```
-   https://github.com/databricks-industry-solutions/security-analysis-tool/tree/main/docs/wheels
-   ```
-
-4. Upload all wheel files to `/FileStore/wheels` in your workspace.
-
-5. Verify all files are there by running:
-   ```python
-   %fs ls /FileStore/wheels
-   ```
-
-6. Then change the cell in your notebook `install_sat_sdk` to this:
-   ```python
-   %pip install msal --find-links /Volumes/{catalog}/{schema}/{volume_name}/msal-1.22.0-py2.py3-none-any.whl
-   
-   %pip install dbl-sat-sdk==0.1.37 --find-links /Volumes/{catalog}/{schema}/{volume_name}/dbl_sat_sdk-0.1.37-py3-none-any.whl
-   ```
-
-7. Make sure the versions for the above libraries match.
+- **Secret scanning** downloads the TruffleHog binary from GitHub. In a
+  restricted-egress environment, allow-list `raw.githubusercontent.com`,
+  `github.com`, `release-assets.githubusercontent.com` and
+  `objects.githubusercontent.com` (all HTTPS/443 — the download redirects across
+  them, so an incomplete list still fails; see the [Secret Scanning](./functionality/secret-scanning.mdx)
+  firewall list) or provide an internal mirror.
+- **Classic compute** pip-installs `requests` and `PyYAML` from PyPI for the
+  scanners (serverless already has them). On classic compute without PyPI access,
+  make those available from an internal package index.
 
 </AccordionItem>
 

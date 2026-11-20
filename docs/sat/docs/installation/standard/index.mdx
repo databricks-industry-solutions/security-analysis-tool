@@ -6,14 +6,16 @@ import Admonition from '@theme/Admonition';
 # Standard Install
 
 <Admonition type="warning" title="Unity Catalog Required">
-**SAT v0.5.0 and higher requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT.
+**SAT requires Unity Catalog.** Make sure Unity Catalog is enabled in your Databricks environment before installing SAT — the app stores its results (and its credentials, as UC secrets) in a Unity Catalog schema.
 </Admonition>
 
-<Admonition type="warning" title="Python Version Requirement">
-If you install SAT locally using `install.sh`, you must use **Python version lower than 3.12**. Python 3.12 is not currently supported for local installations.
+<Admonition type="note" title="What the standard install does">
+`./install.sh` runs locally (Python 3.9+), asks for your CLI profile and a SQL warehouse, and deploys the **security-analysis** app to your workspace. Everything else — catalog/schema, account credentials, scope, and compute — is configured in the app's setup flow after it is deployed.
 </Admonition>
 
-
+<Admonition type="info" title="App source folder">
+The installer uploads the app code to **`/Workspace/Applications/SAT/files/app/security-analysis-tool`**. If you deploy or redeploy the app from the **Databricks Apps UI** (Compute → Apps → security-analysis → Deploy), choose that folder as the app's **source code path**. From the CLI it's `databricks apps deploy security-analysis --source-code-path /Workspace/Applications/SAT/files/app/security-analysis-tool`.
+</Admonition>
 
 SAT can be set up on any of the cloud platforms where Databricks is hosted. Please follow the setup guide specific to your cloud provider:
 

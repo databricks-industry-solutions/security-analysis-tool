@@ -27,10 +27,9 @@ const sidebars = {
       collapsible: true,
       collapsed: false,
       items: [
-        'functionality/general-dashboard',
-        'functionality/executive-dashboard',
+        'functionality/the-app',
         'functionality/permissions-analysis',
-        'functionality/cluster-secrets-scanning',
+        'functionality/secret-scanning',
       ],
     },
     {

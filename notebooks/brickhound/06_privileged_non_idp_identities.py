@@ -46,12 +46,12 @@
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
-# MAGIC - SAT installed (`sat_scope` with `account-console-id`, `client-id`, `client-secret`,
-# MAGIC   `analysis_schema_name`).
+# MAGIC - SAT app installed (account credentials `account-console-id`, `client-id`, `client-secret`
+# MAGIC   stored as Unity Catalog secrets in the results schema).
 # MAGIC - The service principal must have **Account Admin**, and **Workspace Admin** on any workspace
 # MAGIC   you want workspace-admin findings for (and remediation to work there).
-# MAGIC - **Azure only:** the compute needs network egress to `login.microsoftonline.com` (Entra ID) for
-# MAGIC   MSAL token minting. If serverless egress is restricted, run on a classic cluster.
+# MAGIC - All clouds authenticate with Databricks OAuth (M2M) against the account console; the service
+# MAGIC   principal needs a Databricks OAuth secret. No Microsoft Entra / Azure AD step on Azure.
 
 # COMMAND ----------
 
@@ -97,6 +97,8 @@ def resolve_accounts_host(cloud: str, workspace_url: str, accounts_console_overr
         return accounts_console_override.rstrip("/")
     domain = _domain_from_url(workspace_url)
     if cloud == "aws":
+        if domain == "mil":  # DoD IL5 uses the 'accounts-dod' prefix
+            return "https://accounts-dod.cloud.databricks.mil"
         return f"https://accounts.cloud.databricks.{domain}"
     elif cloud == "gcp":
         return f"https://accounts.gcp.databricks.{domain}"
@@ -109,13 +111,17 @@ WORKSPACE_URL = (
 )
 ACCOUNTS_HOST = resolve_accounts_host(cloud_type, WORKSPACE_URL, json_.get("accounts_console", ""))
 ACCOUNT_ID    = json_["account_id"]
-CLIENT_ID     = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-id")
-CLIENT_SECRET = dbutils.secrets.get(scope=SECRETS_SCOPE, key="client-secret")
 
-# tenant-id is required for Azure (Entra/MSAL auth); absent on AWS/GCP.
-TENANT_ID = None
-if cloud_type == "azure":
-    TENANT_ID = json_.get("tenant_id") or dbutils.secrets.get(scope=SECRETS_SCOPE, key="tenant-id")
+# Account API credentials. The SAT app stores these as Unity Catalog secrets in
+# the results schema. Non-fatal so the job still runs when they are absent
+# (account-level detection is simply skipped).
+def _sat_cred(key):
+    try:
+        return dbutils.secrets.get(catalog=CATALOG, schema=SCHEMA, key=key)
+    except Exception:
+        return ""
+CLIENT_ID     = _sat_cred("client-id")
+CLIENT_SECRET = _sat_cred("client-secret")
 
 PRIVILEGED_NON_IDP_TABLE = f"{CATALOG}.{SCHEMA}.brickhound_privileged_non_idp"
 
@@ -159,37 +165,27 @@ class PrivilegedIdentityAuditor:
     """
 
     def __init__(self, accounts_host: str, account_id: str, client_id: str,
-                 client_secret: str, cloud_type: str, tenant_id: Optional[str] = None,
+                 client_secret: str, cloud_type: str,
                  proxies: Optional[dict] = None) -> None:
         self._accounts_host = accounts_host.rstrip("/")
         self._account_id    = account_id
         self._client_id     = client_id
         self._client_secret = client_secret
         self._cloud_type    = cloud_type
-        self._tenant_id     = tenant_id
         self._proxies       = proxies or {}
         self._acct_token    = self._mint_account_token()
         self._acct_hdrs     = {"Authorization": f"Bearer {self._acct_token}"}
 
     # ── Token helpers ────────────────────────────────────────────────────────
 
-    def _mint_azure_msal_token(self) -> str:
-        """AAD token for the Databricks resource — valid for account SCIM and
-        workspace REST calls on Azure (matches SatDBClient.getAzureTokenWithMSAL)."""
-        import msal
-        app = msal.ConfidentialClientApplication(
-            client_id=self._client_id,
-            client_credential=self._client_secret,
-            authority=f"https://login.microsoftonline.com/{self._tenant_id}",
-        )
-        token = app.acquire_token_for_client(scopes=["2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default"])
-        if not token or not token.get("access_token"):
-            raise Exception(f"MSAL token acquisition failed: {token.get('error_description') if token else 'no token'}")
-        return token["access_token"]
-
     def _mint_account_token(self) -> str:
-        if self._cloud_type == "azure":
-            return self._mint_azure_msal_token()
+        # Account-level scans need an Account ID and account-admin SP credentials;
+        # fail with a clear message rather than a cryptic error in the auth call.
+        if not self._account_id or not self._client_id or not self._client_secret:
+            raise Exception("Account-level scan requires an Account ID and account-admin "
+                            "service principal credentials. Add them in the app: "
+                            "Settings -> Re-run setup.")
+        # Databricks OAuth (M2M) for every cloud, including Azure.
         resp = requests.post(
             f"{self._accounts_host}/oidc/accounts/{self._account_id}/v1/token",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -201,8 +197,15 @@ class PrivilegedIdentityAuditor:
             },
             proxies=self._proxies,
         )
-        resp.raise_for_status()
-        return resp.json()["access_token"]
+        if resp.status_code != 200:
+            raise Exception(f"Account token request failed ({resp.status_code}). Check the "
+                            f"Account ID and that the service principal is an account admin. "
+                            f"Response: {resp.text[:200]}")
+        try:
+            return resp.json()["access_token"]
+        except Exception:
+            raise Exception(f"Account token response was not valid JSON "
+                            f"(status {resp.status_code}): {resp.text[:200]}")
 
     @staticmethod
     def _explain_http_error(resp) -> str:
@@ -449,7 +452,6 @@ auditor = PrivilegedIdentityAuditor(
     client_id     = CLIENT_ID,
     client_secret = CLIENT_SECRET,
     cloud_type    = cloud_type,
-    tenant_id     = TENANT_ID,
     proxies       = json_.get("proxies", {}),
 )
 print("✓ Auditor initialized")
@@ -613,7 +615,7 @@ print(f"Wrote {findings_df.count()} finding(s) to {PRIVILEGED_NON_IDP_TABLE} (ru
 if findings.empty:
     print("✓ No privileged non-IdP-managed identities found for the selected finding types.")
 else:
-    display(findings_df.orderBy("finding_type", F.desc("is_idp_managed")))
+    print(f"{len(findings)} privileged non-IdP identity finding(s) — see the results table.")
 
 # COMMAND ----------
 

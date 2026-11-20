@@ -1,0 +1,32 @@
+name: security-analysis-tool
+display_name: "Security Analysis Tool"
+description: "Permissions analysis, secret scanning, and a security assistant for Databricks"
+
+config:
+  command:
+    - "python"
+    - "app.py"
+
+# The app is configured from its in-app setup flow, not from deploy-time env.
+# Catalog/schema, warehouse, model and Genie space are read at runtime from the
+# config file the setup flow writes; credentials are read from Unity Catalog
+# secrets; collection job ids are discovered by name. So no secret-scope bindings
+# are needed here, and the app boots into its welcome screen when unconfigured.
+#
+# BRICKHOUND_SCHEMA may still be set to '<catalog>.<schema>' to pre-configure an
+# install and skip the welcome screen, but it is no longer required.
+env:
+  - name: "PORT"
+    value: "8000"
+
+resources:
+  compute:
+    size: "small"
+
+health_check:
+  path: "/health"
+  port: 8000
+  timeout: 30
+
+dependencies:
+  # Python packages from requirements.txt are installed automatically.

@@ -51,18 +51,14 @@
 # MAGIC
 # MAGIC BrickHound is integrated into SAT and uses SAT's credential system.
 # MAGIC
-# MAGIC **If SAT is already installed:**
-# MAGIC - No additional configuration needed
-# MAGIC - BrickHound automatically uses credentials from `sat_scope` secret scope
-# MAGIC - Required secrets (already configured by SAT):
+# MAGIC BrickHound runs as part of the SAT app. The app passes the results schema
+# MAGIC as the `analysis_schema_name` job parameter and stores account credentials
+# MAGIC as Unity Catalog secrets in that schema:
 # MAGIC   - `account-console-id` (Account UUID)
 # MAGIC   - `client-id` (Service Principal Application ID)
 # MAGIC   - `client-secret` (Service Principal OAuth Secret)
-# MAGIC   - `analysis_schema_name` (Unity Catalog schema: `catalog.schema`)
 # MAGIC
-# MAGIC **If SAT is not installed:**
-# MAGIC - Run the SAT installer: `./install.sh` in the SAT project root
-# MAGIC - This will create `sat_scope` and configure all required credentials
+# MAGIC No additional configuration is required.
 
 # COMMAND ----------
 
@@ -75,11 +71,14 @@
 # ==============================================================================
 # BRICKHOUND CONFIGURATION (SAT Integration)
 # ==============================================================================
-# Configuration is automatically read from SAT's sat_scope
-
-
-# Read catalog and schema from SAT configuration
-analysis_schema = dbutils.secrets.get(scope=SECRETS_SCOPE, key="analysis_schema_name")
+# Read catalog and schema from the analysis_schema_name job parameter the SAT app
+# sets when it provisions this job (initialize resolves the same value into json_).
+try:
+    analysis_schema = (dbutils.widgets.get("analysis_schema_name") or "").strip()
+except Exception:
+    analysis_schema = ""
+if not analysis_schema:
+    analysis_schema = (json_.get("analysis_schema_name") or "").strip()
 CATALOG = analysis_schema.split('.')[0]
 SCHEMA = analysis_schema.split('.')[1]
 
@@ -93,7 +92,6 @@ print("BrickHound Configuration (SAT Integration)")
 print("=" * 60)
 print(f"Catalog:        {CATALOG}")
 print(f"Schema:         {SCHEMA}")
-print(f"Secrets Scope:  {SECRETS_SCOPE}")
 print(f"Vertices:       {VERTICES_TABLE}")
 print(f"Edges:          {EDGES_TABLE}")
 print(f"Metadata:       {COLLECTION_METADATA_TABLE}")

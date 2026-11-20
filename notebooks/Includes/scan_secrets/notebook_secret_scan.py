@@ -70,23 +70,27 @@ from core import  parser as pars
 from core.dbclient import SatDBClient
 from core.scan_http import AdaptiveRateLimiter, request_with_retry, collect_tree, completeness_verdict, TokenProvider
 
-if cloud_type =='azure': # use client secret
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-  mastername =' ' # this will not be present when using SPs
-  masterpwd = ' '  # we still need to send empty user/pwd.
-  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
-else: # Populate the master key for the Accounts API
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-  mastername = ' '
-  masterpwd = ' '
-  #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-  #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+# Account API credentials. The SAT app stores these as Unity Catalog secrets in
+# the results schema ({catalog}.{schema}.<key>) and passes analysis_schema_name as
+# a job parameter. Non-fatal on absence -- SatDBClient then fails loudly at token
+# mint rather than here at import.
+def _sat_cred(key):
+    parts = (json_.get("analysis_schema_name") or "").split(".")
+    if len(parts) >= 2:
+        try:
+            return dbutils.secrets.get(
+                catalog=parts[0].strip("`"), schema=parts[1].strip("`"), key=key)
+        except Exception:
+            return ""
+    return ""
+
+json_.update({
+    "token": "dapijedi",
+    "client_id": _sat_cred("client-id"),
+    "client_secret": _sat_cred(json_.get("client_secret_key", "client-secret")),
+    "mastername": " ",
+    "masterpwd": " ",
+})
 
 db_client = SatDBClient(json_)
 
@@ -122,7 +126,7 @@ db_client = SatDBClient(json_)
 # MAGIC   done
 # MAGIC fi
 # MAGIC if [ ! -x "$THBIN" ]; then
-# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Allow HTTPS (443) egress to raw.githubusercontent.com, github.com, release-assets.githubusercontent.com and objects.githubusercontent.com (the download redirects across them), or use an internal mirror."
 # MAGIC   exit 1
 # MAGIC fi
 # MAGIC echo "✅ TruffleHog setup verified at $THBIN!"
@@ -219,12 +223,27 @@ def _merge_custom_detectors(config_data: Dict[str, Any], config_folder: str) -> 
         config_data["detectors"] = list(by_name.values())
         logger.info(f"Merged {len(custom_detectors)} custom detector(s) from {custom_path}")
 
-    custom_excluded = (custom.get("settings") or {}).get("excluded_detectors") or []
+    custom_settings = custom.get("settings") or {}
+
+    custom_excluded = custom_settings.get("excluded_detectors") or []
     if custom_excluded:
         existing = config_data.setdefault("settings", {}).setdefault("excluded_detectors", [])
         for x in custom_excluded:
             if x not in existing:
                 existing.append(x)
+
+    # Scan-behaviour overrides the customer set from the app (Secrets -> Scan
+    # settings), so a settings change takes effect on the next run without any
+    # notebook edit. Only the keys present are overridden; the rest keep the
+    # shipped defaults. search_settings.days_back is the scan coverage window
+    # (0 = all notebooks).
+    for section in ("search_settings", "rate_limiting", "performance"):
+        overrides = custom_settings.get(section) or {}
+        if isinstance(overrides, dict) and overrides:
+            target = config_data.setdefault("settings", {}).setdefault(section, {})
+            for k, v in overrides.items():
+                target[k] = v
+            logger.info(f"Applied custom settings override for {section}: {overrides}")
 
     return config_data
 
@@ -256,17 +275,25 @@ def load_config_from_file():
 
     return _merge_custom_detectors(config_data, config_folder)
 
+# A unique, process-owned temp directory for everything this scan writes. A fixed
+# /tmp path is unsafe on serverless: warm containers are reused across runs, so a
+# file left by an earlier run under a different OS user can't be reopened for write
+# (sticky /tmp) and fails with "Permission denied". mkdtemp always returns a fresh
+# directory owned by this process.
+_SAT_SCAN_TMP = tempfile.mkdtemp(prefix="sat_nb_scan_")
+
+
 def create_trufflehog_config(config_data: Dict[str, Any]) -> str:
     """Create TruffleHog configuration file from loaded config data."""
-    config_file_path = "/tmp/trufflehog_config.yaml"
-    
+    config_file_path = os.path.join(_SAT_SCAN_TMP, "trufflehog_config.yaml")
+
     # Extract just the detectors section for TruffleHog
     trufflehog_config = {"detectors": config_data.get("detectors", [])}
-    
+
     try:
         with open(config_file_path, 'w') as file:
             yaml.dump(trufflehog_config, file, default_flow_style=False)
-        
+
         logger.info(f"TruffleHog configuration created at: {config_file_path}")
         return config_file_path
     except Exception as e:
@@ -280,11 +307,19 @@ config_data = load_config_from_file()
 class Config:
     """Configuration class for TruffleHog scanning parameters"""
     
-    # File paths
+    # File paths. Writable files ALWAYS live under the process-owned temp dir (see
+    # _SAT_SCAN_TMP) so a stale file from an earlier run on a warm serverless
+    # container can never block them. These are deliberately NOT taken from the
+    # config's settings.file_paths: that knob historically pinned them to fixed
+    # /tmp paths (e.g. /tmp/notebook_scan_batch), which is exactly what breaks on a
+    # reused serverless container owned by a different OS user ("Permission
+    # denied"). The binary stays at a fixed path -- it is only ever read/executed
+    # (never rewritten in place), and the installer skips the download when an
+    # executable copy is already present.
     TRUFFLEHOG_BINARY = "/tmp/trufflehog_notebook"
     TRUFFLEHOG_CONFIG = create_trufflehog_config(config_data)
-    TEMP_NOTEBOOKS_DIR = config_data.get("settings", {}).get("file_paths", {}).get("temp_notebooks", "/tmp/notebooks")
-    RESULTS_LOG_FILE = config_data.get("settings", {}).get("file_paths", {}).get("results_log", "/tmp/trufflehog_scan_results.json")
+    TEMP_NOTEBOOKS_DIR = os.path.join(_SAT_SCAN_TMP, "notebooks")
+    RESULTS_LOG_FILE = os.path.join(_SAT_SCAN_TMP, "trufflehog_scan_results.json")
     
     # API settings from config
     API_SLEEP_SECONDS = config_data.get("settings", {}).get("rate_limiting", {}).get("api_sleep_seconds", 10)
@@ -299,8 +334,9 @@ class Config:
     # the core count is fine.
     MAX_WORKERS = config_data.get("settings", {}).get("performance", {}).get("max_workers", 16)
     # Directory where a batch of notebooks is materialized so TruffleHog can
-    # scan them all in a single invocation instead of once per file.
-    SCAN_BATCH_DIR = config_data.get("settings", {}).get("file_paths", {}).get("scan_batch_dir", "/tmp/notebook_scan_batch")
+    # scan them all in a single invocation instead of once per file. Under
+    # _SAT_SCAN_TMP (not a config-pinned fixed /tmp path) for serverless safety.
+    SCAN_BATCH_DIR = os.path.join(_SAT_SCAN_TMP, "notebook_scan_batch")
     # Unscanned-object tolerance before a run is failed as incomplete.
     INCOMPLETE_SCAN_FRACTION = config_data.get("settings", {}).get("completeness", {}).get("max_unscanned_fraction", 0.02)
     INCOMPLETE_SCAN_MIN = config_data.get("settings", {}).get("completeness", {}).get("min_unscanned_to_fail", 25)
@@ -324,6 +360,41 @@ except Exception as e:
 os.makedirs(Config.TEMP_NOTEBOOKS_DIR, exist_ok=True)
 logger.info(f"Temporary directory created: {Config.TEMP_NOTEBOOKS_DIR}")
 
+# Binary / opaque object types we do NOT scan. Secrets live in source and config,
+# not compiled artifacts or media; scanning these is low-signal, noisy, and slow
+# on large workspaces. Notebooks (no file extension) and text source/config files
+# (.py, .sql, .json, .yaml, .sh, .txt, ...) are scanned; everything below is skipped.
+_SKIP_EXTENSIONS = frozenset({
+    ".whl", ".jar", ".zip", ".tar", ".gz", ".tgz", ".bz2", ".7z", ".rar",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp", ".pdf",
+    ".parquet", ".orc", ".avro", ".bin", ".so", ".dll", ".dylib", ".class",
+    ".pyc", ".pyo", ".exe", ".o", ".a", ".lib", ".woff", ".woff2", ".ttf",
+    ".eot", ".mp4", ".mov", ".mp3", ".wav", ".db", ".sqlite", ".pkl", ".pickle",
+    ".model", ".pt", ".pth", ".h5", ".onnx", ".npy", ".npz",
+})
+
+
+def _object_ext(name: str) -> str:
+    return os.path.splitext(name or "")[1].lower()
+
+
+def _is_scannable(name: str) -> bool:
+    """False for known binary/opaque object types (skipped at discovery)."""
+    return _object_ext(name) not in _SKIP_EXTENSIONS
+
+
+def _classify_object_type(name: str, raw_type: Optional[str] = None) -> str:
+    """'notebook' or 'file' for the results table.
+
+    Uses the discovery source's explicit object type when available
+    (workspace/list and unified-search both return NOTEBOOK vs FILE); otherwise
+    falls back to the extension — a workspace notebook has no file extension,
+    anything with one is a plain file.
+    """
+    if raw_type:
+        return "notebook" if str(raw_type).upper() == "NOTEBOOK" else "file"
+    return "notebook" if _object_ext(name) == "" else "file"
+
 # Verify TruffleHog binary exists
 if not os.path.exists(Config.TRUFFLEHOG_BINARY):
     error_msg = f"""
@@ -337,9 +408,13 @@ if not os.path.exists(Config.TRUFFLEHOG_BINARY):
     This could be due to network restrictions or firewall policies.
 
     ACTION REQUIRED:
-    Please contact your IT/Security team to allowlist access to:
-      - raw.githubusercontent.com
-      - github.com/trufflesecurity
+    Please contact your IT/Security team to allowlist HTTPS (443) egress to
+    all of these -- the download redirects across them, so an incomplete list
+    still fails:
+      - raw.githubusercontent.com            (install script)
+      - github.com                           (release download URL / redirect)
+      - release-assets.githubusercontent.com (the binary; current asset host)
+      - objects.githubusercontent.com        (legacy asset host / fallback)
 
     Or configure a proxy/mirror for downloading TruffleHog.
     ==========================================
@@ -550,12 +625,25 @@ def discover_notebooks_via_workspace_list(time_filter_enabled: bool,
             with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
                 kept.extend(o for o in pool.map(_keep_if_recent, need_meta) if o is not None)
 
-    # Normalize to the {id, name, workspace_path} shape the batch processor expects.
-    return [{
-        "id": str(obj.get("object_id", "")),
-        "name": obj.get("path", "").rsplit("/", 1)[-1],
-        "workspace_path": obj.get("path", "").rsplit("/", 1)[0],
-    } for obj in kept]
+    # Normalize to the {id, name, workspace_path, object_type} shape the batch
+    # processor expects; skip binary/opaque files (not worth scanning for secrets).
+    items = []
+    skipped = 0
+    for obj in kept:
+        full = obj.get("path", "")
+        name = full.rsplit("/", 1)[-1]
+        if not _is_scannable(name):
+            skipped += 1
+            continue
+        items.append({
+            "id": str(obj.get("object_id", "")),
+            "name": name,
+            "workspace_path": full.rsplit("/", 1)[0],
+            "object_type": _classify_object_type(name, obj.get("object_type")),
+        })
+    if skipped:
+        logger.info(f"Skipped {skipped} binary/opaque file(s) from scanning")
+    return items
 
 def get_fuse_path(workspace_path: str) -> Optional[str]:
     """Find the actual file on the FUSE mount by trying common extensions."""
@@ -592,19 +680,25 @@ def export_notebook_content(notebook_path: str) -> Optional[Dict[str, Any]]:
 
 def decode_and_write_content(content: str, output_path: str) -> bool:
     """
-    Decode base64 content and write to file.
-    
+    Decode base64 notebook content and write it to a file for scanning.
+
+    Written as raw bytes, not decoded as UTF-8 text: notebook source can contain
+    non-UTF-8 bytes (source in another encoding, embedded binary, etc.), and
+    decoding as UTF-8 would raise UnicodeDecodeError ("'utf-8' codec can't decode
+    byte ...") and drop the whole notebook from the scan — on a large workspace
+    that silently loses coverage and can trip the incomplete-scan threshold.
+    TruffleHog reads the file bytewise, so the raw bytes are exactly what we want.
+
     Args:
         content (str): Base64 encoded content
         output_path (str): Path to write decoded content
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
     try:
-        decoded_content = base64.b64decode(content).decode("utf-8")
-        with open(output_path, "w", encoding="utf-8") as file:
-            file.write(decoded_content)
+        with open(output_path, "wb") as file:
+            file.write(base64.b64decode(content))
         return True
     except Exception as e:
         logger.error(f"Error writing content to {output_path}: {str(e)}")
@@ -613,92 +707,53 @@ def decode_and_write_content(content: str, output_path: str) -> bool:
 def scan_for_secrets(file_path: str) -> Optional[str]:
     """
     Run TruffleHog scan on a file to detect secrets.
-    Runs two scans: one with built-in detectors and one with custom detectors,
-    then combines the results.
-    
+
+    A single pass runs the built-in detectors (minus the excluded ones, e.g.
+    DatabricksToken) together with the custom SAT detectors: ``--config`` augments
+    the built-in set rather than replacing it, so one scan covers both. Running a
+    separate custom pass as well -- as this used to -- re-ran every built-in
+    detector and reported every built-in secret twice, doubling both the findings
+    and the scan time.
+
     Args:
         file_path (str): Path to file to scan
-        
+
     Returns:
         Optional[str]: TruffleHog output in JSON format or None if error
     """
-    all_results = []
-    
-    # Scan 1: Run with built-in detectors (excluding specified ones)
     excluded_detectors = ",".join(Config.EXCLUDED_DETECTORS)
-    builtin_command_args = [
+    command_args = [
         Config.TRUFFLEHOG_BINARY,
         "filesystem",
         file_path,
-        f"--exclude-detectors={excluded_detectors}",
-        "--no-update",
-        "-j"
-    ]
-    
-    try:
-        logger.info(f"Running built-in detectors scan on {file_path}")
-        logger.info(f"Built-in scan command: {' '.join(builtin_command_args)}")
-        result = subprocess.run(
-            builtin_command_args,
-            shell=False,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
-        logger.info(f"Built-in scan exit code: {result.returncode}")
-        
-        if result.stdout:
-            all_results.append(result.stdout)
-            logger.info(f"Built-in detectors scan completed with {len(result.stdout.splitlines())} output lines")
-            logger.debug(f"Built-in scan produced {len(result.stdout)} bytes across {len(result.stdout.splitlines())} hits")
-        else:
-            logger.info(f"Built-in detectors scan completed with no secrets found")
-            print(f"Built-in scan stdout was empty")
-        
-        if result.stderr:
-            logger.info(f"Built-in scan stderr: {result.stderr}")
-            logger.debug(f"Built-in scan stderr: {result.stderr}")
-    except subprocess.TimeoutExpired:
-        logger.error(f"Built-in detectors scan timed out for file: {file_path}")
-    
-    # Scan 2: Run with custom detectors from config file
-    custom_command_args = [
-        Config.TRUFFLEHOG_BINARY,
-        "filesystem",
-        file_path,
-        "--no-update",
         "--config",
         Config.TRUFFLEHOG_CONFIG,
-        "-j"
+        f"--exclude-detectors={excluded_detectors}",
+        "--no-update",
+        "--no-verification",
+        "-j",
     ]
-    
+
     try:
-        logger.info(f"Running custom detectors scan on {file_path}")
+        logger.info(f"Running TruffleHog scan on {file_path}")
+        logger.info(f"Scan command: {' '.join(command_args)}")
         result = subprocess.run(
-            custom_command_args,
+            command_args,
             shell=False,
             capture_output=True,
             text=True,
-            timeout=300  # 5 minute timeout
+            timeout=300,  # 5 minute timeout
         )
-        if result.stdout:
-            all_results.append(result.stdout)
-            logger.info(f"Custom detectors scan completed with output")
-        else:
-            logger.info(f"Custom detectors scan completed with no secrets found")
-        
+        logger.info(f"Scan exit code: {result.returncode}")
         if result.stderr:
-            logger.debug(f"Custom scan stderr: {result.stderr}")
-        if result.returncode != 0:
-            logger.warning(f"Custom scan returned non-zero exit code: {result.returncode}")
+            logger.info(f"Scan stderr: {result.stderr}")
+        if result.stdout:
+            logger.info(f"Scan completed with {len(result.stdout.splitlines())} output line(s)")
+            return result.stdout
+        logger.info("Scan completed with no secrets found")
+        return ""
     except subprocess.TimeoutExpired:
-        logger.error(f"Custom detectors scan timed out for file: {file_path}")
-    
-    # Combine results from both scans
-    if all_results:
-        return "\n".join(all_results)
-    else:
-        logger.warning(f"Both scans completed but no results found for {file_path}")
+        logger.error(f"TruffleHog scan timed out for file: {file_path}")
         return ""
 
 def process_trufflehog_output(trufflehog_output: str) -> List[Dict[str, str]]:
@@ -827,15 +882,17 @@ def insert_secret_scan_results_batch(workspace_id: str,
         notebook_id = notebook_metadata.get("object_id", "")
         notebook_path = notebook_metadata.get("path", "")
         notebook_name = notebook_metadata.get("name", "")
+        object_type = notebook_metadata.get("object_type", "notebook")
         secrets_found = notebook_metadata.get("secrets_found", 0)
 
         for secret in notebook_metadata.get("secret_details", []):
             rows.append(
-                "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, cast({} as timestamp))".format(
+                "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, cast({} as timestamp))".format(
                     _sql_str(workspace_id),
                     _sql_str(notebook_id),
                     _sql_str(notebook_path),
                     _sql_str(notebook_name),
+                    _sql_str(object_type),
                     _sql_str(secret.get("DetectorName", "Unknown")),
                     _sql_str(secret.get("Raw_SHA", "")),
                     _sql_str(secret.get("SourceFile", "")),
@@ -869,7 +926,7 @@ def _insert_values(rows: List[str]) -> None:
     spark.sql(
         f"""
         INSERT INTO {json_["analysis_schema_name"]}.notebooks_secret_scan_results
-        (workspace_id, notebook_id, notebook_path, notebook_name, detector_name,
+        (workspace_id, notebook_id, notebook_path, notebook_name, object_type, detector_name,
          secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
         VALUES {", ".join(rows)}
         """
@@ -1113,7 +1170,9 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Dict[str, 
 
     temp_path = f"{parent_path}/{notebook_name}"
     path = quote(temp_path)
-    metadata = {"object_id": notebook_id, "path": path, "name": notebook_name}
+    object_type = notebook.get("object_type") or _classify_object_type(notebook_name)
+    metadata = {"object_id": notebook_id, "path": path, "name": notebook_name,
+                "object_type": object_type}
     scan_file = os.path.join(scan_dir, str(notebook_id))
 
     try:
@@ -1134,8 +1193,19 @@ def _materialize_notebook(notebook: Dict[str, Any], scan_dir: str) -> Dict[str, 
                 return {"outcome": "error"}
             content = export_response.get("content")
             if not content:
-                logger.warning(f"No content found in notebook: {temp_path}")
-                return {"outcome": "error"}
+                # The export succeeded (HTTP 200) but the object has no content:
+                # a legitimately empty file -- a blank/untitled notebook, a
+                # .gitkeep, an empty __init__.py or py.typed marker, etc. There is
+                # simply nothing to scan, which is NOT a failure. Materialize an
+                # empty file so it counts as scanned (zero findings) rather than as
+                # a coverage gap -- otherwise workspaces with empty marker files
+                # trip a false INCOMPLETE SCAN (GitHub #390).
+                try:
+                    open(scan_file, "w").close()
+                except OSError as e:
+                    logger.error(f"Failed to create empty scan file {scan_file}: {e}")
+                    return {"outcome": "error"}
+                return {"outcome": "ok", "scan_file": scan_file, "metadata": metadata}
             if not decode_and_write_content(content, scan_file):
                 logger.error(f"Failed to write notebook content to file: {scan_file}")
                 return {"outcome": "error"}
@@ -1264,7 +1334,21 @@ def process_search_response(response: Dict[str, Any], results_list: List[Dict[st
         logger.warning("Empty response received")
         return None
 
-    _process_notebook_batch(response.get("results", []), results_list,
+    # Skip binary/opaque files and tag each object's type (notebook vs file) so
+    # findings record and display the right kind.
+    items = []
+    skipped = 0
+    for r in response.get("results", []):
+        name = r.get("name", "") or (r.get("workspace_path", "") or "").rsplit("/", 1)[-1]
+        if not _is_scannable(name):
+            skipped += 1
+            continue
+        r["object_type"] = _classify_object_type(name, r.get("type") or r.get("object_type"))
+        items.append(r)
+    if skipped:
+        logger.info(f"Skipped {skipped} binary/opaque file(s) from scanning")
+
+    _process_notebook_batch(items, results_list,
                             output_filename, run_id, workspace_id)
     return response.get("next_page_token")
 
@@ -1615,10 +1699,10 @@ print("🧹 Cleanup Operations")
 print("=" * 30)
 
 # List temporary files created
-print("📁 Temporary files in /tmp/notebooks:")
+print(f"📁 Temporary files in {Config.TEMP_NOTEBOOKS_DIR}:")
 
 if notebooks_by_secrets:
-    display(notebooks_by_secrets)
+    print(f"{len(notebooks_by_secrets)} notebook(s) with secrets — see the results table.")
 else:
     print("No notebooks with secrets to display.")
 

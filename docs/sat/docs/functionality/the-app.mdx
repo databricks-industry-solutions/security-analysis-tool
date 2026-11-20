@@ -1,0 +1,82 @@
+---
+sidebar_position: 1
+sidebar_label: The SAT App
+---
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import Admonition from '@theme/Admonition';
+
+# The SAT App
+
+As of **1.0**, SAT is a single **Databricks App**. Everything — first-run setup,
+data collection, permissions analysis, secret scanning, alerts, and the security
+assistant — lives in one interface.
+
+<Admonition type="tip" title="What's retired in 1.0">
+The **core security posture checks** are now native in the
+[Databricks Governance Hub Security tab](https://docs.databricks.com/aws/en/admin/governance-hub/security),
+so they — along with the standalone dashboards (General and Executive) and the
+Initializer/Driver notebook workflow — are no longer part of SAT. 1.0 focuses on
+the capabilities Governance Hub doesn't cover: **access/permissions risk** and
+**exposed secrets**. Open the app from **Compute → Apps → security-analysis** and
+you have the whole tool in one place.
+</Admonition>
+
+<div className='bg-gray-100 p-4 rounded-lg mb-6'>
+ <img src={useBaseUrl('/img/sat_app_home.png')} alt="SAT app home page" />
+</div>
+
+---
+
+## How the app is organized
+
+* **Home** — a landing overview of your account's scope (workspaces, account
+  groups and admins) and quick entry points into the analyses below.
+* **Principal Analysis** — start from a user, group, or service principal and see
+  everything it can reach, with admin roles (Account / Workspace / Metastore
+  Admin, Catalog Owner) and the workspaces/metastores each admin administers.
+* **Resource Analysis** — start from a resource (catalog, schema, table, cluster,
+  job, warehouse, secret scope, notebook, or folder) and see every principal that
+  can reach it, and whether access is direct or inherited through a group.
+* **Credential Exposure (secret scanning)** — hardcoded secrets found in notebook source, workspace files, and cluster configurations, with scan settings and custom detection
+  rules. See [Secret Scanning](./secret-scanning.mdx).
+* **Alerts** — email/notification alerts on secret-scan findings, built on
+  Databricks SQL alerts. Creating and editing alerts is restricted to workspace
+  or account admins.
+* **Security Assistant** — a chat assistant (backed by a Databricks Foundation
+  Model and a Genie space) that answers questions about your findings and
+  permissions, enforcing your own Unity Catalog grants on every answer.
+* **Data Collection** — run and schedule the collection jobs on demand, and
+  manage scan scope, compute, and notebook/folder collection (see the
+  **Manage** panel).
+* **Settings** — change the results catalog/schema, SQL warehouse, model, or
+  account credentials at any time.
+
+---
+
+## Who sees what
+
+The app runs queries **as the signed-in user** (on-behalf-of), so Unity Catalog
+enforces each viewer's own grants on the results — people see only the data they
+are entitled to. Administrative actions are gated accordingly: **creating,
+editing, and deleting alerts requires the signed-in user to be a workspace or
+account admin.**
+
+<Admonition type="note" title="Access to the app itself">
+Grant "Can Use" on the Databricks App only to the people who should operate SAT.
+App access is the boundary for running collection jobs; viewing results is
+further constrained per-user by Unity Catalog.
+
+**We strongly recommend limiting app access to administrators** — ideally having
+admins be the sole users of SAT. Keeping the operator set small and admin-only
+keeps this security data on a need-to-know basis. Non-admins who only need to read
+findings should be granted Unity Catalog read access to the results schema instead
+of "Can Use" on the app.
+</Admonition>
+
+---
+
+## Learn more
+
+* [Permissions Analysis](./permissions-analysis.mdx) — who can access what, and escalation/impersonation risk.
+* [Secret Scanning](./secret-scanning.mdx) — notebook, file, and cluster secret detection, scan settings, and custom rules.
+* [Usage Guide](../usage.mdx) — setting up, running collection, viewing results, and configuring alerts.

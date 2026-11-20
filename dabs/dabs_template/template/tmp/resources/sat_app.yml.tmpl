@@ -1,0 +1,30 @@
+{{- if .enable_app }}
+resources:
+  apps:
+    sat_security_analysis:
+      name: "security-analysis"
+      description: "Security Analysis Tool — permissions analysis, secret scanning, and security assistant"
+      source_code_path: "../app/security-analysis-tool"
+      # OAuth scopes the app requests when forwarding the calling user's token
+      # (OBO). Declared here so a fresh install's OAuth client carries them from
+      # creation and users consent to them on first open:
+      #   sql   - the Statement Execution API every data read goes through;
+      #           without it reads fail with "required scopes: sql".
+      #   genie - lets the security assistant drive the Genie Conversation API as
+      #           the signed-in user, so Unity Catalog enforces that user's own
+      #           grants on the tables behind each answer. Without it the
+      #           assistant fails with "required scopes: genie".
+      user_api_scopes:
+        - sql
+        - genie
+      # The app is the source of truth for its configuration: catalog/schema,
+      # account id, and credentials are captured in the app's setup flow and
+      # stored as Unity Catalog secrets, and the app provisions its own collection
+      # jobs and Genie space. So the only binding needed is the SQL warehouse,
+      # which grants the app's service principal CAN_USE.
+      resources:
+        - name: "warehouse"
+          sql_warehouse:
+            permission: "CAN_USE"
+            id: {{.warehouse_id}}
+{{- end }}

@@ -8,24 +8,25 @@ import Admonition from '@theme/Admonition';
 
 <Admonition type="note" title="Note">
 
-* **SAT v0.2.0** or higher introduces full support for Unity Catalog. You can now pick your own catalog instead of being limited to the hive_metastore. Additionally, you have the flexibility to choose your own schema name.
+* **Unity Catalog:** SAT stores its results in a Unity Catalog schema — you choose the catalog and schema name during the app's in-app setup.
 
 * **Deployment Requirements**
-  * **AWS/GCP:** At least one SAT setup in a workspace per **Databricks account**.
-  * **Azure:** At least one SAT setup in a workspace per **Azure subscription**.
-  * SAT uses the configured Service Principal to access and analyze configurations by calling account and workspace APIs. Please ensure that the Service Principal is added to **all** workspaces you intend to analyze, following the instructions in the setup guides linked below. If you choose to **exclude** a specific workspace from analysis, simply do not add the Service Principal to it. 
+  * **One SAT app per Databricks account** monitors every workspace in that account — on **AWS**, **Azure**, and **GCP**. On Azure this is per **Databricks account**, not per subscription (a separate per-subscription deployment is no longer needed). A different Databricks account needs its own SAT app.
+  * For account-wide data, give a service principal the **Account admin** role (you enter its credentials in the app's setup). For resource-level findings and secret scanning in a workspace, add the app's service principal as a **workspace admin** on that workspace, then run **Data Collection → Manage → Sync workspaces** in the app to pick it up; to exclude a workspace, remove the service principal (or don't add it) and sync again.
   
 * **Networking and Access Considerations**
 
-  * SAT running on Serverless or Classic Compute cannot analyze account and destination workspaces with IP Access Control Lists (ACLs) enabled unless those ACLs are updated to allow access from the SAT workspace.
-    * If IP Access Control Lists (ACLs) are enabled at the account level and you are running SAT on serverless, contact your account team if you need to allowlist account-level APIs. 
-  * SAT running on Serverless Compute cannot access other workspaces if egress controls are configured in the SAT workspace. In this case, you must configure a separate SAT in the target workspace to perform the analysis.
+  SAT's collection jobs run as the app's service principal and reach the Databricks **account API** and each monitored workspace's **REST API** over the network. The usual constraint is reachability, not the tool itself:
+
+  * **Workspace IP access lists** — to collect a workspace's resource-level findings, the SAT job compute must be able to reach that workspace's API. If the workspace has IP access lists, allow the SAT compute's egress; otherwise that workspace is skipped and recorded as unreachable (collection of the other workspaces continues).
+  * **Account-level IP access lists** — the account-wide collectors call the account console API. If account-level IP access lists are in force and SAT runs on serverless (whose egress is not a fixed workspace IP), ask your account team about allowlisting access to the account-level APIs.
+  * **Serverless egress controls / network-isolated workspaces** — if the SAT workspace's serverless egress is restricted, or a target workspace is otherwise network-isolated, SAT can't collect that workspace remotely. Leave the app's **collection scope** on the **current workspace** (the default) and deploy a SAT app inside each such workspace to analyze it locally. Multi-workspace collection from serverless otherwise relies on **serverless cross-workspace access** (a preview — ask your account team to enable it); unreachable workspaces fail soft and are recorded rather than failing the run.
 
 * **Review and Compliance**
 
   Before implementing any security improvements based on the SAT report:
     * Review the report with business stakeholders, administrators, security teams, and auditors.
-    * Not all deviations require mitigation — evaluate recommendations based on your organizational security requirements.
+    * Not every finding requires action — evaluate it against your organizational security requirements.
     * Some recommendations may have **cost implications** or **dependency limitations**.
     * Refer to individual feature documentation to fully understand the impact before making changes to your security configurations.
     * Keep in mind that SAT is a productivity tool designed to help verify the security configurations of your Databricks deployments. It is not intended to serve as a certification or formal attestation of your deployment's security posture.
@@ -38,17 +39,17 @@ Follow this guide to setup the **Security Analysis Tool (SAT)** on your Databric
 
 <Admonition type="note" title="Note">
 
-SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers,  as most of the checks and recommendations involve security features that are only available in tiers above Standard.
+SAT is especially beneficial to customers on Databricks **Premium** or **Enterprise** tiers, where Unity Catalog and the richer access controls SAT analyzes are available.
 
 </Admonition>
 
 Before proceeding with the installation, make sure you have the following prerequisites:
 
-- Python 3.9 or higher
-- Databricks CLI installed with a profile logged (See [here](https://docs.databricks.com/en/dev-tools/cli/install.html).)
-- Databricks Account ID
-- Databricks SQL Warehouse (To run the SQL dashboard)
-- PyPI access from your workspace (To install the SAT utility library)
+- Python 3.9 or higher (to run the installer locally)
+- Databricks CLI installed with a logged-in profile (See [here](https://docs.databricks.com/en/dev-tools/cli/install.html).)
+- A Databricks SQL warehouse (the app uses it to run analysis queries and alerts; the installer can create one)
+- *(Optional, for account-wide data)* a Databricks **Account ID** and a service principal with the **Account admin** role — you enter these in the app's setup, not at install time
+- PyPI access on the machine running the installer (to install the installer's Python dependencies)
 
 
 
@@ -71,35 +72,36 @@ SAT can be deployed using Terraform. If your organization uses Terraform, it is 
 
 </Admonition>
 
+<Admonition type="note" title="Manual install (no CLI / install.sh / Terraform)">
+
+Prefer not to use `install.sh`, Terraform, or the Databricks CLI? You can deploy the app from the Databricks UI:
+
+1. **Get the code into the workspace** — add the SAT repo as a **Git folder** (**Repos → Add repo**, paste the GitHub URL), or download the repo ZIP from GitHub and upload the `app/security-analysis-tool/` folder to a workspace folder.
+2. **Create the app** — **Compute → Apps → Create app**, name it `security-analysis`, and point its source at the `app/security-analysis-tool` folder from step 1. That folder already contains everything the app needs, including the bundled collection notebooks and SAT SDK (in `assets_data.py` and `lib/`).
+3. **Add the app's resources** — in the app's **Edit** screen, bind a **SQL warehouse** resource (CAN USE), and under **User authorization** add the `sql` and `genie` scopes. (`install.sh` and Terraform set these automatically; a manual install sets them here.)
+4. **Deploy** the app, then **Open** it and complete the in-app setup (catalog/schema, SQL warehouse, and optionally account credentials). The app provisions its own collection jobs from there — no notebooks to import by hand.
+
+The automated paths (`install.sh`, Terraform) do exactly these steps for you; this is the same result done manually.
+
+</Admonition>
+
 
 
 ## Uninstalling SAT
 <Admonition type="note" title="Note">
 
-SAT creates a new **security_analysis** schema along with Delta tables. If you are an existing SAT user please run the following command:
-
-### Hive Metastore Based Schema
+SAT stores its results in the Unity Catalog schema you chose during setup. To remove them, drop that schema (replace with your catalog/schema):
 
 ```sql
-  drop database security_analysis cascade;
-```
-
-### Unity Catalog Based Schema
-
-```sql
-  drop database <uc_catalog_name>.<schema_name> cascade;
+drop schema `<catalog>`.`<schema>` cascade;
 ```
 
 </Admonition>
 ### Standard Setup
 
-
-
-* Delete the **/Workspace/Applications/SAT** folder
-* Delete the following workflows:
-  * **SAT Initializer Notebook**
-  * **SAT Driver Notebook**
-* Delete the **SAT** Dashboards
+* Delete the **security-analysis** app (**Compute → Apps**).
+* Delete the SAT-provisioned collection jobs (they are tagged **Application: SAT** — e.g. *SAT Initializer*, *SAT Permissions Analysis - Data Collection*, the account-report jobs, and *SAT Secrets Scanner*).
+* Delete the **/Workspace/Applications/SAT** folder.
 
 ### Terraform Setup
-* Run the **terraform destroy** command
+* Run the **terraform destroy** command (then remove any jobs the app provisioned, as above).

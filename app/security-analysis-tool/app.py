@@ -1,0 +1,19125 @@
+#!/usr/bin/env python3
+"""
+Permissions Analysis Tool - Databricks Security Analysis Platform
+
+A modern, dashboard-style security analysis app for Databricks environments.
+Inspired by BloodHound for Active Directory analysis.
+"""
+
+from flask import Flask, request, jsonify, send_from_directory
+import os
+import re
+import json
+import time
+import uuid
+import logging
+import threading
+from databricks.sdk import WorkspaceClient
+
+# Strict allowlist for run_id values used in SQL identifier positions. The
+# collector generates run_ids in the format `YYYYMMDD_HHMMSS_<hex>` (see
+# notebooks/permission_analysis_data_collection.py); we accept anything that
+# could plausibly be a run_id across older schemas but refuse anything that
+# could escape a SQL string literal.
+_VALID_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _validate_run_id(value):
+    """Return value if it is a well-formed run_id, else None."""
+    if value is None:
+        return None
+    value = str(value)
+    if _VALID_RUN_ID_RE.match(value):
+        return value
+    return None
+
+app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger(__name__)
+
+# --- Runtime configuration -------------------------------------------------
+# SAT resolves where it lives (catalog.schema, warehouse) at runtime rather than
+# only from deploy-time env, so the app can be deployed with nothing configured
+# and the customer completes setup from the in-app welcome screen. The order of
+# precedence is: the config file the setup flow writes, then the legacy
+# BRICKHOUND_SCHEMA env (so existing installs keep working). When neither is
+# present the app boots in setup mode instead of failing to start.
+#
+# The config file is a workspace file the app's own service principal reads and
+# writes; it needs no pre-existing schema, which is what breaks the chicken-and-egg
+# of storing the schema pointer inside the schema it points at.
+# The app persists its own configuration (chosen catalog/schema, warehouse,
+# model and other non-secret settings) as a JSON workspace file, read back on
+# the next start. It has to live somewhere the app's service principal reliably
+# owns: the deploy root under /Applications is owned by whoever deployed the
+# app, so the SP cannot create files there ("parent folder does not exist" on
+# save). Every principal -- users and service principals alike -- owns its own
+# /Users/<id> home, so the config goes there. Resolved once and cached.
+CONFIG_FILE_NAME = "app_config.json"
+_config_file_path_cache = None
+
+CATALOG = None
+SCHEMA = None
+_app_config = {}
+# Table names, recomputed by _apply_runtime_config whenever the schema changes.
+VERTICES_TABLE = EDGES_TABLE = METADATA_TABLE = None
+SHARED_TO_ACCOUNT_TABLE = PRIVILEGED_NON_IDP_TABLE = DENYLIST_CANDIDATES_TABLE = None
+NOTEBOOK_SECRETS_TABLE = CLUSTER_SECRETS_TABLE = None
+
+
+def _config_client():
+    from databricks.sdk import WorkspaceClient
+    return WorkspaceClient()
+
+
+def _config_file_path():
+    """Absolute workspace path of the app's config file, in the running
+    principal's own home so it is always writable. Both the boot-time read and
+    the setup-time write resolve it through the same identity (the app SP), so
+    they agree on the path. Cached to avoid a current_user call per access."""
+    global _config_file_path_cache
+    if _config_file_path_cache:
+        return _config_file_path_cache
+    home_owner = None
+    try:
+        home_owner = _config_client().current_user.me().user_name
+    except Exception:  # noqa: BLE001 - unavailable at import if creds not ready
+        home_owner = os.environ.get("DATABRICKS_CLIENT_ID")
+    if home_owner:
+        _config_file_path_cache = f"/Users/{home_owner}/.sat/{CONFIG_FILE_NAME}"
+    else:
+        # Last-resort fallback; may not be writable, which surfaces on save.
+        _config_file_path_cache = f"/Applications/SAT/{CONFIG_FILE_NAME}"
+    return _config_file_path_cache
+
+
+def read_persisted_config():
+    """Read the app's own config file, or {} if it has not been written yet."""
+    try:
+        raw = _config_client().workspace.download(_config_file_path()).read()
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001 - absent on first run, or unreadable
+        return {}
+
+
+def write_persisted_config(data):
+    """Persist the app config as a workspace file, readable on the next start."""
+    import io
+    from databricks.sdk.service.workspace import ImportFormat
+    client = _config_client()
+    path = _config_file_path()
+    client.workspace.mkdirs(path.rsplit("/", 1)[0])
+    client.workspace.upload(
+        path, io.BytesIO(json.dumps(data, indent=2).encode()),
+        format=ImportFormat.AUTO, overwrite=True)
+
+
+def _apply_runtime_config(data):
+    """Set CATALOG/SCHEMA and every derived table name from a config dict.
+
+    Called at import and again after the setup flow writes new config, so a
+    running app reconfigures without a restart. Table names are module globals
+    resolved at call time, so reassigning them here updates every caller.
+    """
+    global _app_config, CATALOG, SCHEMA
+    global VERTICES_TABLE, EDGES_TABLE, METADATA_TABLE
+    global SHARED_TO_ACCOUNT_TABLE, PRIVILEGED_NON_IDP_TABLE, DENYLIST_CANDIDATES_TABLE
+    global NOTEBOOK_SECRETS_TABLE, CLUSTER_SECRETS_TABLE
+
+    _app_config = data or {}
+    schema_ref = (_app_config.get("schema")
+                  or os.getenv("BRICKHOUND_SCHEMA") or os.getenv("SAT_SCHEMA") or "")
+    parts = [p for p in schema_ref.replace("`", "").strip().split(".") if p]
+    CATALOG, SCHEMA = (parts[0], parts[1]) if len(parts) == 2 else (None, None)
+
+    def t(name):
+        return f"`{CATALOG}`.`{SCHEMA}`.{name}" if CATALOG and SCHEMA else None
+
+    VERTICES_TABLE = t("brickhound_vertices")
+    EDGES_TABLE = t("brickhound_edges")
+    METADATA_TABLE = t("brickhound_collection_metadata")
+    SHARED_TO_ACCOUNT_TABLE = t("brickhound_shared_to_account")
+    PRIVILEGED_NON_IDP_TABLE = t("brickhound_privileged_non_idp")
+    DENYLIST_CANDIDATES_TABLE = t("brickhound_denylist_candidates")
+    NOTEBOOK_SECRETS_TABLE = t("notebooks_secret_scan_results")
+    CLUSTER_SECRETS_TABLE = t("clusters_secret_scan_results")
+
+    # Keep BRICKHOUND_SCHEMA / SAT_SCHEMA in sync with the configured
+    # catalog.schema: other parts of the app read them (startup config resolution
+    # and the settings display), so they must track the active schema.
+    if CATALOG and SCHEMA:
+        os.environ["BRICKHOUND_SCHEMA"] = f"{CATALOG}.{SCHEMA}"
+        os.environ["SAT_SCHEMA"] = f"{CATALOG}.{SCHEMA}"
+
+    # Bridge persisted config to the environment variables the rest of the app
+    # already reads, so no other call site has to know about the config file.
+    for env_key, cfg_key in (("WAREHOUSE_ID", "warehouse_id"),
+                             ("GENIE_SPACE_ID", "genie_space_id"),
+                             ("WORKSPACE_ID", "workspace_id"),
+                             ("ACCOUNT_ID", "account_id")):
+        if _app_config.get(cfg_key):
+            os.environ[env_key] = str(_app_config[cfg_key])
+
+
+def is_configured():
+    return bool(CATALOG and SCHEMA)
+
+
+# --- Unity Catalog secrets -------------------------------------------------
+# Secrets live as Unity Catalog securables (catalog.schema.name), governed by UC
+# grants rather than a workspace secret scope. The app reads and writes them as
+# its own service principal, which owns the schema it created during setup.
+def _uc_full_name(key):
+    # The UC secrets API addresses a secret by its bare dotted full name
+    # (catalog.schema.name); backticking the parts makes get/update miss.
+    return f"{CATALOG}.{SCHEMA}.{key}" if is_configured() else None
+
+
+def uc_secret_present(key, client=None):
+    from databricks.sdk.errors import NotFound
+    if not is_configured():
+        return False
+    client = client or _config_client()
+    try:
+        client.secrets_uc.get_secret(full_name=_uc_full_name(key))
+        return True
+    except NotFound:
+        return False
+    except Exception:  # noqa: BLE001 - unreadable counts as not usable
+        return False
+
+
+def uc_secret_value(key, client=None):
+    """The secret's plaintext, or None if absent. Read via the SDK, so it is not
+    subject to notebook-style redaction -- callers must not echo it."""
+    from databricks.sdk.errors import NotFound
+    if not is_configured():
+        return None
+    client = client or _config_client()
+    try:
+        got = client.secrets_uc.get_secret(full_name=_uc_full_name(key), include_value=True)
+        return got.effective_value if got.effective_value is not None else got.value
+    except NotFound:
+        return None
+
+
+def uc_secret_put(key, value, comment=None, client=None):
+    """Create or replace a UC secret. Requires the app SP to own the schema (or
+    hold CREATE SECRET), which it does by having created the schema at setup."""
+    from databricks.sdk.service.catalog import Secret
+    from google.protobuf.field_mask_pb2 import FieldMask
+    client = client or _config_client()
+    secret = Secret(name=key, catalog_name=CATALOG, schema_name=SCHEMA,
+                    value=str(value), comment=comment)
+    if uc_secret_present(key, client=client):
+        client.secrets_uc.update_secret(
+            full_name=_uc_full_name(key), secret=secret,
+            update_mask=FieldMask(paths=["value"]))
+    else:
+        client.secrets_uc.create_secret(secret)
+
+
+# Explicit-schema variants of the secret read/write above. The functions above
+# address the *current* schema via the CATALOG/SCHEMA globals; these take the
+# catalog and schema outright, so a schema change can copy secrets out of the old
+# schema (no longer the current one) into the new one.
+def _uc_secret_read_at(client, catalog, schema, key):
+    """A secret's plaintext from an explicit schema, or None if absent/unreadable."""
+    from databricks.sdk.errors import NotFound
+    try:
+        got = client.secrets_uc.get_secret(
+            full_name=f"{catalog}.{schema}.{key}", include_value=True)
+        return got.effective_value if got.effective_value is not None else got.value
+    except NotFound:
+        return None
+    except Exception:  # noqa: BLE001 - unreadable counts as absent for a copy
+        return None
+
+
+def _uc_secret_write_at(client, catalog, schema, key, value, comment=None):
+    """Create or replace a secret in an explicit schema."""
+    from databricks.sdk.errors import NotFound
+    from databricks.sdk.service.catalog import Secret
+    from google.protobuf.field_mask_pb2 import FieldMask
+    full = f"{catalog}.{schema}.{key}"
+    secret = Secret(name=key, catalog_name=catalog, schema_name=schema,
+                    value=str(value), comment=comment)
+    try:
+        client.secrets_uc.get_secret(full_name=full)
+        exists = True
+    except NotFound:
+        exists = False
+    if exists:
+        client.secrets_uc.update_secret(
+            full_name=full, secret=secret, update_mask=FieldMask(paths=["value"]))
+    else:
+        client.secrets_uc.create_secret(secret)
+
+
+# --- First-run setup -------------------------------------------------------
+# The app can be deployed with nothing configured. On first open the welcome
+# screen collects the catalog, schema, warehouse and account credentials; the
+# app then creates the schema, persists the config file, and writes the
+# credentials as UC secrets. Everything the customer needs to run SAT is entered
+# in the app -- no installer step in between.
+SETUP_CREDENTIAL_KEYS = {"client_id": "client-id", "client_secret": "client-secret"}
+
+
+def _ensure_schema(catalog, schema, client=None):
+    """Create the schema if absent. The app SP becomes its owner, which is what
+    lets it manage UC secrets there afterwards."""
+    from databricks.sdk.errors import ResourceAlreadyExists, NotFound
+    client = client or _config_client()
+    try:
+        client.schemas.get(full_name=f"{catalog}.{schema}")
+        return "exists"
+    except NotFound:
+        pass
+    try:
+        client.schemas.create(name=schema, catalog_name=catalog)
+        return "created"
+    except ResourceAlreadyExists:
+        return "exists"
+
+
+# Resolve at import. An env-configured install applies immediately; a fresh
+# deploy reads its (absent) config file and boots in setup mode.
+_apply_runtime_config(read_persisted_config())
+logger.info("[CONFIG] catalog=%s schema=%s configured=%s", CATALOG, SCHEMA, is_configured())
+logger.info(f"[CONFIG FINAL] VERTICES_TABLE={VERTICES_TABLE}")
+logger.info(f"[CONFIG FINAL] EDGES_TABLE={EDGES_TABLE}")
+logger.info(f"[CONFIG FINAL] METADATA_TABLE={METADATA_TABLE}")
+
+# Global variable to cache the current run_id for this session
+_cached_run_id = None
+
+
+class NoAccessError(Exception):
+    """Raised when the calling user lacks UC SELECT on the permissions-graph tables.
+
+    Caught by the Flask errorhandler below and rendered as a friendly banner
+    rather than a 500 / SQL stack trace.
+    """
+
+
+def _looks_like_no_access(exc):
+    """Detect UC permission, missing-grant, or missing-OBO-scope errors.
+
+    Matches three classes of failure that should render as a friendly
+    no-access banner rather than a generic 500 / silent empty result:
+      1. Typed `PermissionDenied` / `Unauthenticated` from the Databricks
+         SDK (preferred — the SDK does expose these for `execute_statement`).
+      2. `403 Forbidden` with `Invalid scope, required scopes: sql` —
+         user authorization is configured but the `sql` scope isn't in
+         the scope list.
+      3. Message-based fallback covering UC permission errors and
+         "table/schema/catalog does not exist" (UC hides resources the
+         caller can't see).
+    """
+    try:
+        from databricks.sdk.errors.platform import (
+            PermissionDenied, Unauthenticated,
+        )
+        if isinstance(exc, (PermissionDenied, Unauthenticated)):
+            return True
+    except ImportError:
+        pass
+    msg = str(exc).lower()
+    keywords = (
+        "invalid scope",
+        "required scopes",
+        "permission denied",
+        "permissiondenied",
+        "access denied",
+        "not authorized",
+        "unauthorized",
+        "insufficient_permissions",
+        "403 forbidden",
+        "does not exist",       # UC returns "table or view ... does not exist" when the user can't see it
+        "table_not_found",
+        "schema_not_found",
+        "catalog_not_found",
+    )
+    return any(k in msg for k in keywords)
+
+
+def _log_no_access_detail(exc):
+    """Record the underlying error verbatim.
+
+    The user-facing banner is deliberately short, which makes diagnosis hard when
+    the guess is wrong. This keeps the raw provider message in the app log.
+    """
+    logger.warning("no_access underlying error: %r", exc)
+
+
+def _no_access_message(exc=None):
+    """Pick the most accurate banner text based on the underlying error.
+
+    Two distinct failure modes:
+      * Missing OAuth scope on the app — the platform forwards a token but
+        it doesn't carry `sql`, so the warehouse rejects with
+        "Invalid scope, required scopes: sql". Fix is on the app config.
+      * Missing UC grant — the user lacks SELECT on the permissions-graph
+        tables. Fix is on the schema grants.
+    """
+    msg = str(exc).lower() if exc is not None else ""
+    if exc is not None:
+        _log_no_access_detail(exc)
+    if "invalid scope" in msg or "required scopes" in msg:
+        return (
+            "This app needs your permission to run queries on your behalf.\n\n"
+            "Sign out and sign back in to grant it: open the account menu in the "
+            "top-right of the app and choose Sign out, then reload this page and "
+            "accept the access request. Your existing sign-in was issued before "
+            "query access was enabled, so it cannot be upgraded in place.\n\n"
+            "The app only ever reads data, and only what your own Unity Catalog "
+            "permissions already allow."
+        )
+
+    return (
+        "You don't have read access to the security analysis data.\n\n"
+        "This app shows only what your own Unity Catalog permissions allow, so "
+        f"nothing is displayed until you are granted SELECT on the "
+        f"{CATALOG}.{SCHEMA} schema.\n\n"
+        "Ask whoever administers your Databricks account for read access to that "
+        "schema, then reload this page."
+    )
+
+
+def get_user_email():
+    """Return the calling user's email from Databricks Apps headers.
+
+    `X-Forwarded-Email` is set by the Apps platform on every request reaching
+    the app process. Falls back to 'unknown' for local-dev / non-Apps contexts.
+    """
+    try:
+        return request.headers.get("X-Forwarded-Email", "unknown")
+    except RuntimeError:
+        # Outside a request context (e.g. module import) — return unknown.
+        return "unknown"
+
+
+
+def _token_has_sql_scope(token):
+    """Whether a forwarded user token carries the `sql` scope.
+
+    Databricks Apps forwards a user token whenever user authorization is enabled,
+    but that token only carries the scopes the platform has actually minted for
+    the app. A token without `sql` cannot call the Statement Execution API, and
+    the failure surfaces late as a confusing permission error — so it is checked
+    up front by reading the token's own claims.
+
+    Returns True when the scope is present, False when provably absent, and True
+    when the token cannot be decoded (fail open, so an unexpected token format
+    does not disable on-behalf-of-user access).
+    """
+    if not token:
+        return False
+    try:
+        import base64
+        parts = token.split(".")
+        if len(parts) < 2:
+            return True
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:  # noqa: BLE001
+        return True
+    scope_claim = claims.get("scope") or claims.get("scp") or ""
+    scopes = scope_claim.split() if isinstance(scope_claim, str) else list(scope_claim)
+    return "sql" in scopes
+
+
+def get_connection():
+    """Get a Databricks SDK client, preferring the calling user's identity (OBO).
+
+    When the Apps platform forwards the user's OAuth token via the
+    `x-forwarded-access-token` header, we build a per-request WorkspaceClient
+    bound to that token. This makes every Statement Execution run as the
+    user, so UC enforces the user's grants on the permissions-graph tables.
+
+    If the header is absent (user authorization not configured for this app
+    in the Databricks UI, or local dev), we fall back to the app SP. This
+    keeps the app working during the OBO migration and surfaces a one-time
+    warning so an admin can finish the configuration.
+    """
+    user_token = None
+    try:
+        user_token = request.headers.get("x-forwarded-access-token")
+    except RuntimeError:
+        # Outside a request context — keep user_token None and use SP.
+        pass
+
+    # A forwarded token that lacks the `sql` scope cannot call the Statement
+    # Execution API.
+    #
+    # The app does NOT quietly fall back to its service principal here: doing so
+    # shows every viewer the same data while looking identical to per-user
+    # filtering, which is exactly the wrong failure mode for a security tool. The
+    # request fails with an explanation instead.
+    #
+    # ALLOW_SERVICE_PRINCIPAL_FALLBACK=true opts into the shared-visibility mode
+    # for deployments where per-user filtering is not required and every viewer is
+    # already trusted with the whole dataset.
+    if user_token and not _token_has_sql_scope(user_token):
+        allow_fallback = (
+            os.getenv("ALLOW_SERVICE_PRINCIPAL_FALLBACK", "false").strip().lower()
+            == "true"
+        )
+        if not allow_fallback:
+            raise NoAccessError(
+                "This app cannot query on your behalf yet.\n\n"
+                "Your sign-in does not include query access, so the app has no way "
+                "to read the security tables as you. Rather than showing data that "
+                "is not filtered to your own permissions, it stops here.\n\n"
+                "An administrator can resolve this by recreating the app with query "
+                "access enabled, which is how per-user filtering is granted."
+            )
+        if not hasattr(get_connection, "_scope_fallback_logged"):
+            logger.warning(
+                "Forwarded user token lacks the `sql` scope and "
+                "ALLOW_SERVICE_PRINCIPAL_FALLBACK is enabled: querying as the app "
+                "service principal. Results are NOT filtered per user."
+            )
+            get_connection._scope_fallback_logged = True
+        user_token = None
+        get_connection._degraded_to_sp = True
+
+    if user_token:
+        # `auth_type="pat"` is required: without it the SDK's auth resolver
+        # sees the user's bearer token AND the app SP env vars
+        # (DATABRICKS_CLIENT_ID/SECRET injected by Databricks Apps) and
+        # raises `more than one authorization method configured: oauth and
+        # pat`. Pinning auth_type forces the SDK to use only the user token.
+        # `host` must also be explicit so the env-driven OAuth path is fully
+        # bypassed.
+        workspace_client = WorkspaceClient(
+            host=os.getenv("DATABRICKS_HOST"),
+            token=user_token,
+            auth_type="pat",
+        )
+        if not hasattr(get_connection, "_obo_logged"):
+            logger.info(
+                "OBO mode: forwarding user access token (host=%s, user=%s)",
+                workspace_client.config.host, get_user_email(),
+            )
+            get_connection._obo_logged = True
+    else:
+        workspace_client = WorkspaceClient()
+        if not hasattr(get_connection, "_sp_logged"):
+            logger.warning(
+                "App SP mode: no x-forwarded-access-token on request. Configure user "
+                "authorization for this app in the Databricks UI to enable OBO."
+            )
+            logger.info(
+                "Connected as app SP: host=%s auth_type=%s",
+                workspace_client.config.host, workspace_client.config.auth_type,
+            )
+            get_connection._sp_logged = True
+
+    warehouse_id = os.getenv("WAREHOUSE_ID") or os.getenv("DATABRICKS_WAREHOUSE_ID")
+    if not warehouse_id:
+        # No warehouse is selected until first-run setup completes, so this is the
+        # expected state while the welcome screen is up -- not a deploy fault.
+        # Kept at a single warning (not an ERROR/"FATAL") so an unconfigured app
+        # does not fill its logs with alarming output during normal onboarding.
+        if not getattr(get_connection, "_no_warehouse_logged", False):
+            logger.warning(
+                "No SQL warehouse configured yet; SAT queries are unavailable "
+                "until first-run setup selects one."
+            )
+            get_connection._no_warehouse_logged = True
+        raise ValueError(
+            "SAT is not configured yet: no SQL warehouse has been selected. "
+            "Complete the welcome setup to choose a warehouse."
+        )
+
+    if not hasattr(get_connection, "_warehouse_logged"):
+        logger.info("Using SQL Warehouse: %s", warehouse_id)
+        get_connection._warehouse_logged = True
+
+    return workspace_client, warehouse_id
+
+
+def _build_sdk_parameters(params):
+    """Map a {name: value} dict to the SDK's parameter list shape.
+
+    Each value is sent as STRING — Databricks SQL coerces from there into
+    the column type at execution time. Lazy import so older SDKs that
+    don't expose StatementParameterListItem at this path don't break the
+    no-params codepath.
+    """
+    if not params:
+        return None
+    from databricks.sdk.service.sql import StatementParameterListItem
+    return [
+        StatementParameterListItem(
+            name=name,
+            value=None if value is None else str(value),
+            type="STRING",
+        )
+        for name, value in params.items()
+    ]
+
+
+def exec_query(sql_query, params=None):
+    """Execute query and return first column of first row.
+
+    `params` is a {name: value} dict bound to `:name` placeholders in
+    the SQL. Always prefer bind params over string interpolation for
+    user-controlled values.
+
+    UC permission errors are translated to NoAccessError so the Flask
+    errorhandler can render a friendly banner instead of a 500.
+    """
+    try:
+        workspace_client, warehouse_id = get_connection()
+        kwargs = {
+            "warehouse_id": warehouse_id,
+            "catalog": CATALOG,
+            "schema": SCHEMA,
+            "statement": sql_query,
+            "wait_timeout": "30s",
+        }
+        sdk_params = _build_sdk_parameters(params)
+        if sdk_params:
+            kwargs["parameters"] = sdk_params
+        result = workspace_client.statement_execution.execute_statement(**kwargs)
+        if hasattr(result, 'result') and result.result:
+            if hasattr(result.result, 'data_array') and result.result.data_array:
+                value = result.result.data_array[0][0]
+                return int(value) if value else 0
+        return 0
+    except NoAccessError:
+        raise
+    except Exception as e:
+        if _looks_like_no_access(e):
+            raise NoAccessError(_no_access_message(e)) from e
+        logger.exception("executing query")
+        return 0
+
+
+def exec_query_df(sql_query, params=None):
+    """Execute query and return results as list of dicts.
+
+    `params` is a {name: value} dict bound to `:name` placeholders in
+    the SQL. Always prefer bind params over string interpolation for
+    user-controlled values.
+
+    UC permission errors are translated to NoAccessError so the Flask
+    errorhandler can render a friendly banner instead of a 500.
+    """
+    try:
+        workspace_client, warehouse_id = get_connection()
+        kwargs = {
+            "warehouse_id": warehouse_id,
+            "catalog": CATALOG,
+            "schema": SCHEMA,
+            "statement": sql_query,
+            "wait_timeout": "50s",
+        }
+        sdk_params = _build_sdk_parameters(params)
+        if sdk_params:
+            kwargs["parameters"] = sdk_params
+        result = workspace_client.statement_execution.execute_statement(**kwargs)
+        if hasattr(result, 'result') and result.result:
+            if hasattr(result.result, 'data_array') and result.result.data_array:
+                columns = []
+                try:
+                    if hasattr(result, 'manifest') and result.manifest:
+                        if hasattr(result.manifest, 'schema') and result.manifest.schema:
+                            for col in result.manifest.schema.columns:
+                                if hasattr(col, 'name'):
+                                    columns.append(col.name)
+                                elif isinstance(col, dict) and 'name' in col:
+                                    columns.append(col['name'])
+                except Exception:
+                    pass
+                rows = []
+                for row in result.result.data_array:
+                    if columns and len(columns) == len(row):
+                        rows.append(dict(zip(columns, row)))
+                    else:
+                        rows.append({f"col{i}": val for i, val in enumerate(row)})
+                return rows
+        return []
+    except NoAccessError:
+        raise
+    except Exception as e:
+        if _looks_like_no_access(e):
+            raise NoAccessError(_no_access_message(e)) from e
+        logger.exception("executing query")
+        return []
+
+
+def _truthy(val):
+    """Coerce a Statement-Execution cell to a bool.
+
+    The SQL Statement Execution API returns every value as a string, so a
+    BOOLEAN column arrives as 'true'/'false'. Treat those (and real bools)
+    consistently; anything else is falsy.
+    """
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() == 'true'
+
+
+def get_latest_run_id():
+    """Get the most recent run_id from collection_metadata"""
+    try:
+        result = exec_query_df(f"""
+            SELECT run_id FROM {METADATA_TABLE}
+            ORDER BY collection_timestamp DESC LIMIT 1
+        """)
+        if result and len(result) > 0:
+            value = result[0].get('run_id') or result[0].get('col0')
+            return _validate_run_id(value)
+        return None
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception as e:
+        logger.exception("getting latest run_id")
+        return None
+
+
+def get_current_run_id():
+    """Get run_id from request params, body, or default to latest.
+
+    Every path is validated against _VALID_RUN_ID_RE before return so that
+    callers can safely interpolate the value into SQL string literals. An
+    invalid user-supplied run_id falls through to the next source (body,
+    cache, latest) rather than being returned raw.
+    """
+    global _cached_run_id
+    # Check if run_id is in request args (GET parameters)
+    run_id = _validate_run_id(request.args.get('run_id'))
+    if run_id:
+        return run_id
+    # Check if run_id is in request body (POST requests)
+    if request.is_json:
+        data = request.get_json(silent=True)
+        if data:
+            run_id = _validate_run_id(data.get('run_id'))
+            if run_id:
+                return run_id
+    # Use cached run_id if available
+    if _cached_run_id:
+        return _cached_run_id
+    # Otherwise get the latest
+    _cached_run_id = get_latest_run_id()
+    return _cached_run_id
+
+
+def get_available_runs(limit=10):
+    """Get list of available collection runs"""
+    logger.debug(f"get_available_runs called, METADATA_TABLE={METADATA_TABLE}")
+    try:
+        # Try query with new columns first
+        query = f"""
+            SELECT run_id,
+                   CAST(collection_timestamp AS STRING) as collection_timestamp,
+                   vertices_count,
+                   edges_count,
+                   collected_by,
+                   workspaces_collected,
+                   workspaces_failed,
+                   collection_mode
+            FROM {METADATA_TABLE}
+            ORDER BY collection_timestamp DESC
+            LIMIT {limit}
+        """
+        logger.debug(f"Executing query: {query[:100]}...")
+        result = exec_query_df(query)
+        logger.debug(f"Query returned {len(result) if result else 0} rows")
+        return result
+    except NoAccessError:
+        # Don't fall back — the user lacks access; surface the friendly banner.
+        raise
+    except Exception as e:
+        logger.exception("Error getting available runs with new columns")
+        # Fall back to basic columns (for backwards compatibility)
+        try:
+            query2 = f"""
+                SELECT run_id,
+                       CAST(collection_timestamp AS STRING) as collection_timestamp,
+                       vertices_count,
+                       edges_count,
+                       collected_by
+                FROM {METADATA_TABLE}
+                ORDER BY collection_timestamp DESC
+                LIMIT {limit}
+            """
+            logger.debug(f"Executing fallback query: {query2[:100]}...")
+            result = exec_query_df(query2)
+            logger.debug(f"Fallback query returned {len(result) if result else 0} rows")
+            return result
+        except NoAccessError:
+            raise
+        except Exception as e2:
+            logger.exception("Error getting available runs (fallback)")
+            return []
+
+
+def get_collection_coverage(run_id=None):
+    """Get workspace coverage information for a collection run"""
+    import json
+    if not run_id:
+        run_id = get_current_run_id()
+
+    if not run_id:
+        return None
+
+    try:
+        result = exec_query_df(
+            f"""
+            SELECT workspaces_collected, workspaces_failed, collection_mode,
+                   CAST(collection_timestamp AS STRING) as collection_timestamp,
+                   collected_by, vertices_count, edges_count
+            FROM {METADATA_TABLE}
+            WHERE run_id = :run_id
+            LIMIT 1
+            """,
+            params={"run_id": run_id},
+        )
+        if result and len(result) > 0:
+            row = result[0]
+            coverage = {
+                'collection_mode': row.get('collection_mode', 'unknown'),
+                'collection_timestamp': row.get('collection_timestamp'),
+                'collected_by': row.get('collected_by'),
+                'vertices_count': row.get('vertices_count'),
+                'edges_count': row.get('edges_count'),
+                'workspaces_collected': [],
+                'workspaces_failed': []
+            }
+            # Parse JSON fields
+            if row.get('workspaces_collected'):
+                try:
+                    coverage['workspaces_collected'] = json.loads(row['workspaces_collected'])
+                except:
+                    pass
+            if row.get('workspaces_failed'):
+                try:
+                    coverage['workspaces_failed'] = json.loads(row['workspaces_failed'])
+                except:
+                    pass
+            return coverage
+        return None
+    except NoAccessError:
+        raise
+    except Exception as e:
+        logger.exception("getting collection coverage with new columns")
+        # Return empty coverage for backwards compatibility
+        return {
+            'collection_mode': 'unknown',
+            'collection_timestamp': None,
+            'collected_by': None,
+            'vertices_count': None,
+            'edges_count': None,
+            'workspaces_collected': [],
+            'workspaces_failed': []
+        }
+
+
+def sanitize(value):
+    """Escape a string for safe use as a SQL string literal.
+
+    DEPRECATED — prefer bind parameters via `exec_query_df(..., params=...)`
+    over interpolating sanitized values. This helper is kept for sites
+    that build dynamic SQL fragments (e.g. IN-list construction over
+    runtime-determined principal-ID variants); those will be migrated to
+    parameterized queries in a follow-up pass.
+
+    Escapes both single quotes and backslashes — Spark SQL's default
+    string parser doesn't honor backslash escapes, but defense-in-depth
+    against future parser changes (or operators that read these values
+    via Spark configurations that DO honor escapes) is cheap.
+    """
+    if not value:
+        return ""
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("'", "''")
+    )
+
+
+def get_recursive_group_cte(principal_id, principal_email, principal_name, run_id):
+    """
+    Generate a recursive CTE to expand all group memberships including nested groups.
+    Returns the CTE SQL and tracks the inheritance path.
+
+    The CTE produces columns:
+    - group_id: The group ID
+    - group_name: The group name
+    - inheritance_path: Full path showing how access was inherited (e.g., "Group A → Group B → Group C")
+    - depth: Nesting level (0 = direct membership)
+    """
+    safe_id = sanitize(principal_id)
+    safe_email = sanitize(principal_email)
+    safe_name = sanitize(principal_name)
+
+    return f"""
+    all_groups AS (
+        -- Level 0: Direct group memberships of the principal
+        SELECT
+            g.id as group_id,
+            g.name as group_name,
+            g.name as inheritance_path,
+            0 as depth
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON e.dst = g.id AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND (e.src = '{safe_id}' OR e.src = '{safe_email}' OR e.src = '{safe_name}'
+               OR e.src LIKE '%:{safe_id}' OR e.src LIKE '%:{safe_email}')
+          AND g.node_type IN ('Group', 'AccountGroup')
+
+        UNION ALL
+
+        -- Level 1+: Groups that contain our groups (nested membership)
+        SELECT
+            parent_g.id as group_id,
+            parent_g.name as group_name,
+            CONCAT(ag.inheritance_path, ' → ', parent_g.name) as inheritance_path,
+            ag.depth + 1 as depth
+        FROM all_groups ag
+        JOIN {EDGES_TABLE} e ON e.src = ag.group_id AND e.relationship = 'MemberOf' AND e.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} parent_g ON e.dst = parent_g.id AND parent_g.run_id = '{run_id}'
+        WHERE parent_g.node_type IN ('Group', 'AccountGroup')
+          AND ag.depth < 10  -- Prevent infinite loops, max 10 levels of nesting
+    )
+    """
+
+
+def get_principal_identifiers_cte(principal_id, principal_email, principal_name):
+    """
+    Generate a CTE that lists all identifiers for a principal.
+    This handles the fact that edges may reference principals by different IDs.
+    """
+    safe_id = sanitize(principal_id)
+    safe_email = sanitize(principal_email)
+    safe_name = sanitize(principal_name)
+
+    return f"""
+    principal_ids AS (
+        SELECT '{safe_id}' as pid
+        UNION SELECT '{safe_email}' WHERE '{safe_email}' != ''
+        UNION SELECT '{safe_name}' WHERE '{safe_name}' != ''
+    )
+    """
+
+
+def find_principal(identifier, run_id):
+    """Find a principal by ID, email, name, or display_name.
+
+    Prioritizes AccountUser over workspace-level User to ensure account-level
+    group memberships (which have WorkspaceAccess edges) are found.
+    """
+    if not identifier:
+        return None
+    # Order by node_type to prefer AccountUser/AccountGroup/AccountServicePrincipal
+    # These have account-level group memberships with WorkspaceAccess edges
+    query = f"""
+    SELECT id, name, display_name, email, node_type, owner
+    FROM {VERTICES_TABLE}
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(email) = LOWER(:ident)
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
+    AND node_type IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+    ORDER BY CASE
+        WHEN node_type = 'AccountUser' THEN 1
+        WHEN node_type = 'AccountGroup' THEN 2
+        WHEN node_type = 'AccountServicePrincipal' THEN 3
+        ELSE 4
+    END
+    LIMIT 1
+    """
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
+    return results[0] if results else None
+
+
+def find_account_principal(identifier, run_id):
+    """Find the account-level version of a principal (AccountUser/AccountGroup/AccountServicePrincipal).
+
+    This is used to resolve workspace access via account-level group memberships.
+    """
+    if not identifier:
+        return None
+    query = f"""
+    SELECT id, name, display_name, email, node_type, owner
+    FROM {VERTICES_TABLE}
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(email) = LOWER(:ident)
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
+    AND node_type IN ('AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+    LIMIT 1
+    """
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
+    return results[0] if results else None
+
+
+def find_resource(identifier, run_id):
+    """Find a resource by ID, name, or display_name"""
+    if not identifier:
+        return None
+    query = f"""
+    SELECT id, name, display_name, email, node_type, owner
+    FROM {VERTICES_TABLE}
+    WHERE run_id = :run_id
+      AND (id = :ident
+       OR LOWER(name) = LOWER(:ident)
+       OR LOWER(display_name) = LOWER(:ident))
+    AND node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+    LIMIT 1
+    """
+    results = exec_query_df(query, params={"run_id": run_id, "ident": identifier})
+    return results[0] if results else None
+
+
+# ============================================================================
+# Request lifecycle: audit log + friendly no-access handler
+# ============================================================================
+
+
+@app.before_request
+def _audit_log_request():
+    """Emit one info-level log line per API request capturing the calling
+    user's identity (from Databricks Apps `X-Forwarded-Email`), the path,
+    and the upstream client IP. Provides per-user attribution without
+    requiring OBO to be configured.
+    """
+    if request.path.startswith("/api/") or request.path == "/":
+        logger.info(
+            "request: path=%s user=%s ip=%s req_id=%s",
+            request.path,
+            get_user_email(),
+            request.headers.get("X-Real-Ip", "-"),
+            request.headers.get("X-Request-Id", "-"),
+        )
+
+
+@app.after_request
+def _security_headers(resp):
+    """Apply baseline security headers on every response.
+
+    The inline `<script>` and `<style>` blocks in get_main_html() require
+    `'unsafe-inline'` on script-src/style-src. Pulling that JS/CSS out into
+    served static files is a separate refactor; until then this header
+    set still adds meaningful defense-in-depth against MIME sniffing,
+    referrer leaks, and outbound resource loads.
+
+    `X-Frame-Options` is intentionally not set — the app is rendered in
+    the Databricks Apps UI inside an iframe, and a stricter value would
+    break that integration. Frame ancestry is left to the Databricks
+    platform's reverse proxy.
+    """
+    resp.headers.setdefault("Content-Security-Policy", (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ))
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
+
+
+@app.errorhandler(NoAccessError)
+def _no_access_handler(exc):
+    """Translate a NoAccessError raised from exec_query[_df] into a friendly
+    JSON banner the UI can render. The full stack trace is left in app
+    logs (logger.exception) for admins to triage.
+    """
+    logger.warning(
+        "no_access: user=%s path=%s message=%s",
+        get_user_email(), request.path, str(exc),
+    )
+    return jsonify({
+        "error": "no_access",
+        "message": str(exc),
+    }), 403
+
+
+# ============================================================================
+# MAIN UI
+# ============================================================================
+
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve static assets (e.g. the favicon) from the app's static/ dir."""
+    return send_from_directory(_STATIC_DIR, filename)
+
+
+@app.route('/favicon.svg')
+def favicon():
+    return send_from_directory(_STATIC_DIR, "favicon.svg")
+
+
+@app.route('/')
+def index():
+    return get_main_html()
+
+
+def get_main_html():
+    """Generate the main dashboard HTML"""
+    return '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Analysis Tool</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-input: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --danger: #8b5cf6;
+            --warning: #f59e0b;
+            --success: #10b981;
+            --border: #334155;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* Layout */
+        .app-container { display: flex; height: 100vh; }
+        .sidebar {
+            width: 300px;
+            background: linear-gradient(180deg, #1a1d2e 0%, #16182a 100%);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 16px rgba(0, 0, 0, 0.1);
+            height: 100vh;
+            position: sticky;
+            top: 0;
+            transition: width 0.2s ease;
+        }
+        .sidebar.collapsed { width: 72px; }
+        /* Pill on the sidebar's edge toggles the rail; the chevron flips when
+           collapsed. */
+        .nav-collapse-btn {
+            position: absolute;
+            /* Centre the toggle on the sidebar's right edge, clear of the sticky
+               collection bar at the top (which previously overlapped it). */
+            top: 50%;
+            transform: translateY(-50%);
+            right: -13px;
+            /* Above the page's sticky stats header (z 100) so the edge pill is
+               never painted over by page content; stays below modals/overlays. */
+            z-index: 110;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+            transition: background 0.15s, color 0.15s;
+        }
+        .nav-collapse-btn:hover { background: var(--bg-input); color: var(--text-primary); }
+        .nav-collapse-btn svg { width: 14px; height: 14px; transition: transform 0.2s; }
+        .sidebar.collapsed .nav-collapse-btn svg { transform: rotate(180deg); }
+
+        /* Floating label shown on hover over a collapsed-rail icon. Fixed-position
+           (via JS) so it escapes the nav's scroll clipping. */
+        .nav-tip {
+            position: fixed;
+            transform: translateY(-50%);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s;
+            z-index: 2000;
+        }
+        .nav-tip.show { opacity: 1; }
+        .main-content {
+            flex: 1;
+            /* min-width:0 lets this flex item shrink to the viewport instead of
+               growing to its widest child. Without it a wide table pushes the
+               whole content area past the screen and the right columns get cut
+               off -- the classic flexbox overflow trap. */
+            min-width: 0;
+            padding: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Stats Header Bar */
+        .stats-header-bar {
+            background: linear-gradient(135deg, #1a1d2e 0%, #16182a 100%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 20px 28px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        .stats-header-bar.collapsed {
+            padding: 12px 28px;
+        }
+        .stats-header-bar.collapsed .stats-header-container {
+            display: none;
+        }
+        .stats-header-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .stats-header-bar.collapsed .stats-header-toggle {
+            margin-bottom: 0;
+        }
+        .stats-header-toggle-text {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+        .stats-header-toggle-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 6px 12px;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        .stats-header-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .stats-header-toggle-btn svg {
+            width: 16px;
+            height: 16px;
+            transition: transform 0.3s;
+        }
+        .stats-header-bar.collapsed .stats-header-toggle-btn svg {
+            transform: rotate(180deg);
+        }
+        .stats-header-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .stats-header-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: nowrap;
+        }
+        .stats-header-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s;
+            flex: 0 0 auto;
+        }
+        .stats-header-section:hover {
+            background: rgba(255, 255, 255, 0.05);
+            transform: translateY(-1px);
+        }
+        .stats-header-label {
+            font-size: 0.68em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 600;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            margin-bottom: 2px;
+        }
+        .stats-header-items {
+            display: flex;
+            gap: 14px;
+        }
+        .stats-header-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0;
+        }
+        .stats-icon {
+            width: 17px;
+            height: 17px;
+            color: #a78bfa;
+            opacity: 0.8;
+            flex-shrink: 0;
+        }
+        .stats-value {
+            font-size: 1.05em;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #c4b5fd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            white-space: nowrap;
+        }
+        .stats-label {
+            font-size: 0.78em;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .stats-header-divider {
+            width: 1px;
+            height: 55px;
+            background: linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.1) 50%, transparent 100%);
+            flex-shrink: 0;
+        }
+
+        /* Sidebar */
+        .sidebar-header {
+            padding: 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .logo:hover {
+            transform: translateX(4px);
+            opacity: 0.8;
+        }
+        .logo-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        /* ---------------------------------------------------------------
+           Security assistant — floating launcher and slide-over panel.
+           Fixed position so it is reachable from every page without taking
+           a nav slot.
+           --------------------------------------------------------------- */
+        .assistant-fab {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 52px;
+            height: 52px;
+            border-radius: 26px;
+            border: none;
+            cursor: pointer;
+            z-index: 1200;
+            display: grid;
+            place-items: center;
+            color: #fff;
+            background: linear-gradient(135deg, #667eea 0%, #8b5cf6 100%);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, .42);
+            transition: transform .16s ease, box-shadow .16s ease;
+        }
+        .assistant-fab:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(102,126,234,.55); }
+        .assistant-fab svg { width: 23px; height: 23px; }
+        .assistant-fab.hidden { display: none; }
+        /* The settings drawer sits above the assistant button, which would
+           otherwise float over the panel's content. */
+        body.drawer-open .assistant-fab { opacity: 0; pointer-events: none; }
+
+        .assistant-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 460px;
+            max-width: 94vw;
+            background: var(--bg-card);
+            border-left: 1px solid var(--border);
+            box-shadow: -14px 0 40px rgba(0, 0, 0, .5);
+            z-index: 1300;
+            display: flex;
+            flex-direction: column;
+            transform: translateX(100%);
+            transition: transform .22s ease;
+        }
+        .assistant-panel.open { transform: translateX(0); }
+
+        .assistant-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .assistant-head-mark {
+            width: 28px; height: 28px; flex: 0 0 28px;
+            border-radius: 8px;
+            display: grid; place-items: center;
+            background: linear-gradient(135deg, #667eea 0%, #8b5cf6 100%);
+            color: #fff;
+        }
+        .assistant-head-mark svg { width: 15px; height: 15px; }
+        .assistant-head-title { font-weight: 650; font-size: 1em; letter-spacing: -.1px; }
+        .assistant-head-sub { font-size: .72em; color: var(--text-muted); }
+        .assistant-close {
+            background: transparent; border: none; cursor: pointer;
+            color: var(--text-muted); font-size: 1.25em; line-height: 1;
+        }
+        .assistant-close:hover { background: var(--bg-input); color: var(--text-primary); }
+
+        /* Header actions sit together at the right edge. */
+        .assistant-head-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            flex: 0 0 auto;
+        }
+        .assistant-icon-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            padding: 4px;
+            border-radius: 6px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+        }
+        .assistant-icon-btn:hover { background: var(--bg-input); color: var(--text-primary); }
+        .assistant-icon-btn svg { width: 15px; height: 15px; }
+        .assistant-icon-btn,
+        .assistant-close {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            display: grid;
+            place-items: center;
+            border-radius: 6px;
+            flex: 0 0 28px;
+        }
+        .assistant-icon-btn.is-open { background: var(--bg-input); color: #a5b4fc; }
+
+        /* Floating hover labels for the header controls. The panel and header
+           don't clip overflow, so a CSS tooltip below each button is enough;
+           right-aligned so it never spills past the panel's edge. */
+        .assistant-head-actions .assistant-icon-btn,
+        .assistant-head-actions .assistant-close { position: relative; }
+        .assistant-head-actions [data-tip]::after {
+            content: attr(data-tip);
+            position: absolute;
+            top: calc(100% + 7px);
+            right: 0;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 11.5px;
+            font-weight: 500;
+            line-height: 1;
+            white-space: nowrap;
+            padding: 6px 9px;
+            border-radius: 7px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transform: translateY(-3px);
+            pointer-events: none;
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            z-index: 2000;
+        }
+        .assistant-head-actions [data-tip]:hover::after,
+        .assistant-head-actions [data-tip]:focus-visible::after {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Reusable help icon for page titles. A small "i" badge that reveals a
+           wrapping tip on hover/focus (wider + wrapping, unlike the one-line
+           button tips above) so a page can carry a sentence or two of
+           how-to-use / how-to-read guidance without cluttering the header. */
+        .help-tip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 17px;
+            height: 17px;
+            margin-left: 9px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+            font-style: normal;
+            line-height: 1;
+            cursor: help;
+            vertical-align: middle;
+            position: relative;
+            user-select: none;
+        }
+        .help-tip:hover, .help-tip:focus-visible { color: var(--text-primary); border-color: var(--accent); }
+        .help-tip::after {
+            content: attr(data-help);
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            width: max-content;
+            max-width: 340px;
+            white-space: normal;
+            text-align: left;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 12.5px;
+            font-weight: 400;
+            line-height: 1.5;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transform: translateY(-4px);
+            pointer-events: none;
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            z-index: 2000;
+        }
+        .help-tip:hover::after,
+        .help-tip:focus-visible::after {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Multi-principal selection chips + per-principal result panels. */
+        #principal-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .principal-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 5px 6px 5px 12px; border-radius: 16px;
+            background: var(--bg-card); border: 1px solid var(--border);
+            color: var(--text-primary); font-size: 0.85em;
+        }
+        .principal-chip button {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 18px; height: 18px; border: none; border-radius: 50%;
+            background: transparent; color: var(--text-muted);
+            font-size: 15px; line-height: 1; cursor: pointer;
+        }
+        .principal-chip button:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .principal-chip-clear {
+            align-self: center; background: none; border: none;
+            color: var(--text-muted); font-size: 0.82em;
+            text-decoration: underline; cursor: pointer;
+        }
+        details.principal-multi { margin-bottom: 14px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        details.principal-multi > summary {
+            cursor: pointer; padding: 12px 16px; font-weight: 600;
+            color: var(--text-primary); background: var(--bg-input); list-style: none;
+        }
+        details.principal-multi > summary::-webkit-details-marker { display: none; }
+        details.principal-multi > summary::before { content: '\\25B8'; margin-right: 8px; color: var(--text-muted); }
+        details.principal-multi[open] > summary::before { content: '\\25BE'; }
+        details.principal-multi > div { padding: 6px 12px 12px; }
+
+        /* Genie result tables rendered inline in an assistant answer. */
+        .assistant-table-wrap {
+            margin: 10px 0 4px;
+            max-height: 260px;
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .assistant-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8em;
+        }
+        .assistant-table th, .assistant-table td {
+            text-align: left;
+            padding: 6px 9px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        .assistant-table th {
+            position: sticky;
+            top: 0;
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            font-weight: 650;
+        }
+        .assistant-table tbody tr:last-child td { border-bottom: none; }
+        .assistant-table-note {
+            font-size: 0.74em;
+            color: var(--text-muted);
+            margin: 4px 2px 0;
+        }
+
+        .assistant-log { flex: 1; overflow-y: auto; padding: 18px 16px; }
+        .assistant-msg { margin-bottom: 16px; }
+        .assistant-msg:last-child { margin-bottom: 4px; }
+
+        /* User turns: a compact right-aligned bubble. */
+        .assistant-msg.me { display: flex; justify-content: flex-end; }
+        .assistant-bubble {
+            max-width: 84%;
+            background: var(--bg-input);
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 13px 13px 4px 13px;
+            padding: 9px 13px;
+            font-size: .9em; line-height: 1.55; color: var(--text-primary);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+        }
+        .assistant-bubble div { margin: 0; }
+
+        /* Assistant turns: full width (room for tables), with a small label. */
+        .assistant-msg.ai { display: block; }
+        .assistant-who {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: .64em; font-weight: 700; letter-spacing: .07em;
+            text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px;
+        }
+        .assistant-who::before {
+            content: ""; width: 6px; height: 6px; border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #8b5cf6);
+        }
+        .assistant-text { font-size: .9em; line-height: 1.55; word-wrap: break-word; color: var(--text-primary); }
+        .assistant-text > div { margin-bottom: 5px; }
+        .assistant-text > div:last-child { margin-bottom: 0; }
+        .assistant-text ul { margin: 6px 0 8px 18px; padding: 0; }
+        .assistant-text li { margin-bottom: 3px; }
+        .assistant-text code {
+            background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px;
+            font-size: .9em;
+        }
+
+        .assistant-trace {
+            margin-top: 7px; border: 1px solid var(--border);
+            border-radius: 6px; background: rgba(0,0,0,.22);
+        }
+        .assistant-trace summary {
+            padding: 5px 9px; cursor: pointer; font-size: .76em; color: var(--text-muted);
+        }
+        .assistant-trace pre {
+            margin: 0; padding: 9px; border-top: 1px solid var(--border);
+            font-size: .72em; color: var(--text-muted); overflow-x: auto;
+        }
+
+        .assistant-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+        .assistant-chip {
+            padding: 6px 12px; border-radius: 999px; cursor: pointer;
+            background: var(--bg-input); border: 1px solid var(--border);
+            font-size: .76em; color: var(--text-secondary); transition: border-color .12s, color .12s;
+        }
+        .assistant-chip:hover { border-color: var(--accent); color: var(--text-primary); }
+
+        /* Past-conversations list (History button). */
+        .assistant-history { padding: 2px; }
+        .assistant-history-head {
+            font-size: .64em; font-weight: 700; letter-spacing: .07em;
+            text-transform: uppercase; color: var(--text-muted); margin: 2px 2px 10px;
+        }
+        .assistant-history-item {
+            display: flex; align-items: baseline; gap: 10px; width: 100%;
+            padding: 9px 11px; margin-bottom: 5px;
+            background: var(--bg-input); border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 9px; cursor: pointer; text-align: left;
+            color: var(--text-primary); font: inherit;
+            transition: border-color .12s, background .12s;
+        }
+        .assistant-history-item:hover { border-color: rgba(102, 126, 234, .5); }
+        .assistant-history-title {
+            flex: 1; min-width: 0; font-size: .86em;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .assistant-history-time { flex: 0 0 auto; font-size: .72em; color: var(--text-muted); }
+        .assistant-history-empty {
+            font-size: .85em; color: var(--text-muted); padding: 8px 2px; line-height: 1.5;
+        }
+
+        .assistant-compose {
+            border-top: 1px solid var(--border);
+            padding: 12px 14px;
+            display: flex; gap: 8px; align-items: flex-end;
+        }
+        .assistant-compose .btn { min-height: 38px; }
+        .assistant-compose textarea {
+            flex: 1; resize: none; min-height: 38px; max-height: 150px;
+            background: var(--bg-input); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 9px 11px; font-family: inherit; font-size: .88em; line-height: 1.4;
+        }
+        .assistant-compose textarea:focus { outline: none; border-color: var(--accent); }
+        .assistant-note {
+            padding: 2px 16px 12px; font-size: .7em; color: var(--text-muted);
+            display: flex; align-items: flex-start; gap: 6px; line-height: 1.45;
+        }
+        .assistant-note svg { width: 11px; height: 11px; flex: 0 0 11px; margin-top: 2px; }
+
+        /* Buttons used by the secret-scanning filters and the assistant.
+           Matches .search-btn's gradient and lift so the app reads as one
+           surface, at a size suited to inline controls. */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            padding: 10px 20px;
+            font-family: inherit;
+            font-size: 0.88em;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.28);
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(102, 126, 234, 0.42);
+        }
+        .btn:active:not(:disabled) { transform: translateY(0); }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn svg { width: 15px; height: 15px; }
+
+        /* btn-primary is an alias so markup can be explicit about intent. */
+        .btn-primary { }
+
+        .btn-stop {
+            background: var(--bg-input);
+            color: #fca5a5;
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            box-shadow: none;
+        }
+        .btn-stop:hover:not(:disabled) {
+            background: rgba(248, 113, 113, 0.12);
+            border-color: rgba(248, 113, 113, 0.7);
+        }
+        .btn-danger {
+            background: var(--bg-input);
+            color: #fca5a5;
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            box-shadow: none;
+        }
+        .btn-danger:hover:not(:disabled) {
+            background: rgba(248, 113, 113, 0.12);
+            border-color: rgba(248, 113, 113, 0.7);
+        }
+        .btn-ghost {
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            box-shadow: none;
+        }
+        .btn-ghost:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        .btn-sm { padding: 7px 13px; font-size: 0.8em; border-radius: 8px; }
+
+        /* ---------------------------------------------------------------
+           Data Collection. Laid out as grouped rows rather than free-floating
+           cards: an operator scans a list of pipelines, checks freshness, and
+           acts on one — the same shape an observability console uses.
+           --------------------------------------------------------------- */
+        /* First-run prompt to create the collection jobs from the app. */
+        .collect-setup {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, .10), rgba(118, 75, 162, .06));
+            border: 1px solid rgba(102, 126, 234, .28);
+            border-radius: 12px;
+            padding: 16px 18px;
+            margin-bottom: 22px;
+        }
+        .collect-setup-text { flex: 1; min-width: 0; }
+        .collect-setup-title { font-weight: 650; font-size: .98em; }
+        .collect-setup-sub { font-size: .85em; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+        .collect-setup-err { font-size: .82em; color: #fca5a5; margin-top: 8px; }
+        .collect-setup .btn { flex-shrink: 0; }
+        .collect-group { margin-bottom: 18px; }
+
+        /* Manage section: admin actions (redeploy, re-run initializer, remove). */
+        .collect-manage {
+            margin-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, .07);
+            padding-top: 6px;
+        }
+        .collect-manage-head {
+            display: flex; align-items: center; gap: 8px;
+            width: 100%; padding: 12px 2px;
+            background: none; border: none; color: var(--text-muted);
+            font: inherit; font-size: .74em; font-weight: 700;
+            letter-spacing: .08em; text-transform: uppercase;
+            cursor: pointer; text-align: left;
+        }
+        .collect-manage-head:hover { color: var(--text-secondary); }
+        .collect-manage-head svg { width: 14px; height: 14px; transition: transform .18s; }
+        .collect-manage-head.is-open svg { transform: rotate(180deg); }
+        .collect-manage-body { padding: 4px 2px; }
+        .manage-action {
+            display: flex; align-items: center; gap: 16px;
+            padding: 13px 0;
+            border-top: 1px solid rgba(255, 255, 255, .05);
+        }
+        .manage-action:first-child { border-top: none; }
+        .manage-action-text { flex: 1; min-width: 0; }
+        .manage-action-title { font-size: .92em; font-weight: 600; }
+        .manage-action-sub { font-size: .82em; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
+        .manage-action .btn { flex-shrink: 0; }
+        .manage-msg { font-size: .82em; margin-top: 8px; min-height: 1em; }
+        .manage-msg.is-error { color: #fca5a5; }
+        .manage-msg.is-warn { color: #fcd34d; }
+        .manage-msg.is-ok { color: #86efac; }
+        .manage-progress {
+            height: 3px; border-radius: 2px; background: var(--bg-input);
+            overflow: hidden; margin-bottom: 8px;
+        }
+        .manage-progress-fill {
+            height: 100%; width: 34%; border-radius: 2px;
+            background: linear-gradient(90deg, transparent, #667eea 45%, #8b5cf6 62%, transparent);
+            animation: collect-sweep 1.7s ease-in-out infinite;
+        }
+        .collect-group-head {
+            display: flex;
+            align-items: baseline;
+            gap: 9px;
+            margin-bottom: 9px;
+        }
+        .collect-group-title {
+            font-size: 0.74em;
+            font-weight: 700;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .collect-group-rule {
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .collect-row {
+            display: grid;
+            /* status rail | name+description | freshness | actions
+               Fixed outer columns keep the status dots and action buttons on the
+               same vertical line across every row, regardless of text length. */
+            grid-template-columns: 132px minmax(0, 1fr) 150px auto;
+            gap: 20px;
+            align-items: start;
+            padding: 15px 18px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: border-color 0.16s, background 0.16s;
+        }
+        .collect-row:hover { border-color: rgba(102, 126, 234, 0.35); }
+        .collect-row.is-running { border-color: rgba(102, 126, 234, 0.5); }
+        .collect-row.is-stale { box-shadow: inset 3px 0 0 #f59e0b; }
+        .collect-row.is-failed { box-shadow: inset 3px 0 0 #ef4444; }
+        .collect-row.is-unconfigured { opacity: 0.6; }
+
+        .collect-name { font-weight: 600; font-size: 0.95em; margin-bottom: 3px; }
+        .collect-desc {
+            font-size: 0.79em;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+        .collect-feeds {
+            font-size: 0.75em;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        .collect-feeds span { color: var(--text-secondary); }
+
+        /* Status rail — first column, so health is the first thing scanned. */
+        .collect-state {
+            display: flex; align-items: center; gap: 7px;
+            font-size: 0.84em; font-weight: 500;
+            white-space: nowrap;
+        }
+        .collect-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
+        .collect-dot.ok      { background: #22c55e; }
+        .collect-dot.stale   { background: #f59e0b; }
+        .collect-dot.failed  { background: #ef4444; }
+        .collect-dot.idle    { background: #64748b; }
+        .collect-dot.running { background: #667eea; animation: collect-pulse 1.4s ease-in-out infinite; }
+        @keyframes collect-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(102,126,234,.6); }
+            50%      { box-shadow: 0 0 0 5px rgba(102,126,234,0); }
+        }
+        .collect-substate {
+            font-size: 0.75em; color: var(--text-muted);
+            margin-top: 4px; padding-left: 14px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Freshness */
+        /* The job name links to its definition in Workflows. Styled as a heading
+           first so the row stays scannable; the arrow appears on hover only.
+           The SVG needs explicit sizing on all axes — an unconstrained inline SVG
+           expands to fill its grid cell, which previously blew the row to 762px. */
+        .collect-link {
+            color: var(--text-primary);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .collect-link:hover { color: #a5b4fc; text-decoration: none; }
+        .collect-link-icon {
+            width: 12px;
+            height: 12px;
+            min-width: 12px;
+            min-height: 12px;
+            flex: 0 0 12px;
+            opacity: 0;
+            transition: opacity 0.14s;
+        }
+        .collect-link:hover .collect-link-icon { opacity: 0.75; }
+
+        /* Guard: any icon added to a row later inherits a sane box. */
+        .collect-row svg { max-width: 16px; max-height: 16px; }
+        /* Per-job remove: quiet by default, danger-tinted on hover/arm. */
+        .collect-remove { color: var(--text-muted); margin-left: 4px; }
+        .collect-remove:hover { color: #fca5a5; border-color: rgba(239, 68, 68, .45); }
+        .collect-remove.is-armed {
+            color: #fca5a5; border-color: rgba(239, 68, 68, .6);
+            background: rgba(239, 68, 68, .12);
+        }
+
+        /* Anchors styled as buttons need the button box model. */
+        a.btn, a.btn:hover { text-decoration: none; }
+        a.btn.btn-sm { line-height: 1; }
+
+        .collect-fresh { font-size: 0.84em; color: var(--text-secondary); white-space: nowrap; }
+        .collect-fresh-sub { font-size: 0.75em; color: var(--text-muted); margin-top: 4px; }
+        /* Hover the relative time to see the exact run date. */
+        .collect-fresh[data-full] { position: relative; cursor: default; }
+        .collect-fresh[data-full]::after {
+            content: attr(data-full);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 0;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 11.5px;
+            font-weight: 500;
+            white-space: nowrap;
+            padding: 6px 9px;
+            border-radius: 7px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transform: translateY(3px);
+            pointer-events: none;
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            z-index: 2000;
+        }
+        .collect-fresh[data-full]:hover::after { opacity: 1; transform: translateY(0); }
+
+        /* Actions */
+        .collect-actions {
+            display: flex; gap: 7px; align-items: center;
+            justify-self: end; white-space: nowrap;
+        }
+
+        /* Progress line spanning the full row while a collection runs. */
+        .collect-bar {
+            grid-column: 1 / -1;
+            height: 3px;
+            border-radius: 2px;
+            background: var(--bg-input);
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .collect-bar-fill {
+            height: 100%;
+            width: 34%;
+            border-radius: 2px;
+            background: linear-gradient(90deg, transparent, #667eea 45%, #8b5cf6 62%, transparent);
+            animation: collect-sweep 1.7s ease-in-out infinite;
+        }
+        @keyframes collect-sweep {
+            0%   { transform: translateX(-110%); }
+            100% { transform: translateX(330%); }
+        }
+
+        .collect-row.just-finished { animation: collect-flash 1.8s ease-out; }
+        @keyframes collect-flash {
+            0%   { box-shadow: inset 0 0 0 2px rgba(34,197,94,.5); }
+            100% { box-shadow: inset 0 0 0 2px rgba(34,197,94,0); }
+        }
+
+        /* Schedule drawer — same surface language as the rest of the app. */
+        .collect-drawer {
+            grid-column: 1 / -1;
+            margin-top: 12px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+        }
+        .collect-drawer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+            gap: 12px;
+            align-items: end;
+        }
+        .collect-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+        .collect-field-label {
+            font-size: 0.71em;
+            font-weight: 650;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .collect-drawer select,
+        .collect-drawer input[type="text"] {
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 9px 11px;
+            font-family: inherit;
+            font-size: 0.86em;
+            width: 100%;
+        }
+        .collect-drawer select:focus,
+        .collect-drawer input[type="text"]:focus {
+            outline: none;
+            border-color: rgba(102, 126, 234, 0.7);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.14);
+        }
+
+        /* Toggle switch, so enabling a schedule doesn't rely on a raw checkbox. */
+        .collect-switch {
+            display: inline-flex; align-items: center; gap: 9px;
+            cursor: pointer; font-size: 0.86em; color: var(--text-secondary);
+        }
+        .collect-switch input { position: absolute; opacity: 0; pointer-events: none; }
+        .collect-switch-track {
+            width: 36px; height: 20px; border-radius: 11px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            position: relative;
+            transition: background 0.18s, border-color 0.18s;
+            flex: 0 0 36px;
+        }
+        .collect-switch-track::after {
+            content: "";
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: var(--text-muted);
+            transition: transform 0.18s, background 0.18s;
+        }
+        .collect-switch input:checked + .collect-switch-track {
+            background: rgba(102, 126, 234, 0.28);
+            border-color: rgba(102, 126, 234, 0.6);
+        }
+        .collect-switch input:checked + .collect-switch-track::after {
+            transform: translateX(16px);
+            background: #a5b4fc;
+        }
+
+        .collect-msg { font-size: 0.82em; margin-top: 10px; min-height: 18px; }
+
+        @media (max-width: 1100px) {
+            .collect-row { grid-template-columns: minmax(0, 1fr); gap: 11px; }
+            .collect-actions { justify-self: start; }
+            .collect-substate { padding-left: 0; }
+        }
+
+        .logo-text {
+            font-size: 0.95em;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 0%, #c4b5fd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.3;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .nav-sections-container {
+            flex: 0 0 auto;
+        }
+        .sidebar-spacer {
+            flex: 1;
+            min-height: 20px;
+        }
+        .sidebar-nav::-webkit-scrollbar {
+            width: 6px;
+        }
+        .sidebar-nav::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .sidebar-nav::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        .sidebar-nav::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* App-wide scrollbars: thin, rounded, soft slate -- replaces the default
+           grey. The transparent border + background-clip insets the thumb so it
+           reads as a floating pill rather than filling the gutter. */
+        * { scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, .34) transparent; }
+        ::-webkit-scrollbar { width: 11px; height: 11px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, .32);
+            border-radius: 10px;
+            border: 3px solid transparent;
+            background-clip: padding-box;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, .5);
+            background-clip: padding-box;
+        }
+        ::-webkit-scrollbar-corner { background: transparent; }
+        .nav-section {
+            margin-bottom: 28px;
+        }
+        .nav-label {
+            font-size: 0.7em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.4);
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+            padding: 0 16px;
+            font-weight: 600;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            color: rgba(255, 255, 255, 0.65);
+            margin-bottom: 4px;
+            font-size: 0.95em;
+            position: relative;
+        }
+        .nav-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 0;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            border-radius: 0 3px 3px 0;
+            transition: height 0.25s;
+        }
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.9);
+            transform: translateX(4px);
+        }
+        .nav-item:hover::before {
+            height: 60%;
+        }
+        .nav-item.active {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+            color: #ffffff;
+            font-weight: 500;
+        }
+        .nav-item.active::before {
+            height: 100%;
+        }
+        .nav-item svg {
+            width: 20px;
+            height: 20px;
+            opacity: 0.75;
+        }
+        .nav-item.active svg {
+            opacity: 1;
+        }
+
+        /* Collapsed rail: icons only. Labels are bare text nodes, so font-size:0
+           drops them while the SVGs keep their explicit dimensions. */
+        .sidebar.collapsed .sidebar-header { padding: 18px 0; }
+        .sidebar.collapsed .logo { justify-content: center; gap: 0; margin-bottom: 0; }
+        .sidebar.collapsed .logo:hover { transform: none; }
+        /* The text column carries an inline display:flex, so override needs force. */
+        .sidebar.collapsed .logo > div:last-child { display: none !important; }
+        .sidebar.collapsed .logo-icon { width: 38px; height: 38px; font-size: 20px; }
+        .sidebar.collapsed .sidebar-nav { padding: 16px 12px; }
+        .sidebar.collapsed .nav-label { display: none; }
+        .sidebar.collapsed .nav-section { margin-bottom: 14px; }
+        .sidebar.collapsed .nav-section + .nav-section {
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            padding-top: 14px;
+        }
+        .sidebar.collapsed .nav-item {
+            justify-content: center;
+            gap: 0;
+            font-size: 0;
+            padding: 11px 0;
+        }
+        .sidebar.collapsed .nav-item:hover { transform: none; }
+        .sidebar.collapsed .sidebar-footer {
+            flex-direction: column;
+            gap: 6px;
+            padding: 10px 8px 12px;
+        }
+        .sidebar.collapsed .footer-link { width: 100%; justify-content: center; padding: 9px; }
+        .sidebar.collapsed .footer-link span:not(.status-dot) { display: none; }
+
+        .sidebar-footer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            flex-shrink: 0;
+            padding: 10px 10px 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(0, 0, 0, 0.15);
+        }
+        /* Both footer controls share one pill style so Settings and Trust Center
+           read as a matched pair rather than a bare icon and a stray link. */
+        .footer-link {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font: inherit;
+            font-size: 0.78em;
+            font-weight: 500;
+            color: rgba(148, 163, 184, 0.9);
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            padding: 6px 8px;
+            cursor: pointer;
+            text-decoration: none;
+            white-space: nowrap;
+            transition: color 0.15s, background 0.15s, border-color 0.15s;
+        }
+        .footer-link:hover {
+            color: rgba(226, 232, 240, 0.98);
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.09);
+        }
+        /* Without an explicit size an inline SVG expands to fill its container,
+           which rendered this icon as a 300px shield. */
+        .footer-link svg { width: 15px; height: 15px; flex-shrink: 0; opacity: 0.85; }
+        .footer-link .status-dot {
+            position: static;
+            box-shadow: none;
+            margin-left: 1px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+        }
+        .stat-mini {
+            text-align: center;
+            padding: 12px 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s;
+        }
+        .stat-mini:hover {
+            background: rgba(255, 255, 255, 0.06);
+            transform: translateY(-2px);
+        }
+        .stat-mini .value {
+            font-size: 1.3em;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #c4b5fd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .stat-mini .label {
+            font-size: 0.65em;
+            color: rgba(255, 255, 255, 0.5);
+            text-transform: uppercase;
+            margin-top: 4px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Main Content */
+        .page { 
+            display: none;
+            padding: 32px;
+            flex: 1;
+            background: #0f1117;
+        }
+        .page.active { 
+            display: block;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .page-header {
+            margin-bottom: 32px;
+        }
+        .page-title {
+            font-size: 2em;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #ffffff;
+        }
+        .page-desc {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1.1em;
+        }
+
+        /* Scope banner: tells the customer, per page, whether the data is
+           account-wide or this-workspace, with live counts and how to change it. */
+        .scope-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin: -12px 0 24px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        .scope-banner.warn { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.3); }
+        .scope-banner.ok   { background: rgba(16, 185, 129, 0.07); border-color: rgba(16, 185, 129, 0.25); }
+        .scope-banner-icon { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px; }
+        .scope-banner-body { flex: 1; min-width: 0; }
+        .scope-badge {
+            display: inline-block;
+            font-size: 0.72em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-right: 8px;
+            vertical-align: middle;
+            background: rgba(102, 126, 234, 0.18);
+            color: #c4b5fd;
+            border: 1px solid rgba(102, 126, 234, 0.35);
+        }
+        .scope-badge.account { background: rgba(16,185,129,0.15); color:#6ee7b7; border-color: rgba(16,185,129,0.35); }
+        .scope-badge.workspace { background: rgba(102,126,234,0.18); color:#c4b5fd; border-color: rgba(102,126,234,0.35); }
+        .scope-badge.warn { background: rgba(245,158,11,0.15); color:#fcd34d; border-color: rgba(245,158,11,0.35); }
+        .scope-banner-text { color: rgba(255,255,255,0.75); }
+        .scope-banner-text strong { color: rgba(255,255,255,0.92); font-weight: 650; }
+        .scope-banner-text code, .scope-banner code {
+            background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px;
+            font-size: 0.92em; word-break: break-all;
+        }
+        .scope-help { margin-top: 6px; }
+        .scope-help summary {
+            cursor: pointer; color: var(--text-secondary);
+            font-size: 0.92em; list-style: none; user-select: none;
+            display: inline-flex; align-items: center; gap: 6px;
+        }
+        .scope-help summary::-webkit-details-marker { display: none; }
+        .scope-help summary:hover { color: var(--text-primary); }
+        .scope-help-caret { width: 12px; height: 12px; flex: 0 0 auto; transition: transform 0.15s ease; }
+        .scope-help[open] .scope-help-caret { transform: rotate(90deg); }
+
+        /* Collapsible setup & access guide shown in the first-run / reconfigure form. */
+        .setup-guide {
+            margin-bottom: 22px;
+            border: 1px solid rgba(102,126,234,0.3);
+            background: rgba(102,126,234,0.06);
+            border-radius: 10px;
+            padding: 0;
+        }
+        .setup-guide > summary {
+            cursor: pointer; list-style: none; user-select: none;
+            display: flex; align-items: center; gap: 8px;
+            padding: 12px 16px; font-weight: 600; font-size: 0.92em; color: #c4b5fd;
+        }
+        .setup-guide > summary::-webkit-details-marker { display: none; }
+        .setup-guide-caret { width: 13px; height: 13px; transition: transform 0.15s ease; }
+        .setup-guide[open] .setup-guide-caret { transform: rotate(90deg); }
+        .setup-guide-body { padding: 4px 18px 16px; font-size: 0.86em; color: rgba(255,255,255,0.72); line-height: 1.6; }
+        .setup-guide-body h4 { color: rgba(255,255,255,0.9); font-size: 0.95em; margin: 14px 0 4px; }
+        .setup-guide-body h4:first-child { margin-top: 4px; }
+        .setup-guide-body ul { margin: 4px 0 4px 18px; padding: 0; }
+        .setup-guide-body li { margin: 3px 0; }
+        .setup-guide-body code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+        .setup-guide-docs {
+            display: flex; width: fit-content; margin: 16px auto 0;
+            align-items: center; gap: 8px;
+            padding: 8px 14px; border-radius: 8px; text-decoration: none;
+            font-weight: 600; font-size: 0.95em; color: #c4b5fd;
+            background: rgba(102,126,234,0.12); border: 1px solid rgba(102,126,234,0.35);
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .setup-guide-docs:hover { background: rgba(102,126,234,0.2); border-color: rgba(102,126,234,0.55); }
+        .setup-guide-docs svg { width: 15px; height: 15px; flex: 0 0 auto; }
+        .setup-guide-docs-ext { opacity: 0.7; }
+
+        /* Secret-scan settings panel (Secrets page) */
+        .ss-settings {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; margin-bottom: 18px; padding: 0;
+        }
+        .ss-settings > summary {
+            list-style: none; cursor: pointer; user-select: none;
+            display: flex; align-items: center; gap: 10px;
+            padding: 16px 22px; font-weight: 650; font-size: 1.02em; color: #ffffff;
+        }
+        .ss-settings > summary::-webkit-details-marker { display: none; }
+        .ss-caret { width: 15px; height: 15px; flex: 0 0 auto; color: var(--text-muted); transition: transform 0.18s ease; }
+        .ss-settings[open] > summary .ss-caret { transform: rotate(90deg); }
+        .ss-settings-body { padding: 0 22px 20px; }
+        .ss-intro { color: var(--text-muted); font-size: 0.9em; line-height: 1.55; margin: 0 0 16px; }
+        .ss-group { padding: 14px 0; border-top: 1px solid var(--border); }
+        .ss-group-title { font-weight: 650; font-size: 0.95em; margin-bottom: 10px; color: #ffffff; }
+        .ss-help { color: var(--text-muted); font-size: 0.85em; line-height: 1.55; margin: 0 0 12px; }
+        .ss-help code, .ss-intro code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+        .ss-rules-state { font-size: 0.86em; color: rgba(255,255,255,0.8); margin: 0 0 12px; }
+        .ss-rules-empty { color: var(--text-muted); }
+        .ss-radio { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; font-size: 0.88em; color: rgba(255,255,255,0.8); line-height: 1.5; cursor: pointer; }
+        .ss-radio input[type="radio"] { margin-top: 3px; flex: 0 0 auto; }
+        .ss-days-input { display: inline-block; width: 64px; padding: 2px 6px; margin: 0 4px; }
+        .ssd-rule { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; background: rgba(255,255,255,0.02); }
+        .ssd-rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .ssd-rule-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 0.8em; font-weight: 600; color: var(--text-muted); }
+        .ssd-rule-grid .field-input { font-weight: 400; }
+        .ssd-regex-field { grid-column: 1 / -1; }
+        .ssd-regex-field .field-input { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; }
+        .ssd-remove { margin-top: 10px; font-size: 0.82em; padding: 5px 12px; }
+        .ss-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding-top: 16px; border-top: 1px solid var(--border); }
+        .ss-status { font-size: 0.86em; }
+        .ss-status.ok { color: #6ee7b7; }
+        .ss-status.err { color: #fca5a5; }
+
+        /* Custom combobox (type-or-pick), used by the setup catalog field */
+        .combo { position: relative; }
+        .combo-input { padding-right: 34px; }
+        .combo-toggle {
+            position: absolute; top: 0; right: 0; height: 100%; width: 32px;
+            display: flex; align-items: center; justify-content: center;
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+        }
+        .combo-toggle:hover { color: #fff; }
+        .combo-toggle svg { width: 16px; height: 16px; }
+        .combo-menu {
+            position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 60;
+            max-height: 220px; overflow-y: auto;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+        }
+        .combo-menu[hidden] { display: none; }
+        .combo-item { padding: 8px 12px; cursor: pointer; font-size: 0.9em; color: rgba(255,255,255,0.85); }
+        .combo-item:hover { background: rgba(102,126,234,0.18); color: #fff; }
+        .combo-empty { padding: 8px 12px; color: var(--text-muted); font-size: 0.85em; }
+        .setup-guide-body .tag {
+            display: inline-block; font-size: 0.72em; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.4px; padding: 1px 7px; border-radius: 999px; margin-right: 6px;
+            background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3);
+        }
+        .scope-help-body { margin-top: 8px; color: rgba(255,255,255,0.65); }
+        .scope-help-body p { margin: 0 0 8px; }
+        .scope-help-body .enable { color:#6ee7b7; }
+        .scope-help-body .disable { color: rgba(255,255,255,0.6); }
+
+        /* Help & Support page */
+        .help-section {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 18px 24px; margin-bottom: 14px;
+        }
+        /* Section header is a clickable summary with a rotating caret; the title is
+           clearly larger/bolder than the question rows nested inside. */
+        .help-section > summary {
+            list-style: none; cursor: pointer; display: flex; align-items: center;
+            gap: 12px; user-select: none; margin: 0;
+        }
+        .help-section > summary::-webkit-details-marker { display: none; }
+        .help-section > summary h2 { flex: 1; }
+        .help-section h2 {
+            font-size: 1.32em; margin: 0; color: #ffffff; font-weight: 750;
+            letter-spacing: -0.015em;
+        }
+        .help-section-caret {
+            flex: 0 0 auto; width: 18px; height: 18px; color: var(--text-muted);
+            transition: transform 0.18s ease;
+        }
+        .help-section[open] > summary .help-section-caret { transform: rotate(90deg); }
+        .help-section > summary:hover h2 { color: #e9e4ff; }
+        .help-section[open] > summary { margin-bottom: 14px; }
+        .help-section .help-sub { font-size: 0.86em; color: var(--text-muted); margin: 0 0 16px; }
+        .help-steps { margin: 0; padding-left: 20px; color: var(--text-secondary); font-size: 0.9em; line-height: 1.7; }
+        .help-steps li { margin: 2px 0; }
+        .help-faq details { border-top: 1px solid var(--border); }
+        .help-faq details:last-child { border-bottom: 1px solid var(--border); }
+        .help-faq summary {
+            cursor: pointer; padding: 13px 0; font-weight: 600; font-size: 0.9em;
+            color: var(--text-primary); list-style: none;
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+        }
+        .help-faq summary::-webkit-details-marker { display: none; }
+        .help-faq summary::after { content: '+'; color: var(--text-muted); font-weight: 700; font-size: 1.1em; }
+        .help-faq details[open] summary::after { content: '\\2212'; }
+        .help-faq summary:hover { color: #c4b5fd; }
+        .help-faq-body { padding: 0 0 15px; color: var(--text-secondary); font-size: 0.88em; line-height: 1.65; }
+        .help-faq-body code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
+        .help-faq-body strong { color: rgba(255,255,255,0.9); }
+        .help-links { display: flex; flex-wrap: wrap; gap: 12px; }
+        .help-link-card {
+            display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+            border: 1px solid var(--border); border-radius: 10px; color: var(--text-primary);
+            text-decoration: none; background: var(--bg-input); font-size: 0.9em; transition: border-color 0.15s, transform 0.15s;
+        }
+        .help-link-card:hover { border-color: #667eea; transform: translateY(-1px); }
+        .help-link-card svg { width: 17px; height: 17px; color: #a78bfa; flex-shrink: 0; }
+
+        /* Interactive report-guide cards + modal */
+        .help-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-items: stretch; }
+        .help-card {
+            text-align: left; background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 10px; padding: 14px 16px; cursor: pointer; display: flex; gap: 12px;
+            align-items: center; min-height: 66px; box-sizing: border-box;
+            transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+        }
+        .help-card:hover { border-color: #667eea; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.28); }
+        .help-card-icon { font-size: 1.5em; flex: 0 0 28px; text-align: center; line-height: 1; }
+        .help-card-text { flex: 1 1 auto; min-width: 0; }
+        .help-card-title { font-weight: 650; font-size: 0.9em; color: var(--text-primary); margin-bottom: 3px; }
+        .help-card-sub { font-size: 0.78em; color: var(--text-muted); line-height: 1.4; }
+        .help-card-arrow { flex: 0 0 auto; color: var(--text-muted); transition: transform 0.15s; }
+        .help-card:hover .help-card-arrow { transform: translateX(3px); color: #a78bfa; }
+
+        .help-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+            z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 24px;
+            opacity: 0; pointer-events: none; transition: opacity 0.15s;
+        }
+        .help-modal-overlay.show { opacity: 1; pointer-events: auto; }
+        .help-modal {
+            background: linear-gradient(180deg, #1a1d2e 0%, #16182a 100%);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; max-width: 660px; width: 100%;
+            max-height: 86vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+            transform: translateY(10px) scale(0.99); transition: transform 0.18s ease;
+        }
+        .help-modal-overlay.show .help-modal { transform: none; }
+        .help-modal-head {
+            display: flex; align-items: center; gap: 14px; padding: 20px 24px;
+            border-bottom: 1px solid var(--border); position: sticky; top: 0;
+            background: #1a1d2e; z-index: 1; border-radius: 16px 16px 0 0;
+        }
+        .help-modal-head .emoji { font-size: 1.8em; line-height: 1; }
+        .help-modal-title { font-size: 1.15em; font-weight: 700; color: var(--text-primary); }
+        .help-modal-sub { font-size: 0.84em; color: var(--text-muted); margin-top: 2px; }
+        .help-modal-close {
+            margin-left: auto; background: none; border: none; color: var(--text-muted);
+            font-size: 1.6em; line-height: 1; cursor: pointer; padding: 0 4px;
+        }
+        .help-modal-close:hover { color: var(--text-primary); }
+        .help-modal-body { padding: 20px 24px 26px; }
+        .help-modal-body h4 {
+            font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.6px; color: #a78bfa;
+            margin: 20px 0 8px; font-weight: 700;
+        }
+        .help-modal-body h4:first-child { margin-top: 0; }
+        .help-modal-body p { color: var(--text-secondary); font-size: 0.9em; line-height: 1.6; margin: 0; }
+        .help-modal-body ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 0.9em; line-height: 1.7; }
+        .help-modal-body ul li { margin: 2px 0; }
+        .help-modal-body code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
+        .help-modal-body strong { color: rgba(255,255,255,0.92); }
+        .help-modal-example {
+            background: var(--bg-input); border-left: 3px solid #667eea; border-radius: 6px;
+            padding: 11px 14px; font-size: 0.87em; color: var(--text-secondary); line-height: 1.6;
+        }
+        .help-modal-cta {
+            display: inline-flex; align-items: center; gap: 6px; margin-top: 20px; padding: 9px 16px;
+            background: var(--accent, #667eea); color: #fff; border: none; border-radius: 8px;
+            font-size: 0.88em; font-weight: 600; cursor: pointer; text-decoration: none;
+        }
+        .help-modal-cta:hover { opacity: 0.9; }
+
+        /* Search Box */
+        .search-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            position: relative;
+        }
+        .search-box {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .search-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px 20px;
+            font-size: 1.1em;
+            color: rgba(255, 255, 255, 0.95);
+            transition: all 0.2s;
+        }
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .search-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+        
+        /* Autocomplete Dropdown */
+        .autocomplete-dropdown {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            margin-right: 100px;
+            background: var(--bg-card);
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 10000;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            display: none;
+        }
+        .autocomplete-dropdown.show {
+            display: block;
+        }
+        .autocomplete-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        .autocomplete-item:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+        .autocomplete-item-name {
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .autocomplete-item-email {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9em;
+        }
+        .autocomplete-item-id {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.85em;
+            font-family: 'Courier New', monospace;
+            margin-top: 4px;
+        }
+        .autocomplete-item-type {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+            margin-left: 8px;
+            text-transform: uppercase;
+        }
+        .autocomplete-item-type.user {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+        .autocomplete-item-type.group {
+            background: rgba(139, 92, 246, 0.2);
+            color: #a78bfa;
+        }
+        .autocomplete-item-type.sp {
+            background: rgba(236, 72, 153, 0.2);
+            color: #f472b6;
+        }
+        
+        .search-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 12px;
+            padding: 16px 32px;
+            font-size: 1em;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        .search-btn:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        .search-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .search-clear-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 8px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            padding: 0;
+        }
+        .search-clear-btn svg {
+            width: 16px;
+            height: 16px;
+            color: var(--text-muted);
+        }
+        .search-clear-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .search-clear-btn:hover svg {
+            color: var(--text-primary);
+        }
+
+        /* Resource Type Filter */
+        .resource-type-filter {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .resource-type-filter:hover {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0.1) 100%);
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateY(-1px);
+        }
+        .resource-type-filter:active {
+            transform: translateY(0);
+        }
+
+        /* Results */
+        .results-container {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        /* --- Settings panel --- */
+        .icon-btn {
+            position: relative;
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: color .15s, background .15s, border-color .15s;
+        }
+        .icon-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, .06);
+            border-color: rgba(255, 255, 255, .1);
+        }
+        .icon-btn svg { width: 17px; height: 17px; pointer-events: none; }
+        .status-dot {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #f59e0b;
+            box-shadow: 0 0 0 2px var(--bg-card);
+        }
+
+        /* [hidden] sets display:none at a lower specificity than a class rule,
+           so both of these need an explicit override or the panel is always open. */
+        .drawer[hidden], .drawer-scrim[hidden] { display: none; }
+        .drawer-scrim {
+            position: fixed;
+            inset: 0;
+            background: rgba(3, 6, 15, .6);
+            backdrop-filter: blur(2px);
+            z-index: 1400;                 /* above the assistant panel (z 1300) */
+            animation: drawerFade .16s ease;
+        }
+        /* Centered modal dialog. Opens over everything (including the assistant
+           side panel) so Settings no longer collides with it -- close the modal
+           and the assistant is still there. */
+        .drawer {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 500px;
+            max-width: 92vw;
+            max-height: 86vh;
+            background: var(--bg-card, #12151f);
+            border: 1px solid rgba(255, 255, 255, .09);
+            border-radius: 14px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, .55);
+            z-index: 1401;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;              /* clip head/body/savebar to the radius */
+            animation: drawerIn .18s cubic-bezier(.22, .61, .36, 1);
+        }
+        @keyframes drawerIn { from { transform: translate(-50%, -48%) scale(.97); opacity: 0; } }
+        @keyframes drawerFade { from { opacity: 0; } }
+        .drawer-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 20px 20px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, .07);
+        }
+        .drawer-title { font-size: 1.05em; font-weight: 650; letter-spacing: -.01em; }
+        .drawer-sub { font-size: .82em; color: var(--text-muted); margin-top: 2px; }
+        /* Indent the title text to line up with the section-card titles below. */
+        .drawer-head-titles { flex: 1; min-width: 0; padding-left: 15px; }
+        .drawer-body { padding: 16px 20px 24px; overflow-y: auto; flex: 1; min-height: 0; }
+
+        /* Problems, stated plainly. Healthy items are not listed: eight rows
+           reading "Healthy" is noise, not information. */
+        .all-clear {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            font-size: .88em;
+            color: #86efac;
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: rgba(34, 197, 94, .09);
+            margin-bottom: 4px;
+        }
+        .all-clear svg { width: 15px; height: 15px; flex-shrink: 0; }
+        .issue {
+            padding: 13px 15px;
+            border-radius: 10px;
+            background: rgba(245, 158, 11, .08);
+            border: 1px solid rgba(245, 158, 11, .22);
+            margin-bottom: 10px;
+        }
+        .issue-head { font-size: .9em; font-weight: 650; color: #fcd34d; }
+        .issue-body { font-size: .85em; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
+        .issue-fix { font-size: .83em; color: var(--text-muted); margin-top: 7px; line-height: 1.5; }
+
+        .drawer-section-label {
+            font-size: 0.72em;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 26px 0 14px;
+        }
+        .drawer-note {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-top: 18px;
+        }
+        /* A one-shot action styled like the section cards above it, so it reads as
+           a deliberate control rather than a stray button. */
+        .settings-action {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            margin-top: 18px;
+            padding: 13px 15px;
+            background: rgba(255, 255, 255, .015);
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 12px;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            transition: background .15s, border-color .15s;
+        }
+        .settings-action:hover {
+            background: rgba(255, 255, 255, .04);
+            border-color: rgba(255, 255, 255, .12);
+        }
+        .settings-action .section-titles { flex: 1; min-width: 0; }
+        .settings-action svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            color: var(--text-muted);
+        }
+        .health-summary {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.88em;
+            padding: 11px 14px;
+            border-radius: 10px;
+            margin-bottom: 18px;
+        }
+        .health-summary.ok { background: rgba(34, 197, 94, 0.1); color: #86efac; }
+        .health-summary.bad { background: rgba(245, 158, 11, 0.1); color: #fcd34d; }
+        /* Collapsible sections. The panel was one long column, so reaching the
+           model setting meant scrolling past credentials and job status. */
+        .settings-section {
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, .015);
+        }
+        .section-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 13px 15px;
+            background: transparent;
+            border: none;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            transition: background .15s;
+        }
+        .section-head:hover { background: rgba(255, 255, 255, .035); }
+        .section-head.is-open { background: rgba(255, 255, 255, .03); }
+        .section-titles { flex: 1; min-width: 0; }
+        .section-title {
+            display: block;
+            font-size: .92em;
+            font-weight: 650;
+        }
+        .section-sub {
+            display: block;
+            font-size: .78em;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .section-badge {
+            font-size: .72em;
+            font-weight: 650;
+            padding: 3px 9px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, .07);
+            color: var(--text-secondary);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .section-chevron {
+            width: 15px;
+            height: 15px;
+            flex-shrink: 0;
+            color: var(--text-muted);
+            transition: transform .18s ease;
+            pointer-events: none;
+        }
+        .section-head.is-open .section-chevron { transform: rotate(180deg); }
+        .section-body {
+            padding: 4px 15px 16px;
+            border-top: 1px solid rgba(255, 255, 255, .05);
+        }
+        .section-body > .field:last-of-type { margin-bottom: 0; }
+
+        /* Permissions checklist: one row per required grant, with its fix. */
+        .req-sp { font-size: .78em; color: var(--text-muted); margin: 2px 0 12px; }
+        .req-sp code { background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px; }
+        .req-item { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.05); }
+        .req-item:first-of-type { border-top: none; }
+        .req-icon { flex-shrink: 0; margin-top: 1px; }
+        .req-icon svg { width: 16px; height: 16px; }
+        .req-ok { color: #86efac; }
+        .req-bad { color: #fca5a5; }
+        .req-opt { color: #fcd34d; }
+        .req-text { flex: 1; min-width: 0; }
+        .req-label { font-size: .9em; font-weight: 600; }
+        .req-tag { font-size: .72em; font-weight: 600; color: var(--text-muted);
+                   background: rgba(255,255,255,.06); border-radius: 20px; padding: 1px 7px; margin-left: 6px; }
+        .req-detail { font-size: .82em; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
+        .req-fix {
+            font-size: .82em; color: var(--text-secondary); margin-top: 6px;
+            line-height: 1.5; padding: 8px 10px; border-radius: 8px;
+            background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07);
+            white-space: pre-wrap; word-break: break-word;
+        }
+
+        /* An input with a trailing control. The button is positioned inside the
+           field so the two align on one baseline rather than stacking. */
+        .input-group { position: relative; display: flex; align-items: center; }
+        .input-group .field-input { padding-right: 42px; }
+        .input-affix {
+            position: absolute;
+            right: 4px;
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 7px;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: color .15s, background .15s;
+        }
+        .input-affix:hover { color: var(--text-primary); background: rgba(255, 255, 255, .07); }
+        .input-affix svg { width: 15px; height: 15px; pointer-events: none; }
+
+        .job-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 0;
+            font-size: .86em;
+            border-bottom: 1px solid rgba(255, 255, 255, .04);
+        }
+        .job-row:last-child { border-bottom: none; }
+        /* The jobs section is a link into the Data Collection page. */
+        .settings-jobs-link {
+            display: block; width: 100%; text-align: left; cursor: pointer;
+            background: none; border: none; color: inherit; font: inherit; padding: 0;
+        }
+        /* Footer row: aligns with the job rows above -- label left, chevron
+           right -- with a divider, so nothing floats off to one side. */
+        .settings-jobs-cta {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-top: 11px; padding-top: 11px;
+            border-top: 1px solid rgba(255, 255, 255, .06);
+            font-size: .86em; font-weight: 600; color: var(--accent);
+        }
+        .settings-jobs-cta svg { width: 15px; height: 15px; }
+        .settings-jobs-link:hover .settings-jobs-cta { color: #93b4f5; }
+        /* "Turn off the assistant" -- quiet, danger-tinted on hover. */
+        .settings-danger {
+            display: block; width: fit-content; margin: 16px auto 2px;
+            background: rgba(239, 68, 68, .10); color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, .40); box-shadow: none;
+        }
+        .settings-danger:hover:not(:disabled) {
+            background: rgba(239, 68, 68, .18); color: #fecaca;
+            border-color: rgba(239, 68, 68, .6); box-shadow: none;
+        }
+        .job-state { font-size: .88em; font-weight: 600; }
+        .job-state.on { color: #86efac; }
+        .job-state.off { color: var(--text-muted); }
+
+        /* --- First-run setup overlay --- */
+        .setup-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            overflow-y: auto;
+            padding: 48px 20px;
+            background: radial-gradient(1200px 600px at 50% -10%, rgba(99,102,241,.18), transparent),
+                        var(--bg-dark);
+        }
+        .setup-overlay[hidden] { display: none; }
+        .setup-card {
+            width: 100%;
+            max-width: 620px;
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 18px;
+            box-shadow: 0 24px 64px rgba(0,0,0,.45);
+            padding: 30px 32px 26px;
+        }
+        .setup-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
+        .setup-logo {
+            flex-shrink: 0;
+            width: 44px; height: 44px;
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+        }
+        .setup-logo svg { width: 22px; height: 22px; }
+        .setup-title { font-size: 1.3em; font-weight: 700; letter-spacing: -.01em; }
+        .setup-sub { font-size: .9em; color: var(--text-muted); margin-top: 5px; line-height: 1.55; }
+        .setup-body { min-height: 60px; }
+        .setup-group { margin-bottom: 22px; }
+        .setup-group-title {
+            font-size: .72em; font-weight: 700; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px;
+        }
+        .setup-optional {
+            font-size: .74em; font-weight: 600; color: var(--text-muted);
+            background: rgba(255,255,255,.06); border-radius: 20px; padding: 2px 8px; margin-left: 8px;
+        }
+        .setup-actions {
+            display: flex; align-items: center; gap: 12px;
+            margin-top: 8px; padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,.07);
+        }
+        .setup-error { flex: 1; font-size: .85em; color: #fca5a5; }
+        .setup-actions .btn { font-size: .95em; padding: 10px 20px; }
+
+        .field { margin-bottom: 20px; }
+        .field-label {
+            display: block;
+            font-size: .88em;
+            font-weight: 600;
+            margin-bottom: 7px;
+        }
+        .field-help {
+            display: block;
+            font-size: .8em;
+            color: var(--text-muted);
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+        .field-input {
+            width: 100%;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, .04);
+            border: 1px solid rgba(255, 255, 255, .12);
+            border-radius: 9px;
+            padding: 9px 12px;
+            color: var(--text-primary);
+            font-size: .9em;
+            transition: border-color .15s, background .15s;
+        }
+        .field-input:hover { background: rgba(255, 255, 255, .06); }
+        .field-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, .06);
+        }
+        .switch-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            cursor: pointer;
+        }
+        .switch-row input { margin-top: 3px; flex-shrink: 0; }
+
+        .cred-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: -6px;
+        }
+        .drawer-savebar[hidden] { display: none; }
+        .drawer-savebar {
+            position: sticky;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin: 16px -20px 0;
+            padding: 14px 20px;
+            background: var(--bg-card);
+            border-top: 1px solid rgba(255, 255, 255, .1);
+        }
+        .savebar-text {
+            flex: 1;
+            font-size: .82em;
+            color: var(--text-muted);
+        }
+        .savebar-text.is-error { color: #fca5a5; }
+
+        /* --- Secret-scanning alerts --- */
+        .alert-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .alert-toolbar-note {
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+        .alert-list { display: flex; flex-direction: column; gap: 12px; }
+        .alert-card {
+            display: grid;
+            grid-template-columns: 4px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0 18px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .alert-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.14);
+        }
+        /* Severity rail, so the list scans by urgency without relying on colour
+           alone for meaning -- the state pill carries the text. */
+        .alert-rail { align-self: stretch; background: var(--text-muted); }
+        .alert-rail.critical { background: #ef4444; }
+        .alert-rail.high { background: #f59e0b; }
+        .alert-rail.medium { background: #3b82f6; }
+        .alert-card.is-paused { opacity: 0.62; }
+        .alert-body { padding: 15px 0; min-width: 0; }
+        .alert-name {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            flex-wrap: wrap;
+        }
+        .alert-meta {
+            margin-top: 5px;
+            font-size: 0.84em;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .alert-meta .sep { opacity: 0.4; }
+        .alert-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-right: 16px;
+            flex-shrink: 0;
+        }
+        .alert-pill {
+            font-size: 0.7em;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 3px 9px;
+            border-radius: 20px;
+            white-space: nowrap;
+        }
+        .alert-pill.triggered { background: rgba(239,68,68,.16); color: #fca5a5; }
+        .alert-pill.ok { background: rgba(34,197,94,.14); color: #86efac; }
+        .alert-pill.unknown { background: rgba(148,163,184,.14); color: #cbd5e1; }
+        .alert-pill.error { background: rgba(245,158,11,.16); color: #fcd34d; }
+        .alert-pill.paused { background: rgba(148,163,184,.14); color: #94a3b8; }
+
+        /* Editor */
+        .alert-form {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 20px 22px;
+            margin-bottom: 18px;
+        }
+        .alert-form-title { font-weight: 600; font-size: 1.05em; margin-bottom: 4px; }
+        .alert-form-sub {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            margin-bottom: 18px;
+        }
+        .alert-type-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .alert-type {
+            text-align: left;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: 10px;
+            padding: 13px 14px;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            color: inherit;
+            font: inherit;
+        }
+        .alert-type:hover { background: rgba(255, 255, 255, 0.05); }
+        .alert-type.selected {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.1);
+        }
+        .alert-type-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+        .alert-type-label { font-weight: 600; font-size: 0.92em; }
+        .alert-type-desc {
+            font-size: 0.82em;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+        .alert-field-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 14px 16px;
+            margin-bottom: 16px;
+        }
+        .alert-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+        .alert-field.wide { grid-column: 1 / -1; }
+        .alert-field label {
+            font-size: 0.75em;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .alert-field input,
+        .alert-field select {
+            background: var(--bg-input);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 9px 11px;
+            color: var(--text-primary);
+            font-size: 0.92em;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .alert-field input:focus,
+        .alert-field select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .alert-field-hint { font-size: 0.78em; color: var(--text-muted); }
+        .alert-check {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 0.88em;
+            color: var(--text-secondary);
+        }
+        .alert-check input { width: auto; }
+        .alert-form-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-top: 16px;
+            margin-top: 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .alert-form-error {
+            color: #fca5a5;
+            font-size: 0.86em;
+            margin-right: auto;
+        }
+        .alert-sql {
+            margin-top: 10px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.8em;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 8px;
+            padding: 12px 14px;
+            white-space: pre-wrap;
+            max-height: 190px;
+            overflow: auto;
+        }
+        /* Cleaned-up alert editor: numbered section labels + advanced disclosure */
+        .alert-step-label {
+            font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.5px;
+            color: #a78bfa; font-weight: 700; margin: 20px 0 8px;
+        }
+        .alert-step-label:first-of-type { margin-top: 4px; }
+        .alert-advanced { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 6px; }
+        .alert-advanced > summary {
+            cursor: pointer; list-style: none; font-size: 0.82em; color: var(--text-secondary);
+            font-weight: 600; padding: 8px 0; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .alert-advanced > summary::-webkit-details-marker { display: none; }
+        .alert-advanced > summary::before { content: '▸'; color: var(--text-muted); }
+        .alert-advanced[open] > summary::before { content: '▾'; }
+        .alert-test-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+        .alert-test-result { font-size: 0.86em; }
+        .alert-test-result .fire { color: #fca5a5; font-weight: 600; }
+        .alert-test-result .ok { color: #86efac; font-weight: 600; }
+        .alert-empty {
+            text-align: center;
+            padding: 40px 24px;
+            border: 1px dashed rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+        }
+        .alert-empty-title { font-weight: 600; margin-bottom: 5px; }
+        .alert-empty-sub {
+            font-size: 0.88em;
+            color: var(--text-muted);
+            max-width: 460px;
+            margin: 0 auto 16px;
+            line-height: 1.5;
+        }
+        /* Secret-scanning summary. Six figures sat in a bare grid with no
+           separation, so the numbers read as one run of digits; each now gets a
+           bounded cell, and the grid wraps instead of crushing columns. */
+        .secret-summary { padding: 18px 20px; margin-bottom: 16px; }
+        .secret-section-title {
+            font-weight: 600;
+            font-size: 0.95em;
+            margin-bottom: 14px;
+        }
+        .secret-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .secret-stat {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 10px;
+            padding: 14px 10px;
+            text-align: center;
+        }
+        .secret-stat-value {
+            font-size: 1.7em;
+            font-weight: 700;
+            line-height: 1.15;
+            font-variant-numeric: tabular-nums;
+        }
+        .secret-stat-label {
+            margin-top: 4px;
+            font-size: 0.72em;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            line-height: 1.3;
+        }
+        /* Scan-coverage ribbon under the headline figures: value-over-label
+           segments split by hairline dividers, rather than a cramped run of
+           middot-separated muted text. */
+        .secret-summary-foot {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 0;
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .sx-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            flex: 1 1 0;
+            min-width: 120px;
+            padding: 0 22px;
+            border-left: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .sx-meta:first-child { padding-left: 0; border-left: none; }
+        .sx-meta-val {
+            font-size: 1.02em;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .sx-meta-label {
+            font-size: 0.7em;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        /* Card headers used above the secret tables. */
+        .secret-card { padding: 16px 18px; }
+        .secret-card-sub {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            margin-top: 3px;
+            margin-bottom: 14px;
+        }
+        /* Table cards let the table meet the card edge, so the head rule spans
+           the full width instead of stopping short of it. */
+        .secret-table-card { padding: 16px 0 4px; }
+        .secret-table-card > .secret-section-title,
+        .secret-table-card > .secret-card-sub { padding: 0 18px; }
+        .secret-table-card .data-table th:first-child,
+        .secret-table-card .data-table td:first-child { padding-left: 18px; }
+        .secret-table-card .data-table th:last-child,
+        .secret-table-card .data-table td:last-child { padding-right: 18px; }
+
+        /* --- Credential Exposure: consolidated detections view ---
+           Headline figures, detector/workspace breakdowns that double as table
+           facets, and the full detail table with instant client-side filtering. */
+        .sx-grid2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        /* Breakdown rows double as table facets: click to filter the detections. */
+        .sx-facet {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 7px 8px;
+            margin: 0 -8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+        .sx-facet:hover { background: rgba(255, 255, 255, 0.04); }
+        .sx-facet:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .sx-facet.is-active { background: rgba(59, 130, 246, 0.12); }
+        .sx-facet-label {
+            flex: 0 0 170px;
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .sx-facet.is-active .sx-facet-label { color: var(--text-primary); font-weight: 600; }
+        .sx-facet-track { flex: 1; height: 7px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
+        .sx-facet-fill { height: 100%; border-radius: 4px; }
+        .sx-facet-val {
+            flex: 0 0 74px;
+            text-align: right;
+            font-size: 0.85em;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-secondary);
+        }
+
+        /* Detections toolbar: search + facet selects, result count flush right. */
+        .sx-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .sx-search { position: relative; flex: 1 1 240px; min-width: 180px; }
+        .sx-search svg {
+            position: absolute;
+            left: 11px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 15px;
+            height: 15px;
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+        .sx-search input {
+            width: 100%;
+            box-sizing: border-box;
+            background: var(--bg-input);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 10px 8px 32px;
+            color: var(--text-primary);
+            font-size: 0.9em;
+        }
+        .sx-search input:focus { outline: none; border-color: var(--accent); }
+        .sx-toolbar select {
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+        .sx-toolbar select:focus { outline: none; border-color: var(--accent); }
+        /* Multi-select checklist (workspace / detector). A button opens a popover
+           of checkboxes built only from values present in the data. */
+        .sx-ms { position: relative; }
+        .sx-ms-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 0.9em;
+            cursor: pointer;
+            white-space: nowrap;
+            max-width: 220px;
+        }
+        .sx-ms-btn:hover { border-color: rgba(255, 255, 255, 0.22); }
+        .sx-ms-btn.has-sel { border-color: var(--accent); color: #fff; }
+        .sx-ms-text { overflow: hidden; text-overflow: ellipsis; }
+        .sx-ms-btn .sx-ms-chev { width: 12px; height: 12px; opacity: 0.55; flex-shrink: 0; }
+        .sx-ms-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 1500;
+            min-width: 240px;
+            max-height: 320px;
+            overflow-y: auto;
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 10px;
+            box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+            padding: 6px;
+        }
+        .sx-ms-menu[hidden] { display: none; }
+        .sx-ms-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 7px 9px;
+            border-radius: 7px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        .sx-ms-item:hover { background: rgba(255, 255, 255, 0.05); }
+        .sx-ms-check {
+            width: 15px;
+            height: 15px;
+            flex-shrink: 0;
+            border: 1.5px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            display: grid;
+            place-items: center;
+        }
+        .sx-ms-check svg { width: 11px; height: 11px; color: #fff; opacity: 0; }
+        .sx-ms-item.sel .sx-ms-check { background: var(--accent); border-color: var(--accent); }
+        .sx-ms-item.sel .sx-ms-check svg { opacity: 1; }
+        .sx-ms-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sx-ms-cnt { color: var(--text-muted); font-size: 0.85em; font-variant-numeric: tabular-nums; }
+        .sx-ms-foot {
+            display: flex;
+            justify-content: flex-end;
+            padding: 6px 7px 2px;
+            margin-top: 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .sx-ms-foot button { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.82em; font-weight: 600; }
+        .sx-ms-foot button:hover { color: #93b4f5; }
+        .sx-count {
+            margin-left: auto;
+            font-size: 0.82em;
+            color: var(--text-muted);
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        .sx-table-wrap { max-height: 560px; overflow-y: auto; overflow-x: auto; }
+        .sx-table-wrap .data-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--bg-card);
+        }
+        /* Fixed layout pins the table to the container width, so nothing is pushed
+           off the right edge; over-long cells truncate with an ellipsis instead. */
+        .sx-dtable { table-layout: fixed; width: 100%; }
+        /* Cells wrap so the full value is shown -- nothing is truncated. Rows grow
+           taller instead of pushing content off the edge; top-align keeps the
+           first line of every cell level. */
+        .sx-dtable td { vertical-align: top; }
+        .sx-wrap { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+        .sx-break { white-space: normal; overflow-wrap: anywhere; word-break: break-all; line-height: 1.5; }
+        .sx-note {
+            padding: 10px 18px;
+            font-size: 0.8em;
+            color: var(--text-muted);
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .sx-empty-row { padding: 32px 18px; text-align: center; color: var(--text-muted); font-size: 0.9em; }
+        .sx-src { color: var(--text-secondary); text-transform: capitalize; }
+        /* Object cell stacks name over path, so the table drops a column and the
+           hash and workspace stop getting pushed off the edge. */
+        .sx-obj-name { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+        .sx-obj-path {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-all;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.82em;
+            color: var(--text-muted);
+            margin-top: 3px;
+            line-height: 1.5;
+        }
+
+        /* Tabular data in the secret-scanning views. These tables previously
+           carried a class with no rule behind it, so they fell back to browser
+           defaults: no cell padding, collapsed columns, and text from adjacent
+           cells running together. */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        .data-table th {
+            text-align: left;
+            padding: 10px 14px;
+            font-size: 0.78em;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            white-space: nowrap;
+        }
+        .data-table td {
+            padding: 11px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            vertical-align: middle;
+        }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:hover { background: rgba(255, 255, 255, 0.035); }
+        /* Numeric columns are right-aligned by the markup; keep them from
+           touching the next column's value. */
+        .data-table th[style*="right"], .data-table td[style*="right"] {
+            padding-right: 18px;
+        }
+        .data-table .nowrap-muted {
+            white-space: nowrap;
+            font-size: 0.88em;
+            color: var(--text-muted);
+        }
+        .data-table .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.88em;
+            color: var(--text-muted);
+        }
+        /* Long paths and hashes truncate rather than forcing the table wide. */
+        .data-table .truncate {
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .results-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .results-title {
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+        .results-count {
+            background: var(--accent);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        .results-body {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        /* Result Cards */
+        .result-card {
+            padding: 16px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: all 0.2s;
+        }
+        .result-card:hover { 
+            background: rgba(255, 255, 255, 0.05);
+            transform: translateX(4px);
+        }
+        .result-card:last-child { border-bottom: none; }
+
+        .result-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            flex-shrink: 0;
+        }
+        .result-icon.user { background: #3b82f620; color: #3b82f6; }
+        .result-icon.group { background: #8b5cf620; color: #8b5cf6; }
+        .result-icon.sp { background: #f59e0b20; color: #f59e0b; }
+        .result-icon.catalog { background: #10b98120; color: #10b981; }
+        .result-icon.schema { background: #06b6d420; color: #06b6d4; }
+        .result-icon.table { background: #6366f120; color: #6366f1; }
+        .result-icon.cluster { background: #ec489920; color: #ec4899; }
+        .result-icon.default { background: #64748b20; color: #64748b; }
+
+        .result-info { flex: 1; min-width: 0; }
+        .result-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .result-meta {
+            font-size: 0.85em;
+            color: var(--text-muted);
+        }
+
+        .result-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .result-badge.high { background: #3b82f620; color: #3b82f6; }
+        .result-badge.medium { background: #3b82f620; color: #3b82f6; }
+        .result-badge.low { background: #3b82f620; color: #3b82f6; }
+
+        /* Summary Cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .summary-value {
+            font-size: 2.5em;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .summary-value.danger { color: var(--danger); }
+        .summary-value.warning { color: var(--warning); }
+        .summary-value.success { color: var(--success); }
+        .summary-value.accent { color: var(--accent); }
+        .summary-label {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 48px;
+            color: var(--text-muted);
+        }
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 48px;
+            color: var(--text-muted);
+        }
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Path Visualization */
+        .path-viz {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 16px 0;
+        }
+        .path-node {
+            background: var(--bg-input);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+        .path-node.start { background: var(--accent); color: white; }
+        .path-node.end { background: var(--danger); color: white; }
+        .path-arrow {
+            color: var(--text-muted);
+            font-size: 1.2em;
+        }
+
+        /* Graph Visualization */
+        .graph-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            min-height: 400px;
+            position: relative;
+        }
+        .graph-canvas {
+            width: 100%;
+            height: 500px;
+            background: radial-gradient(circle at center, #1a2744 0%, var(--bg-dark) 100%);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .graph-canvas svg {
+            width: 100%;
+            height: 100%;
+        }
+        .graph-node {
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .graph-node:hover {
+            transform: scale(1.1);
+        }
+        .graph-node circle {
+            stroke-width: 3;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+        }
+        .graph-node text {
+            font-size: 11px;
+            fill: var(--text-primary);
+            text-anchor: middle;
+            pointer-events: none;
+            font-weight: 500;
+        }
+        .graph-node .node-label {
+            font-size: 10px;
+            fill: var(--text-secondary);
+        }
+        .graph-edge {
+            stroke: var(--text-muted);
+            stroke-width: 2;
+            fill: none;
+            opacity: 0.6;
+        }
+        .graph-edge.highlighted {
+            stroke: var(--danger);
+            stroke-width: 3;
+            opacity: 1;
+        }
+        .graph-edge-arrow {
+            fill: var(--text-muted);
+        }
+        .graph-edge.highlighted + .graph-edge-arrow,
+        .graph-edge-arrow.highlighted {
+            fill: var(--danger);
+        }
+        .graph-legend {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            background: var(--bg-input);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 0.8em;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .legend-item:last-child { margin-bottom: 0; }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .legend-dot.start { background: var(--accent); }
+        .legend-dot.intermediate { background: #8b5cf6; }
+        .legend-dot.target { background: var(--danger); }
+        .legend-dot.unreachable { background: var(--text-muted); }
+
+        /* Risk Meter */
+        .risk-meter {
+            margin: 24px 0;
+        }
+        .risk-bar {
+            height: 8px;
+            background: var(--bg-input);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .risk-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .risk-fill.critical { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
+        .risk-fill.high { background: linear-gradient(90deg, #f59e0b, #d97706); }
+        .risk-fill.medium { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+        .risk-fill.low { background: linear-gradient(90deg, #10b981, #059669); }
+        .risk-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 0.75em;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <!-- First-run setup. Covers the app until the workspace is connected; the
+         init path reveals it only when /api/setup/status reports needs_setup. -->
+    <div class="setup-overlay" id="setup-overlay" hidden>
+        <div class="setup-card">
+            <div class="setup-head">
+                <div class="setup-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div>
+                    <div class="setup-title">Welcome to the Security Analysis Tool</div>
+                    <div class="setup-sub">Connect the tool to your workspace to get started.</div>
+                </div>
+            </div>
+            <div class="setup-body" id="setup-body">
+                <div class="loading"><div class="spinner"></div>Loading your workspace&hellip;</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <button class="nav-collapse-btn" id="nav-collapse-btn" onclick="toggleSidebar()"
+                    aria-label="Collapse navigation" title="Toggle navigation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <!-- Sidebar Header -->
+            <div class="sidebar-header">
+                <div class="logo" style="cursor: pointer;" data-page="home">
+                    <div class="logo-icon">🛡️</div>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span class="logo-text">Security Analysis Tool</span>
+                        <div style="font-size: 0.65em; color: #d32f2f; line-height: 1.2;">
+                            <strong>⚠️ Note:</strong> May have incomplete data. Outputs are visibility/audit aids, not authoritative compliance determinations.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar Navigation -->
+            <nav class="sidebar-nav">
+                <div class="nav-sections-container">
+                    <div class="nav-section">
+                        <div class="nav-label">⚙️ Operations</div>
+                        <div class="nav-item" data-page="collection">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            Data Collection
+                        </div>
+                    </div>
+
+                    <div class="nav-section">
+                        <div class="nav-label">🔍 Analysis Tools</div>
+                        <div class="nav-item" data-page="principal">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            Principal Analysis
+                        </div>
+                        <div class="nav-item" data-page="resource">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                            Resource Analysis
+                        </div>
+                        <div class="nav-item" data-page="paths">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+                            Escalation Paths
+                        </div>
+                        <div class="nav-item" data-page="impersonation">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            Impersonation
+                        </div>
+                        <div class="nav-item" data-page="denylistbuilder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                            Denylist Builder
+                        </div>
+                    </div>
+
+                    <div class="nav-section">
+                        <div class="nav-label">📊 Security Reports</div>
+                        <div class="nav-item" data-page="highprivilege">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                            High Privilege
+                        </div>
+                        <div class="nav-item" data-page="isolated">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
+                            Isolated Principals
+                        </div>
+                        <div class="nav-item" data-page="orphaned">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                            Orphaned Resources
+                        </div>
+                        <div class="nav-item" data-page="overprivileged">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                            Over-Privileged
+                        </div>
+                        <div class="nav-item" data-page="secretscopes">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            Secret Scope Access
+                        </div>
+                        <div class="nav-item" data-page="sharedtoaccount">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                            Shared to All Users
+                        </div>
+                        <div class="nav-item" data-page="privilegednonidp">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                            Privileged Non-IdP
+                        </div>
+                    </div>
+
+                    <div class="nav-section">
+                        <div class="nav-label">🔑 Secret Scanning</div>
+                        <div class="nav-item" data-page="secretsoverview">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 17h.01"/></svg>
+                            Credential Exposure
+                        </div>
+                        <div class="nav-item" data-page="secretsalerts">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                            Alerts
+                        </div>
+                    </div>
+
+                </div>
+
+            </nav>
+
+            <div class="sidebar-footer">
+                <button class="footer-link" id="help-link" title="Help"
+                        aria-label="Help" onclick="navigateToPage('help')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>Help</span>
+                </button>
+                <button class="footer-link" id="settings-gear" title="Settings"
+                        aria-label="Settings" onclick="openSettingsPanel()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>Settings</span>
+                    <span class="status-dot" id="settings-dot" hidden></span>
+                </button>
+                <a class="footer-link" href="https://www.databricks.com/trust"
+                   target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Trust Center</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Inline script to prevent flash - runs immediately before page renders -->
+            <script>
+                (function() {
+                    // Restore the collapsed rail before paint so it doesn't flash.
+                    try {
+                        if (localStorage.getItem('satNavCollapsed') === '1') {
+                            const sb = document.querySelector('.sidebar');
+                            if (sb) sb.classList.add('collapsed');
+                        }
+                    } catch (e) {}
+                    const hash = window.location.hash.substring(1);
+                    if (hash) {
+                        // Hide home page and activate the correct page immediately
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const homePage = document.getElementById('page-home');
+                            const targetPage = document.getElementById('page-' + hash);
+                            const targetNav = document.querySelector('.nav-item[data-page="' + hash + '"]');
+                            
+                            if (targetPage && homePage !== targetPage) {
+                                homePage.classList.remove('active');
+                                targetPage.classList.add('active');
+                                if (targetNav) {
+                                    targetNav.classList.add('active');
+                                }
+                            }
+
+                            // Match navigateToPage's rule here too, otherwise deep
+                            // links to these pages briefly flash the graph-collection
+                            // bar before the main script hides it.
+                            const noStatsBar = ['home', 'sharedtoaccount', 'privilegednonidp',
+                                                'denylistbuilder', 'collection', 'help',
+                                                'secretsoverview', 'secretsalerts'];
+                            const bar = document.getElementById('stats-header-bar');
+                            if (bar && noStatsBar.includes(hash)) bar.style.display = 'none';
+                        });
+                    }
+                })();
+            </script>
+            
+            <!-- Stats Header Bar -->
+            <div class="stats-header-bar" id="stats-header-bar">
+                <div class="stats-header-toggle">
+                    <span class="stats-header-toggle-text">Graph Collection — Inventory &amp; Coverage</span>
+                    <button class="stats-header-toggle-btn" onclick="toggleStatsHeader()">
+                        <span id="stats-toggle-text">Collapse</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 15l-6-6-6 6"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="stats-header-container">
+                    <!-- Simplified Row: Data Collection and Workspaces -->
+                    <div class="stats-header-row">
+                        <!-- Data Collection Date & Time -->
+                        <div class="stats-header-section" style="flex: 1;">
+                            <span class="stats-header-label">Data Collection Date & Time</span>
+                            <select id="header-run-selector" onchange="selectRun(this.value)" style="padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em; cursor: pointer; width: 100%; max-width: 320px; overflow: visible;">
+                                <option value="">Loading runs...</option>
+                            </select>
+                        </div>
+                        <div class="stats-header-divider"></div>
+                        <!-- Workspaces in this Report -->
+                        <div class="stats-header-section" style="flex: 2;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span class="stats-header-label">Workspaces in this Report</span>
+                                <button id="workspace-toggle-btn" onclick="toggleWorkspaceList()" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 0.85em; padding: 4px 8px; display: none;">
+                                    <span id="workspace-toggle-text">Show</span>
+                                    <svg id="workspace-toggle-icon" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle; margin-left: 4px; transition: transform 0.2s;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M6 9l6 6 6-6"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 14px; margin-top: 8px;">
+                                <div id="header-coverage-collected" style="color: #10b981; font-size: 0.9em;"></div>
+                                <div id="header-coverage-failed" style="color: #ef4444; font-size: 0.9em;"></div>
+                            </div>
+                            <div id="workspace-list-container" style="display: none; margin-top: 12px; max-height: 200px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px;">
+                                <div id="workspace-list" style="font-size: 0.85em; color: var(--text-secondary);"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Home/About Page -->
+            <!-- Data Collection: run and schedule the jobs that populate this app. -->
+            <div class="page" id="page-help">
+                <div class="page-header">
+                    <h1 class="page-title">Help &amp; Support</h1>
+                    <p class="page-desc">How SAT works, answers to common questions, and where to get help.</p>
+                </div>
+
+                <details class="help-section" open>
+                    <summary><h2>Understanding the Reports</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
+                    <div class="help-card-grid" id="help-report-cards"></div>
+                </details>
+
+                <details class="help-section" open>
+                    <summary><h2>Getting Started</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
+                    <ol class="help-steps">
+                        <li><strong>Complete setup</strong> — pick a catalog/schema for results and a SQL warehouse. Optionally add an Account ID + a service principal (with the <strong>Account admin</strong> role) to unlock account-wide data.</li>
+                        <li><strong>Run Data Collection</strong> — provision and run the collection jobs; they build the permission graph and findings.</li>
+                        <li><strong>Read the scope banner</strong> — every page shows whether its data is account-wide or limited to this workspace, and how to change that.</li>
+                        <li><strong>Explore</strong> — use Principal / Resource Analysis and the Security Reports to review access.</li>
+                    </ol>
+                </details>
+
+                <details class="help-section">
+                    <summary><h2>Frequently Asked Questions</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
+                    <div class="help-faq">
+                        <details><summary>A page is empty or says "no data" — why?</summary>
+                            <div class="help-faq-body">Either collection hasn't run yet, or the page needs data that isn't enabled. Check <strong>Data Collection</strong> for a recent successful run, and read the page's <strong>scope banner</strong> — it states whether account-wide data is on and, if not, exactly what to enable.</div></details>
+                        <details><summary>What's the difference between "this workspace" and "multiple workspaces"?</summary>
+                            <div class="help-faq-body">Per-workspace findings — resource permissions (clusters, jobs, grants, secret scopes, notebooks) <em>and</em> secret-scan results — follow this setting. <strong>This workspace</strong> scans only where the app runs; <strong>multiple workspaces</strong> scans every workspace the service principal administers (maintained via <strong>Sync workspaces</strong>). Set it in <strong>Data Collection → Manage</strong>. Identities and admin roles are always account-wide when account credentials are configured.</div></details>
+                        <details><summary>Why do I see admins or identities from other workspaces?</summary>
+                            <div class="help-faq-body">Identity and admin data (Account / Workspace / Metastore Admin, account users &amp; groups) is <strong>account-wide</strong>, collected via the account API. So a "Workspace Admin" may administer other workspaces — Principal Analysis and High Privilege name exactly which workspaces/metastores.</div></details>
+                        <details><summary>How do I enable account-wide data?</summary>
+                            <div class="help-faq-body">In the account console, grant a service principal the <strong>Account admin</strong> role (the app's own SP or any other). Then in <strong>Settings → Re-run setup</strong> add the Account ID and that SP's client ID + secret. The scope banner will switch to "Account-wide: ON".</div></details>
+                        <details><summary>How do I include notebooks and folders?</summary>
+                            <div class="help-faq-body">In <strong>Data Collection → Manage</strong>, enable <strong>"Also scan notebook &amp; folder permissions"</strong> and click <strong>Apply &amp; redeploy</strong>. It's off by default because it walks the whole workspace tree, which adds to each collection run's time. Notebooks/folders then appear in Resource Analysis.</div></details>
+                        <details><summary>Why is "Classic" compute greyed out?</summary>
+                            <div class="help-faq-body">This workspace is <strong>serverless-only</strong> (its <code>compute_mode</code> is <code>SERVERLESS</code>), so it has no classic compute to run jobs on — use serverless. Note: classic is greyed out only for a genuinely serverless-only workspace. If classic is offered but a run fails to start a cluster, the app's service principal just needs the <code>allow-cluster-create</code> permission in this workspace.</div></details>
+                        <details><summary>Do I need to re-run after adding a workspace?</summary>
+                            <div class="help-faq-body">No re-setup or initializer re-run. Add the service principal as a <strong>workspace admin</strong> on the new workspace, then open <strong>Data Collection → Manage → Sync workspaces</strong>. Sync discovers the account's workspaces and enables the ones the SP administers; the next scan then covers it. Removing the SP as admin and syncing again drops the workspace.</div></details>
+                        <details><summary>How often does data refresh?</summary>
+                            <div class="help-faq-body">On whatever schedule you set for the collection jobs in <strong>Data Collection</strong>. You can also run any job on demand there. Each page's header shows the collection run it's displaying.</div></details>
+                        <details><summary>Which service principal is used, and what access does it need?</summary>
+                            <div class="help-faq-body">The app's own SP runs the jobs: it needs <code>CAN USE</code> on the warehouse and owns the results schema. Account-wide data uses an account-credential SP with the <strong>Account admin</strong> role. Multi-workspace resource scanning needs the SP added as a <strong>workspace admin</strong> on each workspace. Optional: <code>SELECT</code> on <code>system.access</code> for activity-based reports.</div></details>
+                        <details><summary>How do I rotate or update the service principal secret?</summary>
+                            <div class="help-faq-body">Create a new OAuth secret for the service principal in the account console, then in SAT open <strong>Settings → Account credentials</strong>, paste the client ID + new secret, and click <strong>Update credentials</strong> (they're verified before being stored as Unity Catalog secrets). The collection jobs read the secret at run time, so the next run uses it automatically — <strong>no need to redeploy or re-provision</strong>. Old secrets can then be revoked in the console.</div></details>
+                        <details><summary>How do I change which service principal SAT uses?</summary>
+                            <div class="help-faq-body">For account-wide data, enter a different service principal's client ID + secret in <strong>Settings → Account credentials</strong> (or Re-run setup) — make sure that SP holds the <strong>Account admin</strong> role, and for multi-workspace that it's a workspace admin on each workspace. The identity that <em>runs the app and its jobs</em> (the app's own service principal) is set at the Databricks App level in the Apps UI, not inside SAT; changing it there and redeploying is only needed if you want a different runtime identity.</div></details>
+                        <details><summary>How do I upgrade SAT to a new version?</summary>
+                            <div class="help-faq-body">SAT is a Databricks App deployed from the GitHub repo. To pick up new code/features: <strong>1)</strong> get the latest from the repo (<code>git pull</code> on your checkout, or re-download the release); <strong>2)</strong> redeploy the app with your usual install/deploy step (e.g. <code>databricks apps deploy</code> or the installer) so the app and bundled notebooks update; <strong>3)</strong> in the app, open <strong>Data Collection → Manage → Redeploy jobs</strong> so the collection jobs use the new notebooks. Your configuration and already-collected data are preserved. Check the repo's releases/changelog for version-specific notes.</div></details>
+                        <details><summary>Will my settings and data survive a redeploy or upgrade?</summary>
+                            <div class="help-faq-body">Yes. Configuration is stored in the app's config file and credentials in Unity Catalog secrets; collected results live in your results schema. Redeploying the app or jobs doesn't clear them. "Redeploy jobs" only updates the job definitions/notebooks, and "Re-run initializer" rebuilds the result tables' schema without dropping prior runs.</div></details>
+                    </div>
+                </details>
+
+                <details class="help-section">
+                    <summary><h2>Troubleshooting</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
+                    <div class="help-faq">
+                        <details><summary>Account-wide data is missing</summary>
+                            <div class="help-faq-body">Confirm the Account ID + credentials are set (Settings → Re-run setup) and that the service principal holds the <strong>Account admin</strong> role, then run the collection jobs. The scope banner reports "set up, no data yet" when credentials exist but a run hasn't produced data.</div></details>
+                        <details><summary>A collection job failed</summary>
+                            <div class="help-faq-body">Open <strong>Data Collection</strong> and check the job's last run. Common causes: the SP lacks <code>CAN MANAGE</code> on jobs or <code>CAN USE</code> on the warehouse, or the results schema isn't readable. Re-run the initializer from Manage if the schema/tables look incomplete.</div></details>
+                        <details><summary>Notebooks aren't showing in Resource Analysis</summary>
+                            <div class="help-faq-body">Enable notebook scanning in <strong>Data Collection → Manage</strong>, click <strong>Apply &amp; redeploy</strong>, run collection again, then hard-refresh. Use the <strong>Notebooks</strong> / <strong>Folders</strong> browse buttons or search by name.</div></details>
+                        <details><summary>Some workspaces were skipped</summary>
+                            <div class="help-faq-body">The service principal must be a <strong>workspace admin</strong> on each workspace you want scanned. On serverless, scanning remote workspaces needs cross-workspace access — if remote ones are skipped, ask your account team to enroll you, or use classic compute.</div></details>
+                        <details><summary>I get a permission / 403 error viewing results</summary>
+                            <div class="help-faq-body">Results are governed by Unity Catalog. Ask whoever owns the results schema to grant you <code>USE SCHEMA</code> + <code>SELECT</code> on it.</div></details>
+                        <details><summary>Account authentication failed / credentials expired</summary>
+                            <div class="help-faq-body">The service principal's OAuth secret has likely expired or been revoked. Create a fresh secret in the account console, then update it in <strong>Settings → Account credentials</strong> → <strong>Update credentials</strong>. The requirements checklist in setup verifies the account connection and the <strong>Account admin</strong> role live, so re-run setup to confirm it's green.</div></details>
+                        <details><summary>A new workspace isn't appearing in scans</summary>
+                            <div class="help-faq-body">Add the service principal as a <strong>workspace admin</strong> on that workspace, then run <strong>Data Collection → Manage → Sync workspaces</strong> so SAT discovers it and enables it for scanning. Also make sure collection scope is set to <strong>Multiple workspaces</strong>. If it still doesn't scan, the SP may lack admin there, or (on serverless) the account isn't enrolled in cross-workspace access.</div></details>
+                    </div>
+                </details>
+
+                <details class="help-section" open>
+                    <summary><h2>More Help</h2><svg class="help-section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></summary>
+                    <div class="help-links">
+                        <a class="help-link-card" href="https://databricks-industry-solutions.github.io/security-analysis-tool/" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                            Documentation
+                        </a>
+                        <a class="help-link-card" href="https://github.com/databricks-industry-solutions/security-analysis-tool" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                            Source
+                        </a>
+                        <a class="help-link-card" href="https://github.com/databricks-industry-solutions/security-analysis-tool/issues" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            Report an issue
+                        </a>
+                        <a class="help-link-card" href="https://www.databricks.com/trust" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            Databricks Trust Center
+                        </a>
+                    </div>
+                </details>
+
+                <!-- Report guide modal (populated by openHelpGuide) -->
+                <div class="help-modal-overlay" id="help-modal-overlay" onclick="if(event.target===this)closeHelpGuide()">
+                    <div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+                        <div class="help-modal-head">
+                            <span class="emoji" id="help-modal-emoji">📘</span>
+                            <div>
+                                <div class="help-modal-title" id="help-modal-title">Report</div>
+                                <div class="help-modal-sub" id="help-modal-sub"></div>
+                            </div>
+                            <button class="help-modal-close" aria-label="Close" onclick="closeHelpGuide()">&times;</button>
+                        </div>
+                        <div class="help-modal-body" id="help-modal-body"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="page" id="page-collection">
+                <div class="page-header">
+                    <h1 class="page-title">Data Collection</h1>
+                    <p class="page-desc">Run, schedule, and monitor the analysis collection jobs.</p>
+                </div>
+                <div id="collection-panel"></div>
+            </div>
+
+            <div class="page active" id="page-home">
+                <div class="page-header" style="text-align: center; margin-bottom: 18px;">
+                    <h1 class="page-title" style="margin-bottom: 6px; font-size: 1.8em;">🛡️ Security Analysis Tool</h1>
+                </div>
+
+                <div class="card" style="padding: 20px;">
+                    <h2 style="font-size: 1.2em; margin-bottom: 10px; color: var(--primary);">What is the Security Analysis Tool?</h2>
+                    <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.92em;">
+                        The Security Analysis Tool is a security observability platform for Databricks environments.
+                        It maps the permissions graph to surface privilege escalation paths, over-privileged principals,
+                        and complex access relationships across workspaces; scans notebook source, workspace files,
+                        and cluster configurations for hardcoded credentials; and answers questions about any of it in plain language.
+                    </p>
+                    <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.86em;">
+                        Core security posture checks are available natively in the <a href="https://docs.databricks.com/aws/en/admin/governance-hub/security" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">Databricks Governance Hub (Security section)</a>.
+                    </p>
+
+                    <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🎯 Key Features</h3>
+                    <ul style="line-height: 1.5; color: var(--text-secondary); list-style-position: inside; margin-bottom: 13px; font-size: 0.88em;">
+                        <li><strong>Principal Analysis</strong> - Discover what a user, group, or service principal can access</li>
+                        <li><strong>Resource Analysis</strong> - Find all principals with access to specific resources</li>
+                        <li><strong>Escalation Paths</strong> - Identify potential privilege escalation routes</li>
+                        <li><strong>Impersonation Analysis</strong> - See who can impersonate whom</li>
+                        <li><strong>Security Reports</strong> - Pre-built reports for common security concerns</li>
+                    </ul>
+
+                    <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🪪 Account &amp; Identity Governance <span style="font-size: 0.7em; font-weight: 600; color: #10b981; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle;">New</span></h3>
+                    <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 9px; font-size: 0.88em;">
+                        Account-level detections that complement Automatic Identity Management (AIM). These run their own account-wide detection jobs and are surfaced with their own point-in-time coverage:
+                    </p>
+                    <ul style="line-height: 1.5; color: var(--text-secondary); list-style-position: inside; margin-bottom: 13px; font-size: 0.88em;">
+                        <li><strong>Shared to All Users</strong> - Find resources shared with the built-in <em>account users</em> group (i.e. exposed to everyone in the account) and optionally remediate them</li>
+                        <li><strong>Privileged Non-IdP</strong> - Surface Account Admin / Workspace Admin held by identities that aren't IdP-managed (no <code>externalId</code>), or assigned directly to users and service principals — access that bypasses your identity provider's joiner/mover/leaver governance</li>
+                        <li><strong>Denylist Builder</strong> - Rank IdP groups by inactive members to find safe <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">account access denylist</a> candidates, plus an Entra ID dynamic-group rule helper to scale a single denylist entry to thousands of users</li>
+                    </ul>
+
+                    <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">🚀 Getting Started</h3>
+                    
+                    <!-- Graph Collection status instructions -->
+                    <div style="padding: 13px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.02) 100%); border: 2px solid rgba(16, 185, 129, 0.2); border-radius: 10px; margin-bottom: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                        <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 7px;">
+                            <div style="width: 30px; height: 30px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 15px;">
+                                📈
+                            </div>
+                            <div style="font-size: 0.9em; font-weight: 700; color: var(--text-primary);">Graph Collection — Inventory &amp; Coverage</div>
+                        </div>
+                        <p style="color: var(--text-secondary); font-size: 0.82em; line-height: 1.35; margin: 0 0 0 39px;">
+                            When you open an <strong>Analysis Tool</strong> or graph <strong>Security Report</strong>, a header bar shows the graph collection's inventory and workspace coverage. Use its <strong>Data Collection</strong> dropdown to switch between collection runs and view historical data. Account &amp; Identity Governance pages run their own account-wide jobs and show their own coverage instead.
+                        </p>
+                    </div>
+                    
+                    <p style="line-height: 1.45; color: var(--text-secondary); margin-bottom: 13px; font-size: 0.9em;">
+                        Use the navigation menu on the left to explore different analysis capabilities:
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 13px; margin-top: 13px;">
+                        <div style="padding: 16px; background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(59, 130, 246, 0.02) 100%); border: 2px solid rgba(59, 130, 246, 0.2); border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                            <div style="display: flex; align-items: center; gap: 11px; margin-bottom: 9px;">
+                                <div style="width: 38px; height: 38px; background: linear-gradient(135deg, var(--primary) 0%, #2563eb 100%); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                                    🔍
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.95em; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Analysis Tools</div>
+                                    <div style="font-size: 0.68em; color: var(--primary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Interactive</div>
+                                </div>
+                            </div>
+                            <p style="color: var(--text-secondary); font-size: 0.86em; line-height: 1.35; margin: 0;">
+                                Investigate principals, resources, and permission paths with interactive search tools
+                            </p>
+                        </div>
+                        <div style="padding: 16px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(139, 92, 246, 0.02) 100%); border: 2px solid rgba(139, 92, 246, 0.2); border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                            <div style="display: flex; align-items: center; gap: 11px; margin-bottom: 9px;">
+                                <div style="width: 38px; height: 38px; background: linear-gradient(135deg, var(--danger) 0%, #7c3aed 100%); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                                    📊
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.95em; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Security Reports</div>
+                                    <div style="font-size: 0.68em; color: var(--danger); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Pre-built</div>
+                                </div>
+                            </div>
+                            <p style="color: var(--text-secondary); font-size: 0.86em; line-height: 1.35; margin: 0;">
+                                View pre-generated security insights, risks, and comprehensive audit reports
+                            </p>
+                        </div>
+                    </div>
+
+                    <h3 style="font-size: 1em; margin: 15px 0 9px 0; color: var(--primary);">💡 Tips</h3>
+                    <ul style="line-height: 1.5; color: var(--text-secondary); list-style-position: inside; margin-bottom: 0; font-size: 0.88em;">
+                        <li>Use email addresses, names, or IDs when searching for principals</li>
+                        <li>For resources, use the full namespace/path (e.g., catalog.schema.table)</li>
+                        <li>Click on principals or resources in results to navigate to detailed analysis</li>
+                        <li>Reports auto-load when you navigate to them</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Principal Analysis Page -->
+            <div class="page" id="page-principal">
+                <div class="page-header">
+                    <h1 class="page-title">Principal Analysis <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Enter a user, group, or service principal (by email, name, or application ID). You get back every resource it can reach and how each access is granted — a direct grant, inherited through a group, or via ownership. Use it to review one identity's full reach, and whether it is itself an Account, Workspace, or Metastore Admin.">i</span></h1>
+                    <p class="page-desc">Everything a user, group, or service principal can reach, directly or through group membership.</p>
+                </div>
+
+                <!-- Input Section: Search and Browse -->
+                <div style="margin: 20px 0; padding: 20px; background: var(--bg-input); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <div class="search-container" style="margin: 0;">
+                        <div class="search-box">
+                            <div style="flex: 1; position: relative;">
+                                <input type="text" class="search-input" id="principal-search"
+                                       placeholder="Search a user, group, or service principal — add several to compare..."
+                                       autocomplete="off">
+                                <button class="search-clear-btn" id="principal-clear-btn" onclick="clearPrincipalSearch()" style="display: none;" title="Clear search">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
+                                <div class="autocomplete-dropdown" id="principal-autocomplete"></div>
+                            </div>
+                            <button class="search-btn" onclick="analyzeSelectedPrincipals()">Analyze</button>
+                        </div>
+                        <div id="principal-chips"></div>
+                        <div id="principal-chips-hint" style="margin-top: 8px; font-size: 0.82em; color: var(--text-muted);">Tip: pick or type a principal to add it below &mdash; add several to analyze them side by side, then click Analyze.</div>
+                    </div>
+
+                    <!-- Principal Type Filter -->
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                            <span style="font-size: 0.9em; color: var(--text-secondary); font-weight: 600;">Or Browse and Select by Type:</span>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            <button class="resource-type-filter" data-type="User" onclick="browsePrincipalsByType('User')">Users</button>
+                            <button class="resource-type-filter" data-type="Group" onclick="browsePrincipalsByType('Group')">Groups</button>
+                            <button class="resource-type-filter" data-type="ServicePrincipal" onclick="browsePrincipalsByType('ServicePrincipal')">Service Principals</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="principal-results"></div>
+            </div>
+
+            <!-- Resource Analysis Page -->
+            <div class="page" id="page-resource">
+                <div class="page-header">
+                    <h1 class="page-title">Resource Analysis <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Enter a resource (for example catalog.schema.table, a cluster, or a warehouse). You get back every principal that can reach it, their permission level, and whether access is direct or inherited through a group. Use it to audit who can touch a sensitive asset.">i</span></h1>
+                    <p class="page-desc">Every principal that can reach a given resource, and the grant that allows it.</p>
+                </div>
+
+                <!-- Input Section: Search and Browse -->
+                <div style="margin: 20px 0; padding: 20px; background: var(--bg-input); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <div class="search-container" style="margin: 0;">
+                        <div class="search-box">
+                            <div style="flex: 1; position: relative;">
+                                <input type="text" class="search-input" id="resource-search"
+                                       placeholder="Search by resource name such as catalog, schema, table, cluster, warehouse, or job name..."
+                                       autocomplete="off">
+                                <button class="search-clear-btn" id="resource-clear-btn" onclick="clearResourceSearch()" style="display: none;" title="Clear search">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
+                                <div class="autocomplete-dropdown" id="resource-autocomplete"></div>
+                            </div>
+                            <button class="search-btn" onclick="analyzeResource()">Analyze</button>
+                        </div>
+                    </div>
+
+                    <!-- Resource Type Filter -->
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                            <span style="font-size: 0.9em; color: var(--text-secondary); font-weight: 600;">Or Browse and Select by Type:</span>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            <button class="resource-type-filter" data-type="Catalog" onclick="browseResourcesByType('Catalog')">Catalogs</button>
+                            <button class="resource-type-filter" data-type="Schema" onclick="browseResourcesByType('Schema')">Schemas</button>
+                            <button class="resource-type-filter" data-type="Table" onclick="browseResourcesByType('Table')">Tables</button>
+                            <button class="resource-type-filter" data-type="View" onclick="browseResourcesByType('View')">Views</button>
+                            <button class="resource-type-filter" data-type="Volume" onclick="browseResourcesByType('Volume')">Volumes</button>
+                            <button class="resource-type-filter" data-type="Function" onclick="browseResourcesByType('Function')">Functions</button>
+                            <button class="resource-type-filter" data-type="Cluster" onclick="browseResourcesByType('Cluster')">Clusters</button>
+                            <button class="resource-type-filter" data-type="Job" onclick="browseResourcesByType('Job')">Jobs</button>
+                            <button class="resource-type-filter" data-type="Warehouse" onclick="browseResourcesByType('Warehouse')">Warehouses</button>
+                            <button class="resource-type-filter" data-type="ServingEndpoint" onclick="browseResourcesByType('ServingEndpoint')">Endpoints</button>
+                            <button class="resource-type-filter" data-type="SecretScope" onclick="browseResourcesByType('SecretScope')">Secrets</button>
+                            <button class="resource-type-filter" data-type="Notebook" onclick="browseResourcesByType('Notebook')">Notebooks</button>
+                            <button class="resource-type-filter" data-type="Directory" onclick="browseResourcesByType('Directory')">Folders</button>
+                            <button class="resource-type-filter" data-type="Repo" onclick="browseResourcesByType('Repo')">Repos</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="resource-results"></div>
+            </div>
+
+            <!-- Escalation Paths Page -->
+            <div class="page" id="page-paths">
+                <div class="page-header">
+                    <h1 class="page-title">Escalation Paths <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Enter a principal to trace routes by which it could reach admin or otherwise privileged access — for example through a group that owns a resource, or by managing a more-privileged identity. Each row is one path; shorter paths are easier to exploit, so review whether any step is unintended.">i</span></h1>
+                    <p class="page-desc">Routes by which a principal could obtain admin or otherwise privileged access.</p>
+                </div>
+
+                <div class="search-container">
+                    <div class="search-box">
+                        <div style="flex: 1; position: relative;">
+                            <input type="text" class="search-input" id="paths-search"
+                                   placeholder="Search by name, user email, group, or service principal..."
+                                   autocomplete="off">
+                            <button class="search-clear-btn" id="paths-clear-btn" onclick="clearPathsSearch()" style="display: none;" title="Clear search">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                            <div class="autocomplete-dropdown" id="paths-autocomplete"></div>
+                        </div>
+                        <button class="search-btn" onclick="findPaths()">Find Paths</button>
+                    </div>
+                </div>
+
+                <!-- Principal Type Filter -->
+                <div style="margin: 20px 0; padding: 16px; background: var(--bg-input); border-radius: 12px;">
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                        <span style="font-size: 0.9em; color: var(--text-secondary); font-weight: 600;">Browse by Type:</span>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <button class="resource-type-filter" data-type="User" onclick="browsePathsPrincipalsByType('User')">Users</button>
+                        <button class="resource-type-filter" data-type="Group" onclick="browsePathsPrincipalsByType('Group')">Groups</button>
+                        <button class="resource-type-filter" data-type="ServicePrincipal" onclick="browsePathsPrincipalsByType('ServicePrincipal')">Service Principals</button>
+                    </div>
+                </div>
+
+                <div id="paths-results"></div>
+            </div>
+
+            <!-- Impersonation Analysis Page -->
+            <div class="page" id="page-impersonation">
+                <div class="page-header">
+                    <h1 class="page-title">Impersonation Analysis <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Lists identities that can act as another identity — for example by managing a service principal or its tokens, or running jobs as someone else. Read each row as a can-act-as relationship and confirm it is intended.">i</span></h1>
+                    <p class="page-desc">Principals that can act as another identity, and the permissions that make it possible.</p>
+                </div>
+
+                <div style="background: var(--bg-input); border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px;">
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">Source Type</label>
+                            <select id="impersonate-source-type" class="search-input" style="width: 100%;" onchange="loadSourcePrincipals()">
+                                <option value="User">User</option>
+                                <option value="Group">Group</option>
+                                <option value="ServicePrincipal">Service Principal</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">Target Type</label>
+                            <select id="impersonate-target-type" class="search-input" style="width: 100%;" onchange="loadTargetPrincipals()">
+                                <option value="User">User</option>
+                                <option value="Group">Group</option>
+                                <option value="ServicePrincipal">Service Principal</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px;">
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">Source</label>
+                            <input type="text" id="impersonate-source" class="search-input" style="width: 100%;" placeholder="Enter source email/name or select from list">
+                            <select id="impersonate-source-select" class="search-input" style="width: 100%; margin-top: 8px; display: none;"></select>
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">Target</label>
+                            <input type="text" id="impersonate-target" class="search-input" style="width: 100%;" placeholder="Enter target email/name or select from list">
+                            <select id="impersonate-target-select" class="search-input" style="width: 100%; margin-top: 8px; display: none;"></select>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 0.85em; color: var(--text-secondary); margin-bottom: 8px;">Analysis Type</label>
+                        <div style="display: flex; gap: 20px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="radio" name="analysis-type" value="all" checked>
+                                <span>🔀 All Paths (1-5 hops)</span>
+                                <span style="font-size: 0.8em; color: var(--text-muted);">Shows every possible attack route</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="radio" name="analysis-type" value="shortest">
+                                <span>⚡ Shortest Path (1-10 hops)</span>
+                                <span style="font-size: 0.8em; color: var(--text-muted);">Finds the most direct route</span>
+                            </label>
+                        </div>
+                    </div>
+                    <button class="search-btn" onclick="runImpersonationAnalysis()">▶ Run Analysis</button>
+                </div>
+
+                <div id="impersonation-results"></div>
+            </div>
+
+            <!-- Isolated Principals Report Page -->
+            <div class="page" id="page-isolated">
+                <div class="page-header">
+                    <h1 class="page-title">Isolated Principals <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Each row is an identity with almost no groups or grants — often a leftover, test, or misconfigured account. Confirm whether it is still needed; stale accounts are good deactivation candidates.">i</span></h1>
+                    <p class="page-desc">Identities with almost no group membership or grants. Often leftover or misconfigured accounts.</p>
+                </div>
+                <div id="isolated-results"></div>
+            </div>
+
+            <!-- Orphaned Resources Report Page -->
+            <div class="page" id="page-orphaned">
+                <div class="page-header">
+                    <h1 class="page-title">Orphaned Resources <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Resources with no explicit grants, so access falls back to inherited or default permissions that are easy to overlook. Review whether that inherited access is appropriate, or add explicit grants.">i</span></h1>
+                    <p class="page-desc">Resources with no explicit grants. Access falls back to inherited or default permissions.</p>
+                </div>
+                <div id="orphaned-results"></div>
+            </div>
+
+            <!-- Over-Privileged Principals Report Page -->
+            <div class="page" id="page-overprivileged">
+                <div class="page-header">
+                    <h1 class="page-title">Over-Privileged Principals <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Identities whose granted access is wider than their recent activity suggests they use. Treat them as right-sizing candidates — compare granted versus used access and trim what is not needed.">i</span></h1>
+                    <p class="page-desc">Identities holding more access than their activity suggests they need.</p>
+                </div>
+                <div id="overprivileged-results"></div>
+            </div>
+
+            <!-- High Privilege Principals Report Page -->
+            <div class="page" id="page-highprivilege">
+                <div class="page-header">
+                    <h1 class="page-title">High Privilege Principals <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Identities with admin rights, granted directly or inherited through a group. Keep this set as small as possible, and for each one confirm the admin rights are required.">i</span></h1>
+                    <p class="page-desc">Identities with administrative rights, whether granted directly or inherited through groups.</p>
+                </div>
+                <div id="highprivilege-results"></div>
+            </div>
+
+            <!-- Secret Scope Access Report Page -->
+            <div class="page" id="page-secretscopes">
+                <div class="page-header">
+                    <h1 class="page-title">Secret Scope Access <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Each row is a principal's access to a scope — READ sees the secret values, WRITE adds or changes them, and MANAGE can also change who has access (MANAGE includes WRITE includes READ). Watch for broad groups with READ, or non-admins with MANAGE.">i</span></h1>
+                    <p class="page-desc">Who can read, write, or manage each secret scope. Secret scopes are the legacy credential store &mdash; Unity Catalog secrets offer governed, fine-grained access control and are recommended for new secrets.</p>
+                </div>
+
+                <!-- Filters -->
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                    <div style="display: flex; gap: 16px; align-items: end; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="display: block; font-size: 0.85em; color: var(--text-secondary); margin-bottom: 6px;">Workspace</label>
+                            <select id="secretscope-workspace-filter" onchange="onSecretScopeWorkspaceChange()" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-primary); font-size: 0.95em;">
+                                <option value="">All Workspaces</option>
+                            </select>
+                        </div>
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="display: block; font-size: 0.85em; color: var(--text-secondary); margin-bottom: 6px;">Secret Scope</label>
+                            <select id="secretscope-scope-filter" onchange="loadSecretScopeAccess()" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-primary); font-size: 0.95em;">
+                                <option value="">All Scopes</option>
+                            </select>
+                        </div>
+                        <button onclick="clearSecretScopeFilters()" style="padding: 10px 16px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; color: var(--text-secondary); cursor: pointer; font-size: 0.9em;">
+                            Clear Filters
+                        </button>
+                    </div>
+                </div>
+
+                <div id="secretscopes-results"></div>
+            </div>
+
+            <!-- Shared to All Account Users Report Page -->
+            <div class="page" id="page-sharedtoaccount">
+                <div class="page-header">
+                    <h1 class="page-title">Shared to All Account Users <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Each row is a dashboard, Genie space, or app shared with the built-in account users group, so everyone in the account can read it. Treat as unintended exposure unless it is meant to be public, and remove the account-users grant to restrict it.">i</span></h1>
+                    <p class="page-desc">Dashboards, Genie spaces, and apps shared with the built-in account users group, and therefore readable by everyone in the account.</p>
+                </div>
+                <div id="sharedtoaccount-results"></div>
+            </div>
+
+            <!-- Privileged Non-IdP Group Identities Report Page -->
+            <div class="page" id="page-privilegednonidp">
+                <div class="page-header">
+                    <h1 class="page-title">Privileged Non-IdP Group Identities <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Admin rights held outside your identity provider, so they survive offboarding — removing someone from the IdP does not revoke them. Review each and move the privilege under an IdP-managed group where possible.">i</span></h1>
+                    <p class="page-desc">Administrative rights held outside your identity provider. These accounts survive offboarding, because removing someone from the IdP does not revoke them.</p>
+                </div>
+                <div id="privilegednonidp-results"></div>
+            </div>
+
+            <!-- Account Denylist Builder Page -->
+            <div class="page" id="page-denylistbuilder">
+                <div class="page-header">
+                    <h1 class="page-title">Account Denylist Builder <span class="help-tip" tabindex="0" aria-label="How to use this page" data-help="Finds IdP groups whose members have no recent Databricks activity, ranked so a higher inactive count or percentage is a stronger denylist candidate. Review the members first, then use the generated Entra ID dynamic-group rule to apply one denylist entry at scale.">i</span></h1>
+                    <p class="page-desc">Tools to help build an <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/account-access-denylist" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">account access denylist</a>: find IdP groups whose members aren't using Databricks, and generate Entra ID dynamic-group rules that scale a single denylist entry to thousands of users.</p>
+                </div>
+
+                <!-- Section 1: Inactive-user group candidates -->
+                <div style="margin-bottom: 28px;">
+                    <h2 style="font-size: 1.1em; margin-bottom: 4px;">1. Inactive-User Group Candidates</h2>
+                    <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 12px;">
+                        IdP-managed (external) groups ranked by count of inactive members (users with no
+                        <code>system.access.audit</code> activity in the look-back window — a heuristic for the
+                        <a href="https://learn.microsoft.com/en-gb/azure/databricks/admin/users-groups/automatic-identity-management/#status" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">"Inactive: No usage"</a> status). Groups whose members mostly aren't logging in are good denylist candidates.
+                        <br><span style="color: #f59e0b;">Note:</span> under Automatic Identity Management, IdP group memberships are resolved just-in-time and aren't returned by the account SCIM API, so this ranking can be empty even for populated groups. Where that's the case, use the Entra rule builder below.
+                    </p>
+                    <div id="denylist-candidates-results"></div>
+                </div>
+
+                <!-- Section 2: Entra ID dynamic group rule helper -->
+                <div>
+                    <h2 style="font-size: 1.1em; margin-bottom: 4px;">2. Entra ID Dynamic Group Rule Builder</h2>
+                    <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 12px;">
+                        Denylists support up to 100 groups, but a single
+                        <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-membership" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">Entra ID dynamic group</a>
+                        can contain thousands of users via a membership rule. Build a rule below, then create the
+                        group in Entra and add it to your denylist. See also
+                        <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-rule-more-efficient" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">writing efficient rules</a>.
+                    </p>
+                    <div id="entra-rule-builder"></div>
+                </div>
+            </div>
+
+            <!-- Credential Exposure (secret scanning overview) -->
+            <div class="page" id="page-secretsoverview">
+                <div class="page-header">
+                    <h1 class="page-title">Credential Exposure <span class="help-tip" tabindex="0" aria-label="About this page" data-help="The secret scanner inspects notebook source, workspace files (.py, .sql, config, etc.), and cluster environment variables for hardcoded credentials such as API keys and tokens. Remove them from the code/config and store them in Unity Catalog secrets instead of hardcoding. Run and schedule the scan from Data Collection.">i</span></h1>
+                    <p class="page-desc">Secrets &mdash; API keys and tokens &mdash; found hardcoded in notebook source, workspace files, and cluster configurations, where anyone with access to the code can read them.</p>
+                </div>
+                <div id="secrets-scan-settings"></div>
+                <div id="secretsoverview-results"></div>
+            </div>
+
+            <!-- Secret Scanning Alerts Page -->
+            <div class="page" id="page-secretsalerts">
+                <div class="page-header">
+                    <h1 class="page-title">Alerts <span class="help-tip" tabindex="0" aria-label="About this page" data-help="Create Databricks SQL alerts that email recipients when the scanner's findings meet a condition (e.g. any hardcoded secret found). Pick what to watch, the threshold, how often to check, and who to notify. 'Test condition now' shows whether it would fire; actual emails are sent on the alert's schedule.">i</span></h1>
+                    <p class="page-desc">Get notified when the scanner finds exposed credentials. These are standard Databricks SQL alerts &mdash; the schedule, notifications and history work exactly as they do elsewhere, and each one stays editable in the workspace.</p>
+                </div>
+                <div id="secretsalerts-results"></div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Security assistant: floating launcher + slide-over panel, available on
+         every page rather than occupying a nav slot. -->
+    <div class="drawer-scrim" id="settings-scrim" hidden onclick="closeSettingsPanel()"></div>
+    <aside class="drawer" id="settings-drawer" hidden aria-label="Settings and health">
+        <div class="drawer-head">
+            <div class="drawer-head-titles">
+                <div class="drawer-title">Settings</div>
+                <div class="drawer-sub">Configuration and connection health</div>
+            </div>
+            <button class="icon-btn" onclick="closeSettingsPanel()" aria-label="Close settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="drawer-body" id="settings-body"></div>
+    </aside>
+
+    <!-- Hidden until initApp confirms the workspace is configured; the assistant
+         has nothing to answer against during first-run setup. -->
+    <button class="assistant-fab hidden" id="assistant-fab" title="Ask the security assistant" aria-label="Open security assistant">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+    </button>
+
+    <aside class="assistant-panel" id="assistant-panel" aria-label="Security assistant">
+        <div class="assistant-head">
+            <div class="assistant-head-mark">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            </div>
+            <div style="min-width:0;">
+                <div class="assistant-head-title">Security Assistant</div>
+                <div class="assistant-head-sub" id="assistant-model-label">Permissions, secrets, and audit activity</div>
+            </div>
+            <div class="assistant-head-actions">
+            <button class="assistant-icon-btn" id="assistant-history-btn" data-tip="Past conversations" aria-label="Past conversations">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+            </button>
+            <button class="assistant-icon-btn" id="assistant-new-btn" data-tip="New chat" aria-label="Start a new chat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+            </button>
+            <button class="assistant-close" id="assistant-close" data-tip="Close" aria-label="Close">&times;</button>
+            </div>
+        </div>
+
+        <div class="assistant-log" id="assistant-log"></div>
+        <div class="assistant-compose">
+            <textarea id="assistant-input" rows="1" placeholder="Ask a security question&hellip;"></textarea>
+            <button class="btn btn-primary" id="assistant-send">Send</button>
+            <button class="btn btn-stop" id="assistant-stop" hidden>Stop</button>
+        </div>
+        <div class="assistant-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Read-only — the assistant can explain findings but cannot change permissions or data.
+        </div>
+    </aside>
+
+
+
+    <script>
+        // Current run_id state
+        let currentRunId = null;
+
+        // Track current page and loaded reports
+        let currentPage = 'dashboard';
+        const reportPages = ['isolated', 'orphaned', 'overprivileged', 'highprivilege', 'secretscopes', 'sharedtoaccount', 'privilegednonidp'];
+        const analysisPages = ['principal', 'resource', 'paths', 'risk', 'impersonation', 'denylistbuilder'];
+
+        // Track which analyses have been performed (so we can refresh on run change)
+        let lastAnalysis = {
+            principal: null,  // stores last search term
+            resource: null,
+            paths: null,
+            risk: null
+        };
+
+        // Logo click handler - navigate to home page
+        document.querySelector('.logo').addEventListener('click', () => {
+            navigateToPage('home');
+        });
+
+        // Collapsible sidebar — state persists across sessions.
+        function setSidebarCollapsed(collapsed) {
+            const sb = document.querySelector('.sidebar');
+            if (!sb) return;
+            sb.classList.toggle('collapsed', collapsed);
+            const btn = document.getElementById('nav-collapse-btn');
+            if (btn) btn.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+            try { localStorage.setItem('satNavCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+        }
+        function toggleSidebar() {
+            const sb = document.querySelector('.sidebar');
+            setSidebarCollapsed(!(sb && sb.classList.contains('collapsed')));
+        }
+        // Reconcile aria with the class the pre-paint script may have set.
+        setSidebarCollapsed(!!document.querySelector('.sidebar.collapsed'));
+
+        // Collapsed rail has no visible labels, so show a floating label on hover.
+        // A fixed-position tip (not a ::after) escapes the nav's scroll clipping.
+        (function () {
+            let tip;
+            function show(el) {
+                if (!document.querySelector('.sidebar.collapsed')) return;
+                const label = (el.textContent || '').trim();
+                if (!label) return;
+                if (!tip) { tip = document.createElement('div'); tip.className = 'nav-tip'; document.body.appendChild(tip); }
+                tip.textContent = label;
+                const r = el.getBoundingClientRect();
+                tip.style.top = (r.top + r.height / 2) + 'px';
+                tip.style.left = (r.right + 12) + 'px';
+                tip.classList.add('show');
+            }
+            function hide() { if (tip) tip.classList.remove('show'); }
+            document.querySelectorAll('.nav-item, .footer-link').forEach(el => {
+                el.addEventListener('mouseenter', () => show(el));
+                el.addEventListener('mouseleave', hide);
+                el.addEventListener('click', hide);
+            });
+        })();
+
+        // Navigation with auto-load for reports
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const page = item.dataset.page;
+                navigateToPage(page);
+            });
+        });
+
+        // Function to navigate to a page and update URL hash
+        // Report guides shown on the Help page. Each opens a modal explaining what
+        // the analysis shows, how to read it, what to look for, and an example.
+        const REPORT_GUIDES = {
+            principal: { emoji: '👤', title: 'Principal Analysis', nav: 'principal',
+                sub: 'Everything one identity can reach',
+                whatItIs: 'Pick a user, group, or service principal and see every resource it can access, how each grant is obtained, and the admin roles it holds.',
+                howToRead: ['Each row is a resource the principal can reach.', 'The grant path is labelled <strong>Direct</strong>, <strong>Group</strong> (inherited via membership), <strong>Ownership</strong>, or <strong>Parent</strong> (inherited from a parent object).', 'The "Admin roles — what &amp; where" box lists Account / Workspace / Metastore Admin, naming the exact workspaces and metastores.'],
+                lookFor: ['Broad reach via a large group the person does not need.', 'Admin roles held by non-human or stale identities.', 'Access to sensitive catalogs/secret scopes inherited from a wide group.'],
+                example: 'Analyzing a departing employee shows they are Workspace Admin on 3 workspaces and can read a secrets scope via the <code>account users</code> group — revoke before offboarding.' },
+            resource: { emoji: '📦', title: 'Resource Analysis', nav: 'resource',
+                sub: 'Everyone who can reach one resource',
+                whatItIs: 'Pick a resource (catalog, table, cluster, job, warehouse, secret scope, notebook, folder…) and see every principal that can access it and how.',
+                howToRead: ['Each row is a principal with access, their permission level, and whether it is direct, via a group, via ownership, or inherited from a parent.', 'Use the quick-browse buttons to list resources by type, or search by name.'],
+                lookFor: ['A sensitive table or secret scope reachable by a broad group.', 'More principals than expected with MANAGE / ALL PRIVILEGES.', 'Access inherited from a parent catalog/folder that should be tighter.'],
+                example: 'Checking a production catalog reveals <code>account users</code> has USE CATALOG — far too broad for prod data.' },
+            paths: { emoji: '🪜', title: 'Escalation Paths', nav: 'paths',
+                sub: 'Routes to higher privilege',
+                whatItIs: 'Traces how a principal could reach admin or otherwise-privileged access — through a group that owns a resource, or by managing a more-privileged identity.',
+                howToRead: ['Each row is one path; read it left-to-right as a chain of steps.', 'Shorter paths are easier to exploit.'],
+                lookFor: ['Short paths from ordinary users to admin.', 'Paths that pass through a group anyone can join.', 'Unexpected ownership that grants management of a privileged identity.'],
+                example: 'A developer is in a group that can manage a service principal that is Account Admin — a two-step escalation to full control.' },
+            impersonation: { emoji: '🎭', title: 'Impersonation', nav: 'impersonation',
+                sub: 'Who can act as whom',
+                whatItIs: 'Lists identities that can act as another identity — by managing a service principal or its tokens, or running jobs as someone else.',
+                howToRead: ['Read each row as a "can act as" relationship from a source to a target principal.', 'Confirm each relationship is intended.'],
+                lookFor: ['Users who can manage a high-privilege service principal.', '"Can act as" chains that bypass a person’s own permissions.'],
+                example: 'An analyst can manage the service principal that owns the finance pipeline — they can run it as that SP and read everything it can.' },
+            highprivilege: { emoji: '🛡️', title: 'High Privilege Principals', nav: 'highprivilege',
+                sub: 'Admins across the account',
+                whatItIs: 'Every identity with admin rights — Account Admin, Metastore Admin, Workspace Admin, or Catalog Owner — direct or inherited through a group.',
+                howToRead: ['Grouped by role; each row names the identity and the "via" (the workspace, metastore, group, or direct role it comes from).', 'Roles are detected <strong>account-wide</strong>, so a Workspace Admin may administer other workspaces, not this one.', 'Use the search box and role filter to narrow.'],
+                lookFor: ['More Account/Metastore Admins than necessary.', 'Admin held via a group rather than assigned directly.', 'Service principals with admin that no one owns.'],
+                example: 'Filtering to Account Admin shows 12 principals — several are personal accounts that should be moved to a managed admin group.' },
+            isolated: { emoji: '🧍', title: 'Isolated Principals', nav: 'isolated',
+                sub: 'Leftover / unused identities',
+                whatItIs: 'Identities with almost no groups or grants — often leftover, test, or misconfigured accounts.',
+                howToRead: ['Each row is an identity with minimal connections in the graph.', 'Treat as candidates to confirm and deactivate.'],
+                lookFor: ['Stale accounts from former employees or finished projects.', 'Test service principals that were never cleaned up.'],
+                example: 'A service principal with no group memberships and one orphaned token — a leftover from a POC, safe to remove.' },
+            orphaned: { emoji: '🗃️', title: 'Orphaned Resources', nav: 'orphaned',
+                sub: 'No explicit grants',
+                whatItIs: 'Resources with no explicit permission grants, so access falls back to inherited or default permissions that are easy to overlook.',
+                howToRead: ['Each row is a resource whose access is implicit (owner/inherited) rather than explicitly granted.'],
+                lookFor: ['Sensitive objects relying only on inherited access.', 'Resources whose only access is the owner — confirm that is intended.'],
+                example: 'A schema with no grants is reachable only through its catalog’s broad grant — add explicit, narrower grants.' },
+            overprivileged: { emoji: '📉', title: 'Over-Privileged Principals', nav: 'overprivileged',
+                sub: 'Granted more than used',
+                whatItIs: 'Identities whose granted access is wider than their recent activity suggests they use — right-sizing candidates.',
+                howToRead: ['Compare granted access against recent usage for each principal.', 'Large gaps are the best trimming candidates.'],
+                lookFor: ['Broad grants with little or no recent activity.', 'Admin or ALL PRIVILEGES that is never exercised.'],
+                example: 'A group has ALL PRIVILEGES on a catalog but no member has queried it in 90 days — downgrade to read, or remove.' },
+            secretscopes: { emoji: '🔐', title: 'Secret Scope Access', nav: 'secretscopes',
+                sub: 'Who can read/write secrets',
+                whatItIs: 'Each row is a principal’s access to a secret scope — READ sees values, WRITE changes them, MANAGE can also change who has access.',
+                howToRead: ['MANAGE includes WRITE includes READ.', 'Filter by workspace when multiple are scanned.', 'These are legacy secret scopes; Unity Catalog secrets offer finer-grained, governed access.'],
+                lookFor: ['Broad groups with READ on sensitive scopes.', 'Non-admins with MANAGE.'],
+                example: 'The <code>users</code> group has READ on a scope holding a prod database password — restrict to a small service group.' },
+            sharedtoaccount: { emoji: '🌐', title: 'Shared to All Users', nav: 'sharedtoaccount',
+                sub: 'Shared with everyone',
+                whatItIs: 'Dashboards, Genie spaces, and apps shared with the built-in <code>account users</code> group, so everyone in the account can open them.',
+                howToRead: ['Each row is an object shared account-wide, who shared it, and when.', 'Filter by workspace when multiple are scanned.'],
+                lookFor: ['Dashboards exposing sensitive data to everyone.', 'Shares that were meant for a team, not the whole account.'],
+                example: 'A revenue dashboard shared to all account users — restrict it to the finance group.' },
+            privilegednonidp: { emoji: '🚫', title: 'Privileged Non-IdP', nav: 'privilegednonidp',
+                sub: 'Admin outside your IdP',
+                whatItIs: 'Admin rights held outside identity-provider-managed groups — assigned directly, or via non-IdP groups — so they survive offboarding in your IdP.',
+                howToRead: ['Each row is a privileged identity flagged as non-IdP-managed, with the workspace it applies to.', 'Removing someone from the IdP will not revoke these.'],
+                lookFor: ['Account/Workspace Admin assigned directly to a user or SP.', 'Admin via a group your IdP does not manage.'],
+                example: 'A user is Workspace Admin by direct assignment — move it under an IdP-managed admin group so leaver automation covers it.' },
+            denylistbuilder: { emoji: '📋', title: 'Denylist Builder', nav: 'denylistbuilder',
+                sub: 'Inactive-member groups',
+                whatItIs: 'Finds IdP groups whose members show no recent Databricks activity, ranked so a higher inactive count/percentage is a stronger denylist candidate.',
+                howToRead: ['Each row is a group with its inactive-member count/percentage.', '"Inactive" is a heuristic: no system.access.audit activity in the window.'],
+                lookFor: ['Groups that are mostly inactive — candidates to deny at scale.', 'Review members before applying.'],
+                example: 'A 200-member group with 180 inactive — generate the Entra ID dynamic-group rule to apply one denylist entry at scale.' },
+        };
+        function renderHelpReportCards() {
+            const grid = document.getElementById('help-report-cards');
+            if (!grid || grid.dataset.rendered) return;
+            grid.innerHTML = Object.keys(REPORT_GUIDES).map(k => {
+                const g = REPORT_GUIDES[k];
+                return `<div class="help-card" onclick="openHelpGuide('${k}')" tabindex="0" role="button"
+                            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openHelpGuide('${k}')}">
+                    <span class="help-card-icon">${g.emoji}</span>
+                    <div class="help-card-text">
+                        <div class="help-card-title">${escapeHtml(g.title)}</div>
+                        <div class="help-card-sub">${escapeHtml(g.sub)}</div>
+                    </div>
+                    <span class="help-card-arrow">→</span>
+                </div>`;
+            }).join('');
+            grid.dataset.rendered = '1';
+        }
+        function openHelpGuide(key) {
+            const g = REPORT_GUIDES[key];
+            if (!g) return;
+            document.getElementById('help-modal-emoji').textContent = g.emoji;
+            document.getElementById('help-modal-title').textContent = g.title;
+            document.getElementById('help-modal-sub').textContent = g.sub;
+            const li = arr => arr.map(x => `<li>${x}</li>`).join('');
+            document.getElementById('help-modal-body').innerHTML = `
+                <h4>What it shows</h4><p>${g.whatItIs}</p>
+                <h4>How to read it</h4><ul>${li(g.howToRead)}</ul>
+                <h4>What to look for</h4><ul>${li(g.lookFor)}</ul>
+                <h4>Example</h4><div class="help-modal-example">${g.example}</div>
+                <button class="help-modal-cta" onclick="closeHelpGuide(); navigateToPage('${g.nav}')">Open ${escapeHtml(g.title)} →</button>`;
+            document.getElementById('help-modal-overlay').classList.add('show');
+        }
+        function closeHelpGuide() {
+            const o = document.getElementById('help-modal-overlay');
+            if (o) o.classList.remove('show');
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHelpGuide(); });
+
+        // Which scope each page's data has. 'account' = account-wide identity/admin
+        // data; 'workspace' = resources scoped to the scanned workspace(s); 'mixed'
+        // = identities account-wide but resource reach limited to scanned workspaces.
+        const PAGE_SCOPE = {
+            highprivilege: 'account', privilegednonidp: 'account',
+            sharedtoaccount: 'account', denylistbuilder: 'account',
+            principal: 'mixed', paths: 'mixed', impersonation: 'mixed', isolated: 'mixed',
+            resource: 'workspace', orphaned: 'workspace', overprivileged: 'workspace',
+            secretscopes: 'workspace',
+            // Secrets Overview and Alerts are the secret-scanner dataset / config,
+            // not the permission graph the scope banner describes, so no banner.
+        };
+        let _scopeCache = null;
+        async function loadScope(force) {
+            if (_scopeCache && !force) return _scopeCache;
+            try { _scopeCache = await fetch('/api/scope').then(r => r.json()); }
+            catch (e) { _scopeCache = { configured: false }; }
+            return _scopeCache;
+        }
+        function _scopeHelp(enableText, disableText) {
+            const caret = '<svg class="scope-help-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>';
+            return `<details class="scope-help"><summary>${caret}How to change this</summary>
+                <div class="scope-help-body">
+                    <p class="enable">${escapeHtml(enableText)}</p>
+                    <p class="disable">${escapeHtml(disableText)}</p>
+                </div></details>`;
+        }
+        // --- Reusable per-report workspace filter -------------------------------
+        // Options are derived from the rows actually present, so newly-scanned
+        // workspaces appear automatically and the control hides itself when there's
+        // only one workspace to show.
+        function wsOptionsFromRows(rows) {
+            const seen = new Map();
+            (rows || []).forEach(r => {
+                const id = (r.workspace_id || r.workspace_name || '').toString();
+                if (!id) return;
+                if (!seen.has(id)) seen.set(id, (r.workspace_name || r.workspace_id || id).toString());
+            });
+            return Array.from(seen, ([id, name]) => ({ id, name }))
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        }
+        function wsFilterSelectHtml(selectId, rows, onchange) {
+            const opts = wsOptionsFromRows(rows);
+            if (opts.length <= 1) return '';  // nothing meaningful to filter
+            return `<select id="${selectId}" onchange="${onchange}" style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); padding: 6px 10px; font-size: 0.85em;">
+                <option value="">All workspaces (${opts.length})</option>
+                ${opts.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join('')}
+            </select>`;
+        }
+        function applyWsFilter(containerId, selectId) {
+            const sel = document.getElementById(selectId);
+            const v = sel ? sel.value : '';
+            const root = document.getElementById(containerId);
+            if (!root) return;
+            root.querySelectorAll('.ws-row').forEach(r => {
+                r.style.display = (!v || r.getAttribute('data-ws') === v) ? '' : 'none';
+            });
+            // Hide groups with no visible rows; expand groups that still have matches.
+            root.querySelectorAll('.tree-type-group').forEach(g => {
+                const any = Array.from(g.querySelectorAll('.ws-row')).some(r => r.style.display !== 'none');
+                g.style.display = any ? '' : 'none';
+                if (v && any) {
+                    const c = g.querySelector('.tree-type-content');
+                    const t = g.querySelector('.tree-toggle');
+                    if (c) c.style.display = 'block';
+                    if (t) t.textContent = '▼';
+                }
+            });
+        }
+
+        // Expand/collapse a truncated "+N more" inline list (admin resources, etc.)
+        // so the full set is viewable no matter how long.
+        function toggleMore(id, btn) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const show = el.style.display === 'none';
+            el.style.display = show ? 'inline' : 'none';
+            btn.textContent = show ? 'show less' : (btn.getAttribute('data-more') || '+ more');
+        }
+
+        async function renderScopeBanner(page) {
+            const scopeType = PAGE_SCOPE[page];
+            const pageEl = document.getElementById('page-' + page);
+            if (!pageEl) return;
+            if (!scopeType) { pageEl.querySelectorAll('.scope-banner').forEach(b => b.remove()); return; }
+            const s = await loadScope();
+            // Do all DOM work synchronously AFTER the await: navigateToPage fires
+            // several times on load, so removing-then-inserting around the await
+            // would let concurrent calls stack 2-3 banners. Removing every existing
+            // banner immediately before inserting one keeps exactly one.
+            pageEl.querySelectorAll('.scope-banner').forEach(b => b.remove());
+            if (!s || !s.configured) return;
+            const aw = s.account_wide || {}, rs = s.resource_scan || {};
+            const c = aw.counts || {};
+            const infoIcon = '<svg class="scope-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>';
+            const warnIcon = '<svg class="scope-banner-icon" viewBox="0 0 24 24" fill="none" stroke="#fcd34d" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+            let cls = '', icon = infoIcon, badge = '', text = '', help = '';
+
+            const spTxt = aw.service_principal ? ` via service principal <code>${escapeHtml(aw.service_principal)}</code>` : '';
+            const wsCount = rs.workspace_count;  // live count of workspaces with resource data
+            const switchHint = ` To include your other workspaces, set collection scope to <strong>Multiple workspaces</strong> (Data Collection → Manage, or Settings → Re-run setup).`;
+            if (scopeType === 'account') {
+                if (aw.active) {
+                    cls = 'ok';
+                    badge = '<span class="scope-badge account">Account-wide: ON</span>';
+                    text = `This page covers your <strong>entire account</strong>${spTxt} — <strong>${c.workspaces_total||0}</strong> workspaces, <strong>${c.account_groups||0}</strong> account groups, <strong>${c.account_admins||0}</strong> account admins.`;
+                    help = _scopeHelp('Account-wide scanning is already on' + (aw.service_principal ? ' (service principal ' + aw.service_principal + ').' : '.'), aw.disable_guidance||'');
+                } else if (aw.configured) {
+                    cls = 'warn'; icon = warnIcon;
+                    badge = '<span class="scope-badge warn">Account-wide: set up, no data yet</span>';
+                    text = `Account credentials are configured${spTxt}, but no account-wide data has been collected yet. Run the collection jobs, and confirm that service principal has the <strong>Account admin</strong> role.`;
+                    help = _scopeHelp(aw.enable_guidance||'', aw.disable_guidance||'');
+                } else {
+                    cls = 'warn'; icon = warnIcon;
+                    badge = '<span class="scope-badge warn">Account-wide: OFF</span>';
+                    text = `Account-wide scanning isn't set up, so this page is empty or partial. Turning it on surfaces account admins, account users &amp; groups, and account-level findings across every workspace.`;
+                    help = _scopeHelp(aw.enable_guidance||'', aw.disable_guidance||'');
+                }
+            } else if (scopeType === 'workspace') {
+                const multi = (rs.scope === 'all');
+                const nScanned = (rs.workspaces_scanned||[]).length;
+                cls = ''; badge = multi
+                    ? `<span class="scope-badge workspace">${nScanned>0?nScanned+' workspaces':'All workspaces'}</span>`
+                    : '<span class="scope-badge workspace">This workspace</span>';
+                text = multi
+                    ? `Resource findings are scanned from <strong>${wsCount ? wsCount + ' workspace' + (wsCount === 1 ? '' : 's') : 'all reachable workspaces'}</strong>. Compute: <strong>${escapeHtml(rs.compute||'serverless')}</strong>.`
+                    : `Resource findings here are from <strong>this workspace only</strong>${wsCount ? ' (' + wsCount + ' workspace' + (wsCount === 1 ? '' : 's') + ' with data)' : ''}.` + switchHint;
+                const failed = (rs.workspaces_failed||[]).length;
+                if (multi && failed > 0) {
+                    cls = 'warn'; icon = warnIcon;
+                    text += ` <strong>${failed}</strong> workspace(s) were skipped (unreachable) — on serverless, ask your account team to enroll you in cross-workspace access.`;
+                }
+                help = _scopeHelp(rs.enable_guidance||'', rs.disable_guidance||'');
+            } else { // mixed
+                const multi = (rs.scope === 'all');
+                badge = `<span class="scope-badge account">Identities: account-wide${aw.active ? '' : ' (off)'}</span>` +
+                        (multi ? '<span class="scope-badge workspace">Resources: all workspaces</span>'
+                               : '<span class="scope-badge workspace">Resources: this workspace</span>');
+                text = multi
+                    ? `Identities and admin roles are <strong>account-wide</strong>${aw.active ? spTxt : ''}; resource reach spans the <strong>${wsCount ? wsCount + ' scanned workspace' + (wsCount === 1 ? '' : 's') : 'scanned workspaces'}</strong>.`
+                    : `Identities and admin roles are <strong>account-wide</strong>${aw.active ? spTxt : ''}; the resources a principal can reach are from <strong>this workspace only</strong>${wsCount ? ' (' + wsCount + ' workspace' + (wsCount === 1 ? '' : 's') + ' with data)' : ''}.` + switchHint;
+                if (!aw.active) { cls = 'warn'; icon = warnIcon; text += ` Account-wide identity data isn't enabled yet, so identities and roles may be incomplete.`; }
+                help = _scopeHelp((aw.enable_guidance || '') + ' ' + (rs.enable_guidance || ''), (aw.disable_guidance || '') + ' ' + (rs.disable_guidance || ''));
+            }
+
+            const header = pageEl.querySelector(':scope > .page-header');
+            const banner = document.createElement('div');
+            banner.className = 'scope-banner' + (cls ? ' ' + cls : '');
+            banner.innerHTML = `${icon}<div class="scope-banner-body"><div>${badge}<span class="scope-banner-text">${text}</span></div>${help}</div>`;
+            if (header && header.nextSibling) header.parentNode.insertBefore(banner, header.nextSibling);
+            else pageEl.insertBefore(banner, pageEl.firstChild);
+        }
+
+        function navigateToPage(page) {
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            
+            // Activate the correct nav item (if not home page)
+            if (page !== 'home') {
+                const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+                if (navItem) navItem.classList.add('active');
+            }
+            
+            // Show the page
+            document.getElementById('page-' + page).classList.add('active');
+            currentPage = page;
+
+            // Update URL hash
+            window.location.hash = page;
+
+            // The global stats header describes the permissions graph collection run
+            // (inventory counts and collector coverage, driven by the run selector).
+            // Hide it on pages it does not describe: the intro page, the
+            // account-level detection reports (own run_id and coverage block), the
+            // secret scanning pages (different dataset entirely), and Data
+            // Collection, which reports freshness for every job itself.
+            const hideStatsBarPages = ['home', 'sharedtoaccount', 'privilegednonidp', 'denylistbuilder',
+                                       'collection', 'help', 'secretsoverview', 'secretsalerts'];
+            const statsBar = document.getElementById('stats-header-bar');
+            if (statsBar) statsBar.style.display = hideStatsBarPages.includes(page) ? 'none' : '';
+
+            // Scope banner: tell the customer what this page's data covers.
+            renderScopeBanner(page);
+
+            // Auto-load reports when navigating to report pages
+            if (page === 'isolated') loadIsolatedPrincipals();
+            else if (page === 'orphaned') loadOrphanedResources();
+            else if (page === 'overprivileged') loadOverPrivileged();
+            else if (page === 'highprivilege') loadHighPrivilege();
+            else if (page === 'secretscopes') loadSecretScopeAccess();
+            else if (page === 'sharedtoaccount') loadSharedToAccount();
+            else if (page === 'privilegednonidp') loadPrivilegedNonIdp();
+            else if (page === 'denylistbuilder') loadDenylistBuilder();
+            else if (page === 'collection') loadCollectionPanel();
+            else if (page === 'help') renderHelpReportCards();
+            else if (page === 'secretsoverview') { loadSecretsScanSettings(); loadSecretsExposure(); }
+            else if (page === 'secretsalerts') loadSecretsAlerts();
+            else if (page === 'impersonation') {
+                // Load principals for both dropdowns
+                loadSourcePrincipals();
+                loadTargetPrincipals();
+            }
+        }
+
+        // Handle browser back/forward buttons
+        window.addEventListener('hashchange', () => {
+            const hash = window.location.hash.substring(1) || 'home';
+            if (document.getElementById(`page-${hash}`)) {
+                navigateToPage(hash);
+            }
+        });
+
+        // Load available runs on page load
+        async function loadRuns() {
+            try {
+                const res = await fetch('/api/runs');
+                const data = await res.json();
+                const headerSelector = document.getElementById('header-run-selector');
+
+                if (!headerSelector) {
+                    console.error('Header run selector not found');
+                    return;
+                }
+
+                if (data.runs && data.runs.length > 0) {
+                    const optionsHTML = data.runs.map(run => {
+                        const ts = new Date(run.collection_timestamp);
+                        const formatted = ts.toLocaleString('en-US', {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                        });
+                        const vertices = run.vertices_count || 0;
+                        return `<option value="${run.run_id}">${formatted} (${vertices} nodes)</option>`;
+                    }).join('');
+                    
+                    headerSelector.innerHTML = optionsHTML;
+
+                    // Set current run_id to the latest (first in list)
+                    currentRunId = data.current_run_id || data.runs[0].run_id;
+                    headerSelector.value = currentRunId;
+                } else {
+                    const noDataHTML = '<option value="">No data collected yet</option>';
+                    headerSelector.innerHTML = noDataHTML;
+                }
+            } catch (e) {
+                console.error('Error loading runs:', e);
+                const headerSelector = document.getElementById('header-run-selector');
+                if (headerSelector) {
+                    headerSelector.innerHTML = '<option value="">Error loading runs</option>';
+                }
+            }
+        }
+
+        // Handle run selection change
+        function selectRun(runId) {
+            if (runId && runId !== currentRunId) {
+                currentRunId = runId;
+                
+                // Update header dropdown value
+                const headerSelector = document.getElementById('header-run-selector');
+                if (headerSelector) headerSelector.value = runId;
+                
+                // Reset cached filter data (will reload on next page visit)
+                secretScopeFilterData = { workspaces: [], scopes: [] };
+
+                // Refresh dashboard stats
+                loadStats();
+
+                // Auto-refresh current report page if on one
+                if (currentPage === 'isolated') loadIsolatedPrincipals();
+                else if (currentPage === 'orphaned') loadOrphanedResources();
+                else if (currentPage === 'overprivileged') loadOverPrivileged();
+                else if (currentPage === 'highprivilege') loadHighPrivilege();
+                else if (currentPage === 'secretscopes') { clearSecretScopeFilters(); }
+
+                // Auto-refresh analysis if user has previously performed one
+                if (lastAnalysis.principal) analyzeSelectedPrincipals();
+                if (lastAnalysis.resource) analyzeResource();
+                if (lastAnalysis.paths) findPaths();
+                if (lastAnalysis.risk) assessRisk();
+            }
+        }
+
+        // Helper to build URL with run_id
+        function apiUrl(endpoint) {
+            const url = new URL(endpoint, window.location.origin);
+            if (currentRunId) {
+                url.searchParams.set('run_id', currentRunId);
+            }
+            return url.toString();
+        }
+
+        // Load stats for current run
+        async function loadStats() {
+            try {
+                const res = await fetch(apiUrl('/api/stats'));
+                const data = await res.json();
+
+                // Collection timestamp (sidebar) - kept for any legacy references
+                const timestampEl = document.getElementById('collection-timestamp');
+                if (timestampEl && data.collection_timestamp) {
+                    const date = new Date(data.collection_timestamp);
+                    const formatted = date.toLocaleString('en-US', {
+                        month: 'short', day: 'numeric', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit'
+                    });
+                    timestampEl.innerHTML = `<strong>${formatted}</strong>`;
+                } else if (timestampEl) {
+                    timestampEl.textContent = 'Not available';
+                }
+
+                // Workspace coverage (header)
+                const headerCoverageCollected = document.getElementById('header-coverage-collected');
+                const headerCoverageFailed = document.getElementById('header-coverage-failed');
+                const workspaceList = document.getElementById('workspace-list');
+                const workspaceToggleBtn = document.getElementById('workspace-toggle-btn');
+
+                // Store workspace data globally for toggle function
+                window.workspaceData = {
+                    collected: data.workspaces_collected || [],
+                    failed: data.workspaces_failed || []
+                };
+
+                if (headerCoverageCollected) {
+                    if (data.workspaces_collected && data.workspaces_collected.length > 0) {
+                        headerCoverageCollected.innerHTML = `✓ ${data.workspaces_collected.length} workspace${data.workspaces_collected.length > 1 ? 's' : ''} collected`;
+                        if (workspaceToggleBtn) {
+                            workspaceToggleBtn.style.display = 'block';
+                        }
+                    } else {
+                        headerCoverageCollected.textContent = 'No workspaces collected';
+                    }
+                }
+
+                if (headerCoverageFailed) {
+                    if (data.workspaces_failed && data.workspaces_failed.length > 0) {
+                        headerCoverageFailed.innerHTML = `⚠ ${data.workspaces_failed.length} failed`;
+                    } else {
+                        headerCoverageFailed.textContent = '';
+                    }
+                }
+
+                // Populate workspace list
+                if (workspaceList && window.workspaceData) {
+                    let listHTML = '';
+                    if (window.workspaceData.collected.length > 0) {
+                        listHTML += '<div style="margin-bottom: 8px; color: #10b981; font-weight: 600;">✓ Collected:</div>';
+                        listHTML += '<div style="margin-left: 12px; margin-bottom: 12px;">';
+                        window.workspaceData.collected.forEach(ws => {
+                            listHTML += `<div style="padding: 4px 0; border-bottom: 1px solid var(--border-color);">${ws}</div>`;
+                        });
+                        listHTML += '</div>';
+                    }
+                    if (window.workspaceData.failed.length > 0) {
+                        listHTML += '<div style="margin-bottom: 8px; color: #ef4444; font-weight: 600;">⚠ Failed:</div>';
+                        listHTML += '<div style="margin-left: 12px;">';
+                        window.workspaceData.failed.forEach(ws => {
+                            listHTML += `<div style="padding: 4px 0; border-bottom: 1px solid var(--border-color);">${ws}</div>`;
+                        });
+                        listHTML += '</div>';
+                    }
+                    workspaceList.innerHTML = listHTML;
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        // Toggle stats header collapse/expand
+        function toggleStatsHeader() {
+            const statsBar = document.getElementById('stats-header-bar');
+            const toggleText = document.getElementById('stats-toggle-text');
+
+            if (statsBar.classList.contains('collapsed')) {
+                statsBar.classList.remove('collapsed');
+                toggleText.textContent = 'Collapse';
+            } else {
+                statsBar.classList.add('collapsed');
+                toggleText.textContent = 'Expand';
+            }
+        }
+
+        // Toggle workspace list visibility
+        function toggleWorkspaceList() {
+            const container = document.getElementById('workspace-list-container');
+            const toggleText = document.getElementById('workspace-toggle-text');
+            const toggleIcon = document.getElementById('workspace-toggle-icon');
+
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                toggleText.textContent = 'Hide';
+                toggleIcon.style.transform = 'rotate(180deg)';
+            } else {
+                container.style.display = 'none';
+                toggleText.textContent = 'Show';
+                toggleIcon.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Initialize - load runs first, then stats
+        async function initApp() {
+            // First-run gate: until the workspace is connected, show the welcome
+            // screen and load nothing schema-dependent.
+            let status = { needs_setup: false };
+            try {
+                status = await fetch('/api/setup/status').then(r => r.json());
+            } catch (e) { /* if status is unreachable, fall through to the app */ }
+            if (status.needs_setup) {
+                showSetup();
+                return;
+            }
+
+            // Workspace is configured: the assistant has data to answer against,
+            // so reveal its launcher (hidden by default for the welcome screen).
+            if (!status.assistant_disabled) document.getElementById('assistant-fab').classList.remove('hidden');
+
+            // Navigate first so the target page shows its own loading state
+            // immediately. The run selector and stats only power the
+            // permissions-graph header (hidden on most pages), so they load in the
+            // background instead of blocking first paint. Report pages that need a
+            // run_id fall back to the latest run server-side when it isn't set yet.
+            const hash = window.location.hash.substring(1);
+            if (hash && document.getElementById(`page-${hash}`)) {
+                navigateToPage(hash);
+            } else {
+                navigateToPage('home');
+            }
+            loadRuns();
+            loadStats();
+        }
+        initApp();
+
+        // --- First-run setup ------------------------------------------------
+        // `reconfigure` is true when opened from Settings on an already-configured
+        // app: the current values are pre-filled and a Cancel button is shown, so
+        // the screen can be dismissed without changing anything.
+        async function showSetup(reconfigure) {
+            const overlay = document.getElementById('setup-overlay');
+            overlay.hidden = false;
+            // Keep the assistant launcher from showing through the overlay.
+            document.getElementById('assistant-fab').classList.add('hidden');
+            const body = document.getElementById('setup-body');
+            body.innerHTML = '<div class="loading"><div class="spinner"></div>Loading your workspace…</div>';
+            try {
+                const [opts, status] = await Promise.all([
+                    fetch('/api/setup/options').then(r => r.json()),
+                    reconfigure ? fetch('/api/setup/status').then(r => r.json()) : Promise.resolve({}),
+                ]);
+                if (opts.error) {
+                    body.innerHTML = `<div class="setup-error">${escapeHtml(opts.error)}</div>`;
+                    return;
+                }
+                opts.reconfigure = !!reconfigure;
+                opts.current = reconfigure
+                    ? { catalog: status.catalog, schema: status.schema,
+                        warehouse_id: status.warehouse_id,
+                        account_id: status.account_id,
+                        scan_scope: status.scan_scope,
+                        job_compute: status.job_compute,
+                        collect_notebooks: status.collect_notebooks }
+                    : {};
+                renderSetupForm(opts);
+            } catch (e) {
+                body.innerHTML = `<div class="setup-error">Could not load your workspace: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function hideSetup() {
+            document.getElementById('setup-overlay').hidden = true;
+            // hideSetup only runs on Cancel (an already-configured app), so the
+            // launcher belongs back on screen.
+            document.getElementById('assistant-fab').classList.remove('hidden');
+        }
+
+        // Opened from Settings: close the drawer, then re-run setup with current
+        // values pre-filled.
+        function reopenSetup() {
+            closeSettingsPanel();
+            showSetup(true);
+        }
+
+        function setupPicker(id, options, placeholder, selected) {
+            // A select when the workspace listed values, a text box when it did not
+            // (e.g. the app SP cannot list catalogs) so setup is never a dead end.
+            // `selected` preselects the current value when re-running setup.
+            selected = selected || '';
+            if (options && options.length) {
+                return `<select class="field-input" id="${id}">
+                    <option value="">${escapeHtml(placeholder)}</option>
+                    ${options.map(o => `<option value="${escapeHtml(o.value)}"${o.value === selected ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+                </select>`;
+            }
+            return `<input class="field-input" id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(selected)}">`;
+        }
+
+        // Options registry for the custom comboboxes, keyed by input id.
+        const _comboOpts = {};
+
+        function setupCombo(id, options, placeholder, selected) {
+            // A text box you can type in, plus a clickable, filterable dropdown of
+            // known values. We render our own dropdown rather than a native
+            // <datalist> because datalist support is inconsistent across browsers
+            // (notably Safari, where no list appears at all).
+            selected = selected || '';
+            _comboOpts[id] = (options || []).map(o => (o && o.value != null) ? String(o.value) : String(o));
+            return `<div class="combo">
+                <input class="field-input combo-input" id="${id}" type="text" autocomplete="off"
+                       placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(selected)}"
+                       oninput="comboShow('${id}')" onfocus="comboShow('${id}')"
+                       onkeydown="comboKey(event, '${id}')">
+                <button type="button" class="combo-toggle" tabindex="-1" aria-label="Show choices"
+                        onmousedown="event.preventDefault()" onclick="comboToggle('${id}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="combo-menu" id="${id}-menu" role="listbox" hidden></div>
+            </div>`;
+        }
+
+        function comboShow(id) {
+            const menu = document.getElementById(id + '-menu');
+            const input = document.getElementById(id);
+            if (!menu || !input) return;
+            const q = (input.value || '').trim().toLowerCase();
+            const all = _comboOpts[id] || [];
+            const matches = q ? all.filter(v => v.toLowerCase().includes(q)) : all;
+            menu.innerHTML = matches.length
+                ? matches.map(v => `<div class="combo-item" role="option" data-value="${escapeHtml(v)}">${escapeHtml(v)}</div>`).join('')
+                : `<div class="combo-empty">${all.length ? 'No match — press Enter to use what you typed' : 'No catalogs the app can access — type any catalog name'}</div>`;
+            // onmousedown fires before the input's blur, so the pick lands before the menu closes.
+            menu.onmousedown = (e) => {
+                const item = e.target.closest('.combo-item');
+                if (!item) return;
+                e.preventDefault();
+                input.value = item.getAttribute('data-value');
+                menu.hidden = true;
+            };
+            menu.hidden = false;
+        }
+
+        function comboToggle(id) {
+            const menu = document.getElementById(id + '-menu');
+            if (!menu) return;
+            if (menu.hidden) { comboShow(id); const i = document.getElementById(id); if (i) i.focus(); }
+            else { menu.hidden = true; }
+        }
+
+        function comboKey(event, id) {
+            if (event.key === 'Escape') {
+                const menu = document.getElementById(id + '-menu');
+                if (menu) menu.hidden = true;
+            }
+        }
+
+        // Close any open combobox when clicking outside it.
+        document.addEventListener('click', (e) => {
+            document.querySelectorAll('.combo-menu').forEach(menu => {
+                const combo = menu.closest('.combo');
+                if (!menu.hidden && combo && !combo.contains(e.target)) menu.hidden = true;
+            });
+        });
+
+        function renderSetupForm(opts) {
+            const catalogs = (opts.catalogs || []).map(c => ({ value: c, label: c }));
+            const warehouses = (opts.warehouses || []).map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` }));
+            const models = (opts.models || []).map(m => ({ value: m, label: m }));
+            const cur = opts.current || {};
+            const credHelp = opts.reconfigure
+                ? 'Service principal for account-level scans. Leave blank to keep the stored value.'
+                : 'Service principal for account-level scans. You can add this later in Settings.';
+
+            document.getElementById('setup-body').innerHTML = `
+                <details class="setup-guide">
+                    <summary><svg class="setup-guide-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Setup &amp; access guide — identities, permissions, and scope</summary>
+                    <div class="setup-guide-body">
+                        <h4>Two identities</h4>
+                        SAT runs everything as the <strong>app's service principal</strong> (the app's own identity; its jobs run as this principal). For account-wide data it also uses <strong>account API credentials</strong> — a service principal's OAuth client ID + secret, holding the Account admin role. That can be the app's own service principal, or <em>any other</em> service principal you grant Account admin — whichever you enter below is what's used.
+
+                        <h4>Choose what you need</h4>
+                        <ul>
+                            <li><span class="tag">Default</span><strong>This workspace, basic.</strong> The app SP needs <code>CAN USE</code> on the SQL warehouse and it owns the results schema it creates (so it can store secrets). Scans resources — clusters, jobs, grants, secret scopes — in this one workspace. No account credentials required.</li>
+                            <li><span class="tag">Account-wide</span><strong>Account identities &amp; admins.</strong> Powers Account/Workspace/Metastore Admin detection, account users &amp; groups, Shared-to-All-Users, Privileged Non-IdP, and Denylist. Enter the <strong>Account ID</strong> and the service principal's <strong>client ID + secret</strong> below, and grant that service principal the <strong>Account admin</strong> role in the account console. Works on serverless.</li>
+                            <li><span class="tag">Multi-workspace</span><strong>Resources across many workspaces.</strong> Add the app's service principal as a <strong>workspace admin</strong> on every workspace you want scanned, then set scope to <em>Multiple workspaces</em>. Use <strong>Classic</strong> compute, or <strong>Serverless</strong> if your account has cross-workspace serverless access (otherwise unreachable workspaces are skipped and reported — ask your account team to enroll you).</li>
+                        </ul>
+
+                        <h4>Adding workspaces later</h4>
+                        Add the service principal as a workspace admin on the new workspace, then run <strong>Data Collection → Manage → Sync workspaces</strong> — SAT discovers the account's workspaces and enables the ones the SP administers. <strong>No re-setup and no initializer re-run needed.</strong> (Removing the SP as admin and syncing again drops a workspace from scans.)
+
+                        <h4>Optional — system tables access</h4>
+                        <code>SELECT</code> on <code>system.access</code> for the app service principal powers the activity- and audit-based features. Without it they stay empty; everything else still works. Specifically:
+                        <ul>
+                            <li><strong>Denylist Candidates</strong> — ranks inactive identities using <code>system.access.audit</code> (no sign-in/query activity in the look-back window).</li>
+                            <li><strong>Shared to All Users</strong> — detects dashboards, Genie spaces, and apps shared with everyone from <code>system.access.audit</code> + <code>system.access.workspaces_latest</code>.</li>
+                            <li><strong>Privileged Non-IdP</strong> — enumerates workspaces from <code>system.access.workspaces_latest</code> to attribute findings.</li>
+                        </ul>
+                        Grant with <code>GRANT USE SCHEMA, SELECT ON SCHEMA system.access TO &lt;service-principal&gt;</code> (the <code>system.access</code> schema must be enabled for the metastore).
+
+                        <a class="setup-guide-docs" href="https://databricks-industry-solutions.github.io/security-analysis-tool/" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                            Full SAT documentation
+                            <svg class="setup-guide-docs-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+                        </a>
+                    </div>
+                </details>
+
+                <div class="setup-group">
+                    <div class="setup-group-title">Results storage</div>
+                    <div class="field">
+                        <span class="field-label">Catalog</span>
+                        ${setupCombo('setup-catalog', catalogs, 'Choose a catalog you can access, or type a name', cur.catalog)}
+                        <span class="field-help">The results schema is created in this catalog. Pick from the catalogs you have access to, or type any catalog name.</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Schema name</span>
+                        <input class="field-input" id="setup-schema" type="text" value="${escapeHtml(cur.schema || opts.default_schema || 'security_analysis')}">
+                        <span class="field-help">Created if it doesn't exist.</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">SQL warehouse</span>
+                        ${setupPicker('setup-warehouse', warehouses, 'Choose a warehouse', cur.warehouse_id)}
+                        <span class="field-help">Runs analysis queries and alerts.</span>
+                    </div>
+                </div>
+
+                <div class="setup-group">
+                    <div class="setup-group-title">Account credentials <span class="setup-optional">optional</span></div>
+                    <div class="field">
+                        <span class="field-label">Account ID</span>
+                        <input class="field-input" id="setup-account-id" type="text" autocomplete="off" placeholder="Account console UUID" value="${escapeHtml(cur.account_id || '')}">
+                        <span class="field-help">Required for all account-wide data: Account/Workspace/Metastore Admin detection, account users &amp; groups, High Privilege, Shared to All Users, Privileged Non-IdP, and Denylist. Without it, SAT reports on this workspace only. Find it in the account console.</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Client ID</span>
+                        <input class="field-input" id="setup-client-id" type="text" autocomplete="off" placeholder="Service principal application ID">
+                        <span class="field-help">${escapeHtml(credHelp)}</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Client secret</span>
+                        <div class="input-group">
+                            <input class="field-input" id="setup-client-secret" type="password" autocomplete="new-password" placeholder="OAuth secret">
+                            <button type="button" class="input-affix" onclick="setupToggleSecret()" aria-label="Show secret">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                        </div>
+                        <span class="field-help">Verified before it's stored.</span>
+                    </div>
+                </div>
+
+                <div class="setup-group">
+                    <div class="setup-group-title">Collection scope &amp; compute</div>
+                    <div class="field">
+                        <span class="field-label">Workspaces to scan</span>
+                        <select class="field-input" id="setup-scan-scope">
+                            <option value="current"${(cur.scan_scope || 'current') !== 'all' ? ' selected' : ''}>This workspace only</option>
+                            <option value="all"${(cur.scan_scope || 'current') === 'all' ? ' selected' : ''}>Multiple workspaces (every workspace the service principal can access)</option>
+                        </select>
+                        <span class="field-help">Per-workspace findings — resource permissions (clusters, jobs, grants, secret scopes) and secret-scan results — follow this setting. Identity/admin data is always account-wide when account credentials are set. For multiple workspaces, add the app's service principal as a <strong>workspace admin</strong> on each workspace you want scanned, then run <strong>Data Collection → Manage → Sync workspaces</strong> to pick them up.</span>
+                    </div>
+                    <div class="field">
+                        <span class="field-label">Job compute</span>
+                        <select class="field-input" id="setup-job-compute">
+                            <option value="serverless"${(opts.classic_available === false || (cur.job_compute || 'serverless') !== 'classic') ? ' selected' : ''}>Serverless (recommended)</option>
+                            <option value="classic"${opts.classic_available === false ? ' disabled' : ((cur.job_compute || 'serverless') === 'classic' ? ' selected' : '')}>Classic (single-node cluster)${opts.classic_available === false ? ' — serverless-only workspace (no classic compute)' : ''}</option>
+                        </select>
+                        <span class="field-help">Serverless starts instantly and needs no cluster. Classic runs jobs on an ephemeral single-node job cluster; use it to scan multiple workspaces when your account isn't yet enrolled in serverless cross-workspace access. Classic also requires the app's service principal to have cluster-create permission in this workspace. Changing this re-creates the collection jobs.</span>
+                    </div>
+                    <div class="field">
+                        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="setup-collect-notebooks" style="margin-top: 3px;"${cur.collect_notebooks ? ' checked' : ''}>
+                            <span>
+                                <span class="field-label" style="display: block;">Scan notebook &amp; folder permissions</span>
+                                <span class="field-help">Off by default. Adds notebooks, folders, and repos (with their access) to Resource Analysis. This walks the whole workspace tree and reads per-object ACLs, so each collection run takes longer to complete — turn it on only if you need notebook-level visibility.</span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="setup-actions">
+                    <span class="setup-error" id="setup-error"></span>
+                    ${opts.reconfigure ? '<button class="btn btn-ghost" onclick="hideSetup()">Cancel</button>' : ''}
+                    <button class="btn" id="setup-submit" onclick="submitSetup()">${opts.reconfigure ? 'Save changes' : 'Complete setup'}</button>
+                </div>`;
+        }
+
+        function setupToggleSecret() {
+            const f = document.getElementById('setup-client-secret');
+            f.type = f.type === 'password' ? 'text' : 'password';
+        }
+
+        function fieldValue(id) {
+            const el = document.getElementById(id);
+            return el ? el.value.trim() : '';
+        }
+
+        async function submitSetup() {
+            const err = document.getElementById('setup-error');
+            const btn = document.getElementById('setup-submit');
+            const originalLabel = btn.textContent;
+            err.textContent = '';
+            const payload = {
+                catalog: fieldValue('setup-catalog'),
+                schema: fieldValue('setup-schema'),
+                warehouse_id: fieldValue('setup-warehouse'),
+                account_id: fieldValue('setup-account-id'),
+                client_id: fieldValue('setup-client-id'),
+                client_secret: fieldValue('setup-client-secret'),
+                scan_scope: fieldValue('setup-scan-scope') || 'current',
+                job_compute: fieldValue('setup-job-compute') || 'serverless',
+                collect_notebooks: !!(document.getElementById('setup-collect-notebooks') || {}).checked,
+            };
+            if (!payload.catalog) { err.textContent = 'Choose a catalog.'; return; }
+            if (!payload.warehouse_id) { err.textContent = 'Choose a SQL warehouse.'; return; }
+
+            btn.disabled = true;
+            btn.textContent = 'Setting up…';
+            try {
+                const result = await fetch('/api/setup/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                }).then(r => r.json());
+                if (result.error) {
+                    err.textContent = result.error;
+                    btn.disabled = false;
+                    btn.textContent = originalLabel;
+                    return;
+                }
+                if (result.reprovision_error) {
+                    // Setup saved, but re-pointing existing jobs at the new schema
+                    // failed. Show it, then still reload so they can fix it from
+                    // Data Collection.
+                    err.textContent = 'Setup saved, but updating the collection jobs to the new '
+                        + 'schema failed: ' + result.reprovision_error
+                        + ' Re-provision them from the Data Collection page.';
+                    btn.textContent = 'Continuing…';
+                    setTimeout(() => window.location.reload(), 4500);
+                    return;
+                }
+                // Configured now — reload into the fully-initialised app.
+                window.location.reload();
+            } catch (e) {
+                err.textContent = e.message;
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+            }
+        }
+
+        // Icon helper
+        function getIcon(type) {
+            const icons = {
+                'User': 'user', 'AccountUser': 'user',
+                'Group': 'group', 'AccountGroup': 'group',
+                'ServicePrincipal': 'sp', 'AccountServicePrincipal': 'sp',
+                'Catalog': 'catalog', 'Schema': 'schema', 'Table': 'table', 'View': 'table',
+                'Cluster': 'cluster', 'Job': 'cluster', 'Warehouse': 'cluster'
+            };
+            return icons[type] || 'default';
+        }
+
+        function getEmoji(type) {
+            const emojis = {
+                'User': '👤', 'AccountUser': '👤',
+                'Group': '👥', 'AccountGroup': '👥',
+                'ServicePrincipal': '🤖', 'AccountServicePrincipal': '🤖', 'Service Principal': '🤖',
+                'Catalog': '📦', 'Schema': '📁', 'Table': '📊', 'View': '👁',
+                'Cluster': '⚡', 'Job': '⏱', 'Warehouse': '🏭',
+                'ServingEndpoint': '🚀', 'SecretScope': '🔐',
+                'Notebook': '📓', 'Directory': '🗂️', 'Repo': '📚'
+            };
+            return emojis[type] || '📄';
+        }
+
+        function getBadgeClass(perm) {
+            return 'low';  // Neutral styling for all permissions
+        }
+
+        // HTML-escape any string before interpolating into an innerHTML
+        // template. Defined early so every renderer below can use it.
+        // Uses textContent assignment which is the canonical browser-safe
+        // escape (handles <, >, &, ", ', NUL, etc. consistently).
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+
+        // Format principal name with identifier for uniqueness.
+        // Shows "Display Name (email)" or "Display Name (name)" to
+        // distinguish principals with same display name. Returns
+        // HTML-escaped text safe to drop into an `${...}` interpolation
+        // inside an innerHTML template.
+        function formatPrincipalName(displayName, email, name, id) {
+            const display = displayName || name || email || id || 'Unknown';
+            const identifier = email || name || id;
+            if (identifier && String(display).toLowerCase() !== String(identifier).toLowerCase()) {
+                return `${escapeHtml(display)} (${escapeHtml(identifier)})`;
+            }
+            return escapeHtml(display);
+        }
+
+        function showLoading(containerId) {
+            document.getElementById(containerId).innerHTML = `
+                <div class="results-container">
+                    <div class="loading"><div class="spinner"></div>Analyzing...</div>
+                </div>`;
+        }
+
+        function showEmpty(containerId, message) {
+            document.getElementById(containerId).innerHTML = `
+                <div class="results-container">
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        <p>${message}</p>
+                    </div>
+                </div>`;
+        }
+
+        // Navigate to Principal Analysis page with pre-filled principal
+        function navigateToPrincipalAnalysis(principalIdentifier) {
+            // Switch to principal analysis page
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            const navItem = document.querySelector('.nav-item[data-page="principal"]');
+            if (navItem) navItem.classList.add('active');
+            document.getElementById('page-principal').classList.add('active');
+            currentPage = 'principal';
+
+            // Pre-fill with the single principal (as one chip) and analyze it.
+            const id = decodeURIComponent(principalIdentifier);
+            principalSelection = [{ id: id, label: id }];
+            renderPrincipalChips();
+            const searchField = document.getElementById('principal-search');
+            if (searchField) { searchField.value = ''; delete searchField.dataset.identifier; }
+            analyzeSelectedPrincipals();
+        }
+
+        // Navigate to Escalation Paths page with pre-filled principal
+        function navigateToEscalation(principalIdentifier) {
+            // Switch to escalation paths page
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            const navItem = document.querySelector('.nav-item[data-page="paths"]');
+            if (navItem) navItem.classList.add('active');
+            document.getElementById('page-paths').classList.add('active');
+            currentPage = 'paths';
+
+            // Set the search field and trigger analysis
+            const searchField = document.getElementById('paths-search');
+            if (searchField) {
+                searchField.value = decodeURIComponent(principalIdentifier);
+                findPaths();
+            }
+        }
+
+        // Navigate to Resource Analysis page with pre-filled resource
+        function navigateToResourceAnalysis(resourceIdentifier) {
+            // Switch to resource analysis page
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            const navItem = document.querySelector('.nav-item[data-page="resource"]');
+            if (navItem) navItem.classList.add('active');
+            document.getElementById('page-resource').classList.add('active');
+            currentPage = 'resource';
+
+            // Set the search field and trigger analysis
+            const searchField = document.getElementById('resource-search');
+            if (searchField) {
+                searchField.value = decodeURIComponent(resourceIdentifier);
+                analyzeResource();
+            }
+        }
+
+        // Principal Analysis
+        async function analyzePrincipal(identifierArg, containerArg) {
+            const searchInput = document.getElementById('principal-search');
+            const container = containerArg || 'principal-results';
+            const query = ((searchInput && searchInput.value) || '').trim();
+
+            // An explicit identifier (from the multi-principal driver) wins;
+            // otherwise use the stored autocomplete identifier, else the typed text.
+            const identifier = identifierArg || (searchInput && searchInput.dataset.identifier) || query;
+            if (!identifier) return;
+            showLoading(container);
+
+            try {
+                const res = await fetch('/api/what-can-access', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({principal: identifier, resource_type: 'All', run_id: currentRunId})
+                });
+                const result = await res.json();
+
+                if (!result.success) {
+                    showEmpty(container, result.message);
+                    return;
+                }
+
+                const data = result.data || [];
+
+                // Get principal info from the result
+                const principalInfo = result.principal_info || {};
+                const principalName = principalInfo.name || query;
+                const principalDisplayName = principalInfo.display_name || principalName;
+                const principalEmail = principalInfo.email || '';
+                const principalId = principalInfo.id || '';
+                const principalType = principalInfo.type || '';
+                const memberCount = principalInfo.member_count || 0;
+                const isGroup = principalType === 'Group' || principalType === 'AccountGroup';
+                const isServicePrincipal = principalType.includes('ServicePrincipal');
+
+                // Admin / privileged roles this principal holds (Account/Workspace/
+                // Metastore Admin, Catalog Owner). Shown as badges so the card
+                // states up front whether the identity is itself an admin.
+                const adminRoles = principalInfo.admin_roles || [];
+                const roleColor = (risk) => risk === 'CRITICAL' ? '#ef4444' : (risk === 'HIGH' ? '#f59e0b' : '#64748b');
+                const adminBadgesHtml = adminRoles.length
+                    ? adminRoles.map(r => `<span style="display: inline-block; padding: 4px 10px; background: ${roleColor(r.risk_level)}22; color: ${roleColor(r.risk_level)}; border: 1px solid ${roleColor(r.risk_level)}55; border-radius: 6px; font-size: 0.72em; font-weight: 700; text-transform: uppercase; margin-left: 6px;">🛡️ ${escapeHtml(r.role)}</span>`).join('')
+                    : `<span style="display: inline-block; padding: 4px 10px; background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-size: 0.72em; font-weight: 600; text-transform: uppercase; margin-left: 6px;">No admin roles</span>`;
+
+                // "What and where" detail for each admin role: which workspaces
+                // (Workspace Admin), which metastores (Metastore Admin), which
+                // catalogs (Catalog Owner). Account Admin is account-wide. This is
+                // what stops "Workspace Admin" from being mistaken for admin of the
+                // workspace SAT is installed in -- it names the actual workspaces.
+                const roleEmoji = { 'Account Admin': '👑', 'Metastore Admin': '🗄️', 'Workspace Admin': '🏢', 'Catalog Owner': '📚' };
+                const adminDetailHtml = adminRoles.length ? `
+                    <div style="margin-top: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 12px 14px;">
+                        <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px;">Admin roles — what &amp; where</div>
+                        ${adminRoles.map((r, ri) => {
+                            const color = roleColor(r.risk_level);
+                            const res = r.resources || [];
+                            const label = r.role === 'Workspace Admin' ? 'workspace' : (r.role === 'Metastore Admin' ? 'metastore' : (r.role === 'Catalog Owner' ? 'catalog' : ''));
+                            let where;
+                            if (r.role === 'Account Admin') where = 'Entire account';
+                            else if (!res.length) where = `<span style="color: var(--text-muted);">${label || 'resource'} not identified in this collection</span>`;
+                            else if (res.length <= 8) where = res.map(escapeHtml).join(', ');
+                            else {
+                                // Show the first 8, with the rest in a span that the
+                                // "+N more" link expands/collapses so nothing is hidden.
+                                const restId = 'adminres-' + ri;
+                                where = res.slice(0, 8).map(escapeHtml).join(', ')
+                                    + `<span id="${restId}" style="display: none;">, ${res.slice(8).map(escapeHtml).join(', ')}</span>`
+                                    + ` <a href="javascript:void(0)" data-more="+${res.length - 8} more" onclick="toggleMore('${restId}', this)" style="color: var(--accent); text-decoration: none; white-space: nowrap;">+${res.length - 8} more</a>`;
+                            }
+                            const countStr = (r.role !== 'Account Admin' && res.length) ? ` · ${res.length} ${label}${res.length === 1 ? '' : 's'}` : '';
+                            return `<div style="display: flex; gap: 10px; margin-bottom: 8px; font-size: 0.86em; line-height: 1.5;">
+                                <span style="flex: 0 0 auto;">${roleEmoji[r.role] || '🛡️'}</span>
+                                <div style="min-width: 0;">
+                                    <span style="color: ${color}; font-weight: 650;">${escapeHtml(r.role)}</span><span style="color: var(--text-muted);">${countStr}</span>
+                                    <div style="color: var(--text-secondary); margin-top: 2px; word-break: break-word;">${where}</div>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                        <div style="font-size: 0.78em; color: var(--text-muted); margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">Admin roles are detected account-wide. "Workspace Admin" means this identity administers the listed workspaces — not necessarily the workspace SAT is installed in.</div>
+                    </div>` : '';
+
+                // Group by resource type, then by resource name, collecting privileges and inheritance paths
+                const byType = {};
+                data.forEach(d => {
+                    const t = d.resource_type || 'Other';
+                    const name = d.resource_name || d.resource_id;
+                    if (!byType[t]) byType[t] = {};
+                    if (!byType[t][name]) byType[t][name] = { privileges: [], grant_types: new Set(), inheritance_paths: [] };
+                    byType[t][name].privileges.push(d.permission_level);
+                    byType[t][name].grant_types.add(d.grant_type);
+                    if (d.inheritance_path) {
+                        byType[t][name].inheritance_paths.push(d.inheritance_path);
+                    }
+                });
+
+                // Count unique resources per type
+                const typeCounts = {};
+                for (const [type, resources] of Object.entries(byType)) {
+                    typeCounts[type] = Object.keys(resources).length;
+                }
+                const uniqueResourcesCount = Object.values(typeCounts).reduce((a, b) => a + b, 0);
+
+                // Count by access type from summary (returned by API)
+                const summary = result.summary || {};
+                const directCount = summary.direct || 0;
+                const groupCount = summary.via_groups || 0;
+                const ownershipCount = summary.via_ownership || 0;
+                const parentCount = summary.via_parent || 0;
+
+                // Get type icon and label
+                const getTypeInfo = (type) => {
+                    if (type === 'User' || type === 'AccountUser') return { icon: '👤', label: 'User' };
+                    if (type === 'Group' || type === 'AccountGroup') return { icon: '👥', label: 'Group' };
+                    if (type.includes('ServicePrincipal')) return { icon: '🤖', label: 'Service Principal' };
+                    return { icon: '❓', label: type };
+                };
+                const typeInfo = getTypeInfo(principalType);
+
+                let html = `
+                    <!-- Principal Information Card -->
+                    <div style="background: linear-gradient(135deg, #1a1d2e 0%, #16182a 100%); border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                            <div style="font-size: 2.5em;">${typeInfo.icon}</div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 1.3em; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">${escapeHtml(principalDisplayName)}</div>
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px;">
+                                    <span style="display: inline-block; padding: 4px 10px; background: var(--accent)20; color: var(--accent); border-radius: 6px; font-size: 0.75em; font-weight: 600; text-transform: uppercase;">${typeInfo.label}</span>${adminBadgesHtml}
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.05);">
+                            ${principalEmail ? `
+                            <div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">Email</div>
+                                <div style="font-size: 0.95em; color: var(--text-secondary); word-break: break-all;">${escapeHtml(principalEmail)}</div>
+                            </div>
+                            ` : ''}
+                            ${isGroup ? `
+                            <div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">Members</div>
+                                <div style="font-size: 0.95em; color: var(--text-secondary);">
+                                    <span style="font-size: 1.3em; font-weight: 600; color: var(--accent);">${memberCount}</span>
+                                    <span style="color: var(--text-muted); font-size: 0.9em;"> ${memberCount === 1 ? 'member' : 'members'}</span>
+                                </div>
+                            </div>
+                            ` : ''}
+                            ${(!isGroup && principalName && principalName !== principalEmail) ? `
+                            <div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">${isServicePrincipal ? 'Application ID' : 'Username'}</div>
+                                <div style="font-size: 0.95em; color: var(--text-secondary); word-break: break-all; font-family: monospace;">${escapeHtml(principalName)}</div>
+                            </div>
+                            ` : ''}
+                            ${principalId ? `
+                            <div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">ID</div>
+                                <div style="font-size: 0.95em; color: var(--text-secondary); font-family: monospace;">${escapeHtml(principalId)}</div>
+                            </div>
+                            ` : ''}
+                        </div>
+                        ${adminDetailHtml}
+                    </div>
+
+                    <!-- Access Summary Card -->
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Access Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${uniqueResourcesCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Unique Resources</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #3b82f6;">${directCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Direct</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #8b5cf6;">${groupCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Via Groups</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${ownershipCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Ownership</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #f59e0b;">${parentCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Via Parent</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Accessible Resources</span>
+                            <span class="results-count">${uniqueResourcesCount} resources</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Render tree structure by type
+                const typeOrder = ['Catalog', 'Schema', 'Table', 'View', 'Volume', 'Function', 'Cluster', 'Job', 'Warehouse', 'ServingEndpoint', 'SecretScope'];
+                const sortedTypes = Object.keys(byType).sort((a, b) => {
+                    const aIdx = typeOrder.indexOf(a);
+                    const bIdx = typeOrder.indexOf(b);
+                    if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                });
+
+                sortedTypes.forEach((type, typeIdx) => {
+                    const resources = byType[type];
+                    const resourceCount = Object.keys(resources).length;
+                    const typeId = 'type-' + type.replace(/[^a-zA-Z]/g, '');
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${getEmoji(type)}</span>
+                                <span style="font-weight: 600; flex: 1;">${type}s(${resourceCount})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    // Sort resources alphabetically
+                    const sortedResources = Object.entries(resources).sort((a, b) => a[0].localeCompare(b[0]));
+
+                    sortedResources.forEach(([name, info], idx) => {
+                        const isLast = idx === sortedResources.length - 1;
+                        const uniquePrivileges = [...new Set(info.privileges)];
+                        const grantTypes = [...info.grant_types].join(', ');
+                        // Get inheritance paths (filter out null/undefined)
+                        const inheritancePaths = [...new Set(info.inheritance_paths.filter(p => p))];
+
+                        html += `
+                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; margin-bottom: 6px; word-break: break-all;">${name}</div>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                        ${uniquePrivileges.map(p => `<span class="result-badge low">${p}</span>`).join('')}
+                                    </div>
+                                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">${grantTypes}</div>
+                                    ${inheritancePaths.length > 0 ? `
+                                    <div style="font-size: 0.75em; color: var(--accent); margin-top: 6px; padding: 4px 8px; background: var(--accent)10; border-radius: 4px; display: inline-block;">
+                                        <span style="opacity: 0.7;">via:</span> ${inheritancePaths.join(' | ')}
+                                    </div>` : ''}
+                                </div>
+                            </div>`;
+                    });
+
+                    html += `
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div></div>';
+                document.getElementById(container).innerHTML = html;
+            } catch (e) {
+                showEmpty(container, 'Error: ' + e.message);
+            }
+        }
+
+        function toggleTreeSection(typeId) {
+            const content = document.getElementById(typeId + '-content');
+            const toggle = document.getElementById(typeId + '-toggle');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                toggle.textContent = '▼';
+            } else {
+                content.style.display = 'none';
+                toggle.textContent = '▶';
+            }
+        }
+
+        // Resource Analysis
+        async function analyzeResource() {
+            const searchInput = document.getElementById('resource-search');
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            // Use the stored resource ID if available (from autocomplete), otherwise use the input value
+            const resourceIdentifier = searchInput.dataset.resourceId || query;
+            lastAnalysis.resource = resourceIdentifier;  // Track for auto-refresh
+            showLoading('resource-results');
+
+            try {
+                const res = await fetch('/api/who-can-access', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({resource: resourceIdentifier, run_id: currentRunId})
+                });
+                const result = await res.json();
+
+                if (!result.success) {
+                    showEmpty('resource-results', result.message);
+                    return;
+                }
+
+                const data = result.data || [];
+
+                // Get resource info from the result
+                const resourceInfo = result.resource_info || {};
+                const resourceName = resourceInfo.name || query;
+                const resourceId = resourceInfo.id || '';
+                const resourceType = resourceInfo.type || '';
+                const resourceOwner = resourceInfo.owner || '';
+
+                // Group by principal type, then by unique key (canonical_id + email), collecting permissions and inheritance paths
+                const byType = {};
+                data.forEach(d => {
+                    // Normalize type for grouping
+                    let typeGroup = d.principal_type || 'Other';
+                    if (typeGroup === 'AccountUser') typeGroup = 'User';
+                    if (typeGroup === 'AccountGroup') typeGroup = 'Group';
+                    if (typeGroup.includes('ServicePrincipal')) typeGroup = 'Service Principal';
+
+                    // Extract canonical ID (part after ':' if present)
+                    const canonicalId = d.principal_id.includes(':')
+                        ? d.principal_id.split(':')[1]
+                        : d.principal_id;
+
+                    // Create unique key: canonical_id + email (to handle multiple accounts with same name)
+                    const uniqueKey = canonicalId + '|' + (d.principal_email || d.principal_name || d.principal_id);
+
+                    if (!byType[typeGroup]) byType[typeGroup] = {};
+                    if (!byType[typeGroup][uniqueKey]) byType[typeGroup][uniqueKey] = {
+                        name: d.principal_name || d.principal_id,
+                        permissions: [],
+                        grant_types: new Set(),
+                        email: d.principal_email,
+                        original_type: d.principal_type,
+                        inheritance_paths: []
+                    };
+                    byType[typeGroup][uniqueKey].permissions.push(d.permission_level);
+                    byType[typeGroup][uniqueKey].grant_types.add(d.grant_type);
+                    if (d.inheritance_path) {
+                        byType[typeGroup][uniqueKey].inheritance_paths.push(d.inheritance_path);
+                    }
+                });
+
+                // Count unique principals per type
+                const users = Object.keys(byType['User'] || {}).length;
+                const groups = Object.keys(byType['Group'] || {}).length;
+                const sps = Object.keys(byType['Service Principal'] || {}).length;
+                const totalPrincipals = users + groups + sps;
+
+                // Recalculate access type counts from grouped data (not from backend summary)
+                let directCount = 0;
+                let groupCount = 0;
+                let ownershipCount = 0;
+                let parentCount = 0;
+
+                Object.values(byType).forEach(typeGroup => {
+                    Object.values(typeGroup).forEach(principal => {
+                        if (principal.grant_types.has('Direct')) directCount++;
+                        if (principal.grant_types.has('Group')) groupCount++;
+                        if (principal.grant_types.has('Ownership')) ownershipCount++;
+                        if (principal.grant_types.has('Parent')) parentCount++;
+                    });
+                });
+
+                // Get type icon and color
+                const getResourceTypeInfo = (type) => {
+                    const typeMap = {
+                        'Catalog': { icon: '📦', color: '#667eea' },
+                        'Schema': { icon: '📐', color: '#8b5cf6' },
+                        'Table': { icon: '📊', color: '#3b82f6' },
+                        'View': { icon: '👁️', color: '#06b6d4' },
+                        'Volume': { icon: '💾', color: '#10b981' },
+                        'Function': { icon: '⚡', color: '#f59e0b' },
+                        'Cluster': { icon: '⚙️', color: '#ef4444' },
+                        'ClusterPolicy': { icon: '📋', color: '#f87171' },
+                        'Job': { icon: '🔄', color: '#f97316' },
+                        'Warehouse': { icon: '🏭', color: '#ec4899' },
+                        'ServingEndpoint': { icon: '🚀', color: '#a855f7' },
+                        'SecretScope': { icon: '🔐', color: '#6366f1' },
+                        'Metastore': { icon: '🗄️', color: '#14b8a6' },
+                        'Notebook': { icon: '📓', color: '#0ea5e9' },
+                        'Directory': { icon: '🗂️', color: '#64748b' },
+                        'Repo': { icon: '📚', color: '#22c55e' }
+                    };
+                    return typeMap[type] || { icon: '📄', color: '#6b7280' };
+                };
+                const typeInfo = getResourceTypeInfo(resourceType);
+                
+                // Get appropriate ID label based on resource type
+                const getIdLabel = (type) => {
+                    if (type === 'Cluster') return 'Cluster ID';
+                    if (type === 'ClusterPolicy') return 'Policy ID';
+                    if (type === 'Warehouse') return 'Warehouse ID';
+                    if (type === 'Job') return 'Job ID';
+                    if (type === 'Catalog') return 'Catalog ID';
+                    if (type === 'Schema') return 'Schema ID';
+                    if (type === 'Table' || type === 'View') return 'Table ID';
+                    return 'Resource ID';
+                };
+
+                let html = `
+                    <!-- Resource Information Card -->
+                    <div style="background: linear-gradient(135deg, #1a1d2e 0%, #16182a 100%); border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                            <div style="flex: 1;">
+                                <div style="font-size: 1.3em; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; word-break: break-all;">${escapeHtml(resourceName)}</div>
+                                <div style="display: inline-block; padding: 4px 10px; background: ${typeInfo.color}20; color: ${typeInfo.color}; border: 1px solid ${typeInfo.color}40; border-radius: 6px; font-size: 0.75em; font-weight: 600; text-transform: uppercase;">${resourceType}</div>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.05);">
+                            ${(resourceType === 'Cluster' || resourceType === 'Warehouse') ? `
+                            <div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">${getIdLabel(resourceType)}</div>
+                                <div style="font-size: 0.95em; color: var(--text-secondary); font-family: monospace; word-break: break-all;">${escapeHtml(resourceId)}</div>
+                            </div>
+                            ` : ''}
+                            ${resourceOwner ? `
+                            <div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">Owner</div>
+                                <div style="font-size: 0.95em; color: var(--text-secondary); word-break: break-all;">${escapeHtml(resourceOwner)}</div>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                    
+                    <!-- Access Summary Card -->
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Access Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${totalPrincipals}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #3b82f6;">${directCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Direct</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #8b5cf6;">${groupCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Via Groups</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${ownershipCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Ownership</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #f59e0b;">${parentCount}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Via Parent</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Principals with Access</span>
+                            <span class="results-count">${totalPrincipals} principals</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Sort types: User, Group, Service Principal
+                const typeOrder = ['User', 'Group', 'Service Principal'];
+                const sortedTypes = Object.keys(byType).sort((a, b) => {
+                    const aIdx = typeOrder.indexOf(a);
+                    const bIdx = typeOrder.indexOf(b);
+                    if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                });
+
+                sortedTypes.forEach(type => {
+                    const principals = byType[type];
+                    const principalCount = Object.keys(principals).length;
+                    const typeId = 'resource-type-' + type.replace(/[^a-zA-Z]/g, '');
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${getEmoji(type)}</span>
+                                <span style="font-weight: 600; flex: 1;">${type}s(${principalCount})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    // Sort principals alphabetically by name (not by uniqueKey)
+                    const sortedPrincipals = Object.entries(principals).sort((a, b) => {
+                        const nameA = a[1].name || '';
+                        const nameB = b[1].name || '';
+                        return nameA.localeCompare(nameB);
+                    });
+
+                    sortedPrincipals.forEach(([uniqueKey, info], idx) => {
+                        const isLast = idx === sortedPrincipals.length - 1;
+                        const uniquePermissions = [...new Set(info.permissions)];
+                        const grantTypes = [...info.grant_types].join(', ');
+                        // Get unique inheritance paths (filter out null/undefined)
+                        const inheritancePaths = [...new Set(info.inheritance_paths.filter(p => p))];
+                        // Format name with email for uniqueness
+                        const displayName = formatPrincipalName(info.name, info.email, null, null);
+
+                        html += `
+                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; margin-bottom: 6px; word-break: break-all;">${displayName}</div>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                        ${uniquePermissions.map(p => `<span class="result-badge low">${p}</span>`).join('')}
+                                    </div>
+                                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">${grantTypes}</div>
+                                    ${inheritancePaths.length > 0 ? `
+                                    <div style="font-size: 0.75em; color: var(--accent); margin-top: 6px; padding: 4px 8px; background: var(--accent)10; border-radius: 4px; display: inline-block;">
+                                        <span style="opacity: 0.7;">via:</span> ${inheritancePaths.join(' | ')}
+                                    </div>` : ''}
+                                </div>
+                            </div>`;
+                    });
+
+                    html += `
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div></div>';
+                document.getElementById('resource-results').innerHTML = html;
+            } catch (e) {
+                showEmpty('resource-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Browse Resources by Type
+        // Pretty plural label for a resource node type (avoids "Directorys").
+        function resourceTypeLabel(type) {
+            const map = {
+                'Directory': 'Folders', 'Notebook': 'Notebooks', 'Repo': 'Repos',
+                'SecretScope': 'Secret Scopes', 'ServingEndpoint': 'Serving Endpoints',
+                'ClusterPolicy': 'Cluster Policies'
+            };
+            if (map[type]) return map[type];
+            if (type && type.endsWith('y')) return type.slice(0, -1) + 'ies';
+            return (type || 'Resource') + 's';
+        }
+
+        async function browseResourcesByType(resourceType) {
+            showLoading('resource-results');
+            
+            try {
+                const res = await fetch('/api/browse-resources-by-type', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        resource_type: resourceType,
+                        run_id: currentRunId
+                    })
+                });
+                const result = await res.json();
+                
+                if (!result.success) {
+                    showEmpty('resource-results', result.message || 'No resources found');
+                    return;
+                }
+                
+                const resources = result.resources || [];
+                const typeLabelPlural = resourceTypeLabel(resourceType);
+                if (resources.length === 0) {
+                    showEmpty('resource-results', `No ${typeLabelPlural} found in this collection`);
+                    return;
+                }
+
+                // Display the list of resources
+                let html = `
+                    <div class="card">
+                        <div class="results-header">
+                            <span class="results-title">${typeLabelPlural}</span>
+                            <span class="results-count">${resources.length} resource${resources.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">
+                            <div style="max-height: 600px; overflow-y: auto;">
+                `;
+                
+                resources.forEach((resource, idx) => {
+                    const isLast = idx === resources.length - 1;
+                    html += `
+                        <div class="browse-resource-item" data-resource-id="${escapeHtml(resource.id)}" data-resource-name="${escapeHtml(resource.name)}"
+                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;" 
+                             onmouseover="this.style.background='var(--bg-input)'" 
+                             onmouseout="this.style.background='transparent'">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 500; color: var(--text-primary); margin-bottom: 4px; word-break: break-all;">${escapeHtml(resource.name)}</div>
+                                ${resource.owner ? `<div style="font-size: 0.85em; color: var(--text-secondary);">Owner: ${escapeHtml(resource.owner)}</div>` : ''}
+                            </div>
+                            <div style="color: var(--primary); font-size: 0.9em;">→</div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('resource-results').innerHTML = html;
+                
+                // Attach click event listeners to the resource items
+                document.querySelectorAll('.browse-resource-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        const resourceId = this.getAttribute('data-resource-id');
+                        const resourceName = this.getAttribute('data-resource-name');
+                        selectResource(resourceId, resourceName);
+                    });
+                });
+            } catch (e) {
+                showEmpty('resource-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Browse Principals by Type
+        async function browsePrincipalsByType(principalType) {
+            showLoading('principal-results');
+            
+            try {
+                const res = await fetch('/api/browse-principals-by-type', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        principal_type: principalType,
+                        run_id: currentRunId
+                    })
+                });
+                const result = await res.json();
+                
+                if (!result.success) {
+                    showEmpty('principal-results', result.message || 'No principals found');
+                    return;
+                }
+                
+                const principals = result.principals || [];
+                if (principals.length === 0) {
+                    showEmpty('principal-results', `No ${principalType}s found in this collection`);
+                    return;
+                }
+                
+                // Display the list of principals
+                const typeLabel = principalType === 'ServicePrincipal' ? 'Service Principals' : principalType + 's';
+                let html = `
+                    <div class="card">
+                        <div class="results-header">
+                            <span class="results-title">${typeLabel}</span>
+                            <span class="results-count">${principals.length} principal${principals.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">
+                            <div style="max-height: 600px; overflow-y: auto;">
+                `;
+                
+                principals.forEach((principal, idx) => {
+                    const isLast = idx === principals.length - 1;
+                    const displayName = principal.display_name || principal.name || principal.email || principal.id;
+                    html += `
+                        <div class="browse-principal-item" data-principal-id="${escapeHtml(principal.id)}" data-principal-name="${escapeHtml(displayName)}"
+                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;" 
+                             onmouseover="this.style.background='var(--bg-input)'" 
+                             onmouseout="this.style.background='transparent'">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 500; color: var(--text-primary); margin-bottom: 4px; word-break: break-all;">${escapeHtml(displayName)}</div>
+                                ${principal.email ? `<div style="font-size: 0.85em; color: var(--text-secondary);">${escapeHtml(principal.email)}</div>` : ''}
+                            </div>
+                            <div style="color: var(--primary); font-size: 0.9em;">→</div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('principal-results').innerHTML = html;
+                
+                // Attach click event listeners to the principal items
+                document.querySelectorAll('.browse-principal-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        const principalId = this.getAttribute('data-principal-id');
+                        const principalName = this.getAttribute('data-principal-name');
+                        selectPrincipal(principalId, principalName);
+                    });
+                });
+            } catch (e) {
+                showEmpty('principal-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Browse Principals by Type for Escalation Paths
+        async function browsePathsPrincipalsByType(principalType) {
+            showLoading('paths-results');
+            
+            try {
+                const res = await fetch('/api/browse-principals-by-type', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        principal_type: principalType,
+                        run_id: currentRunId
+                    })
+                });
+                const result = await res.json();
+                
+                if (!result.success) {
+                    showEmpty('paths-results', result.message || 'No principals found');
+                    return;
+                }
+                
+                const principals = result.principals || [];
+                if (principals.length === 0) {
+                    showEmpty('paths-results', `No ${principalType}s found in this collection`);
+                    return;
+                }
+                
+                // Display the list of principals
+                const typeLabel = principalType === 'ServicePrincipal' ? 'Service Principals' : principalType + 's';
+                let html = `
+                    <div class="card">
+                        <div class="results-header">
+                            <span class="results-title">${typeLabel}</span>
+                            <span class="results-count">${principals.length} principal${principals.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">
+                            <div style="max-height: 600px; overflow-y: auto;">
+                `;
+                
+                principals.forEach((principal, idx) => {
+                    const isLast = idx === principals.length - 1;
+                    const displayName = principal.display_name || principal.name || principal.email || principal.id;
+                    html += `
+                        <div class="browse-paths-principal-item" data-principal-id="${escapeHtml(principal.id)}" data-principal-name="${escapeHtml(displayName)}"
+                             style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'}; cursor: pointer; transition: background 0.2s;" 
+                             onmouseover="this.style.background='var(--bg-input)'" 
+                             onmouseout="this.style.background='transparent'">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 500; color: var(--text-primary); margin-bottom: 4px; word-break: break-all;">${escapeHtml(displayName)}</div>
+                                ${principal.email ? `<div style="font-size: 0.85em; color: var(--text-secondary);">${escapeHtml(principal.email)}</div>` : ''}
+                            </div>
+                            <div style="color: var(--primary); font-size: 0.9em;">→</div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('paths-results').innerHTML = html;
+                
+                // Attach click event listeners to the principal items
+                document.querySelectorAll('.browse-paths-principal-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        const principalId = this.getAttribute('data-principal-id');
+                        const principalName = this.getAttribute('data-principal-name');
+                        selectPathsPrincipal(principalId, principalName);
+                    });
+                });
+            } catch (e) {
+                showEmpty('paths-results', 'Error: ' + e.message);
+            }
+        }
+
+        function selectPathsPrincipal(identifier, displayName) {
+            const pathsInput = document.getElementById('paths-search');
+            if (pathsInput) {
+                pathsInput.value = displayName || identifier;
+                pathsInput.dataset.identifier = identifier;
+                document.getElementById('paths-clear-btn').style.display = 'flex';
+            }
+            const pathsAutocomplete = document.getElementById('paths-autocomplete');
+            if (pathsAutocomplete) {
+                pathsAutocomplete.classList.remove('show');
+            }
+            findPaths();
+        }
+
+        function getResourceIcon(type) {
+            const icons = {
+                'Catalog': '📦',
+                'Schema': '📁',
+                'Table': '📊',
+                'View': '👁️',
+                'Volume': '💾',
+                'Function': '⚡',
+                'Cluster': '🖥️',
+                'Job': '⚙️',
+                'Warehouse': '🏭',
+                'ServingEndpoint': '🚀',
+                'SecretScope': '🔐',
+                'Notebook': '📓',
+                'Directory': '🗂️',
+                'Repo': '📚'
+            };
+            return icons[type] || '📄';
+        }
+
+        // Escalation Paths - Visual Attack Path Display
+        function getRiskColor(risk) {
+            const colors = { 'CRITICAL': '#8b5cf6', 'HIGH': '#f97316', 'MEDIUM': '#eab308' };
+            return colors[risk] || '#8b5cf6';
+        }
+        function getRiskBg(risk) {
+            const colors = { 'CRITICAL': '#8b5cf620', 'HIGH': '#f9731620', 'MEDIUM': '#eab30820' };
+            return colors[risk] || '#8b5cf620';
+        }
+        function getRiskIcon(risk) {
+            const icons = { 'CRITICAL': '🟣', 'HIGH': '🟠', 'MEDIUM': '🟡' };
+            return icons[risk] || '⚪';
+        }
+        function getPathTypeIcon(type) {
+            if (type === 'INDIRECT_ESCALATION') return '⚡';
+            if (type === 'DIRECT_ROLE') return '👑';
+            return '📋';
+        }
+        function getPathTypeLabel(type) {
+            if (type === 'INDIRECT_ESCALATION') return 'Indirect (via Job/Notebook)';
+            if (type === 'DIRECT_ROLE') return 'Direct Role Assignment';
+            return 'Group Membership';
+        }
+        function getNodeIcon(type) {
+            const icons = {
+                'User': '👤', 'Group': '👥', 'ServicePrincipal': '🤖',
+                'AccountUser': '👤', 'AccountGroup': '👥', 'AccountServicePrincipal': '🤖',
+                'PrivilegedRole': '🛡️', 'PrivilegedPrincipal': '👑',
+                'Job': '⚙️', 'Notebook': '📓', 'Pipeline': '🔄'
+            };
+            return icons[type] || '📦';
+        }
+
+        async function findPaths() {
+            const searchInput = document.getElementById('paths-search');
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            // Use the stored identifier if available (from autocomplete), otherwise use the input value
+            const identifier = searchInput.dataset.identifier || query;
+            lastAnalysis.paths = identifier;  // Track for auto-refresh
+            showLoading('paths-results');
+
+            try {
+                const res = await fetch('/api/escalation-paths', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({principal: identifier, max_depth: 5, run_id: currentRunId})
+                });
+                const result = await res.json();
+
+                if (!result.success) {
+                    showEmpty('paths-results', result.message);
+                    return;
+                }
+
+                const principal = result.principal || {};
+                const summary = result.summary || {};
+                const paths = result.paths || [];
+
+                // No paths found
+                if (summary.total_paths === 0) {
+                    document.getElementById('paths-results').innerHTML = `
+                        <div class="results-container">
+                            <div style="padding: 60px 24px; text-align: center;">
+                                <div style="font-size: 48px; margin-bottom: 16px;">✅</div>
+                                <div style="font-size: 1.2em; color: var(--success); margin-bottom: 8px;">No Escalation Paths Found</div>
+                                <div style="color: var(--text-secondary);">${formatPrincipalName(principal.display_name, principal.email, principal.name, null)} cannot reach any privileged roles</div>
+                            </div>
+                        </div>`;
+                    return;
+                }
+
+                // Build summary cards with path type breakdown
+                const groupPaths = summary.group_membership_paths || 0;
+                const indirectPaths = summary.indirect_paths || 0;
+
+                let html = `
+                    <div class="summary-grid">
+                        <div class="summary-card">
+                            <div class="summary-value" style="color: #8b5cf6;">${summary.critical_paths || 0}</div>
+                            <div class="summary-label">Critical Paths</div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-value" style="color: #f97316;">${summary.high_paths || 0}</div>
+                            <div class="summary-label">High Risk Paths</div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-value accent">${summary.total_paths}</div>
+                            <div class="summary-label">Total Paths</div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-value accent">${summary.shortest_path || '-'}</div>
+                            <div class="summary-label">Shortest Path</div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; margin-bottom: 24px;">
+                        <div style="flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <span>📋</span>
+                                <span style="font-weight: 500;">Group Membership</span>
+                            </div>
+                            <div style="color: var(--text-secondary); font-size: 0.9em;">${groupPaths} path(s) via nested group chains</div>
+                        </div>
+                        <div style="flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <span>⚡</span>
+                                <span style="font-weight: 500;">Indirect Escalation</span>
+                            </div>
+                            <div style="color: var(--text-secondary); font-size: 0.9em;">${indirectPaths} path(s) via jobs/notebooks owned by admins</div>
+                        </div>
+                    </div>
+
+                    <div class="results-container" style="margin-bottom: 24px;">
+                        <div class="results-header">
+                            <span class="results-title">Principal</span>
+                        </div>
+                        <div style="padding: 16px 24px; display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 24px;">${getNodeIcon(principal.type)}</span>
+                            <div>
+                                <div style="font-weight: 600;">${formatPrincipalName(principal.display_name, principal.email, principal.name, null)}</div>
+                                <div style="color: var(--text-secondary); font-size: 0.9em;">${principal.type}</div>
+                            </div>
+                        </div>
+                    </div>`;
+
+                // Group paths by the final privileged role
+                const pathsByRole = {};
+                paths.forEach(p => {
+                    // Find the privileged role from hops (last node with type PrivilegedRole)
+                    let role = 'Unknown';
+                    for (let i = p.hops.length - 1; i >= 0; i--) {
+                        if (p.hops[i].node_type === 'PrivilegedRole') {
+                            role = p.hops[i].node_name;
+                            break;
+                        }
+                    }
+                    if (!pathsByRole[role]) pathsByRole[role] = [];
+                    pathsByRole[role].push(p);
+                });
+
+                // Sort roles by risk level
+                const roleOrder = ['Account Admin', 'Metastore Admin', 'Workspace Admin', 'Catalog Owner'];
+                const sortedRoles = Object.keys(pathsByRole).sort((a, b) => {
+                    const ia = roleOrder.indexOf(a);
+                    const ib = roleOrder.indexOf(b);
+                    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+                });
+
+                html += `<div class="results-container">
+                    <div class="results-header">
+                        <span class="results-title">Escalation Paths by Privileged Role</span>
+                        <span class="results-count">${paths.length} paths</span>
+                    </div>
+                    <div class="results-body">`;
+
+                // Render paths grouped by role
+                for (const role of sortedRoles) {
+                    const rolePaths = pathsByRole[role];
+                    const firstPath = rolePaths[0];
+                    const risk = firstPath.risk_level || 'HIGH';
+                    const riskColor = getRiskColor(risk);
+                    const riskBg = getRiskBg(risk);
+
+                    html += `
+                        <div class="attack-path-group" style="border-left: 4px solid ${riskColor}; margin: 16px 0; padding-left: 16px;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                                <span style="font-size: 24px;">🛡️</span>
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 600; font-size: 1.1em;">${role}</div>
+                                    <div style="color: var(--text-secondary); font-size: 0.85em;">${rolePaths.length} path(s) to this role</div>
+                                </div>
+                                <span class="result-badge" style="background: ${riskBg}; color: ${riskColor};">${getRiskIcon(risk)} ${risk}</span>
+                            </div>`;
+
+                    // Show up to 3 paths per role
+                    rolePaths.slice(0, 3).forEach((path, pathIdx) => {
+                        const pathType = path.path_type || 'GROUP_MEMBERSHIP';
+                        const isIndirect = pathType === 'INDIRECT_ESCALATION';
+
+                        html += `
+                            <div class="attack-path" style="background: var(--bg-input); border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <div style="color: var(--text-secondary); font-size: 0.8em;">
+                                        Path ${pathIdx + 1} · ${path.path_length} hop${path.path_length !== 1 ? 's' : ''}
+                                    </div>
+                                    <span style="font-size: 0.75em; background: ${isIndirect ? '#f9731620' : '#3b82f620'}; color: ${isIndirect ? '#f97316' : '#3b82f6'}; padding: 2px 8px; border-radius: 4px;">
+                                        ${getPathTypeIcon(pathType)} ${getPathTypeLabel(pathType)}
+                                    </span>
+                                </div>
+                                <div class="path-hops">`;
+
+                        // Render each hop
+                        path.hops.forEach((hop, i) => {
+                            const isStart = i === 0;
+                            const isEnd = i === path.hops.length - 1;
+                            const isRole = hop.node_type === 'PrivilegedRole';
+                            const isPrivPrincipal = hop.node_type === 'PrivilegedPrincipal';
+
+                            let nodeColor = '#64748b';
+                            if (isStart) nodeColor = 'var(--accent)';
+                            else if (isRole) nodeColor = riskColor;
+                            else if (isPrivPrincipal) nodeColor = '#f97316';
+
+                            // Edge label (for non-first hops)
+                            if (i > 0) {
+                                const edgeLabel = hop.edge_relationship || 'Connected';
+                                const permLabel = hop.edge_permission && hop.edge_permission !== edgeLabel ? `: ${hop.edge_permission}` : '';
+                                html += `
+                                    <div class="path-edge" style="display: flex; align-items: center; margin: 8px 0 8px 20px;">
+                                        <div style="width: 2px; height: 24px; background: ${nodeColor}; margin-right: 12px;"></div>
+                                        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 4px 10px; font-size: 0.75em; color: var(--text-secondary);">
+                                            ${edgeLabel}${permLabel}
+                                        </div>
+                                    </div>`;
+                            }
+
+                            // Node
+                            const nodeIcon = getNodeIcon(hop.node_type);
+                            html += `
+                                <div class="path-node-row" style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="width: 32px; height: 32px; border-radius: ${isRole ? '4px' : '50%'}; background: ${nodeColor}; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; flex-shrink: 0;">
+                                        ${isStart ? '▶' : isRole ? '🛡️' : nodeIcon}
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: ${isRole ? '600' : '500'};">${hop.node_name}</div>
+                                        <div style="font-size: 0.8em; color: var(--text-muted);">${hop.node_type}</div>
+                                    </div>
+                                    ${isStart ? '<span style="font-size: 0.75em; background: var(--accent); color: white; padding: 2px 8px; border-radius: 4px;">START</span>' : ''}
+                                    ${isRole ? `<span style="font-size: 0.75em; background: ${riskBg}; color: ${riskColor}; padding: 2px 8px; border-radius: 4px;">ESCALATES TO</span>` : ''}
+                                </div>`;
+                        });
+
+                        html += `
+                                </div>
+                            </div>`;
+                    });
+
+                    if (rolePaths.length > 3) {
+                        html += `<div style="color: var(--text-muted); font-size: 0.85em; padding: 8px 0;">+ ${rolePaths.length - 3} more path(s) to ${role}</div>`;
+                    }
+
+                    html += `</div>`;
+                }
+
+                html += '</div></div>';
+                document.getElementById('paths-results').innerHTML = html;
+            } catch (e) {
+                showEmpty('paths-results', 'Error: ' + e.message);
+            }
+        }
+
+        // =====================================================================
+        // REPORT FUNCTIONS
+        // =====================================================================
+
+        // Load Isolated Principals Report
+
+        // ------------------------------------------------------------------
+        // Secret scanning
+        //
+        // Findings come from the SAT secret scanner. "Confirmed active" means
+        // TruffleHog validated the credential against the live service, so those
+        // are ranked first everywhere — they are the ones that need rotating now.
+        // ------------------------------------------------------------------
+
+        // Rendered when the scanner has not populated its tables. Deliberately
+        // distinct from an empty result: "no findings" and "never scanned" are
+        // very different answers, and conflating them gives false assurance.
+        function showSecretsNotReady(containerId, message) {
+            document.getElementById(containerId).innerHTML = `
+                <div class="results-container">
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                        <p style="font-weight:600;color:var(--text-primary);margin-bottom:6px;">No scan results yet</p>
+                        <p>${escapeHtml(message || '')}</p>
+                    </div>
+                </div>`;
+        }
+
+        function secretStatBlock(label, value, color) {
+            return `
+                <div class="secret-stat">
+                    <div class="secret-stat-value" style="color: ${color};">${value}</div>
+                    <div class="secret-stat-label">${escapeHtml(label)}</div>
+                </div>`;
+        }
+
+        // Workspace display: the scanner records a generic "current workspace"
+        // placeholder as the name for a single-workspace scan, so fall back to the
+        // real workspace id in that case (and when the name is simply missing).
+        // Friendly scan timestamp, e.g. "Nov 11, 2:32 PM"; falls back to the raw
+        // value if it can't be parsed.
+        function sxFmtDate(raw) {
+            if (!raw) return '';
+            const d = new Date(String(raw).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return String(raw).slice(0, 16).replace('T', ' ');
+            return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        }
+
+        function secretsWsLabel(name, id) {
+            const n = (name || '').trim();
+            if (n && n.toLowerCase() !== 'current workspace') return n;
+            return String(id || '');
+        }
+
+
+        // ------------------------------------------------------------------
+        // Security assistant (floating panel)
+        // ------------------------------------------------------------------
+
+        const assistantState = { conversationId: null, busy: false, ready: null,
+                                 controller: null, turnId: null };
+
+
+        // Render Genie's result table (if any) and a collapsible SQL view.
+        function assistantRenderResult(result) {
+            let html = '';
+            const rows = result.rows || [];
+            const cols = (result.columns && result.columns.length) ? result.columns
+                         : (rows[0] ? Object.keys(rows[0]) : []);
+            if (rows.length && cols.length) {
+                const head = cols.map(c => `<th>${escapeHtml(String(c))}</th>`).join('');
+                const body = rows.map(r =>
+                    `<tr>${cols.map(c => {
+                        const v = r[c];
+                        return `<td>${escapeHtml(v === null || v === undefined ? '' : String(v))}</td>`;
+                    }).join('')}</tr>`).join('');
+                const note = result.truncated
+                    ? `<div class="assistant-table-note">Showing ${rows.length} of ${result.row_count} rows.</div>` : '';
+                html += `<div class="assistant-table-wrap"><table class="assistant-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${note}`;
+            }
+            if (result.sql) {
+                html += `<details class="assistant-trace"><summary>View SQL</summary><pre>${escapeHtml(result.sql)}</pre></details>`;
+            }
+            return html;
+        }
+
+        async function assistantCreateSpace() {
+            const btn = document.getElementById('assistant-create-space');
+            if (btn) { btn.disabled = true; btn.textContent = 'Creating the assistant…'; }
+            try {
+                const res = await fetch('/api/assistant/genie/create', { method: 'POST' }).then(r => r.json());
+                if (res.error) {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Create the assistant'; }
+                    alert('Could not create the assistant: ' + res.error);
+                    return;
+                }
+                assistantState.ready = null;
+                assistantInit();
+            } catch (e) {
+                if (btn) { btn.disabled = false; btn.textContent = 'Create the assistant'; }
+                alert('Could not create the assistant: ' + e.message);
+            }
+        }
+
+        function assistantOpen() {
+            document.getElementById('assistant-panel').classList.add('open');
+            document.getElementById('assistant-fab').classList.add('hidden');
+            if (assistantState.ready === null) assistantInit();
+            const input = document.getElementById('assistant-input');
+            if (input) setTimeout(() => input.focus(), 220);
+        }
+
+        function assistantClose() {
+            document.getElementById('assistant-panel').classList.remove('open');
+            document.getElementById('assistant-fab').classList.remove('hidden');
+        }
+
+        async function assistantInit() {
+            const log = document.getElementById('assistant-log');
+            log.innerHTML = '<div class="loading"><div class="spinner"></div>Connecting&hellip;</div>';
+            try {
+                const cfg = await fetch('/api/assistant/config').then(r => r.json());
+                assistantState.ready = !!cfg.ready;
+                if (!cfg.ready) {
+                    const createBtn = cfg.needs_space
+                        ? `<button class="btn btn-primary btn-sm" id="assistant-create-space" style="margin-top:12px;">Create the assistant</button>`
+                        : '';
+                    log.innerHTML = `
+                        <div class="empty-state" style="padding:24px 8px;">
+                            <p style="font-weight:600;color:var(--text-primary);margin-bottom:6px;">Assistant unavailable</p>
+                            <p style="font-size:.88em;">${escapeHtml(cfg.message || '')}</p>
+                            ${createBtn}
+                        </div>`;
+                    const cb = document.getElementById('assistant-create-space');
+                    if (cb) cb.addEventListener('click', assistantCreateSpace);
+                    return;
+                }
+                log.innerHTML = `
+                    <div class="assistant-chips">
+                        ${(cfg.suggestions || []).map(q =>
+                            `<div class="assistant-chip" data-ask="${escapeHtml(q)}">${escapeHtml(q)}</div>`).join('')}
+                    </div>
+                    <div style="font-size:.85em;color:var(--text-muted);line-height:1.5;">
+                        Ask about permissions, exposed credentials, or workspace activity.
+                        Answers are generated by Databricks Genie over your SAT results —
+                        read-only, and scoped to your own Unity Catalog permissions.
+                    </div>`;
+                log.querySelectorAll('[data-ask]').forEach(chip => {
+                    chip.addEventListener('click', () => {
+                        document.getElementById('assistant-input').value = chip.dataset.ask;
+                        assistantSend();
+                    });
+                });
+            } catch (e) {
+                assistantState.ready = false;
+                log.innerHTML = `<div class="empty-state" style="padding:24px 8px;"><p>Could not reach the assistant: ${escapeHtml(e.message)}</p></div>`;
+            }
+        }
+
+        // Start a fresh conversation: abandon any in-flight turn, drop the server
+        // session id so the next message begins with no prior history, and reset the
+        // panel to its suggestions.
+        function assistantNewSession() {
+            if (assistantState.busy && assistantState.controller) {
+                try { assistantState.controller.abort(); } catch (e) { /* already settled */ }
+            }
+            assistantState.conversationId = null;
+            assistantState.busy = false;
+            assistantState.turnId = null;
+            const send = document.getElementById('assistant-send');
+            const stop = document.getElementById('assistant-stop');
+            if (send) send.hidden = false;
+            if (stop) stop.hidden = true;
+            assistantInit();
+            const input = document.getElementById('assistant-input');
+            if (input) { input.value = ''; input.focus(); }
+        }
+
+        // Past conversations: Genie stores every thread per user, so the pane can
+        // list them and reopen one. The history button toggles the list; picking a
+        // conversation reloads its turns and continues it on the next message.
+        function assistantRelTime(ms) {
+            if (!ms) return '';
+            const d = Math.max(0, Date.now() - Number(ms));
+            const day = Math.floor(d / 86400000), h = Math.floor(d / 3600000), m = Math.floor(d / 60000);
+            if (day >= 1) return day + 'd ago';
+            if (h >= 1) return h + 'h ago';
+            if (m >= 1) return m + 'm ago';
+            return 'just now';
+        }
+
+        async function assistantToggleHistory() {
+            const log = document.getElementById('assistant-log');
+            if (log.querySelector('.assistant-history')) { assistantInit(); return; }
+            log.innerHTML = '<div class="loading"><div class="spinner"></div>Loading conversations&hellip;</div>';
+            try {
+                const data = await fetch('/api/assistant/conversations').then(r => r.json());
+                const convs = data.conversations || [];
+                if (!convs.length) {
+                    log.innerHTML = `<div class="assistant-history"><div class="assistant-history-head">Past conversations</div><div class="assistant-history-empty">No past conversations yet. Ask something to start one.</div></div>`;
+                    return;
+                }
+                const items = convs.map(c => `
+                    <button class="assistant-history-item" data-conv="${escapeHtml(c.conversation_id)}">
+                        <span class="assistant-history-title">${escapeHtml(c.title)}</span>
+                        <span class="assistant-history-time">${assistantRelTime(c.created)}</span>
+                    </button>`).join('');
+                log.innerHTML = `<div class="assistant-history"><div class="assistant-history-head">Past conversations</div>${items}</div>`;
+                log.querySelectorAll('.assistant-history-item').forEach(el =>
+                    el.addEventListener('click', () => assistantLoadConversation(el.dataset.conv)));
+            } catch (e) {
+                log.innerHTML = `<div class="assistant-history"><div class="assistant-history-empty">Could not load conversations: ${escapeHtml(e.message)}</div></div>`;
+            }
+        }
+
+        async function assistantLoadConversation(convId) {
+            const log = document.getElementById('assistant-log');
+            log.innerHTML = '<div class="loading"><div class="spinner"></div>Loading conversation&hellip;</div>';
+            try {
+                const data = await fetch('/api/assistant/conversation/' + encodeURIComponent(convId)).then(r => r.json());
+                if (data.error) { log.innerHTML = `<div class="assistant-history"><div class="assistant-history-empty">${escapeHtml(data.error)}</div></div>`; return; }
+                log.innerHTML = '';
+                (data.turns || []).forEach(t => {
+                    if (t.role === 'user') {
+                        assistantAppend('user', assistantMarkdown(t.content || ''));
+                    } else {
+                        let html = assistantMarkdown(t.content || '(no answer)');
+                        if (t.sql) html += `<details class="assistant-trace"><summary>View SQL</summary><pre>${escapeHtml(t.sql)}</pre></details>`;
+                        assistantAppend('ai', html);
+                    }
+                });
+                assistantState.conversationId = convId;
+                const input = document.getElementById('assistant-input');
+                if (input) input.focus();
+            } catch (e) {
+                log.innerHTML = `<div class="assistant-history"><div class="assistant-history-empty">${escapeHtml(e.message)}</div></div>`;
+            }
+        }
+
+        // Turn the assistant off (two-click confirm) or back on, from Settings.
+        async function assistantDisable(btn) {
+            if (btn.dataset.armed !== '1') {
+                btn.dataset.armed = '1';
+                btn.textContent = 'Click again to turn off';
+                clearTimeout(btn._t);
+                btn._t = setTimeout(() => { btn.dataset.armed = '0'; btn.textContent = 'Turn off the assistant'; }, 4000);
+                return;
+            }
+            clearTimeout(btn._t); btn.disabled = true; btn.textContent = 'Turning off\u2026';
+            try {
+                await fetch('/api/assistant/disable', { method: 'POST' }).then(r => r.json());
+                document.getElementById('assistant-fab').classList.add('hidden');
+                document.getElementById('assistant-panel').classList.remove('open');
+                assistantState.ready = null;
+                loadSettings();
+            } catch (e) { btn.disabled = false; btn.dataset.armed = '0'; btn.textContent = 'Turn off the assistant'; }
+        }
+
+        async function assistantEnable(btn) {
+            btn.disabled = true; btn.textContent = 'Turning on\u2026';
+            try {
+                await fetch('/api/assistant/enable', { method: 'POST' }).then(r => r.json());
+                document.getElementById('assistant-fab').classList.remove('hidden');
+                assistantState.ready = null;
+                loadSettings();
+            } catch (e) { btn.disabled = false; btn.textContent = 'Turn on the assistant'; }
+        }
+
+        // From the Settings jobs section, jump to the Data Collection page.
+        function gotoCollection() {
+            closeSettingsPanel();
+            const el = document.querySelector('[data-page="collection"]');
+            if (el) el.click();
+        }
+
+        // Minimal markdown: bold, inline code, and bullet lines. The assistant is
+        // instructed to keep formatting simple, so a full parser is unnecessary.
+        function assistantMarkdown(text) {
+            const out = [];
+            let inList = false;
+            // Split on newlines using String.fromCharCode(10). A backslash escape
+            // cannot be used here: this whole template is a Python f-string, so
+            // Python would consume the escape and emit a literal line break,
+            // which is a JavaScript syntax error.
+            escapeHtml(text).split(String.fromCharCode(10)).forEach(raw => {
+                const line = raw
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+                if (bullet) {
+                    if (!inList) { out.push('<ul>'); inList = true; }
+                    out.push(`<li>${bullet[1]}</li>`);
+                } else {
+                    if (inList) { out.push('</ul>'); inList = false; }
+                    out.push(line.trim() ? `<div>${line}</div>` : '<div style="height:6px"></div>');
+                }
+            });
+            if (inList) out.push('</ul>');
+            return out.join('');
+        }
+
+        function assistantAppend(role, html) {
+            const log = document.getElementById('assistant-log');
+            // Clear the intro block on the first real exchange.
+            if (log.querySelector('.assistant-chips') || log.querySelector('.assistant-history')) log.innerHTML = '';
+            const wrap = document.createElement('div');
+            wrap.className = 'assistant-msg ' + (role === 'user' ? 'me' : 'ai');
+            if (role === 'user') {
+                wrap.innerHTML = `<div class="assistant-bubble">${html}</div>`;
+            } else {
+                wrap.innerHTML = `
+                    <div class="assistant-who">Assistant</div>
+                    <div class="assistant-text">${html}</div>`;
+            }
+            log.appendChild(wrap);
+            log.scrollTop = log.scrollHeight;
+            return wrap;
+        }
+
+        // Abort the in-flight turn. The fetch is cancelled locally and the server is
+        // told to stop, so a long tool loop stops spending tokens rather than
+        // running on invisibly after the user gave up on it.
+        function assistantStop() {
+            if (!assistantState.busy) return;
+            const turn = assistantState.turnId;
+            if (assistantState.controller) assistantState.controller.abort();
+            if (turn) {
+                fetch('/api/assistant/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ turn_id: turn }),
+                }).catch(() => {});
+            }
+        }
+
+        async function assistantSend() {
+            if (assistantState.busy) return;
+            const input = document.getElementById('assistant-input');
+            const question = input.value.trim();
+            if (!question) return;
+
+            input.value = '';
+            assistantState.busy = true;
+            assistantState.controller = new AbortController();
+            assistantState.turnId = 'turn-' + Date.now() + '-' +
+                Math.random().toString(36).slice(2, 8);
+            const sendBtn = document.getElementById('assistant-send');
+            const stopBtn = document.getElementById('assistant-stop');
+            sendBtn.disabled = true;
+            sendBtn.hidden = true;
+            stopBtn.hidden = false;
+            assistantAppend('user', assistantMarkdown(question));
+            const pending = assistantAppend('ai', '<div class="loading" style="padding:0;"><div class="spinner"></div>Investigating&hellip;</div>');
+
+            try {
+                const res = await fetch('/api/assistant/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: assistantState.controller.signal,
+                    body: JSON.stringify({
+                        message: question,
+                        conversation_id: assistantState.conversationId,
+                        turn_id: assistantState.turnId,
+                    }),
+                });
+                const result = await res.json();
+                if (result.error) {
+                    pending.querySelector('.assistant-text').innerHTML =
+                        `<span style="color:#fca5a5;">${escapeHtml(result.error)}</span>`;
+                } else {
+                    assistantState.conversationId = result.conversation_id;
+                    let html = assistantMarkdown(result.answer || '(no answer)');
+                    html += assistantRenderResult(result);
+                    pending.querySelector('.assistant-text').innerHTML = html;
+                }
+            } catch (e) {
+                const stopped = e.name === 'AbortError';
+                pending.querySelector('.assistant-text').innerHTML = stopped
+                    ? '<span style="color:#94a3b8;">Stopped.</span>'
+                    : `<span style="color:#fca5a5;">${escapeHtml(e.message)}</span>`;
+            } finally {
+                assistantState.busy = false;
+                assistantState.controller = null;
+                assistantState.turnId = null;
+                const sendBtn = document.getElementById('assistant-send');
+                const stopBtn = document.getElementById('assistant-stop');
+                sendBtn.disabled = false;
+                sendBtn.hidden = false;
+                stopBtn.hidden = true;
+                const log = document.getElementById('assistant-log');
+                log.scrollTop = log.scrollHeight;
+            }
+        }
+
+        // Wire the assistant once the DOM exists.
+        (function wireAssistant() {
+            function attach() {
+                const fab = document.getElementById('assistant-fab');
+                if (!fab) return;
+                fab.addEventListener('click', assistantOpen);
+                document.getElementById('assistant-new-btn').addEventListener('click', assistantNewSession);
+                document.getElementById('assistant-history-btn').addEventListener('click', assistantToggleHistory);
+                document.getElementById('assistant-close').addEventListener('click', assistantClose);
+                document.getElementById('assistant-send').addEventListener('click', assistantSend);
+                document.getElementById('assistant-stop').addEventListener('click', assistantStop);
+                const input = document.getElementById('assistant-input');
+                input.addEventListener('keydown', ev => {
+                    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); assistantSend(); }
+                    // Escape stops a running turn, matching the Stop button.
+                    if (ev.key === 'Escape' && assistantState.busy) { ev.preventDefault(); assistantStop(); }
+                });
+                document.addEventListener('keydown', ev => {
+                    if (ev.key === 'Escape') assistantClose();
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', attach);
+            } else {
+                attach();
+            }
+        })();
+
+
+        // ------------------------------------------------------------------
+        // Data collection control
+        //
+        // Starts the SAT collection jobs and follows the run to completion, so a
+        // refresh never requires leaving the app. Only the two jobs bound in the
+        // app's configuration can be started.
+        // ------------------------------------------------------------------
+
+        let collectionPollTimers = {};
+        let collectionElapsedTimer = null;
+        const collectionRunStart = {};
+
+        // A collection older than this is flagged stale — the data on screen may no
+        // longer reflect the workspace.
+        const COLLECT_STALE_HOURS = 36;
+
+        function formatElapsed(ms) {
+            if (!ms || ms < 0) return '0s';
+            const total = Math.floor(ms / 1000);
+            const h = Math.floor(total / 3600);
+            const m = Math.floor((total % 3600) / 60);
+            const sec = total % 60;
+            if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+            if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`;
+            return `${sec}s`;
+        }
+
+        function formatAgo(ms) {
+            if (!ms) return null;
+            const diff = Date.now() - Number(ms);
+            if (diff < 60000) return 'just now';
+            if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+            return `${Math.floor(diff / 86400000)}d ago`;
+        }
+
+        function collectionStageText(run) {
+            const state = String(run.state || '').toUpperCase();
+            if (state === 'PENDING' || state === 'QUEUED' || state === 'BLOCKED') {
+                return 'Waiting for compute';
+            }
+            const total = Number(run.tasks_total) || 0;
+            const done = Number(run.tasks_done) || 0;
+            if (total > 1 && done > 0) return `Running · ${done} of ${total} steps complete`;
+            return 'Running';
+        }
+
+        // Status is derived from the last run plus its age, so "succeeded three days
+        // ago" reads as stale rather than healthy.
+        function collectionHealth(run) {
+            if (!run) return { tone: 'idle', text: 'Never collected' };
+            if (run.active) return { tone: 'running', text: collectionStageText(run) };
+            // A cancellation is a deliberate act, not a fault: it gets the neutral
+            // idle treatment rather than the red that means something went wrong.
+            // The API reports the termination code, which is USER_CANCELED for a
+            // cancel from this UI and CANCELED for other cancellation paths.
+            if (String(run.result || '').indexOf('CANCEL') !== -1) {
+                return { tone: 'idle', text: 'Cancelled' };
+            }
+            if (run.result && run.result !== 'SUCCESS') {
+                return { tone: 'failed', text: 'Failed' };
+            }
+            const ageH = run.start_time ? (Date.now() - Number(run.start_time)) / 3600000 : null;
+            if (ageH !== null && ageH > COLLECT_STALE_HOURS) {
+                return { tone: 'stale', text: 'Out of date' };
+            }
+            return { tone: 'ok', text: 'Up to date' };
+        }
+
+        function collectionRow(job) {
+            if (!job.configured) {
+                return `
+                    <div class="collect-row is-unconfigured">
+                        <div class="collect-state">
+                            <span class="collect-dot idle"></span>
+                            <span>Not set up</span>
+                        </div>
+                        <div>
+                            <div class="collect-name">${escapeHtml(job.label)}</div>
+                            <div class="collect-desc">${escapeHtml(job.description)}</div>
+                        </div>
+                        <div></div>
+                        <div class="collect-actions"></div>
+                    </div>`;
+            }
+
+            const run = job.latest_run;
+            const health = collectionHealth(run);
+            const active = run && run.active;
+            if (active && run.start_time) collectionRunStart[job.kind] = Number(run.start_time);
+
+            const rowClass = active ? ' is-running'
+                : health.tone === 'stale' ? ' is-stale'
+                : health.tone === 'failed' ? ' is-failed' : '';
+
+            const substate = active
+                ? `<div class="collect-substate" data-elapsed="${escapeHtml(job.kind)}">${formatElapsed(Date.now() - (Number(run.start_time) || Date.now()))} elapsed</div>`
+                : '';
+
+            let freshness = '<div class="collect-fresh-sub">No runs recorded</div>';
+            if (run && run.start_time) {
+                const duration = (run.end_time && run.start_time)
+                    ? formatElapsed(Number(run.end_time) - Number(run.start_time)) : null;
+                const fullDate = new Date(Number(run.start_time)).toLocaleString('en-US',
+                    { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+                freshness = `
+                    <div class="collect-fresh" data-full="${escapeHtml(fullDate)}">${escapeHtml(formatAgo(run.start_time))}</div>
+                    <div class="collect-fresh-sub">
+                        ${duration ? 'Completed in ' + escapeHtml(duration) : 'In progress'}
+                    </div>`;
+            }
+
+            const nameCell = job.job_url
+                ? `<a class="collect-link" href="${escapeHtml(job.job_url)}" target="_blank" rel="noopener"
+                      title="Open in Workflows">${escapeHtml(job.label)}<svg class="collect-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg></a>`
+                : escapeHtml(job.label);
+
+            return `
+                <div class="collect-row${rowClass}" data-kind="${escapeHtml(job.kind)}">
+                    <div>
+                        <div class="collect-state">
+                            <span class="collect-dot ${health.tone}"></span>
+                            <span>${escapeHtml(health.text)}</span>
+                        </div>
+                        ${substate}
+                    </div>
+                    <div>
+                        <div class="collect-name">${nameCell}</div>
+                        <div class="collect-desc">${escapeHtml(job.description)}</div>
+                    </div>
+                    <div>${freshness}</div>
+                    <div class="collect-actions">
+                        ${active
+                            ? `<button class="btn btn-sm btn-stop" onclick="cancelCollection('${escapeHtml(job.kind)}')">Cancel run</button>`
+                            : `<button class="btn btn-sm" onclick="startCollection('${escapeHtml(job.kind)}')">Run now</button>`}
+                        <button class="btn btn-sm btn-ghost" onclick="toggleScheduleEditor('${escapeHtml(job.kind)}')">Schedule</button>
+                        ${run && run.run_page_url
+                            ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(run.run_page_url)}" target="_blank" rel="noopener">Last run</a>`
+                            : ''}
+                        ${active ? '' : `<button class="btn btn-sm btn-ghost collect-remove" onclick="removeCollectionJob('${escapeHtml(job.kind)}', this)">Remove</button>`}
+                    </div>
+                    ${active ? '<div class="collect-bar"><div class="collect-bar-fill"></div></div>' : ''}
+                    <div class="collect-drawer" id="schedule-${escapeHtml(job.kind)}" style="display:none;"></div>
+                </div>`;
+        }
+
+        function startElapsedTicker() {
+            if (collectionElapsedTimer) clearInterval(collectionElapsedTimer);
+            collectionElapsedTimer = setInterval(() => {
+                let any = false;
+                document.querySelectorAll('[data-elapsed]').forEach(node => {
+                    const started = collectionRunStart[node.dataset.elapsed];
+                    if (!started) return;
+                    any = true;
+                    node.textContent = formatElapsed(Date.now() - started) + ' elapsed';
+                });
+                if (!any) { clearInterval(collectionElapsedTimer); collectionElapsedTimer = null; }
+            }, 1000);
+        }
+
+        async function loadCollectionPanel(options) {
+            const panel = document.getElementById('collection-panel');
+            const quiet = options && options.quiet;
+            // Preserve any open schedule drawer across a quiet refresh.
+            const openDrawers = quiet
+                ? Array.from(document.querySelectorAll('.collect-drawer'))
+                    .filter(d => d.style.display !== 'none').map(d => d.id.replace('schedule-', ''))
+                : [];
+
+            if (!quiet) {
+                panel.innerHTML = '<div class="loading"><div class="spinner"></div>Checking collection status…</div>';
+            }
+            try {
+                const result = await fetch('/api/collection/status').then(r => r.json());
+                if (result.error) {
+                    panel.innerHTML = `
+                        <div class="card" style="padding:16px 18px;">
+                            <div style="font-weight:600;margin-bottom:4px;">Couldn't check collection status</div>
+                            <div style="font-size:.85em;color:var(--text-muted);">${escapeHtml(result.error)}</div>
+                        </div>`;
+                    return null;
+                }
+                const jobs = result.jobs || [];
+                const groups = result.groups || [];
+                const stale = jobs.filter(j => j.configured && collectionHealth(j.latest_run).tone === 'stale').length;
+                const failed = jobs.filter(j => j.configured && collectionHealth(j.latest_run).tone === 'failed').length;
+                const unconfigured = jobs.filter(j => !j.configured).length;
+
+                let banner = '';
+                if (unconfigured > 0) {
+                    const allMissing = unconfigured === jobs.length;
+                    banner += `<div class="collect-setup">
+                        <div class="collect-setup-text">
+                            <div class="collect-setup-title">${allMissing ? 'Set up data collection' : 'Finish setup'}</div>
+                            <div class="collect-setup-sub">${unconfigured} of ${jobs.length} collection ${unconfigured === 1 ? 'job needs' : 'jobs need'} to be set up before ${unconfigured === 1 ? 'it' : 'they'} can run.</div>
+                            <div class="collect-setup-err" id="provision-err"></div>
+                        </div>
+                        <button class="btn" id="provision-btn" onclick="provisionCollection()">${allMissing ? 'Set up' : 'Finish setup'}</button>
+                    </div>`;
+                }
+                if (failed > 0) {
+                    banner += `<div class="alert" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 15px;margin-bottom:18px;font-size:.87em;color:#fca5a5;">
+                        ${failed} collection${failed === 1 ? '' : 's'} failed on the last run. Views that depend on them may be showing older data.
+                    </div>`;
+                } else if (stale > 0) {
+                    banner += `<div class="alert" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 15px;margin-bottom:18px;font-size:.87em;color:#fcd34d;">
+                        ${stale} collection${stale === 1 ? '' : 's'} last ran more than ${COLLECT_STALE_HOURS} hours ago.
+                    </div>`;
+                }
+
+                const sections = groups.map(group => {
+                    const inGroup = jobs.filter(j => j.group === group);
+                    if (!inGroup.length) return '';
+                    return `
+                        <div class="collect-group">
+                            <div class="collect-group-head">
+                                <span class="collect-group-title">${escapeHtml(group)}</span>
+                                <span class="collect-group-rule"></span>
+                            </div>
+                            ${inGroup.map(collectionRow).join('')}
+                        </div>`;
+                }).join('');
+
+                // Management actions, shown once collection is set up.
+                const manageOpen = document.getElementById('collect-manage-body') &&
+                    !document.getElementById('collect-manage-body').hidden;
+                const manage = jobs.some(j => j.configured) ? `
+                    <div class="collect-manage">
+                        <button class="collect-manage-head${manageOpen ? ' is-open' : ''}" onclick="toggleManage()">
+                            <span>Manage</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+                        <div class="collect-manage-body" id="collect-manage-body"${manageOpen ? '' : ' hidden'}>
+                            <div class="manage-action" id="collect-compute-action" style="align-items:flex-start;">
+                                <div class="manage-action-text" style="flex:1;">
+                                    <div class="manage-action-title">Compute &amp; scope</div>
+                                    <div class="manage-action-sub">How the collection jobs run, and how many workspaces they scan. Applying re-creates the jobs with the new settings.</div>
+                                    <div id="collect-compute-note" style="font-size:.8em;color:var(--text-muted);margin-top:6px;"></div>
+                                </div>
+                                <div style="display:flex;flex-direction:column;gap:8px;align-items:stretch;min-width:220px;">
+                                    <select id="collect-compute-select" class="field-input">
+                                        <option value="serverless">Serverless compute</option>
+                                        <option value="classic">Classic (single-node cluster)</option>
+                                    </select>
+                                    <select id="collect-scope-select" class="field-input">
+                                        <option value="current">Scan this workspace only</option>
+                                        <option value="all">Scan multiple workspaces</option>
+                                    </select>
+                                    <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.85em; color: var(--text-secondary); cursor: pointer; max-width: 440px;">
+                                        <input type="checkbox" id="collect-notebooks-check" style="margin-top: 3px;">
+                                        <span>Also scan notebook &amp; folder permissions
+                                            <span style="display: block; color: var(--text-muted); font-size: 0.95em; margin-top: 2px; font-weight: 400;">Adds notebooks, folders, and repos — and who can access them — to Resource Analysis. It walks the whole workspace tree reading per-object permissions, so each collection run takes longer to complete. This choice is saved and takes effect on the next collection run only after you click <strong>Apply &amp; redeploy</strong>.</span>
+                                        </span>
+                                    </label>
+                                    <button class="btn btn-sm" id="collect-compute-apply" onclick="applyComputeControl(this)">Apply &amp; redeploy</button>
+                                </div>
+                            </div>
+                            <div class="manage-action">
+                                <div class="manage-action-text">
+                                    <div class="manage-action-title">Redeploy jobs</div>
+                                    <div class="manage-action-sub">Re-import the notebooks and update every job definition.</div>
+                                </div>
+                                <button class="btn btn-sm btn-ghost" onclick="redeployCollection(this)">Redeploy</button>
+                            </div>
+                            <div class="manage-action" style="align-items:flex-start;">
+                                <div class="manage-action-text" style="flex:1;">
+                                    <div class="manage-action-title">Sync workspaces</div>
+                                    <div class="manage-action-sub">Discover the account's workspaces and mark which ones to scan. A workspace is enabled when the SAT service principal is a <strong>workspace admin</strong> there — add it as an admin on a new workspace, then sync to pick it up (remove it and sync to drop the workspace). The enabled set is only scanned when <strong>Compute &amp; scope</strong> above is set to <strong>Multiple workspaces</strong> (switching to that runs a sync for you). Requires account credentials.</div>
+                                    <div id="sync-ws-count" style="font-size:.8em;color:var(--text-muted);margin-top:6px;"></div>
+                                </div>
+                                <button class="btn btn-sm btn-ghost" onclick="syncWorkspaces(this)">Sync</button>
+                            </div>
+                            <div class="manage-action">
+                                <div class="manage-action-text">
+                                    <div class="manage-action-title">Re-run initializer</div>
+                                    <div class="manage-action-sub">Rebuild the schema and result tables.</div>
+                                </div>
+                                <button class="btn btn-sm btn-ghost" onclick="rerunInitializer(this)">Run</button>
+                            </div>
+                            <div class="manage-action">
+                                <div class="manage-action-text">
+                                    <div class="manage-action-title">Remove all jobs</div>
+                                    <div class="manage-action-sub">Delete the collection jobs from this workspace. Collected data is kept.</div>
+                                </div>
+                                <button class="btn btn-sm btn-danger" onclick="teardownCollection(this)">Remove</button>
+                            </div>
+                            <div class="manage-msg" id="manage-msg"></div>
+                        </div>
+                    </div>` : '';
+
+                panel.innerHTML = banner + sections + manage;
+                if (manage) loadComputeControl();
+                if (jobs.some(j => j.latest_run && j.latest_run.active)) startElapsedTicker();
+                openDrawers.forEach(kind => toggleScheduleEditor(kind));
+                return jobs;
+            } catch (e) {
+                panel.innerHTML = `<div class="card" style="padding:16px;"><div style="color:#fca5a5;">${escapeHtml(e.message)}</div></div>`;
+                return null;
+            }
+        }
+
+        // Populate the Compute & scope control with the current settings and
+        // disable the classic option when this workspace can't run classic compute.
+        async function loadComputeControl() {
+            try {
+                const r = await fetch('/api/collection/compute').then(x => x.json());
+                if (r.error) return;
+                const cs = document.getElementById('collect-compute-select');
+                const ss = document.getElementById('collect-scope-select');
+                const note = document.getElementById('collect-compute-note');
+                if (cs) cs.value = r.compute || 'serverless';
+                if (ss) ss.value = r.scan_scope || 'current';
+                const nb = document.getElementById('collect-notebooks-check');
+                if (nb) nb.checked = !!r.collect_notebooks;
+                if (cs && !r.classic_available) {
+                    const opt = cs.querySelector('option[value="classic"]');
+                    if (opt) { opt.disabled = true; opt.textContent = 'Classic (not available in this workspace)'; }
+                    if (cs.value === 'classic') cs.value = 'serverless';
+                }
+                renderScanTargetCount(r);
+            } catch (e) { /* non-fatal */ }
+        }
+
+        // How many workspaces the next scan will cover, given scope + the enabled
+        // (service-principal-administered) set. Edge cases handled explicitly:
+        //  - scope "current": always exactly this workspace, whatever is enabled;
+        //  - scope "all" with N enabled: N (reachable ones; serverless skips the rest);
+        //  - scope "all" with 0 enabled: the scanner self-registers the current one;
+        //  - unknown (no account creds / table not created yet): say how to populate it.
+        function renderScanTargetCount(r) {
+            const el = document.getElementById('sync-ws-count');
+            if (!el) return;
+            const scope = r.scan_scope || 'current';
+            const en = r.enabled_workspaces;   // null when unknown
+            const total = r.registered_workspaces;
+            const serverlessNote = (r.compute !== 'classic')
+                ? ' On serverless, workspaces the service principal cannot reach are skipped and recorded.' : '';
+            if (scope !== 'all') {
+                el.innerHTML = '<strong>Will scan: this workspace only (1).</strong>' +
+                    (en != null && en > 1
+                        ? ' ' + en + ' workspaces are enabled — switch Compute &amp; scope to <strong>Multiple workspaces</strong> to scan them.'
+                        : '');
+                return;
+            }
+            if (en == null) {
+                el.innerHTML = 'Scope is <strong>Multiple workspaces</strong>. Set account credentials and click <strong>Sync</strong> to populate the workspace list.';
+                return;
+            }
+            if (en === 0) {
+                el.innerHTML = '<strong>Will scan: the current workspace</strong> (no workspaces enabled yet — click <strong>Sync</strong> to enable every workspace the service principal administers).';
+                return;
+            }
+            el.innerHTML = '<strong>Will scan: ' + en + ' workspace' + (en === 1 ? '' : 's') + '</strong>' +
+                (total != null && total > en ? ' of ' + total + ' in the account' : '') +
+                ' (every workspace the service principal administers).' + serverlessNote;
+        }
+
+        async function applyComputeControl(btn) {
+            const cs = document.getElementById('collect-compute-select');
+            const ss = document.getElementById('collect-scope-select');
+            const note = document.getElementById('collect-compute-note');
+            const label = btn ? btn.textContent : '';
+            if (note) note.textContent = '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+            try {
+                const nb = document.getElementById('collect-notebooks-check');
+                const r = await fetch('/api/collection/compute', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ compute: cs ? cs.value : 'serverless', scan_scope: ss ? ss.value : 'current', collect_notebooks: !!(nb && nb.checked) }),
+                }).then(x => x.json());
+                if (r.error) {
+                    if (note) note.textContent = r.error;
+                    if (btn) { btn.disabled = false; btn.textContent = label; }
+                    return;
+                }
+                // Switching to Multiple auto-syncs the workspace set; surface what it found.
+                if (note && r.sync) {
+                    if (r.sync.error) {
+                        note.textContent = 'Saved. Could not auto-sync workspaces (' + r.sync.error +
+                            '). Run Manage → Sync workspaces after collection is set up.';
+                    } else if (typeof r.sync.enabled === 'number') {
+                        note.textContent = 'Saved and synced — ' + r.sync.enabled + ' of ' +
+                            r.sync.registered + ' workspace(s) enabled for scanning (SP is a workspace admin).';
+                    }
+                }
+                _scopeCache = null;  // scope changed — refresh page banners on next view
+                await loadCollectionPanel();
+            } catch (e) {
+                if (note) note.textContent = e.message;
+                if (btn) { btn.disabled = false; btn.textContent = label; }
+            }
+        }
+
+        async function provisionCollection() {
+            const btn = document.getElementById('provision-btn');
+            const err = document.getElementById('provision-err');
+            const label = btn ? btn.textContent : '';
+            if (err) err.textContent = '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Setting up…'; }
+            try {
+                const result = await fetch('/api/collection/provision', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ run_initializer: true }),
+                }).then(r => r.json());
+                if (result.error) {
+                    if (err) err.textContent = result.error;
+                    if (btn) { btn.disabled = false; btn.textContent = label; }
+                    return;
+                }
+                // Jobs now exist; reload so the rows switch to Run controls.
+                await loadCollectionPanel();
+            } catch (e) {
+                if (err) err.textContent = e.message;
+                if (btn) { btn.disabled = false; btn.textContent = label; }
+            }
+        }
+
+        function toggleManage() {
+            const body = document.getElementById('collect-manage-body');
+            const head = document.querySelector('.collect-manage-head');
+            if (!body) return;
+            body.hidden = !body.hidden;
+            if (head) head.classList.toggle('is-open', !body.hidden);
+        }
+
+        function manageMsg(text, tone, url) {
+            const el = document.getElementById('manage-msg');
+            if (!el) return;
+            el.className = 'manage-msg' + (tone ? ' is-' + tone : '');
+            if (url) {
+                el.innerHTML = `${escapeHtml(text || '')} <a href="${escapeHtml(url)}" target="_blank" rel="noopener">View run</a>`;
+            } else {
+                el.textContent = text || '';
+            }
+        }
+
+        // An indeterminate progress bar for in-flight actions (no incremental
+        // percentage to report), with an optional link to the underlying run.
+        function manageProgress(text, url) {
+            const el = document.getElementById('manage-msg');
+            if (!el) return;
+            el.className = 'manage-msg is-warn';
+            const link = url ? ` <a href="${escapeHtml(url)}" target="_blank" rel="noopener">View run</a>` : '';
+            el.innerHTML = '<div class="manage-progress"><div class="manage-progress-fill"></div></div>'
+                + `<span>${escapeHtml(text || '')}${link}</span>`;
+        }
+
+        async function redeployCollection(btn) {
+            const label = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Redeploying…';
+            manageProgress('Importing notebooks and updating job definitions…');
+            try {
+                const result = await fetch('/api/collection/provision', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ run_initializer: false }),
+                }).then(r => r.json());
+                if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = label; return; }
+                const jobs = result.jobs || {};
+                const ok = Object.keys(jobs).filter(k => jobs[k] && !jobs[k].error).length;
+                manageMsg(`Redeployed — ${ok} job${ok === 1 ? '' : 's'} updated with the latest notebooks.`, 'ok');
+                btn.disabled = false; btn.textContent = label;
+                await loadCollectionPanel({ quiet: true });
+            } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = label; }
+        }
+
+        async function rerunInitializer(btn) {
+            const label = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Starting…';
+            manageMsg('');
+            let runId;
+            try {
+                const result = await fetch('/api/collection/initializer', { method: 'POST' }).then(r => r.json());
+                if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = label; return; }
+                runId = result.run_id;
+            } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = label; return; }
+
+            // Follow the run so the user sees progress and a definite outcome,
+            // rather than a fire-and-forget "started" with no confirmation.
+            btn.textContent = 'Running…';
+            const started = Date.now();
+            let attempts = 0;
+            const done = (msg, tone, url) => { manageMsg(msg, tone, url); btn.disabled = false; btn.textContent = label; };
+            const tick = async () => {
+                attempts += 1;
+                const secs = Math.round((Date.now() - started) / 1000);
+                try {
+                    const run = await fetch(`/api/collection/run/${runId}`).then(r => r.json());
+                    if (run.error) { done(run.error, 'error'); return; }
+                    if (!run.active) {
+                        if (run.result === 'SUCCESS') {
+                            done(`Initializer finished in ${secs}s — schema and tables are ready.`, 'ok', run.run_page_url);
+                        } else {
+                            done(`Initializer ${(run.result || 'failed').toLowerCase().replace(/_/g,' ')} after ${secs}s.`, 'error', run.run_page_url);
+                        }
+                        return;
+                    }
+                    manageProgress(`Initializer running… ${secs}s elapsed`, run.run_page_url);
+                } catch (e) {
+                    manageProgress(`Initializer running… ${secs}s elapsed`);
+                }
+                const delay = attempts <= 6 ? 4000 : attempts <= 20 ? 10000 : 20000;
+                if (attempts < 200) setTimeout(tick, delay);
+                else done('Initializer is still running — check the run in Workflows.', 'warn');
+            };
+            manageProgress('Initializer running… 0s elapsed');
+            setTimeout(tick, 3000);
+        }
+
+        async function syncWorkspaces(btn) {
+            const label = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Syncing…';
+            manageMsg('');
+            manageProgress('Discovering account workspaces and checking admin access…');
+            try {
+                const result = await fetch('/api/collection/sync-workspaces', { method: 'POST' }).then(r => r.json());
+                if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = label; return; }
+                const reg = result.registered || 0, en = result.enabled || 0, und = result.undetermined || 0;
+                let msg = `Synced ${reg} workspace${reg === 1 ? '' : 's'} — ${en} enabled for scanning (SP is a workspace admin or current workspace).`;
+                if (und) msg += ` ${und} could not be checked and were left unchanged.`;
+                // Guide, don't flip: if scope is still single-workspace but more than
+                // the current workspace is enabled, tell the customer to switch scope.
+                let tone = 'ok';
+                if (result.scan_scope !== 'all' && en > 1) {
+                    msg += ` Collection scope is “This workspace only”, so only the current workspace is scanned — switch to “Multiple workspaces” above to scan all ${en}.`;
+                    tone = 'warn';
+                }
+                manageMsg(msg, tone);
+                btn.disabled = false; btn.textContent = label;
+                await loadCollectionPanel({ quiet: true });
+            } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = label; }
+        }
+
+        // Destructive: a two-step confirm rather than a browser dialog.
+        async function teardownCollection(btn) {
+            if (btn.dataset.armed !== '1') {
+                btn.dataset.armed = '1';
+                btn.textContent = 'Click again to remove';
+                manageMsg('This deletes all collection jobs. Collected data is kept.', 'warn');
+                clearTimeout(btn._armTimer);
+                btn._armTimer = setTimeout(() => {
+                    btn.dataset.armed = '0'; btn.textContent = 'Remove'; manageMsg('');
+                }, 4000);
+                return;
+            }
+            clearTimeout(btn._armTimer);
+            btn.dataset.armed = '0'; btn.disabled = true; btn.textContent = 'Removing…';
+            manageMsg('');
+            try {
+                const result = await fetch('/api/collection/teardown', { method: 'POST' }).then(r => r.json());
+                if (result.error) { manageMsg(result.error, 'error'); btn.disabled = false; btn.textContent = 'Remove'; return; }
+                await loadCollectionPanel();
+            } catch (e) { manageMsg(e.message, 'error'); btn.disabled = false; btn.textContent = 'Remove'; }
+        }
+
+        // Remove one collection job. Two-click arm so a single misclick next to
+        // "Run now" can't delete a job; collected data is untouched either way.
+        async function removeCollectionJob(kind, btn) {
+            if (btn.dataset.armed !== '1') {
+                btn.dataset.armed = '1';
+                btn.textContent = 'Confirm remove';
+                btn.classList.add('is-armed');
+                collectionRowNote(kind, 'Removes this job only. Collected data is kept.', 'warn');
+                clearTimeout(btn._armTimer);
+                btn._armTimer = setTimeout(() => {
+                    btn.dataset.armed = '0'; btn.textContent = 'Remove'; btn.classList.remove('is-armed');
+                }, 4000);
+                return;
+            }
+            clearTimeout(btn._armTimer);
+            btn.dataset.armed = '0'; btn.disabled = true; btn.textContent = 'Removing…';
+            btn.classList.remove('is-armed');
+            try {
+                const result = await fetch('/api/collection/teardown/' + encodeURIComponent(kind),
+                    { method: 'POST' }).then(r => r.json());
+                if (result.error) {
+                    collectionRowNote(kind, result.error, 'error');
+                    btn.disabled = false; btn.textContent = 'Remove';
+                    return;
+                }
+                await loadCollectionPanel();
+            } catch (e) {
+                collectionRowNote(kind, e.message, 'error');
+                btn.disabled = false; btn.textContent = 'Remove';
+            }
+        }
+
+        async function startCollection(kind) {
+            try {
+                const result = await fetch('/api/collection/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: kind }),
+                }).then(r => r.json());
+
+                await loadCollectionPanel({ quiet: true });
+                if (result.error) {
+                    collectionRowNote(kind, result.error, 'error');
+                    return;
+                }
+                collectionRunStart[kind] = Date.now();
+                startElapsedTicker();
+                pollCollectionRun(result.run_id, kind);
+            } catch (e) {
+                await loadCollectionPanel();
+            }
+        }
+
+        // Show a message inside a collection row, for outcomes that belong next to
+        // the job they concern rather than in a global banner.
+        function collectionRowNote(kind, text, tone) {
+            const row = document.querySelector(`.collect-row[data-kind="${kind}"]`);
+            if (!row) return;
+            const note = document.createElement('div');
+            const color = tone === 'error' ? '#fca5a5' : '#94a3b8';
+            note.style.cssText =
+                `grid-column:1/-1;margin-top:9px;font-size:.83em;color:${color};`;
+            note.textContent = text;
+            row.appendChild(note);
+        }
+
+        async function cancelCollection(kind) {
+            const row = document.querySelector(`.collect-row[data-kind="${kind}"]`);
+            const btn = row && row.querySelector('.btn-stop');
+            if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
+            try {
+                const result = await fetch('/api/collection/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: kind }),
+                }).then(r => r.json());
+
+                if (result.error) {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Cancel run'; }
+                    await loadCollectionPanel({ quiet: true });
+                    collectionRowNote(kind, result.error, 'error');
+                    return;
+                }
+                if (!result.cancelled) {
+                    if (collectionPollTimers[kind]) clearTimeout(collectionPollTimers[kind]);
+                    delete collectionRunStart[kind];
+                    await loadCollectionPanel({ quiet: true });
+                    collectionRowNote(kind, result.message || 'That job was not running.', 'muted');
+                    return;
+                }
+
+                // Jobs take several seconds to actually reach TERMINATED, so an
+                // immediate refresh would still read RUNNING and leave the row stuck
+                // on stale state. Keep polling the run until it settles.
+                if (result.run_id) {
+                    pollCollectionRun(result.run_id, kind);
+                } else {
+                    delete collectionRunStart[kind];
+                    await loadCollectionPanel({ quiet: true });
+                }
+            } catch (e) {
+                await loadCollectionPanel({ quiet: true });
+                collectionRowNote(kind, e.message, 'error');
+            }
+        }
+
+        function pollCollectionRun(runId, kind) {
+            if (collectionPollTimers[kind]) clearTimeout(collectionPollTimers[kind]);
+            let attempts = 0;
+            const tick = async () => {
+                attempts += 1;
+                try {
+                    const run = await fetch(`/api/collection/run/${runId}`).then(r => r.json());
+                    await loadCollectionPanel({ quiet: true });
+                    if (!run.active) {
+                        delete collectionRunStart[kind];
+                        const row = document.querySelector(`.collect-row[data-kind="${kind}"]`);
+                        if (row && run.result === 'SUCCESS') row.classList.add('just-finished');
+                        return;
+                    }
+                } catch (e) { /* transient; keep polling */ }
+                // Fast early polling so short runs feel responsive, backing off so a
+                // long collection doesn't hammer the API.
+                const delay = attempts <= 6 ? 5000 : attempts <= 20 ? 15000 : 30000;
+                if (attempts < 160) collectionPollTimers[kind] = setTimeout(tick, delay);
+            };
+            collectionPollTimers[kind] = setTimeout(tick, 3000);
+        }
+
+        const SCHEDULE_PRESETS = [
+            { label: 'Every hour',           cron: '0 0 * * * ?' },
+            { label: 'Daily at 02:00',       cron: '0 0 2 * * ?' },
+            { label: 'Daily at 08:00',       cron: '0 0 8 * * ?' },
+            { label: 'Weekdays at 08:00',    cron: '0 0 8 ? * MON-FRI' },
+            { label: 'Weekly, Sunday 02:00', cron: '0 0 2 ? * SUN' },
+        ];
+
+        async function toggleScheduleEditor(kind) {
+            const box = document.getElementById(`schedule-${kind}`);
+            if (!box) return;
+            if (box.style.display !== 'none' && box.dataset.loaded === '1') {
+                box.style.display = 'none';
+                box.dataset.loaded = '';
+                return;
+            }
+            box.style.display = 'block';
+            box.innerHTML = '<div class="loading" style="padding:6px 0;"><div class="spinner"></div>Loading schedule…</div>';
+            try {
+                const sched = await fetch(`/api/collection/schedule/${kind}`).then(r => r.json());
+                if (sched.error) {
+                    box.innerHTML = `<div style="font-size:.84em;color:#fca5a5;">${escapeHtml(sched.error)}</div>`;
+                    box.dataset.loaded = '1';
+                    return;
+                }
+                const current = sched.cron || '';
+                const matched = SCHEDULE_PRESETS.find(p => p.cron === current);
+                box.innerHTML = `
+                    <div class="collect-drawer-grid">
+                        <div class="collect-field">
+                            <span class="collect-field-label">Automatic collection</span>
+                            <label class="collect-switch">
+                                <input type="checkbox" id="sched-on-${kind}" ${sched.paused ? '' : 'checked'}>
+                                <span class="collect-switch-track"></span>
+                                <span id="sched-on-label-${kind}">${sched.paused ? 'Off' : 'On'}</span>
+                            </label>
+                        </div>
+                        <div class="collect-field">
+                            <span class="collect-field-label">Frequency</span>
+                            <select id="sched-preset-${kind}">
+                                ${SCHEDULE_PRESETS.map(pr =>
+                                    `<option value="${escapeHtml(pr.cron)}" ${pr.cron === current ? 'selected' : ''}>${escapeHtml(pr.label)}</option>`).join('')}
+                                <option value="__custom" ${matched ? '' : 'selected'}>Custom schedule…</option>
+                            </select>
+                        </div>
+                        <div class="collect-field">
+                            <span class="collect-field-label">Time zone</span>
+                            <input type="text" id="sched-tz-${kind}" value="${escapeHtml(sched.timezone || 'UTC')}">
+                        </div>
+                        <div class="collect-field" id="sched-custom-${kind}" style="${matched ? 'display:none;' : ''}">
+                            <span class="collect-field-label">Cron expression</span>
+                            <input type="text" id="sched-cron-${kind}" value="${escapeHtml(current)}" placeholder="0 0 8 ? * *">
+                        </div>
+                        <div class="collect-field" style="flex:0 0 auto;">
+                            <span class="collect-field-label">&nbsp;</span>
+                            <button class="btn btn-sm" onclick="saveSchedule('${escapeHtml(kind)}')">Save schedule</button>
+                        </div>
+                    </div>
+                    <div class="collect-msg" id="sched-msg-${kind}"></div>`;
+                box.dataset.loaded = '1';
+
+                const preset = document.getElementById(`sched-preset-${kind}`);
+                preset.addEventListener('change', () => {
+                    const isCustom = preset.value === '__custom';
+                    document.getElementById(`sched-custom-${kind}`).style.display = isCustom ? 'flex' : 'none';
+                    if (!isCustom) document.getElementById(`sched-cron-${kind}`).value = preset.value;
+                });
+                const toggle = document.getElementById(`sched-on-${kind}`);
+                toggle.addEventListener('change', () => {
+                    document.getElementById(`sched-on-label-${kind}`).textContent = toggle.checked ? 'On' : 'Off';
+                });
+            } catch (e) {
+                box.innerHTML = `<div style="font-size:.84em;color:#fca5a5;">${escapeHtml(e.message)}</div>`;
+                box.dataset.loaded = '1';
+            }
+        }
+
+        async function saveSchedule(kind) {
+            const msg = document.getElementById(`sched-msg-${kind}`);
+            const preset = document.getElementById(`sched-preset-${kind}`).value;
+            const cron = preset === '__custom'
+                ? document.getElementById(`sched-cron-${kind}`).value.trim()
+                : preset;
+            const timezone = document.getElementById(`sched-tz-${kind}`).value.trim() || 'UTC';
+            const enabled = document.getElementById(`sched-on-${kind}`).checked;
+            msg.innerHTML = '<span style="color:var(--text-muted);">Saving…</span>';
+            try {
+                const result = await fetch(`/api/collection/schedule/${kind}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cron: cron, timezone: timezone, paused: !enabled }),
+                }).then(r => r.json());
+                if (result.error) {
+                    msg.innerHTML = `<span style="color:#fca5a5;">${escapeHtml(result.error)}</span>`;
+                    return;
+                }
+                msg.innerHTML = enabled
+                    ? '<span style="color:#86efac;">Saved — this collection will run on the new schedule.</span>'
+                    : '<span style="color:#86efac;">Saved — automatic collection is off. You can still run it manually.</span>';
+                loadCollectionPanel({ quiet: true });
+            } catch (e) {
+                msg.innerHTML = `<span style="color:#fca5a5;">${escapeHtml(e.message)}</span>`;
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // Credential Exposure — consolidated secrets detections view.
+        // Headline figures come from the server aggregate (accurate totals even
+        // when the detail table is capped); the detector/workspace breakdowns
+        // double as facets that filter the detail table, which filters and
+        // searches client-side for instant response.
+        // ─────────────────────────────────────────────────────────────────
+        const secretsExposure = {
+            summary: {}, byDetector: [], byWorkspace: [],
+            rows: [], truncated: false,
+            filters: { search: '', sources: [], detectors: [], workspaces: [] },
+        };
+
+        // ── Secret-scan settings & custom detection rules ──────────────────
+        // Lets customers change the scan coverage window and add their own
+        // detection rules from the app; saving writes the scanner config the
+        // collection jobs read at run time, so it takes effect on the next scan
+        // with no redeploy and no notebook edits.
+        let secretsScanCfg = { days_back: 0, custom_detectors: [], excluded_detectors: [], default_excluded: [] };
+
+        async function loadSecretsScanSettings() {
+            const el = document.getElementById('secrets-scan-settings');
+            if (!el) return;
+            try {
+                const r = await fetch('/api/secrets/config');
+                if (!r.ok) { el.innerHTML = ''; return; }
+                secretsScanCfg = await r.json();
+            } catch (e) { el.innerHTML = ''; return; }
+            renderSecretsScanSettings();
+        }
+
+        function secretsDetectorRow(d) {
+            d = d || { name: '', keywords: '', regex: '', description: '' };
+            const kw = Array.isArray(d.keywords) ? d.keywords.join(', ') : (d.keywords || '');
+            return `<div class="ssd-rule">
+                <div class="ssd-rule-grid">
+                    <label>Name<input type="text" class="field-input ssd-name" value="${escapeHtml(d.name || '')}" placeholder="AcmeApiKey"></label>
+                    <label>Keywords (comma-separated)<input type="text" class="field-input ssd-kw" value="${escapeHtml(kw)}" placeholder="acme, acme_key"></label>
+                    <label class="ssd-regex-field">Regex<input type="text" class="field-input ssd-regex" value="${escapeHtml(d.regex || '')}" placeholder="(?i)\\b(acme_[a-z0-9]{32})\\b"></label>
+                    <label>Description (optional)<input type="text" class="field-input ssd-desc" value="${escapeHtml(d.description || '')}" placeholder="Acme Corp API key"></label>
+                </div>
+                <button type="button" class="btn btn-ghost ssd-remove" onclick="this.closest('.ssd-rule').remove()">Remove rule</button>
+            </div>`;
+        }
+
+        function renderSecretsScanSettings() {
+            const el = document.getElementById('secrets-scan-settings');
+            const cfg = secretsScanCfg;
+            const all = (cfg.days_back || 0) === 0;
+            const nDays = all ? 7 : cfg.days_back;
+            const scanClusters = cfg.scan_clusters !== false;
+            const ruleCount = (cfg.custom_detectors || []).length;
+            const rules = (cfg.custom_detectors || []).map(secretsDetectorRow).join('');
+            const rulesState = ruleCount
+                ? `<p class="ss-rules-state">You have <strong>${ruleCount}</strong> custom rule${ruleCount === 1 ? '' : 's'} configured. Edit any field to change a rule, or <em>Remove rule</em> to delete it — then click <strong>Save scan settings</strong>.</p>`
+                : `<p class="ss-rules-state ss-rules-empty">No custom rules configured yet. Click <strong>+ Add rule</strong> below to create one.</p>`;
+            el.innerHTML = `
+            <details class="ss-settings">
+                <summary><svg class="ss-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Scan Settings &amp; Custom Detection Rules</summary>
+                <div class="ss-settings-body">
+                    <p class="ss-intro">These control how the secret scanner runs. Changes are saved to the scanner's config and take effect on the <strong>next scan run</strong> — no redeploy and no editing notebooks. Run a scan from <strong>Data Collection</strong> after saving.</p>
+
+                    <div class="ss-group">
+                        <div class="ss-group-title">Scan coverage</div>
+                        <label class="ss-radio"><input type="radio" name="ss-coverage" value="all"${all ? ' checked' : ''} onchange="secretsCoverageToggle()"> <span><strong>All objects (recommended)</strong> — scans every notebook and file each run, so the dashboard always shows your complete current exposure. Secrets you remove stop showing once the next scan confirms they're gone.</span></label>
+                        <label class="ss-radio"><input type="radio" name="ss-coverage" value="recent"${all ? '' : ' checked'} onchange="secretsCoverageToggle()"> <span><strong>Only recently modified</strong> — scans just notebooks and files changed in the last <input type="number" id="ss-days" min="1" max="3650" value="${nDays}" class="field-input ss-days-input"${all ? ' disabled' : ''}> day(s). Faster on very large workspaces, but the dashboard then shows only that window — secrets in untouched objects won't appear even if they're still there.</span></label>
+                    </div>
+
+                    <div class="ss-group">
+                        <div class="ss-group-title">What's scanned</div>
+                        <label class="ss-radio"><input type="checkbox" id="ss-scan-clusters"${scanClusters ? ' checked' : ''}> <span><strong>Scan cluster configurations</strong> — also check cluster <code>spark_env_vars</code> and init scripts for secrets. Off scans notebook and workspace-file source only.</span></label>
+                    </div>
+
+                    <div class="ss-group">
+                        <div class="ss-group-title">Custom detection rules <span class="setup-optional">optional</span></div>
+                        <p class="ss-help">Add your own patterns (e.g. an internal token format) on top of SAT's built-in detectors. Each rule needs a <strong>name</strong>, one or more <strong>keywords</strong> (TruffleHog only inspects text containing a keyword — keep them specific), and a <strong>regex</strong> that matches the secret. Example regex: <code>(?i)\\b(acme_[a-z0-9]{32})\\b</code>. Patterns use RE2 (TruffleHog/Go) syntax. Rules apply to both notebook and cluster scans.</p>
+                        ${rulesState}
+                        <div id="ssd-rules">${rules}</div>
+                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('ssd-rules').insertAdjacentHTML('beforeend', secretsDetectorRow())">+ Add rule</button>
+                    </div>
+
+                    <div class="ss-actions">
+                        <span class="ss-status" id="ss-status"></span>
+                        <button type="button" class="btn" id="ss-save" onclick="secretsSaveScanSettings()">Save scan settings</button>
+                    </div>
+                </div>
+            </details>`;
+        }
+
+        function secretsCoverageToggle() {
+            const recent = document.querySelector('input[name="ss-coverage"][value="recent"]').checked;
+            const days = document.getElementById('ss-days');
+            if (days) days.disabled = !recent;
+        }
+
+        async function secretsSaveScanSettings() {
+            const status = document.getElementById('ss-status');
+            const btn = document.getElementById('ss-save');
+            const recent = document.querySelector('input[name="ss-coverage"][value="recent"]').checked;
+            let days_back = 0;
+            if (recent) {
+                days_back = parseInt(document.getElementById('ss-days').value, 10);
+                if (!(days_back >= 1)) { status.textContent = 'Enter a valid number of days (1 or more).'; status.className = 'ss-status err'; return; }
+            }
+            const custom_detectors = [...document.querySelectorAll('#ssd-rules .ssd-rule')].map(r => ({
+                name: r.querySelector('.ssd-name').value.trim(),
+                keywords: r.querySelector('.ssd-kw').value,
+                regex: r.querySelector('.ssd-regex').value.trim(),
+                description: r.querySelector('.ssd-desc').value.trim(),
+            })).filter(d => d.name || d.regex || d.keywords);
+
+            const scan_clusters = document.getElementById('ss-scan-clusters').checked;
+            btn.disabled = true; status.textContent = 'Saving…'; status.className = 'ss-status';
+            try {
+                const r = await fetch('/api/secrets/config', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ days_back, custom_detectors, scan_clusters, excluded_detectors: secretsScanCfg.excluded_detectors || [] }),
+                });
+                const j = await r.json();
+                if (!r.ok) { status.textContent = j.error || 'Save failed.'; status.className = 'ss-status err'; btn.disabled = false; return; }
+                secretsScanCfg = j;
+                status.textContent = '✓ Saved — applies on the next scan run.'; status.className = 'ss-status ok';
+            } catch (e) {
+                status.textContent = 'Save failed: ' + e.message; status.className = 'ss-status err';
+            }
+            btn.disabled = false;
+        }
+
+        async function loadSecretsExposure() {
+            const container = document.getElementById('secretsoverview-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading scan results…</div>';
+            try {
+                // In parallel, so a cold warehouse pays its start-up cost once
+                // (shared) rather than once per sequential request.
+                const [sum, det, ws, find] = await Promise.all([
+                    fetch('/api/secrets/summary').then(r => r.json()),
+                    fetch('/api/secrets/by-detector').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/secrets/by-workspace').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/secrets/findings?limit=2000').then(r => r.json()).catch(() => ({})),
+                ]);
+                if (sum.ready === false) { showSecretsNotReady('secretsoverview-results', sum.message); return; }
+                if (sum.error) { showEmpty('secretsoverview-results', sum.error); return; }
+
+                secretsExposure.summary = sum.summary || {};
+                secretsExposure.scanJobUrl = sum.scan_job_url || '';
+                secretsExposure.byDetector = (det && det.rows) || [];
+                secretsExposure.byWorkspace = (ws && ws.rows) || [];
+                secretsExposure.rows = (find && find.rows) || [];
+                secretsExposure.truncated = !!(find && find.truncated);
+                secretsExposure.filters = { search: '', sources: [], detectors: [], workspaces: [] };
+                renderSecretsExposure();
+            } catch (e) {
+                showEmpty('secretsoverview-results', 'Failed to load scan results: ' + e.message);
+            }
+        }
+
+        function renderSecretsExposure() {
+            const s = secretsExposure.summary;
+            const total = Number(s.total_findings || 0);
+            let html = '';
+
+            // Headline figures from the server aggregate: every detection, the
+            // distinct credentials behind them (the unit you rotate), and the
+            // objects to clean up.
+            const nb = Number(s.notebook_findings || 0);
+            const fi = Number(s.file_findings || 0);
+            const cl = Number(s.cluster_findings || 0);
+            html += `
+                <div class="card secret-summary">
+                    <div class="secret-section-title">Exposure Summary</div>
+                    <div class="secret-stat-grid">
+                        ${secretStatBlock('Total findings', total, total > 0 ? '#f59e0b' : '#22c55e')}
+                        ${secretStatBlock('Unique secrets', s.distinct_secrets || 0, '#3b82f6')}
+                        ${secretStatBlock('Affected objects', s.affected_objects || 0, '#3b82f6')}
+                    </div>
+                    <div class="secret-summary-foot">
+                        ${s.last_scan_time ? `<div class="sx-meta">
+                            <div class="sx-meta-val">${secretsExposure.scanJobUrl
+                                ? `<a href="${escapeHtml(secretsExposure.scanJobUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;" title="Open the secret scanner job">${escapeHtml(sxFmtDate(s.last_scan_time))} ↗</a>`
+                                : escapeHtml(sxFmtDate(s.last_scan_time))}</div>
+                            <div class="sx-meta-label">Last scan</div>
+                        </div>` : ''}
+                        <div class="sx-meta">
+                            <div class="sx-meta-val">${s.workspaces_scanned || 0}</div>
+                            <div class="sx-meta-label">Workspaces scanned</div>
+                        </div>
+                        <div class="sx-meta">
+                            <div class="sx-meta-val" style="color:${(s.affected_workspaces || 0) > 0 ? '#f59e0b' : '#22c55e'};">${s.affected_workspaces || 0}</div>
+                            <div class="sx-meta-label">Workspaces with findings</div>
+                        </div>
+                        <div class="sx-meta">
+                            <div class="sx-meta-val">${nb}</div>
+                            <div class="sx-meta-label">In notebooks</div>
+                        </div>
+                        <div class="sx-meta">
+                            <div class="sx-meta-val">${fi}</div>
+                            <div class="sx-meta-label">In files</div>
+                        </div>
+                        <div class="sx-meta">
+                            <div class="sx-meta-val">${cl}</div>
+                            <div class="sx-meta-label">In cluster configs</div>
+                        </div>
+                    </div>
+                </div>`;
+
+            if (total === 0) {
+                html += `
+                    <div class="card" style="padding:22px;text-align:center;">
+                        <div style="font-weight:600;color:#22c55e;margin-bottom:4px;">No hardcoded credentials found</div>
+                        <div style="font-size:0.88em;color:var(--text-muted);">${s.workspaces_scanned || 0} workspace(s) scanned clean in the latest run.</div>
+                    </div>`;
+                document.getElementById('secretsoverview-results').innerHTML = html;
+                return;
+            }
+
+            // Breakdowns double as facets: click a row to filter the detections.
+            const det = secretsExposure.byDetector, ws = secretsExposure.byWorkspace;
+            const cards = [];
+            if (det.length) {
+                const max = Math.max(...det.map(r => Number(r.findings) || 0), 1);
+                cards.push(`
+                    <div class="card secret-card">
+                        <div class="secret-section-title">By Detector</div>
+                        ${det.map(r => secretsFacet('detectors', r.detector_name, r.detector_name,
+                            Number(r.findings) || 0, max)).join('')}
+                    </div>`);
+            }
+            if (ws.length) {
+                const max = Math.max(...ws.map(r => Number(r.findings) || 0), 1);
+                cards.push(`
+                    <div class="card secret-card">
+                        <div class="secret-section-title">By Workspace</div>
+                        ${ws.map(r => secretsFacet('workspaces', r.workspace_id, secretsWsLabel(r.workspace_name, r.workspace_id),
+                            Number(r.findings) || 0, max)).join('')}
+                    </div>`);
+            }
+            if (cards.length === 2) html += '<div class="sx-grid2">' + cards.join('') + '</div>';
+            else if (cards.length === 1) html += `<div style="margin-bottom:16px;">${cards[0]}</div>`;
+
+            // Detail table with a live toolbar; rows are filtered client-side.
+            // table-layout:fixed keeps the table exactly as wide as its container,
+            // so columns truncate with an ellipsis instead of overflowing the card.
+            const cols = '<col style="width:11%"><col style="width:17%"><col style="width:32%"><col style="width:24%"><col style="width:16%">';
+            // Multi-select checklists, built only from values present in the data.
+            const detMs = det.length ? secretsMultiselect('detectors', 'All detectors',
+                det.map(r => ({ value: r.detector_name, label: r.detector_name, count: Number(r.findings) || 0 }))) : '';
+            const wsMs = ws.length ? secretsMultiselect('workspaces', 'All workspaces',
+                ws.map(r => ({ value: String(r.workspace_id), label: secretsWsLabel(r.workspace_name, r.workspace_id), count: Number(r.findings) || 0 }))) : '';
+            // Object-type multi-select, same control as detectors/workspaces; only
+            // types actually present (count > 0) are offered.
+            const typeItems = [
+                { value: 'notebook', label: 'Notebooks', count: nb },
+                { value: 'file', label: 'Files', count: fi },
+                { value: 'cluster', label: 'Cluster configs', count: cl },
+            ].filter(t => t.count > 0);
+            const srcMs = typeItems.length ? secretsMultiselect('sources', 'All types', typeItems) : '';
+            html += `
+                <div class="card secret-table-card" style="padding:0;">
+                    <div class="sx-toolbar">
+                        <div class="sx-search">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                            <input id="sx-search" type="text" placeholder="Search object, path, detector or hash…" autocomplete="off">
+                        </div>
+                        ${srcMs}
+                        ${detMs}
+                        ${wsMs}
+                        <span class="sx-count" id="sx-count"></span>
+                    </div>
+                    <div class="sx-table-wrap">
+                        <table class="data-table sx-dtable">
+                            <colgroup>${cols}</colgroup>
+                            <thead><tr>
+                                <th>Source</th><th>Detector</th>
+                                <th>Object</th><th>Hash</th><th>Workspace</th>
+                            </tr></thead>
+                            <tbody id="sx-tbody"></tbody>
+                        </table>
+                    </div>
+                    ${secretsExposure.truncated ? '<div class="sx-note">Showing the first 2,000 detections. Narrow with the filters above to see specific findings.</div>' : ''}
+                </div>`;
+
+            document.getElementById('secretsoverview-results').innerHTML = html;
+
+            // Wire the toolbar, multi-selects, and clickable facets.
+            const search = document.getElementById('sx-search');
+            if (search) search.addEventListener('input', e => {
+                secretsExposure.filters.search = e.target.value.trim().toLowerCase();
+                secretsRenderTable();
+            });
+            // Facets (breakdown rows) toggle membership in the same arrays the
+            // multi-selects drive, so clicking a bar or ticking a box is one filter.
+            document.querySelectorAll('.sx-facet').forEach(el => {
+                const fire = () => secretsToggleFilter(el.dataset.kind, el.dataset.value);
+                el.addEventListener('click', fire);
+                el.addEventListener('keydown', ev => {
+                    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fire(); }
+                });
+            });
+            secretsWireMultiselects();
+            secretsApplyFilters();
+        }
+
+        function secretsFacet(kind, value, label, findings, max) {
+            const pct = max > 0 ? (findings / max) * 100 : 0;
+            const active = (secretsExposure.filters[kind] || []).includes(String(value));
+            return `
+                <div class="sx-facet${active ? ' is-active' : ''}" role="button" tabindex="0"
+                     data-kind="${kind}" data-value="${escapeHtml(String(value))}">
+                    <div class="sx-facet-label" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+                    <div class="sx-facet-track"><div class="sx-facet-fill" style="width:${pct}%;background:#f59e0b;"></div></div>
+                    <div class="sx-facet-val">${findings}</div>
+                </div>`;
+        }
+
+        // A checklist dropdown. kind is a filters array key ('detectors' /
+        // 'workspaces'); items is [{value,label,count}] built from present data.
+        function secretsMultiselect(kind, allLabel, items) {
+            const rows = items.map(it => `
+                <div class="sx-ms-item" data-value="${escapeHtml(String(it.value))}">
+                    <span class="sx-ms-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span>
+                    <span class="sx-ms-label" title="${escapeHtml(it.label)}">${escapeHtml(it.label)}</span>
+                    <span class="sx-ms-cnt">${it.count}</span>
+                </div>`).join('');
+            return `
+                <div class="sx-ms" data-kind="${kind}" data-all-label="${escapeHtml(allLabel)}">
+                    <button type="button" class="sx-ms-btn" aria-haspopup="true" aria-expanded="false">
+                        <span class="sx-ms-text">${escapeHtml(allLabel)}</span>
+                        <svg class="sx-ms-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <div class="sx-ms-menu" hidden>
+                        ${rows}
+                        <div class="sx-ms-foot"><button type="button" data-ms-clear>Clear</button></div>
+                    </div>
+                </div>`;
+        }
+
+        function secretsWireMultiselects() {
+            document.querySelectorAll('.sx-ms').forEach(ms => {
+                const btn = ms.querySelector('.sx-ms-btn');
+                const menu = ms.querySelector('.sx-ms-menu');
+                const kind = ms.dataset.kind;
+                btn.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const willOpen = menu.hidden;
+                    document.querySelectorAll('.sx-ms-menu').forEach(m => { m.hidden = true; });
+                    menu.hidden = !willOpen;
+                    btn.setAttribute('aria-expanded', String(willOpen));
+                });
+                menu.addEventListener('click', e => e.stopPropagation());
+                ms.querySelectorAll('.sx-ms-item').forEach(it => {
+                    it.addEventListener('click', () => secretsToggleFilter(kind, it.dataset.value));
+                });
+                const clear = ms.querySelector('[data-ms-clear]');
+                if (clear) clear.addEventListener('click', () => { secretsExposure.filters[kind] = []; secretsApplyFilters(); });
+            });
+            // One document listener closes any open menu on an outside click.
+            if (!secretsWireMultiselects._bound) {
+                document.addEventListener('click', () => {
+                    document.querySelectorAll('.sx-ms-menu').forEach(m => { m.hidden = true; });
+                    document.querySelectorAll('.sx-ms-btn').forEach(b => b.setAttribute('aria-expanded', 'false'));
+                });
+                secretsWireMultiselects._bound = true;
+            }
+        }
+
+        // Toggle one value in a filter array (detectors/workspaces), then re-sync
+        // every control bound to that filter and redraw the table.
+        function secretsToggleFilter(kind, value) {
+            const arr = secretsExposure.filters[kind];
+            if (!Array.isArray(arr)) return;
+            const i = arr.indexOf(value);
+            if (i >= 0) arr.splice(i, 1); else arr.push(value);
+            secretsApplyFilters();
+        }
+
+        function secretsMsText(kind, arr, allLabel) {
+            if (!arr.length) return allLabel;
+            if (arr.length === 1) {
+                if (kind === 'workspaces') {
+                    const w = secretsExposure.byWorkspace.find(x => String(x.workspace_id) === String(arr[0]));
+                    return w ? secretsWsLabel(w.workspace_name, w.workspace_id) : arr[0];
+                }
+                if (kind === 'sources') return ({notebook:'Notebooks',file:'Files',cluster:'Cluster configs'})[arr[0]] || arr[0];
+                return arr[0];
+            }
+            const noun = kind === 'workspaces' ? 'workspaces' : kind === 'sources' ? 'types' : 'detectors';
+            return `${arr.length} ${noun}`;
+        }
+
+        // Reflect filter state onto every control (facets + multi-selects), then
+        // redraw the table -- so the facet bars and the checklists always agree.
+        function secretsApplyFilters() {
+            const f = secretsExposure.filters;
+            document.querySelectorAll('.sx-facet').forEach(el => {
+                const arr = f[el.dataset.kind] || [];
+                el.classList.toggle('is-active', arr.includes(el.dataset.value));
+            });
+            document.querySelectorAll('.sx-ms').forEach(ms => {
+                const kind = ms.dataset.kind, arr = f[kind] || [];
+                ms.querySelectorAll('.sx-ms-item').forEach(it => it.classList.toggle('sel', arr.includes(it.dataset.value)));
+                const txt = ms.querySelector('.sx-ms-text');
+                if (txt) txt.textContent = secretsMsText(kind, arr, ms.dataset.allLabel);
+                ms.querySelector('.sx-ms-btn').classList.toggle('has-sel', arr.length > 0);
+            });
+            secretsRenderTable();
+        }
+
+        function secretsFilteredRows() {
+            const f = secretsExposure.filters;
+            return secretsExposure.rows.filter(r => {
+                if (f.sources.length && !f.sources.includes(r.source_type)) return false;
+                if (f.detectors.length && !f.detectors.includes(r.detector_name)) return false;
+                if (f.workspaces.length && !f.workspaces.includes(String(r.workspace_id))) return false;
+                if (f.search) {
+                    const hay = ((r.object_name || '') + ' ' + (r.object_path || '') + ' ' + (r.detector_name || '') + ' ' + (r.secret_sha256 || '')).toLowerCase();
+                    if (!hay.includes(f.search)) return false;
+                }
+                return true;
+            });
+        }
+
+        function secretsRenderTable() {
+            const tbody = document.getElementById('sx-tbody');
+            if (!tbody) return;
+            const rows = secretsFilteredRows();
+            const total = secretsExposure.rows.length;
+            // Show the friendly workspace label in the table, not the raw id.
+            const wsName = {};
+            secretsExposure.byWorkspace.forEach(w => { wsName[String(w.workspace_id)] = secretsWsLabel(w.workspace_name, w.workspace_id); });
+            const count = document.getElementById('sx-count');
+            if (count) {
+                count.textContent = rows.length === total
+                    ? `${total} detection${total === 1 ? '' : 's'}`
+                    : `${rows.length} of ${total} detection${total === 1 ? '' : 's'}`;
+            }
+            if (!rows.length) {
+                tbody.innerHTML = `<tr><td colspan="5" class="sx-empty-row">No detections match these filters.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td class="sx-src">${escapeHtml({notebook:'Notebook',file:'File',cluster:'Cluster'}[r.source_type] || r.source_type)}</td>
+                    <td class="sx-wrap">${escapeHtml(r.detector_name)}</td>
+                    <td>
+                        <div class="sx-obj-name">${r.object_url
+                            ? `<a href="${escapeHtml(r.object_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent);" title="Open in workspace">${escapeHtml(r.object_name)}</a>`
+                            : escapeHtml(r.object_name)}</div>
+                        <div class="sx-obj-path">${escapeHtml(r.object_path)}</div>
+                    </td>
+                    <td class="mono sx-break">${escapeHtml(String(r.secret_sha256 || ''))}</td>
+                    <td class="sx-wrap">${escapeHtml(wsName[String(r.workspace_id)] || r.workspace_id)}</td>
+                </tr>`).join('');
+        }
+
+        // --- Settings panel -------------------------------------------------
+        // Values that the app reads per request are editable here and take effect
+        // immediately. Each is validated against the workspace before it is
+        // applied, so a mistyped warehouse cannot break every page.
+
+        const settingsState = { data: null, choices: null, dirty: {}, saving: false };
+
+        function openSettingsPanel() {
+            document.body.classList.add('drawer-open');
+            document.getElementById('settings-scrim').hidden = false;
+            document.getElementById('settings-drawer').hidden = false;
+            document.getElementById('settings-body').innerHTML =
+                '<div class="loading"><div class="spinner"></div>Checking your environment\u2026</div>';
+            loadSettings();
+        }
+
+        function closeSettingsPanel() {
+            document.body.classList.remove('drawer-open');
+            document.getElementById('settings-scrim').hidden = true;
+            document.getElementById('settings-drawer').hidden = true;
+            settingsState.dirty = {};
+        }
+
+        document.addEventListener('keydown', ev => {
+            const drawer = document.getElementById('settings-drawer');
+            if (ev.key === 'Escape' && drawer && !drawer.hidden) closeSettingsPanel();
+        });
+
+        async function loadSettings() {
+            try {
+                const [data, choices, credentials] = await Promise.all([
+                    fetch('/api/settings').then(r => r.json()),
+                    fetch('/api/settings/choices').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/settings/credentials').then(r => r.json()).catch(() => ({})),
+                ]);
+                if (data.error) {
+                    document.getElementById('settings-body').innerHTML =
+                        `<div class="health-summary bad">${escapeHtml(data.error)}</div>`;
+                    return;
+                }
+                settingsState.data = data;
+                settingsState.choices = choices || {};
+                settingsState.credentials = credentials || {};
+                // The permissions checklist probes several grants (a few SQL calls),
+                // so it's loaded after the panel renders rather than blocking it.
+                settingsState.requirements = settingsState.requirements || { loading: true };
+                settingsState.dirty = {};
+                renderSettings();
+                loadRequirements();
+            } catch (e) {
+                document.getElementById('settings-body').innerHTML =
+                    `<div class="health-summary bad">Could not load settings: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        // Probe the permissions checklist after the panel is up, then refresh just
+        // that section's body and badge in place.
+        async function loadRequirements() {
+            try {
+                settingsState.requirements = await fetch('/api/setup/requirements').then(r => r.json());
+            } catch (e) {
+                settingsState.requirements = { error: e.message, checks: [] };
+            }
+            const body = document.getElementById('sec-requirements');
+            if (body) body.innerHTML = requirementsBody();
+            const checks = (settingsState.requirements || {}).checks || [];
+            const reqFail = checks.filter(c => !c.ok && !c.optional).length;
+            const optFail = checks.filter(c => !c.ok && c.optional).length;
+            const badge = document.querySelector('[data-section="requirements"] .section-badge');
+            if (badge && checks.length) {
+                badge.textContent = reqFail ? `${reqFail} to fix` : (optFail ? `${optFail} optional` : 'All set');
+            }
+            updateSettingsIndicator(reqFail);
+        }
+
+        function updateSettingsIndicator(failing) {
+            const dot = document.getElementById('settings-dot');
+            if (dot) dot.hidden = failing === 0;
+            const gear = document.getElementById('settings-gear');
+            if (gear) {
+                gear.title = failing
+                    ? `${failing} item${failing === 1 ? '' : 's'} need attention`
+                    : 'Settings';
+            }
+        }
+
+        function markSettingDirty(key, value) {
+            settingsState.dirty[key] = value;
+            const bar = document.getElementById('settings-savebar');
+            if (bar) bar.hidden = Object.keys(settingsState.dirty).length === 0;
+        }
+
+        // Sections are collapsible and remember their state for the session, so
+        // an operator who only came to change the model is not scrolling past
+        // credentials and job status to reach it.
+        const SETTINGS_SECTIONS = [
+            { id: 'requirements', title: 'Permissions', sub: 'Grants the app needs to run' },
+            { id: 'connection', title: 'Connection', sub: 'Where results are stored' },
+            { id: 'assistant', title: 'Assistant', sub: 'Model and data sources' },
+            { id: 'access', title: 'Access', sub: 'Who sees which results' },
+            { id: 'credentials', title: 'Account credentials', sub: 'Account API service principal' },
+            { id: 'jobs', title: 'Analysis jobs', sub: 'Deployment status' },
+        ];
+        const settingsOpen = { requirements: true, connection: false, assistant: false,
+                               access: false, credentials: false, jobs: false };
+
+        function requirementsBody() {
+            const req = settingsState.requirements || {};
+            if (req.loading) {
+                return '<div class="loading"><div class="spinner"></div>Checking permissions…</div>';
+            }
+            const checks = req.checks || [];
+            if (!checks.length) {
+                return `<div class="field-help">${escapeHtml(req.message || req.error || 'Checklist unavailable.')}</div>`;
+            }
+            const sp = req.service_principal || 'the app service principal';
+            const rows = checks.map(c => {
+                const icon = c.ok
+                    ? '<svg class="req-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>'
+                    : (c.optional
+                        ? '<svg class="req-opt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/></svg>'
+                        : '<svg class="req-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>');
+                return `
+                    <div class="req-item">
+                        <span class="req-icon">${icon}</span>
+                        <div class="req-text">
+                            <div class="req-label">${escapeHtml(c.label)}${c.optional ? ' <span class="req-tag">optional</span>' : ''}</div>
+                            <div class="req-detail">${escapeHtml(c.detail || '')}</div>
+                            ${(!c.ok && c.fix) ? `<div class="req-fix">${escapeHtml(c.fix)}</div>` : ''}
+                        </div>
+                    </div>`;
+            }).join('');
+            return `<div class="req-sp">Checked as <code>${escapeHtml(sp)}</code></div>${rows}`;
+        }
+
+        function toggleSettingsSection(id) {
+            settingsOpen[id] = !settingsOpen[id];
+            const body = document.getElementById(`sec-${id}`);
+            const head = document.querySelector(`[data-section="${id}"]`);
+            if (body) body.hidden = !settingsOpen[id];
+            if (head) head.classList.toggle('is-open', settingsOpen[id]);
+        }
+
+        function renderSettings() {
+            const data = settingsState.data || {};
+            const choices = settingsState.choices || {};
+            const cfg = data.config || {};
+            const checks = data.checks || [];
+            const problems = checks.filter(c => !c.ok);
+
+            let html = '';
+
+            if (problems.length) {
+                html += problems.map(c => `
+                    <div class="issue">
+                        <div class="issue-head">${escapeHtml(c.label)}</div>
+                        <div class="issue-body">${escapeHtml(c.detail || '')}</div>
+                        ${c.remedy ? `<div class="issue-fix">${escapeHtml(c.remedy)}</div>` : ''}
+                    </div>`).join('');
+            } else {
+                html += `
+                    <div class="all-clear">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                        <span>Everything is connected</span>
+                    </div>`;
+            }
+
+            const warehouses = choices.warehouses || [];
+            const spaces = choices.genie_spaces || [];
+            const creds = settingsState.credentials || {};
+            const present = creds.present || {};
+            const bothSet = present.client_id && present.client_secret;
+            const jobs = cfg.jobs || {};
+            const jobKeys = Object.keys(jobs);
+            const connected = jobKeys.filter(k => jobs[k].connected);
+
+            const bodies = {
+                requirements: requirementsBody(),
+                connection:
+                    settingField('warehouse_id', 'SQL warehouse',
+                        'Compute for reports, scans, and alerts.',
+                        selectMarkup('warehouse_id', cfg.warehouse_id,
+                            warehouses.map(w => ({ value: w.id, label: `${w.name} (${w.state.toLowerCase()})` })))) +
+                    settingField('schema', 'Results schema',
+                        'Where results are written.',
+                        `<input class="field-input" id="set-schema" type="text"
+                                value="${escapeHtml(cfg.schema || '')}"
+                                onchange="markSettingDirty('schema', this.value)">`),
+                assistant: cfg.assistant_disabled
+                    ? `<div class="field-help" style="margin:2px 2px 14px;">The security assistant is turned off. Turn it on to ask natural-language questions about your SAT results.</div>
+                       <button class="btn btn-sm" onclick="assistantEnable(this)">Turn on the assistant</button>`
+                    : settingField('genie_space_id', 'Genie space',
+                        'The Genie space the assistant answers from, created automatically over your results schema.',
+                        selectMarkup('genie_space_id', cfg.genie_space_id,
+                            spaces.map(sp => ({ value: sp.id, label: sp.name })), 'None'))
+                      + `<button class="btn btn-sm settings-danger" data-armed="0" onclick="assistantDisable(this)">Turn off the assistant</button>`,
+                access: `
+                    <label class="switch-row" for="set-filtering">
+                        <span>
+                            <span class="field-label">Show each person only their own data</span>
+                            <span class="field-help">Results are filtered by each viewer's Unity Catalog permissions. Off shows everyone the full dataset.</span>
+                        </span>
+                        <input id="set-filtering" type="checkbox" ${cfg.sp_fallback_allowed ? '' : 'checked'}
+                               onchange="markSettingDirty('per_user_filtering', this.checked)">
+                    </label>`,
+                credentials: credentialsMarkup(creds, bothSet),
+                jobs: `<button type="button" class="settings-jobs-link" onclick="gotoCollection()" title="Open Data Collection">
+                    ${jobKeys.map(k => `
+                    <div class="job-row">
+                        <span>${escapeHtml(jobs[k].label)}</span>
+                        <span class="job-state ${jobs[k].connected ? 'on' : 'off'}">${jobs[k].connected ? 'Deployed' : 'Not deployed'}</span>
+                    </div>`).join('')}
+                    <div class="settings-jobs-cta"><span>Manage in Data Collection</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
+                </button>`,
+            };
+
+            const reqChecks = (settingsState.requirements || {}).checks || [];
+            const reqRequiredFail = reqChecks.filter(c => !c.ok && !c.optional).length;
+            const reqOptionalFail = reqChecks.filter(c => !c.ok && c.optional).length;
+            const badges = {
+                requirements: (settingsState.requirements || {}).loading ? 'Checking…'
+                    : (reqChecks.length
+                        ? (reqRequiredFail ? `${reqRequiredFail} to fix`
+                            : (reqOptionalFail ? `${reqOptionalFail} optional` : 'All set'))
+                        : ''),
+                credentials: bothSet ? 'Set' : 'Not set',
+                jobs: `${connected.length} of ${jobKeys.length}`,
+            };
+
+            html += SETTINGS_SECTIONS.map(section => `
+                <section class="settings-section">
+                    <button type="button" class="section-head${settingsOpen[section.id] ? ' is-open' : ''}"
+                            data-section="${section.id}" onclick="toggleSettingsSection('${section.id}')">
+                        <span class="section-titles">
+                            <span class="section-title">${escapeHtml(section.title)}</span>
+                            <span class="section-sub">${escapeHtml(section.sub)}</span>
+                        </span>
+                        ${badges[section.id] ? `<span class="section-badge">${escapeHtml(badges[section.id])}</span>` : ''}
+                        <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <div class="section-body" id="sec-${section.id}"${settingsOpen[section.id] ? '' : ' hidden'}>
+                        ${bodies[section.id]}
+                    </div>
+                </section>`).join('');
+
+            html += `
+                <div class="drawer-savebar" id="settings-savebar" hidden>
+                    <span class="savebar-text" id="settings-saveerr"></span>
+                    <button class="btn btn-sm btn-ghost" onclick="loadSettings()">Discard</button>
+                    <button class="btn btn-sm" id="settings-save" onclick="saveSettings()">Save</button>
+                </div>
+                <button type="button" class="settings-action" onclick="reopenSetup()">
+                    <span class="section-titles">
+                        <span class="section-title">Re-run setup</span>
+                        <span class="section-sub">Change catalog, warehouse, model, or credentials</span>
+                    </span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                </button>
+                <div class="drawer-note">
+                    Changes take effect immediately. Account credentials are stored
+                    as Unity Catalog secrets.
+                </div>`;
+
+            document.getElementById('settings-body').innerHTML = html;
+        }
+
+        function credentialsMarkup(creds, bothSet) {
+            if (creds.writable === false) {
+                return `
+                    <div class="field-help">
+                        This app can't write secrets here. An administrator can grant its
+                        service principal <code>CREATE SECRET</code> on the schema.
+                    </div>`;
+            }
+            const hint = bothSet ? 'Set — enter a new value to replace it.' : '';
+            return `
+                <div class="field">
+                    <span class="field-label">Client ID</span>
+                    <div class="input-group">
+                        <input class="field-input" id="cred-client-id" type="text"
+                               autocomplete="off" placeholder="${escapeHtml(hint || 'Service principal application ID')}">
+                        <button type="button" class="input-affix" onclick="revealStoredClientId()"
+                                title="Show the stored client ID" aria-label="Show the stored client ID">
+                            ${EYE_SVG}
+                        </button>
+                    </div>
+                </div>
+                <div class="field">
+                    <span class="field-label">Client secret</span>
+                    <div class="input-group">
+                        <input class="field-input" id="cred-client-secret" type="password"
+                               autocomplete="new-password" placeholder="${escapeHtml(hint || 'OAuth secret')}">
+                        <button type="button" class="input-affix" id="cred-eye"
+                                onclick="toggleSecretVisibility()"
+                                title="Show what you have typed" aria-label="Show what you have typed">
+                            ${EYE_SVG}
+                        </button>
+                    </div>
+                    <span class="field-help">Replaced together and verified before storing.</span>
+                </div>
+                <div class="cred-actions">
+                    <span class="savebar-text" id="cred-status"></span>
+                    <button class="btn btn-sm btn-ghost" id="cred-save" onclick="saveCredentials()">Update credentials</button>
+                </div>`;
+        }
+
+        const EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+        const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a18 18 0 0 1-2.2 3.1M6.1 6.1A18 18 0 0 0 2 11s3.6 7 10 7a9.1 9.1 0 0 0 3.5-.68"/><path d="M1 1l22 22"/></svg>';
+
+        function toggleSecretVisibility() {
+            const field = document.getElementById('cred-client-secret');
+            const button = document.getElementById('cred-eye');
+            const showing = field.type === 'text';
+            field.type = showing ? 'password' : 'text';
+            button.innerHTML = showing ? EYE_SVG : EYE_OFF_SVG;
+            button.title = showing ? 'Show what you have typed' : 'Hide';
+        }
+
+        async function revealStoredClientId() {
+            const field = document.getElementById('cred-client-id');
+            const status = document.getElementById('cred-status');
+            try {
+                const result = await fetch('/api/settings/credentials/reveal', { method: 'POST' })
+                    .then(r => r.json());
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'savebar-text is-error';
+                    return;
+                }
+                field.value = result.client_id || '';
+                field.type = 'text';
+                status.textContent = 'Showing the stored client ID.';
+                status.className = 'savebar-text';
+            } catch (e) {
+                status.textContent = e.message;
+                status.className = 'savebar-text is-error';
+            }
+        }
+
+        function settingField(key, label, help, control) {
+            return `
+                <div class="field">
+                    <span class="field-label">${escapeHtml(label)}</span>
+                    ${control}
+                    <span class="field-help">${escapeHtml(help)}</span>
+                </div>`;
+        }
+
+        function selectMarkup(key, current, options, emptyLabel) {
+            // An unlisted current value is still offered, so opening the panel can
+            // never silently change a setting that the workspace no longer lists.
+            const known = options.some(o => o.value === current);
+            const extra = (!known && current)
+                ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>` : '';
+            return `
+                <select class="field-input" id="set-${escapeHtml(key)}"
+                        onchange="markSettingDirty('${escapeHtml(key)}', this.value)">
+                    ${emptyLabel ? `<option value=""${!current ? ' selected' : ''}>${escapeHtml(emptyLabel)}</option>` : ''}
+                    ${extra}
+                    ${options.map(o => `<option value="${escapeHtml(o.value)}"${o.value === current ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+                </select>`;
+        }
+
+        async function saveCredentials() {
+            const idField = document.getElementById('cred-client-id');
+            const secretField = document.getElementById('cred-client-secret');
+            const status = document.getElementById('cred-status');
+            const button = document.getElementById('cred-save');
+            status.className = 'savebar-text';
+            status.textContent = '';
+
+            if (!idField.value.trim() || !secretField.value.trim()) {
+                status.textContent = 'Enter both values.';
+                status.className = 'savebar-text is-error';
+                return;
+            }
+            button.disabled = true;
+            button.textContent = 'Verifying\u2026';
+            try {
+                const result = await fetch('/api/settings/credentials', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        client_id: idField.value.trim(),
+                        client_secret: secretField.value.trim(),
+                    }),
+                }).then(r => r.json());
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'savebar-text is-error';
+                    button.disabled = false;
+                    button.textContent = 'Update credentials';
+                    return;
+                }
+                // Clear the fields so the secret does not linger in the DOM.
+                idField.value = '';
+                secretField.value = '';
+                await loadSettings();
+            } catch (e) {
+                status.textContent = e.message;
+                status.className = 'savebar-text is-error';
+                button.disabled = false;
+                button.textContent = 'Update credentials';
+            }
+        }
+
+        async function saveSettings() {
+            if (settingsState.saving) return;
+            const button = document.getElementById('settings-save');
+            const status = document.getElementById('settings-saveerr');
+            settingsState.saving = true;
+            button.disabled = true;
+            button.textContent = 'Saving\u2026';
+            status.textContent = '';
+            status.className = 'savebar-text';
+            try {
+                const result = await fetch('/api/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settingsState.dirty),
+                }).then(r => r.json());
+
+                if (result.errors || result.error) {
+                    const messages = result.errors
+                        ? Object.values(result.errors) : [result.error];
+                    status.textContent = messages.join(' ');
+                    status.className = 'savebar-text is-error';
+                    button.disabled = false;
+                    button.textContent = 'Save';
+                    settingsState.saving = false;
+                    return;
+                }
+                settingsState.saving = false;
+                await loadSettings();
+                // loadSettings() re-renders the panel (a fresh status node), so
+                // surface what happened to the collection jobs afterwards: on a
+                // schema change they are re-pointed at the new schema automatically.
+                const after = document.getElementById('settings-saveerr');
+                const migrated = (result.migrated_secrets || []).length;
+                if (after && result.reprovision_error) {
+                    after.textContent = 'Saved, but updating the collection jobs to the new '
+                        + 'schema failed: ' + result.reprovision_error
+                        + ' Re-provision them from the Data Collection page.';
+                    after.className = 'savebar-text is-error';
+                } else if (after && ((typeof result.reprovisioned === 'number' && result.reprovisioned > 0) || migrated)) {
+                    const parts = [];
+                    if (result.reprovisioned > 0) parts.push('re-pointed ' + result.reprovisioned + ' collection job(s)');
+                    if (migrated) parts.push('carried your account credentials over');
+                    after.textContent = '✓ Saved — ' + parts.join(' and ') + ' to the new schema.';
+                    after.className = 'savebar-text';
+                }
+            } catch (e) {
+                status.textContent = e.message;
+                status.className = 'savebar-text is-error';
+                button.disabled = false;
+                button.textContent = 'Save';
+                settingsState.saving = false;
+            }
+        }
+
+        (function probeSettings() {
+            function run() {
+                fetch('/api/setup/requirements')
+                    .then(r => r.json())
+                    .then(d => updateSettingsIndicator(((d.checks) || []).filter(c => !c.ok && !c.optional).length))
+                    .catch(() => {});
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', run);
+            } else {
+                run();
+            }
+        })();
+
+        // --- Secret-scanning alerts ------------------------------------------
+        // These wrap Databricks SQL alerts; the app supplies the query and
+        // defaults so nobody has to write SQL against the scan tables.
+        const alertState = { options: null, alerts: [], editing: null, selectedTemplate: null };
+
+        function alertCronLabel(cron) {
+            if (!cron) return 'No schedule';
+            const preset = (alertState.options && alertState.options.schedule_presets || [])
+                .find(p => p.cron === cron);
+            return preset ? preset.label : cron;
+        }
+
+        function alertStatePill(a) {
+            if (a.paused) return '<span class="alert-pill paused">Paused</span>';
+            const st = String(a.state || 'UNKNOWN').toUpperCase();
+            const tone = st === 'TRIGGERED' ? 'triggered'
+                : st === 'OK' ? 'ok'
+                : st === 'ERROR' ? 'error' : 'unknown';
+            const text = st === 'TRIGGERED' ? 'Triggered'
+                : st === 'OK' ? 'OK'
+                : st === 'ERROR' ? 'Error' : 'Not yet run';
+            return `<span class="alert-pill ${tone}">${text}</span>`;
+        }
+
+        function alertConditionText(a) {
+            const opText = {
+                GREATER_THAN: '>', GREATER_THAN_OR_EQUAL: '>=', LESS_THAN: '<',
+                LESS_THAN_OR_EQUAL: '<=', EQUAL: '=', NOT_EQUAL: '!=',
+            }[a.operator] || a.operator || '?';
+            const t = a.threshold === null || a.threshold === undefined ? '?' : a.threshold;
+            return `${a.column || 'value'} ${opText} ${t}`;
+        }
+
+        async function loadSecretsAlerts() {
+            const container = document.getElementById('secretsalerts-results');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading alerts...</div>';
+            try {
+                const [options, list] = await Promise.all([
+                    fetch('/api/secrets/alerts/options').then(r => r.json()),
+                    fetch('/api/secrets/alerts').then(r => r.json()),
+                ]);
+                if (options.error) { showEmpty('secretsalerts-results', options.error); return; }
+                if (list.error) { showEmpty('secretsalerts-results', list.error); return; }
+                alertState.options = options;
+                alertState.alerts = list.alerts || [];
+                alertState.canManage = list.can_manage !== false;
+                renderSecretsAlerts();
+            } catch (e) {
+                showEmpty('secretsalerts-results', 'Failed to load alerts: ' + e.message);
+            }
+        }
+
+        function renderSecretsAlerts() {
+            const container = document.getElementById('secretsalerts-results');
+            const alerts = alertState.alerts;
+            const options = alertState.options || {};
+            const canManage = alertState.canManage !== false;
+
+            if (!options.warehouse_configured) {
+                container.innerHTML = `
+                    <div class="alert-empty">
+                        <div class="alert-empty-title">No SQL warehouse configured</div>
+                        <div class="alert-empty-sub">Alerts run their query on a SQL warehouse. Re-run the SAT installer to bind one to this app.</div>
+                    </div>`;
+                return;
+            }
+
+            let html = `
+                <div class="alert-toolbar">
+                    <div class="alert-toolbar-note">
+                        ${alerts.length
+                            ? alerts.length + ' alert' + (alerts.length === 1 ? '' : 's') + ' configured'
+                            : 'No alerts configured yet'}
+                        ${canManage ? '' : ' &middot; view only — only workspace or account admins can create or change alerts'}
+                    </div>
+                    ${canManage ? '<button class="btn btn-sm" onclick="openAlertEditor()">New alert</button>' : ''}
+                </div>
+                <div id="alert-editor-slot"></div>`;
+
+            if (!alerts.length) {
+                html += `
+                    <div class="alert-empty">
+                        <div class="alert-empty-title">Nobody is being notified yet</div>
+                        <div class="alert-empty-sub">
+                            Create an alert to be emailed when the scanner finds exposed credentials.
+                            Alerts are standard Databricks SQL alerts, so they also appear under
+                            Alerts in the workspace and keep working if this app is removed.
+                        </div>
+                        ${canManage
+                            ? '<button class="btn btn-sm" onclick="openAlertEditor()">Create your first alert</button>'
+                            : '<div class="alert-empty-sub">Only workspace or account admins can create alerts.</div>'}
+                    </div>`;
+            } else {
+                html += '<div class="alert-list">';
+                alerts.forEach(a => {
+                    const subs = (a.subscribers || []).length;
+                    const dests = (a.destination_ids || []).length;
+                    let recipients = [];
+                    if (subs) recipients.push(subs + (subs === 1 ? ' recipient' : ' recipients'));
+                    if (dests) recipients.push(dests + (dests === 1 ? ' destination' : ' destinations'));
+                    html += `
+                        <div class="alert-card${a.paused ? ' is-paused' : ''}">
+                            <div class="alert-rail ${escapeHtml(a.severity || '')}"></div>
+                            <div class="alert-body">
+                                <div class="alert-name">
+                                    ${escapeHtml(a.display_name || 'Untitled alert')}
+                                    ${alertStatePill(a)}
+                                </div>
+                                <div class="alert-meta">
+                                    <span>${escapeHtml(alertConditionText(a))}</span>
+                                    <span class="sep">&middot;</span>
+                                    <span>${escapeHtml(alertCronLabel(a.cron))}</span>
+                                    ${recipients.length ? '<span class="sep">&middot;</span><span>' + escapeHtml(recipients.join(', ')) + '</span>' : ''}
+                                    ${a.last_evaluated_at ? '<span class="sep">&middot;</span><span>checked ' + escapeHtml(String(a.last_evaluated_at).slice(0, 16).replace('T', ' ')) + '</span>' : ''}
+                                </div>
+                            </div>
+                            <div class="alert-actions">
+                                ${a.url ? `<a class="btn btn-sm btn-ghost" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">Open</a>` : ''}
+                                ${canManage ? `
+                                <button class="btn btn-sm btn-ghost" onclick="toggleAlertPause('${escapeHtml(a.id)}', ${a.paused ? 'false' : 'true'})">
+                                    ${a.paused ? 'Resume' : 'Pause'}
+                                </button>
+                                <button class="btn btn-sm btn-ghost" onclick="openAlertEditor('${escapeHtml(a.id)}')">Edit</button>
+                                <button class="btn btn-sm btn-stop" onclick="deleteAlert('${escapeHtml(a.id)}')">Delete</button>` : ''}
+                            </div>
+                        </div>`;
+                });
+                html += '</div>';
+            }
+            container.innerHTML = html;
+            if (alertState.editing !== null) renderAlertEditor();
+        }
+
+        function openAlertEditor(alertId) {
+            const existing = alertId
+                ? alertState.alerts.find(a => a.id === alertId) : null;
+            alertState.editing = existing || {};
+            alertState.selectedTemplate = existing
+                ? existing.template_id
+                : ((alertState.options.templates || [])[0] || {}).id;
+            renderAlertEditor();
+            const slot = document.getElementById('alert-editor-slot');
+            if (slot) slot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function closeAlertEditor() {
+            alertState.editing = null;
+            alertState.selectedTemplate = null;
+            renderSecretsAlerts();
+        }
+
+        function selectAlertTemplate(id) {
+            alertState.selectedTemplate = id;
+            renderAlertEditor();
+        }
+
+        function renderAlertEditor() {
+            const slot = document.getElementById('alert-editor-slot');
+            if (!slot) return;
+            const e = alertState.editing || {};
+            const isEdit = !!e.id;
+            const options = alertState.options || {};
+            const templates = options.templates || [];
+            const tpl = templates.find(t => t.id === alertState.selectedTemplate) || templates[0] || {};
+
+            const threshold = e.threshold !== undefined && e.threshold !== null && e.template_id === tpl.id
+                ? e.threshold : tpl.default_threshold;
+            const operator = (e.operator && e.template_id === tpl.id) ? e.operator : tpl.default_operator;
+            const subscribers = (e.subscribers || []).join(', ')
+                || (isEdit ? '' : (options.current_user || ''));
+            const cron = e.cron || '0 0 8 * * ?';
+            const retrigger = e.retrigger_seconds === undefined || e.retrigger_seconds === null
+                ? 3600 : e.retrigger_seconds;
+
+            const presets = options.schedule_presets || [];
+            const cronKnown = presets.some(p => p.cron === cron);
+            const destinations = options.destinations || [];
+
+            slot.innerHTML = `
+                <div class="alert-form">
+                    <div class="alert-form-title">${isEdit ? 'Edit alert' : 'New alert'}</div>
+                    <div class="alert-form-sub">A Databricks SQL alert that emails your recipients when the condition is met. It also appears under Alerts in the workspace and keeps working if this app is removed.</div>
+
+                    <div class="alert-step-label">1 · What to watch</div>
+                    <div class="alert-type-grid">
+                        ${templates.map(t => `
+                            <button type="button" class="alert-type${t.id === tpl.id ? ' selected' : ''}"
+                                    onclick="selectAlertTemplate('${escapeHtml(t.id)}')">
+                                <div class="alert-type-head">
+                                    <span class="alert-type-label">${escapeHtml(t.label)}</span>
+                                    <span class="alert-pill ${t.severity === 'critical' ? 'triggered' : t.severity === 'high' ? 'error' : 'unknown'}">${escapeHtml(t.severity)}</span>
+                                </div>
+                                <div class="alert-type-desc">${escapeHtml(t.description)}</div>
+                            </button>`).join('')}
+                    </div>
+
+                    <div class="alert-step-label">2 · When to alert</div>
+                    <div class="alert-field-grid">
+                        <div class="alert-field">
+                            <label for="al-operator">Trigger when ${escapeHtml(tpl.column || 'value')}</label>
+                            <select id="al-operator">
+                                <option value="GREATER_THAN"${operator === 'GREATER_THAN' ? ' selected' : ''}>is greater than</option>
+                                <option value="GREATER_THAN_OR_EQUAL"${operator === 'GREATER_THAN_OR_EQUAL' ? ' selected' : ''}>is greater than or equal to</option>
+                                <option value="EQUAL"${operator === 'EQUAL' ? ' selected' : ''}>equals</option>
+                                <option value="LESS_THAN"${operator === 'LESS_THAN' ? ' selected' : ''}>is less than</option>
+                                <option value="NOT_EQUAL"${operator === 'NOT_EQUAL' ? ' selected' : ''}>does not equal</option>
+                            </select>
+                        </div>
+                        <div class="alert-field">
+                            <label for="al-threshold">Threshold</label>
+                            <input id="al-threshold" type="number" step="any" value="${escapeHtml(String(threshold === undefined ? 0 : threshold))}">
+                            <div class="alert-field-hint">${tpl.id === 'stale_scan' ? 'Hours since the last scan' : 'Number of findings'}</div>
+                        </div>
+                    </div>
+                    <div class="alert-test-row">
+                        <button type="button" class="btn btn-sm btn-ghost" id="al-test" onclick="runAlertCheck()">Test condition now</button>
+                        <span class="alert-test-result" id="al-test-result"></span>
+                    </div>
+
+                    <div class="alert-step-label">3 · How often to check</div>
+                    <div class="alert-field-grid">
+                        <div class="alert-field">
+                            <label for="al-schedule">Check</label>
+                            <select id="al-schedule" onchange="onAlertScheduleChange()">
+                                ${presets.map(p => `<option value="${escapeHtml(p.cron)}"${p.cron === cron ? ' selected' : ''}>${escapeHtml(p.label)}</option>`).join('')}
+                                <option value="__custom"${cronKnown ? '' : ' selected'}>Custom cron…</option>
+                            </select>
+                        </div>
+                        <div class="alert-field" id="al-cron-wrap" style="${cronKnown ? 'display:none;' : ''}">
+                            <label for="al-cron">Quartz cron</label>
+                            <input id="al-cron" type="text" value="${escapeHtml(cron)}" placeholder="0 0 8 * * ?">
+                        </div>
+                    </div>
+
+                    <div class="alert-step-label">4 · Who to notify</div>
+                    <div class="alert-field-grid">
+                        <div class="alert-field wide">
+                            <label for="al-subscribers">Email recipients</label>
+                            <input id="al-subscribers" type="text" value="${escapeHtml(subscribers)}" placeholder="you@company.com, security@company.com">
+                            <div class="alert-field-hint">Comma-separated workspace users.</div>
+                        </div>
+                        ${destinations.length ? `
+                        <div class="alert-field wide">
+                            <label for="al-destinations">Notification destinations</label>
+                            <select id="al-destinations" multiple size="${Math.min(destinations.length, 4)}">
+                                ${destinations.map(d => `<option value="${escapeHtml(d.id)}"${(e.destination_ids || []).includes(d.id) ? ' selected' : ''}>${escapeHtml(d.display_name)} (${escapeHtml(d.type)})</option>`).join('')}
+                            </select>
+                            <div class="alert-field-hint">Slack, PagerDuty or webhooks configured in this workspace.</div>
+                        </div>` : ''}
+                    </div>
+
+                    <details class="alert-advanced">
+                        <summary>Advanced &amp; name</summary>
+                        <div class="alert-field-grid" style="margin-top:10px;">
+                            <div class="alert-field wide">
+                                <label for="al-name">Alert name</label>
+                                <input id="al-name" type="text" value="${escapeHtml(e.display_name || ('SAT Secrets: ' + (tpl.label || '')))}" placeholder="Alert name">
+                            </div>
+                            <div class="alert-field wide">
+                                <label for="al-description">Description</label>
+                                <textarea id="al-description" rows="2" placeholder="Shown on the alert" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);padding:9px 11px;font:inherit;font-size:0.9em;resize:vertical;">${escapeHtml(e.description || tpl.description || '')}</textarea>
+                                <div class="alert-field-hint">Appears on the alert in the workspace — customize it for your team.</div>
+                            </div>
+                            <div class="alert-field">
+                                <label for="al-retrigger">Re-notify after</label>
+                                <select id="al-retrigger">
+                                    <option value="0"${retrigger === 0 ? ' selected' : ''}>Every check</option>
+                                    <option value="3600"${retrigger === 3600 ? ' selected' : ''}>1 hour</option>
+                                    <option value="21600"${retrigger === 21600 ? ' selected' : ''}>6 hours</option>
+                                    <option value="86400"${retrigger === 86400 ? ' selected' : ''}>24 hours</option>
+                                </select>
+                                <div class="alert-field-hint">Silences repeats while still triggered.</div>
+                            </div>
+                            <div class="alert-field" style="justify-content:flex-end;">
+                                <label class="alert-check">
+                                    <input id="al-notify-ok" type="checkbox"${e.notify_on_ok ? ' checked' : ''}>
+                                    Also notify when resolved
+                                </label>
+                            </div>
+                        </div>
+                        <div class="alert-sql">${escapeHtml(tpl.query || '')}</div>
+                    </details>
+
+                    <div class="alert-form-actions">
+                        <span class="alert-form-error" id="al-error"></span>
+                        <button class="btn btn-sm btn-ghost" onclick="closeAlertEditor()">Cancel</button>
+                        <button class="btn btn-sm" id="al-save" onclick="saveAlert()">${isEdit ? 'Save changes' : 'Create alert'}</button>
+                    </div>
+                </div>`;
+        }
+
+        async function runAlertCheck() {
+            const btn = document.getElementById('al-test');
+            const out = document.getElementById('al-test-result');
+            if (!out) return;
+            out.textContent = '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+            try {
+                const r = await fetch('/api/secrets/alerts/run-check', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        template_id: alertState.selectedTemplate,
+                        operator: document.getElementById('al-operator').value,
+                        threshold: document.getElementById('al-threshold').value,
+                    }),
+                }).then(x => x.json());
+                if (r.error) { out.innerHTML = '<span class="fire">' + escapeHtml(r.error) + '</span>'; }
+                else {
+                    const v = (Math.round(r.value * 100) / 100);
+                    out.innerHTML = `Now: <strong>${escapeHtml(r.column)} = ${v}</strong> — `
+                        + (r.would_fire
+                            ? '<span class="fire">would trigger</span>'
+                            : '<span class="ok">would not trigger</span>')
+                        + ' <span style="color:var(--text-muted);">(SQL alerts email on their schedule, not from this test)</span>';
+                }
+            } catch (e) {
+                out.innerHTML = '<span class="fire">' + escapeHtml(e.message) + '</span>';
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Test condition now'; }
+            }
+        }
+
+        function onAlertScheduleChange() {
+            const sel = document.getElementById('al-schedule');
+            const wrap = document.getElementById('al-cron-wrap');
+            const cronInput = document.getElementById('al-cron');
+            if (!sel || !wrap) return;
+            if (sel.value === '__custom') {
+                wrap.style.display = '';
+            } else {
+                wrap.style.display = 'none';
+                if (cronInput) cronInput.value = sel.value;
+            }
+        }
+
+        function alertEditorPayload() {
+            const sel = document.getElementById('al-schedule');
+            const cronInput = document.getElementById('al-cron');
+            const cron = (sel && sel.value !== '__custom') ? sel.value
+                : (cronInput ? cronInput.value.trim() : '');
+            const destSel = document.getElementById('al-destinations');
+            const descEl = document.getElementById('al-description');
+            return {
+                template_id: alertState.selectedTemplate,
+                display_name: document.getElementById('al-name').value.trim(),
+                description: descEl ? descEl.value.trim() : '',
+                operator: document.getElementById('al-operator').value,
+                threshold: document.getElementById('al-threshold').value,
+                cron: cron,
+                subscribers: document.getElementById('al-subscribers').value,
+                destination_ids: destSel
+                    ? Array.from(destSel.selectedOptions).map(o => o.value) : [],
+                retrigger_seconds: document.getElementById('al-retrigger').value,
+                notify_on_ok: document.getElementById('al-notify-ok').checked,
+                paused: !!(alertState.editing && alertState.editing.paused),
+            };
+        }
+
+        async function saveAlert() {
+            const err = document.getElementById('al-error');
+            const btn = document.getElementById('al-save');
+            const editing = alertState.editing || {};
+            const payload = alertEditorPayload();
+            if (err) err.textContent = '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+            try {
+                const url = editing.id
+                    ? '/api/secrets/alerts/' + encodeURIComponent(editing.id)
+                    : '/api/secrets/alerts';
+                const result = await fetch(url, {
+                    method: editing.id ? 'PATCH' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                }).then(r => r.json());
+                if (result.error) {
+                    if (err) err.textContent = result.error;
+                    if (btn) { btn.disabled = false; btn.textContent = editing.id ? 'Save changes' : 'Create alert'; }
+                    return;
+                }
+                alertState.editing = null;
+                alertState.selectedTemplate = null;
+                await loadSecretsAlerts();
+            } catch (e) {
+                if (err) err.textContent = e.message;
+                if (btn) { btn.disabled = false; btn.textContent = editing.id ? 'Save changes' : 'Create alert'; }
+            }
+        }
+
+        async function toggleAlertPause(alertId, paused) {
+            try {
+                const result = await fetch('/api/secrets/alerts/' + encodeURIComponent(alertId), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ paused: paused }),
+                }).then(r => r.json());
+                if (result.error) { alert(result.error); return; }
+                await loadSecretsAlerts();
+            } catch (e) { alert(e.message); }
+        }
+
+        async function deleteAlert(alertId) {
+            const found = alertState.alerts.find(a => a.id === alertId);
+            const name = found ? found.display_name : 'this alert';
+            if (!confirm('Delete "' + name + '"? It moves to trash and can be restored from the workspace.')) return;
+            try {
+                const result = await fetch('/api/secrets/alerts/' + encodeURIComponent(alertId), {
+                    method: 'DELETE',
+                }).then(r => r.json());
+                if (result.error) { alert(result.error); return; }
+                await loadSecretsAlerts();
+            } catch (e) { alert(e.message); }
+        }
+
+        async function loadIsolatedPrincipals() {
+            const container = document.getElementById('isolated-results');
+            container.innerHTML = '<div class="loading">Analyzing principals...</div>';
+
+            try {
+                const res = await fetch(`/api/report/isolated?run_id=${currentRunId}`);
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('isolated-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                // Group by level
+                const byLevel = { 'Highly Isolated': [], 'Moderately Isolated': [], 'Slightly Isolated': [], 'Well Connected': [] };
+                data.forEach(d => {
+                    const level = d.isolation_risk || 'Well Connected';
+                    if (byLevel[level]) byLevel[level].push(d);
+                });
+
+                let html = `
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Isolation Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${data.length}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #8b5cf6;">${summary.highly_isolated || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted);">Highly Isolated</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #f59e0b;">${summary.moderately_isolated || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted);">Moderately Isolated</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #3b82f6;">${summary.slightly_isolated || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted);">Slightly Isolated</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #22c55e;">${summary.well_connected || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted);">Well Connected</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Categorization Legend</div>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 8px; font-size: 0.85em;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #8b5cf6;"></span>
+                                <span><strong>Highly Isolated:</strong> No group memberships, no permissions, no owned resources</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #f59e0b;"></span>
+                                <span><strong>Moderately Isolated:</strong> Connectivity score &lt; 5 (minimal connections)</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #3b82f6;"></span>
+                                <span><strong>Slightly Isolated:</strong> Connectivity score 5-9</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #22c55e;"></span>
+                                <span><strong>Well Connected:</strong> Connectivity score ≥ 10</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 12px; font-size: 0.8em; color: var(--text-muted);">
+                            Score = (Groups × 5) + Permissions + (Owned × 2)
+                        </div>
+                    </div>
+
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Isolated Principals</span>
+                            <span class="results-count">${data.length} principals</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Render tree structure by level
+                const levelOrder = ['Highly Isolated', 'Moderately Isolated', 'Slightly Isolated', 'Well Connected'];
+                const levelColors = { 'Highly Isolated': '#8b5cf6', 'Moderately Isolated': '#f59e0b', 'Slightly Isolated': '#3b82f6', 'Well Connected': '#22c55e' };
+                const levelEmojis = { 'Highly Isolated': '🟣', 'Moderately Isolated': '🟠', 'Slightly Isolated': '🔵', 'Well Connected': '🟢' };
+
+                levelOrder.forEach((level) => {
+                    const items = byLevel[level];
+                    if (items.length === 0) return;
+
+                    const typeId = 'isolated-level-' + level.toLowerCase().replace(/\\s+/g, '-');
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${levelEmojis[level]}</span>
+                                <span style="font-weight: 600; flex: 1; color: ${levelColors[level]};">${level} (${items.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    // Sort by connectivity score
+                    const sortedItems = items.sort((a, b) => (a.connectivity_score || 0) - (b.connectivity_score || 0));
+
+                    sortedItems.forEach((item, idx) => {
+                        const isLast = idx === sortedItems.length - 1;
+                        const name = item.name || item.email || item.id;
+                        const icon = item.node_type?.includes('Service') ? '🤖' : '👤';
+                        const principalId = item.email || item.id;
+
+                        html += `
+                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <span style="font-size: 20px;">${icon}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${name}</div>
+                                    <div style="font-size: 0.8em; color: var(--text-muted);">
+                                        Groups: ${item.groups || 0} | Permissions: ${item.permissions || 0} | Owned: ${item.owned || 0}
+                                    </div>
+                                </div>
+                                <a href="javascript:void(0)" onclick="navigateToPrincipalAnalysis('${principalId.replace(/'/g, "\\'")}')"
+                                   style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--accent); color: white; border-radius: 6px; text-decoration: none; font-size: 0.85em; font-weight: 500; transition: opacity 0.2s;"
+                                   onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                                    <span>🔍</span> Analyze
+                                </a>
+                            </div>`;
+                    });
+
+                    html += `
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div></div>';
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('isolated-results', 'Error: ' + e.message);
+            }
+        }
+
+        // ── Account Denylist Builder ──────────────────────────────────────
+        async function loadDenylistBuilder() {
+            renderEntraRuleBuilder();       // static; no data dependency
+            await loadDenylistCandidates(); // data-backed table
+        }
+
+        async function loadDenylistCandidates() {
+            const container = document.getElementById('denylist-candidates-results');
+            container.innerHTML = '<div class="loading">Loading inactive-user group candidates...</div>';
+            try {
+                const res = await fetch('/api/report/denylist-candidates');
+                const result = await res.json();
+                if (result.error) { showEmpty('denylist-candidates-results', result.error); return; }
+
+                const data = result.data || [];
+                if (data.length === 0) {
+                    showEmpty('denylist-candidates-results',
+                        'No candidate IdP groups found in the latest run. Note: with Automatic Identity Management (AIM), ' +
+                        'external group memberships are resolved just-in-time and are not returned by the account SCIM API, ' +
+                        'so member-based ranking may be empty even for populated groups. Use the Entra ID dynamic-group ' +
+                        'rule helper below to build denylist groups.');
+                    return;
+                }
+                const detTs = result.detection_timestamp
+                    ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC' : 'Unknown';
+                const days = result.inactive_days || '?';
+                const acctScope = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
+                // renderCoverageBlock escapes chip text, so pass it raw here.
+                const acctLabel = result.account_id
+                    ? 'Account ' + result.account_id + ' (all IdP groups)'
+                    : 'Account-wide (all IdP groups)';
+
+                let html = `
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Accounts',
+                        scopeIcon: '🏛️',
+                        scanned: acctScope,
+                        failed: [],
+                        inReport: [acctLabel],
+                        note: 'Denylist analysis is account-level over account SCIM groups. Inactive = no system.access.audit activity in ' + escapeHtml(String(days)) + ' days. Metastore shown for environment context.'
+                    })}
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Candidate Groups</span>
+                            <span class="results-count">${data.length} group${data.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">
+                            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1.4fr; gap: 8px; padding: 10px 24px; font-size: 0.75em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+                                <div>Group</div><div>Inactive</div><div>Active</div><div>Total</div><div>Inactive %</div><div>Reason</div>
+                            </div>`;
+                data.forEach((c, idx) => {
+                    const isLast = idx === data.length - 1;
+                    const pct = (c.inactive_pct != null) ? c.inactive_pct + '%' : '';
+                    const gname = escapeHtml(c.group_name || c.group_id);
+                    // Group name links to the account-console group detail page.
+                    const nameHtml = c.console_url
+                        ? `<a href="${escapeHtml(c.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none; font-weight: 500;">${gname}</a>`
+                        : `<span style="font-weight:500;">${gname}</span>`;
+                    const reason = escapeHtml(c.candidate_reason || '');
+                    html += `
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1.4fr; gap: 8px; padding: 12px 24px; align-items: center; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                            <div style="min-width:0;"><span style="font-size:18px;">👥</span> ${nameHtml} <span style="color:#10b981;font-size:0.8em;">IdP</span></div>
+                            <div style="color:#ef4444;font-weight:600;">${c.inactive_members ?? 0}</div>
+                            <div style="color:#10b981;">${c.active_members ?? 0}</div>
+                            <div>${c.total_members ?? 0}</div>
+                            <div>${pct}</div>
+                            <div style="font-size:0.8em;color:var(--text-muted);">${reason}</div>
+                        </div>`;
+                });
+                html += `</div></div>`;
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('denylist-candidates-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Entra ID dynamic membership rule scenarios. Each builds a single
+        // parenthesized clause; multiple clauses combine via a chosen operator.
+        // `needs`: '' (no input), 'value' (single), or 'list' (comma-separated).
+        // Escape regex-special chars in a domain for use in an Entra -match rule.
+        // Domains only contain '.' as a regex metacharacter; escape it to '\.'.
+        // Built via fromCharCode(92) to avoid backslash literals (which the Python
+        // string layer serving this HTML would otherwise mangle).
+        const _bs = String.fromCharCode(92);
+        const _nl = String.fromCharCode(10);  // newline without a backslash escape (Python-string safe)
+        const _escRe = s => s.split('.').join(_bs + '.');
+        const ENTRA_SCENARIOS = {
+            guests:         { label: 'Is a guest user', needs: '',
+                              rule: () => '(user.userType -eq "Guest")' },
+            members_only:   { label: 'Is a member (not guest)', needs: '',
+                              rule: () => '(user.userType -eq "Member")' },
+            disabled:       { label: 'Account is disabled', needs: '',
+                              rule: () => '(user.accountEnabled -eq false)' },
+            upn_domain:     { label: 'UPN ends with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.userPrincipalName -match ".*@${_escRe(d)}$"`).join(' -or ') + ')' },
+            upn_not_domain: { label: 'UPN does NOT end with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.userPrincipalName -notMatch ".*@${_escRe(d)}$"`).join(' -and ') + ')' },
+            mail_domain:    { label: 'Mail ends with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.mail -match ".*@${_escRe(d)}$"`).join(' -or ') + ')' },
+            mail_not_domain:{ label: 'Mail does NOT end with domain(s)', needs: 'list',
+                              rule: v => '(' + v.map(d => `user.mail -notMatch ".*@${_escRe(d)}$"`).join(' -and ') + ')' },
+            dept_eq:        { label: 'Department equals', needs: 'value',
+                              rule: v => `(user.department -eq "${v}")` },
+            dept_ne:        { label: 'Department not equals', needs: 'value',
+                              rule: v => `(user.department -ne "${v}")` },
+            dept_in:        { label: 'Department in list', needs: 'list',
+                              rule: v => `(user.department -in [${v.map(x => `"${x}"`).join(', ')}])` },
+            company_eq:     { label: 'Company name equals', needs: 'value',
+                              rule: v => `(user.companyName -eq "${v}")` },
+            company_ne:     { label: 'Company name not equals', needs: 'value',
+                              rule: v => `(user.companyName -ne "${v}")` },
+            company_in:     { label: 'Company name in list', needs: 'list',
+                              rule: v => `(user.companyName -in [${v.map(x => `"${x}"`).join(', ')}])` },
+        };
+
+        // Working set of condition rows for the builder.
+        let _entraConditions = [];
+        let _entraJoin = '-and';
+
+        function renderEntraRuleBuilder() {
+            _entraConditions = [{ scenario: 'guests', value: '' }];
+            _entraJoin = '-and';
+            const el = document.getElementById('entra-rule-builder');
+            el.innerHTML = `
+                <div style="background: var(--bg-input); border-radius: 12px; padding: 20px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <span style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Combine conditions with</span>
+                        <select id="entra-join" onchange="onEntraJoinChange()" style="padding: 6px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.9em;">
+                            <option value="-and">AND (match all)</option>
+                            <option value="-or">OR (match any)</option>
+                        </select>
+                    </div>
+                    <div id="entra-conditions"></div>
+                    <button onclick="addEntraCondition()" style="margin-top: 10px; padding: 6px 12px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--accent); cursor: pointer; font-size: 0.85em;">+ Add condition</button>
+                    <div style="margin-top: 16px;">
+                        <label style="font-size: 0.8em; color: var(--text-secondary); text-transform: uppercase;">Membership rule (paste into Entra "Dynamic membership rules")</label>
+                        <div style="position: relative; margin-top: 6px;">
+                            <pre id="entra-rule-output" style="background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; padding: 14px; white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.9em; min-height: 48px;"></pre>
+                            <button onclick="copyEntraRule()" style="position: absolute; top: 8px; right: 8px; padding: 4px 10px; background: var(--accent); border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.8em;">Copy</button>
+                        </div>
+                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 8px;">
+                            Docs: <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-membership" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">dynamic membership rules</a> ·
+                            <a href="https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-rule-more-efficient" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">efficient rules</a>
+                        </div>
+                    </div>
+                </div>`;
+            renderEntraConditions();
+        }
+
+        function renderEntraConditions() {
+            const wrap = document.getElementById('entra-conditions');
+            const scenarioOpts = (sel) => Object.entries(ENTRA_SCENARIOS)
+                .map(([k, s]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${s.label}</option>`).join('');
+            wrap.innerHTML = _entraConditions.map((c, i) => {
+                const spec = ENTRA_SCENARIOS[c.scenario];
+                const needsInput = spec.needs !== '';
+                const placeholder = spec.needs === 'list' ? 'comma-separated, e.g. contoso.com, fabrikam.com' : 'value';
+                return `
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                        <span style="color: var(--text-muted); font-size: 0.85em; width: 44px;">${i === 0 ? 'Where' : (_entraJoin === '-and' ? 'AND' : 'OR')}</span>
+                        <select onchange="updateEntraCondition(${i}, 'scenario', this.value)" style="flex: 1; min-width: 200px; padding: 8px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.88em;">
+                            ${scenarioOpts(c.scenario)}
+                        </select>
+                        <input type="text" value="${escapeHtml(c.value || '')}" oninput="updateEntraCondition(${i}, 'value', this.value)" placeholder="${placeholder}" style="flex: 2; min-width: 200px; padding: 8px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 0.88em; ${needsInput ? '' : 'visibility: hidden;'}">
+                        <button onclick="removeEntraCondition(${i})" title="Remove" style="padding: 6px 10px; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; color: #ef4444; cursor: pointer; ${_entraConditions.length === 1 ? 'visibility: hidden;' : ''}">✕</button>
+                    </div>`;
+            }).join('');
+            regenEntraRule();
+        }
+
+        function addEntraCondition() { _entraConditions.push({ scenario: 'guests', value: '' }); renderEntraConditions(); }
+        function removeEntraCondition(i) { _entraConditions.splice(i, 1); renderEntraConditions(); }
+        function updateEntraCondition(i, field, val) {
+            _entraConditions[i][field] = val;
+            if (field === 'scenario') renderEntraConditions();  // input visibility may change
+            else regenEntraRule();
+        }
+        function onEntraJoinChange() {
+            _entraJoin = document.getElementById('entra-join').value;
+            renderEntraConditions();
+        }
+
+        function regenEntraRule() {
+            const clauses = [];
+            let incomplete = false;
+            for (const c of _entraConditions) {
+                const spec = ENTRA_SCENARIOS[c.scenario];
+                try {
+                    if (spec.needs === '') { clauses.push(spec.rule()); }
+                    else {
+                        const raw = (c.value || '').trim();
+                        if (!raw) { incomplete = true; continue; }
+                        if (spec.needs === 'list') {
+                            const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+                            if (!parts.length) { incomplete = true; continue; }
+                            clauses.push(spec.rule(parts));
+                        } else {
+                            clauses.push(spec.rule(raw));
+                        }
+                    }
+                } catch (e) { /* skip malformed */ }
+            }
+            let rule;
+            if (!clauses.length) rule = '// add at least one complete condition';
+            else {
+                rule = clauses.length === 1 ? clauses[0] : clauses.join(` ${_entraJoin} `);
+                if (incomplete) rule += _nl + '// note: some conditions are missing values and were skipped';
+            }
+            const out = document.getElementById('entra-rule-output');
+            if (out) out.textContent = rule;
+        }
+
+        function copyEntraRule() {
+            const txt = document.getElementById('entra-rule-output').textContent
+                .split(_nl).filter(l => !l.trim().startsWith('//')).join(_nl).trim();
+            navigator.clipboard.writeText(txt).catch(() => {});
+        }
+
+        // Scope-adaptive coverage block for the SAT audit-log/SCIM tabs (Shared
+        // to All Users, Privileged Non-IdP, Denylist). Rendered in the tab BODY —
+        // never touches the global graph-collection header.
+        //
+        // cfg = {
+        //   dateTs:   detection timestamp string (shown "Data Collection Date & Time"),
+        //   scopeLabel: 'Accounts' | 'Metastores' | 'Workspaces' (drives the box title),
+        //   scopeIcon:  emoji for the scope entities,
+        //   scanned:  [{workspace/name, reason}]  (per-entity coverage; optional),
+        //   failed:   [{workspace/name, reason}]  (coverage gaps w/ reason; optional),
+        //   inReport: [names]                      (entities whose data appears),
+        //   note:     extra one-line context (optional)
+        // }
+        // Collapse a long list of rendered items behind a "Show N more" toggle so
+        // reports covering hundreds of workspaces don't render as a giant wall.
+        function collapsibleList(items, renderItem, limit) {
+            if (!items.length) return '';
+            if (items.length <= limit) return items.map(renderItem).join('');
+            const id = 'covmore-' + (collapsibleList._n = (collapsibleList._n || 0) + 1);
+            const shown = items.slice(0, limit).map(renderItem).join('');
+            const rest = items.slice(limit).map(renderItem).join('');
+            const remaining = items.length - limit;
+            return `${shown}`
+                + `<span id="${id}" style="display:none;">${rest}</span>`
+                + `<a href="javascript:void(0)" onclick="const r=document.getElementById('${id}');`
+                + `const on=r.style.display==='none';r.style.display=on?'inline':'none';`
+                + `this.textContent=on?'Show less':'Show ${remaining} more';" `
+                + `style="display:inline-block; margin:2px 4px; font-size:0.85em; color:var(--accent);">`
+                + `Show ${remaining} more</a>`;
+        }
+
+        function renderCoverageBlock(cfg) {
+            const icon = cfg.scopeIcon || '🏢';
+            const CHIP_LIMIT = 12;   // chips shown before collapsing the remainder
+            const FAIL_LIMIT = 8;    // failed entries shown before collapsing
+            const nameOf = (x) => (x && typeof x === 'object') ? (x.workspace || x.name || '') : x;
+            const okChip = (x) => `<span style="display:inline-block; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:2px 8px; margin:2px; font-size:0.85em;">${icon} ${escapeHtml(nameOf(x))}</span>`;
+            // Failed entries render the reason inline (not hover-only) so it's fully visible.
+            const failItem = (x) => `<div style="padding:4px 0; font-size:0.85em;"><span style="color:#ef4444;">${icon} ${escapeHtml(nameOf(x))}</span><span style="color:var(--text-muted);"> — ${escapeHtml(x.reason || 'not scanned')}</span></div>`;
+
+            const scanned = cfg.scanned || [];
+            const failed = cfg.failed || [];
+            const inReport = cfg.inReport || [];
+
+            // Coverage summary line — only meaningful when we have a per-entity scan.
+            let coverageHtml = '';
+            if (scanned.length || failed.length) {
+                const okLine = `<span style="color:#10b981; font-weight:600;">✓ ${scanned.length} scanned</span>`;
+                const failLine = failed.length ? ` · <span style="color:#ef4444; font-weight:600;">✗ ${failed.length} not scanned</span>` : '';
+                coverageHtml = `<div style="margin-top:6px; font-size:0.9em;">${okLine}${failLine}</div>`
+                    + (failed.length ? `<div style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px;">${collapsibleList(failed, failItem, FAIL_LIMIT)}</div>` : '');
+            }
+            const inReportHtml = inReport.length
+                ? `<div style="margin-top:6px;">${collapsibleList(inReport, okChip, CHIP_LIMIT)}</div>`
+                : '<div style="margin-top:6px; color: var(--text-muted); font-size:0.9em;">None</div>';
+            const noteHtml = cfg.note ? `<div style="margin-top:8px; font-size:0.78em; color:var(--text-muted);">${escapeHtml(cfg.note)}</div>` : '';
+            const dateHtml = cfg.dateTs
+                ? `<div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">Data Collection Date &amp; Time</div>
+                   <div style="margin-top:6px; font-size:0.95em;">🕒 ${escapeHtml(cfg.dateTs)}</div>` : '';
+
+            return `
+                <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 1; min-width: 240px;">
+                        ${dateHtml}
+                    </div>
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; flex: 2; min-width: 300px;">
+                        <div class="stats-header-label" style="color: var(--text-secondary); font-size: 0.8em; text-transform: uppercase;">${escapeHtml(cfg.scopeLabel || 'Workspaces')} in this Report</div>
+                        ${coverageHtml}
+                        <div style="font-size:0.78em; color:var(--text-muted); margin-top:${coverageHtml ? '10px' : '6px'};">In this report${inReport.length ? ` (${inReport.length})` : ''}:</div>
+                        ${inReportHtml}
+                        ${noteHtml}
+                    </div>
+                </div>`;
+        }
+
+        async function loadPrivilegedNonIdp() {
+            const container = document.getElementById('privilegednonidp-results');
+            container.innerHTML = '<div class="loading">Loading privileged non-IdP identities...</div>';
+
+            try {
+                const res = await fetch('/api/report/privileged-non-idp');
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('privilegednonidp-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                if (data.length === 0) {
+                    showEmpty('privilegednonidp-results', 'No privileged non-IdP-managed identities found in the latest detection run.');
+                    return;
+                }
+
+                const detTs = result.detection_timestamp
+                    ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC'
+                    : 'Unknown';
+
+                const typeLabels = { account_admin: 'Account Admin', workspace_admin: 'Workspace Admin' };
+
+                // Group by finding_type
+                const byType = {};
+                data.forEach(d => {
+                    const t = d.finding_type || 'unknown';
+                    if (!byType[t]) byType[t] = [];
+                    byType[t].push(d);
+                });
+
+                let html = `
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Workspaces',
+                        scopeIcon: '🏢',
+                        scanned: result.workspaces_scanned || [],
+                        failed: result.workspaces_failed || [],
+                        inReport: result.workspaces_in_report || [],
+                        note: 'Account Admin is detected account-wide; Workspace Admin is resolved per-workspace via the account workspace-assignment API (coverage above).'
+                    })}
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Privileged Non-IdP Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: var(--warning);">${summary.account_admin || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Acct Admin</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: var(--warning);">${summary.workspace_admin || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">WS Admin</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${summary.remediated || 0}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Remediated</div></div>
+                            <div><div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${(summary.total || 0) - (summary.remediated || 0)}</div><div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Not Remediated</div></div>
+                        </div>
+                    </div>
+                    <div class="results-container">
+                        <div class="results-header" style="flex-wrap: wrap; gap: 10px;">
+                            <span class="results-title">Privileged Identities</span>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                ${wsFilterSelectHtml('pni-ws-filter', data, "applyWsFilter('privilegednonidp-results','pni-ws-filter')")}
+                                <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                            </div>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Categorize a principal_type into a display bucket.
+                const categoryOf = (pt) => (pt || '').includes('Group') ? 'Groups'
+                                         : (pt || '').includes('ServicePrincipal') ? 'Service Principals'
+                                         : 'Users';
+                const categoryEmoji = { 'Users': '👤', 'Groups': '👥', 'Service Principals': '🤖' };
+                const categoryOrder = ['Users', 'Groups', 'Service Principals'];
+
+                ['account_admin', 'workspace_admin'].forEach((type) => {
+                    const items = byType[type];
+                    if (!items || !items.length) return;
+                    const roleLabel = typeLabels[type] || type;
+
+                    // Role header
+                    html += `
+                        <div class="tree-type-group">
+                            <div style="display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span style="font-size: 20px;">🛡️</span>
+                                <span style="font-weight: 700; flex: 1;">${roleLabel} (${items.length})</span>
+                            </div>`;
+
+                    // Split into Users / Groups / Service Principals subsections
+                    const byCat = { 'Users': [], 'Groups': [], 'Service Principals': [] };
+                    items.forEach(it => byCat[categoryOf(it.principal_type)].push(it));
+
+                    categoryOrder.forEach((cat) => {
+                        const catItems = byCat[cat];
+                        if (!catItems.length) return;
+                        const secId = 'privnonidp-' + type + '-' + cat.replace(/\s+/g, '');
+                        html += `
+                            <div class="tree-type-header" onclick="toggleTreeSection('${secId}')" style="display: flex; align-items: center; gap: 12px; padding: 12px 24px 12px 40px; cursor: pointer; border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${secId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 16px;">${categoryEmoji[cat]}</span>
+                                <span style="font-weight: 600; flex: 1;">${cat} (${catItems.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${secId}-content" style="display: none;">`;
+
+                        catItems.forEach((item, idx) => {
+                            const isLast = idx === catItems.length - 1;
+                            const who = formatPrincipalName(item.principal_name, item.principal_email || item.application_id, null, item.principal_id);
+                            // Link the name to the account console for investigation.
+                            const nameHtml = item.console_url
+                                ? `<a href="${escapeHtml(item.console_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${who}</a>`
+                                : who;
+                            const roleBadge = `<span style="color: var(--warning); font-weight: 600;">${roleLabel}</span>`;
+                            const idpBadge = item.is_idp_managed
+                                ? ' <span style="color: #10b981;">· IdP-managed</span>'
+                                : ' <span style="color: #ef4444;">· ⚠ Non-IdP</span>';
+                            const remBadge = item.auto_remediated
+                                ? ' <span style="color: #10b981;">· ✓ Remediated</span>'
+                                : ' <span style="color: #ef4444;">· Not Remediated</span>';
+                            const wsHtml = (item.workspace_name || item.workspace_id)
+                                ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(item.workspace_name || item.workspace_id)}</span>` : '';
+
+                            html += `
+                                <div class="tree-resource ws-row" data-ws="${escapeHtml((item.workspace_id || item.workspace_name || '').toString())}" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 64px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                    <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="font-weight: 500; word-break: break-all;">${categoryEmoji[cat]} ${nameHtml}</div>
+                                        <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">${wsHtml}</div>
+                                    </div>
+                                    <div style="font-size: 0.8em; white-space: nowrap;">${roleBadge}${idpBadge}${remBadge}</div>
+                                </div>`;
+                        });
+                        html += `</div>`;
+                    });
+
+                    html += `</div>`;
+                });
+
+                html += `</div></div>`;
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('privilegednonidp-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Load Orphaned Resources Report
+        async function loadSharedToAccount() {
+            const container = document.getElementById('sharedtoaccount-results');
+            container.innerHTML = '<div class="loading">Loading shared-to-account-users findings...</div>';
+
+            try {
+                const res = await fetch('/api/report/shared-to-account');
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('sharedtoaccount-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                if (data.length === 0) {
+                    showEmpty('sharedtoaccount-results', 'No resources shared to all account users were found in the latest detection run.');
+                    return;
+                }
+
+                const typeLabels = { dashboards: 'Dashboards', genie: 'Genie Agents', apps: 'Apps' };
+                const typeEmoji  = { dashboards: '📊', genie: '💬', apps: '🧩' };
+
+                // Group by resource_type
+                const byType = {};
+                data.forEach(d => {
+                    const t = d.resource_type || 'unknown';
+                    if (!byType[t]) byType[t] = [];
+                    byType[t].push(d);
+                });
+
+                // Header: detection run date/time + metastore scope + workspaces where shares were found.
+                const detTs = result.detection_timestamp
+                    ? escapeHtml(String(result.detection_timestamp).replace('T', ' ').slice(0, 19)) + ' UTC'
+                    : 'Unknown';
+                const metastores = (result.metastores || []).map(m => ({name: m, reason: 'ok'}));
+
+                let html = `
+                    ${renderCoverageBlock({
+                        dateTs: detTs,
+                        scopeLabel: 'Metastores',
+                        scopeIcon: '🗄️',
+                        scanned: metastores,
+                        failed: [],
+                        inReport: result.workspaces || [],
+                        note: 'Detection is account-wide over the audit log (system.access.audit) of the metastore above; the entities in this report are the workspaces where shares were found.'
+                    })}
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Shared to All Account Users</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #ef4444;">${summary.outstanding || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Not Remediated</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #10b981;">${summary.remediated || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Remediated</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="results-container">
+                        <div class="results-header" style="flex-wrap: wrap; gap: 10px;">
+                            <span class="results-title">Shared Resources</span>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                ${wsFilterSelectHtml('sta-ws-filter', data, "applyWsFilter('sharedtoaccount-results','sta-ws-filter')")}
+                                <span class="results-count">${data.length} finding${data.length === 1 ? '' : 's'}</span>
+                            </div>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                const typeOrder = ['dashboards', 'genie', 'apps'];
+                const sortedTypes = Object.keys(byType).sort((a, b) => {
+                    const aIdx = typeOrder.indexOf(a), bIdx = typeOrder.indexOf(b);
+                    if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                });
+
+                sortedTypes.forEach((type) => {
+                    const items = byType[type];
+                    const typeId = 'sharedtoaccount-type-' + type.replace(/[^a-zA-Z]/g, '');
+                    const label = typeLabels[type] || type;
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${typeEmoji[type] || '📄'}</span>
+                                <span style="font-weight: 600; flex: 1;">${label} (${items.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    items.forEach((item, idx) => {
+                        const isLast = idx === items.length - 1;
+                        const name = escapeHtml(item.resource_id || 'unknown');
+                        // Format sharer like other tabs: 👤 Full Name (email)
+                        const sharedBy = formatPrincipalName(item.shared_by_display_name, item.shared_by, null, null);
+                        const wsName = item.workspace_name || item.workspace_id || '';
+                        const when = escapeHtml((item.event_time || '').replace('T', ' ').slice(0, 19));
+                        const url = item.resource_url || '';
+
+                        const statusBadge = item.auto_remediated
+                            ? '<span style="color: #10b981; font-weight: 600;">✓ Remediated</span>'
+                            : '<span style="color: #ef4444; font-weight: 600;">⚠ Not Remediated</span>';
+
+                        const nameHtml = url
+                            ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${name}</a>`
+                            : name;
+
+                        const wsHtml = wsName
+                            ? `<span style="margin-left: 10px;">🏢 Workspace: ${escapeHtml(wsName)}</span>` : '';
+                        const whenHtml = when ? `<span style="margin-left: 10px;">🕒 ${when}</span>` : '';
+                        const sharedToHtml = item.group_name
+                            ? `<span style="margin-left: 10px;">👥 Shared to: ${escapeHtml(item.group_name)}</span>` : '';
+
+                        html += `
+                            <div class="tree-resource ws-row" data-ws="${escapeHtml((item.workspace_id || item.workspace_name || '').toString())}" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; word-break: break-all;">${nameHtml}</div>
+                                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                                        <span>👤 Shared by ${sharedBy}</span>${sharedToHtml}${wsHtml}${whenHtml}
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.8em; white-space: nowrap;">${statusBadge}</div>
+                            </div>`;
+                    });
+
+                    html += `</div></div>`;
+                });
+
+                html += `</div></div>`;
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('sharedtoaccount-results', 'Error: ' + e.message);
+            }
+        }
+
+        async function loadOrphanedResources() {
+            const container = document.getElementById('orphaned-results');
+            container.innerHTML = '<div class="loading">Analyzing resources...</div>';
+
+            try {
+                const res = await fetch(`/api/report/orphaned?run_id=${currentRunId}`);
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('orphaned-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                // Group by type
+                const byType = {};
+                data.forEach(d => {
+                    const t = d.node_type || 'Unknown';
+                    if (!byType[t]) byType[t] = [];
+                    byType[t].push(d);
+                });
+
+                // Count by type for summary
+                const typeCounts = {};
+                for (const [type, items] of Object.entries(byType)) {
+                    typeCounts[type] = items.length;
+                }
+
+                let html = `
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Orphaned Resources Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            </div>
+                            ${Object.entries(typeCounts).map(([type, count]) => `
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #f59e0b;">${count}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">${type}s</div>
+                            </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Orphaned Resources</span>
+                            <span class="results-count">${summary.total || 0} resources</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Render tree structure by type
+                const typeOrder = ['Catalog', 'Schema', 'Table', 'View', 'Volume', 'Function'];
+                const sortedTypes = Object.keys(byType).sort((a, b) => {
+                    const aIdx = typeOrder.indexOf(a);
+                    const bIdx = typeOrder.indexOf(b);
+                    if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                });
+
+                sortedTypes.forEach((type) => {
+                    const items = byType[type];
+                    const typeId = 'orphaned-type-' + type.replace(/[^a-zA-Z]/g, '');
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${getEmoji(type)}</span>
+                                <span style="font-weight: 600; flex: 1;">${type}s (${items.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    // Sort resources alphabetically
+                    const sortedItems = items.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+
+                    sortedItems.forEach((item, idx) => {
+                        const isLast = idx === sortedItems.length - 1;
+                        const name = item.name || item.id;
+                        const owner = item.owner || 'No owner';
+                        const resourceId = item.name || item.id;
+
+                        html += `
+                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${name}</div>
+                                    <div style="font-size: 0.8em; color: var(--text-muted);">Owner: ${owner}</div>
+                                </div>
+                                <a href="javascript:void(0)" onclick="navigateToResourceAnalysis('${resourceId.replace(/'/g, "\\'")}')"
+                                   style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--accent); color: white; border-radius: 6px; text-decoration: none; font-size: 0.85em; font-weight: 500; transition: opacity 0.2s;"
+                                   onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                                    <span>🔍</span> Analyze
+                                </a>
+                            </div>`;
+                    });
+
+                    html += `
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div></div>';
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('orphaned-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Load Over-Privileged Principals Report
+        async function loadOverPrivileged() {
+            const container = document.getElementById('overprivileged-results');
+            container.innerHTML = '<div class="loading">Analyzing privileges...</div>';
+
+            try {
+                const res = await fetch(`/api/report/overprivileged?run_id=${currentRunId}`);
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('overprivileged-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                // Group by level
+                const byLevel = { 'HIGH': [], 'MEDIUM': [], 'LOW': [] };
+                data.forEach(d => {
+                    const level = d.risk_level || 'LOW';
+                    if (byLevel[level]) byLevel[level].push(d);
+                });
+
+                let html = `
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Over-Privileged Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${data.length}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #8b5cf6;">${summary.high || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">High</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #f59e0b;">${summary.medium || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Medium</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #22c55e;">${summary.low || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Low</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Categorization Legend</div>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 8px; font-size: 0.85em;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #8b5cf6;"></span>
+                                <span><strong>High:</strong> Access to 3+ catalogs OR 10+ admin grants (ALL PRIVILEGES, MANAGE)</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #f59e0b;"></span>
+                                <span><strong>Medium:</strong> Access to 1-2 catalogs OR 5-9 admin grants</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #22c55e;"></span>
+                                <span><strong>Low:</strong> Has admin grants but below medium thresholds</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Over-Privileged Principals</span>
+                            <span class="results-count">${data.length} principals</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Render tree structure by level
+                const levelOrder = ['HIGH', 'MEDIUM', 'LOW'];
+                const levelColors = { 'HIGH': '#8b5cf6', 'MEDIUM': '#f59e0b', 'LOW': '#22c55e' };
+                const levelEmojis = { 'HIGH': '🟣', 'MEDIUM': '🟠', 'LOW': '🟢' };
+
+                levelOrder.forEach((level) => {
+                    const items = byLevel[level];
+                    if (items.length === 0) return;
+
+                    const typeId = 'overprivileged-level-' + level.toLowerCase();
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${levelEmojis[level]}</span>
+                                <span style="font-weight: 600; flex: 1; color: ${levelColors[level]};">${level} (${items.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    // Sort by total resources descending
+                    const sortedItems = items.sort((a, b) => (b.total_resources || 0) - (a.total_resources || 0));
+
+                    sortedItems.forEach((item, idx) => {
+                        const isLast = idx === sortedItems.length - 1;
+                        const displayName = formatPrincipalName(item.principal_name, item.principal_email, null, item.principal_id);
+                        const icon = item.principal_type?.includes('Service') ? '🤖' : '👤';
+                        const analyzeId = item.principal_email || item.principal_name || item.principal_id;
+
+                        html += `
+                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <span style="font-size: 20px;">${icon}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${displayName}</div>
+                                    <div style="font-size: 0.8em; color: var(--text-muted);">
+                                        Catalogs: ${item.catalog_count || 0} | Admin Grants: ${item.admin_grants || 0} | Total Resources: ${item.total_resources || 0}
+                                    </div>
+                                </div>
+                                <a href="javascript:void(0)" onclick="navigateToPrincipalAnalysis('${encodeURIComponent(analyzeId)}')"
+                                   style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--accent); color: white; border-radius: 6px; text-decoration: none; font-size: 0.85em; font-weight: 500; white-space: nowrap; transition: opacity 0.2s;"
+                                   onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                                    <span>🔍</span> Analyze
+                                </a>
+                            </div>`;
+                    });
+
+                    html += `
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div></div>';
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('overprivileged-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Load High Privilege Principals Report
+        async function loadHighPrivilege() {
+            const container = document.getElementById('highprivilege-results');
+            container.innerHTML = '<div class="loading">Analyzing high privilege principals...</div>';
+
+            try {
+                const res = await fetch(`/api/report/high-privilege?run_id=${currentRunId}`);
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('highprivilege-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                // Group by role, then by principal type
+                const byRole = {
+                    'Account Admin': { 'Users': {}, 'Groups': {}, 'Service Principals': {} },
+                    'Metastore Admin': { 'Users': {}, 'Groups': {}, 'Service Principals': {} },
+                    'Workspace Admin': { 'Users': {}, 'Groups': {}, 'Service Principals': {} },
+                    'Catalog Owner': { 'Users': {}, 'Groups': {}, 'Service Principals': {} }
+                };
+
+                data.forEach(d => {
+                    const role = d.role || 'Unknown';
+                    const ptype = d.principal_type || '';
+                    const pid = d.principal_id || '';
+                    const pname = d.principal_name || pid;
+
+                    let category = 'Users';
+                    if (ptype.includes('Group')) category = 'Groups';
+                    else if (ptype.includes('ServicePrincipal')) category = 'Service Principals';
+
+                    if (!byRole[role]) byRole[role] = { 'Users': {}, 'Groups': {}, 'Service Principals': {} };
+                    if (!byRole[role][category][pid]) {
+                        byRole[role][category][pid] = {
+                            name: pname,
+                            email: d.principal_email,
+                            type: ptype,
+                            access: []
+                        };
+                    }
+                    byRole[role][category][pid].access.push({
+                        via: d.via,
+                        access_type: d.access_type
+                    });
+                });
+
+                let html = `
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">High Privilege Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total_principals || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #8b5cf6;">${summary.account_admin || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Account Admin</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #ec4899;">${summary.metastore_admin || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Metastore Admin</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #f59e0b;">${summary.workspace_admin || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Workspace Admin</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #3b82f6;">${summary.catalog_owner || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Catalog Owner</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Privilege Legend</div>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 8px; font-size: 0.85em;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #8b5cf6;"></span>
+                                <span><strong>Account Admin:</strong> Full control over the Databricks account</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #ec4899;"></span>
+                                <span><strong>Metastore Admin:</strong> Full control over Unity Catalog metastore</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #f59e0b;"></span>
+                                <span><strong>Workspace Admin:</strong> Full control over a workspace</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #3b82f6;"></span>
+                                <span><strong>Catalog Owner:</strong> Full control over a catalog and its objects</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 12px; font-size: 0.8em; color: var(--text-muted);">
+                            Includes effective privileges via nested group membership (up to 2 levels deep).
+                            Each row's "via" names the workspace / metastore / group the role comes from.
+                        </div>
+                    </div>
+
+                    <div class="results-container">
+                        <div class="results-header" style="flex-wrap: wrap; gap: 10px;">
+                            <span class="results-title">High Privilege Principals</span>
+                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <input id="hp-search" type="text" oninput="applyHighPrivFilter()" placeholder="Search by name, email, or source group…"
+                                       style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); padding: 6px 10px; font-size: 0.85em; min-width: 240px;">
+                                <select id="hp-role-filter" onchange="applyHighPrivFilter()"
+                                        style="background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); padding: 6px 10px; font-size: 0.85em;">
+                                    <option value="">All roles</option>
+                                    <option value="Account Admin">Account Admin</option>
+                                    <option value="Metastore Admin">Metastore Admin</option>
+                                    <option value="Workspace Admin">Workspace Admin</option>
+                                    <option value="Catalog Owner">Catalog Owner</option>
+                                </select>
+                                <span class="results-count" id="hp-filter-count"></span>
+                            </div>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Render tree structure by role
+                const roleOrder = ['Account Admin', 'Metastore Admin', 'Workspace Admin', 'Catalog Owner'];
+                const roleColors = {
+                    'Account Admin': '#8b5cf6',
+                    'Metastore Admin': '#ec4899',
+                    'Workspace Admin': '#f59e0b',
+                    'Catalog Owner': '#3b82f6'
+                };
+                const roleEmojis = {
+                    'Account Admin': '👑',
+                    'Metastore Admin': '🗄️',
+                    'Workspace Admin': '🏢',
+                    'Catalog Owner': '📚'
+                };
+                const typeIcons = { 'Users': '👤', 'Groups': '👥', 'Service Principals': '🤖' };
+
+                roleOrder.forEach((role) => {
+                    const roleData = byRole[role];
+                    const allPrincipals = [
+                        ...Object.values(roleData['Users']),
+                        ...Object.values(roleData['Groups']),
+                        ...Object.values(roleData['Service Principals'])
+                    ];
+                    if (allPrincipals.length === 0) return;
+
+                    const roleId = 'highpriv-role-' + role.replace(/\s+/g, '').toLowerCase();
+
+                    html += `
+                        <div class="tree-type-group" data-role="${role}">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${roleId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${roleId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${roleEmojis[role]}</span>
+                                <span style="font-weight: 600; flex: 1; color: ${roleColors[role]};">${role} (${allPrincipals.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${roleId}-content" style="display: none;">`;
+
+                    // Sort principals
+                    const sortedPrincipals = allPrincipals.sort((a, b) => a.name.localeCompare(b.name));
+
+                    sortedPrincipals.forEach((principal, idx) => {
+                        const isLast = idx === sortedPrincipals.length - 1;
+                        let pIcon = '👤';
+                        if (principal.type.includes('Group')) pIcon = '👥';
+                        else if (principal.type.includes('ServicePrincipal')) pIcon = '🤖';
+                        const displayName = formatPrincipalName(principal.name, principal.email, null, null);
+
+                        const accessList = principal.access.map(a => {
+                            return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: ${roleColors[role]}20; color: ${roleColors[role]}; border-radius: 4px; font-size: 0.75em; margin-right: 6px; margin-bottom: 4px;">${a.via} <span style="opacity: 0.7;">(${a.access_type})</span></span>`;
+                        }).join('');
+
+                        // Create analyze link - use email for users, name for others
+                        const analyzeId = principal.email || principal.name;
+                        const hpSearch = (principal.name + ' ' + (principal.email || '') + ' ' + principal.access.map(a => a.via || '').join(' ')).toLowerCase();
+
+                        html += `
+                            <div class="tree-resource hp-row" data-search="${escapeHtml(hpSearch)}" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <span style="font-size: 20px;">${pIcon}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${displayName}</div>
+                                    <div style="font-size: 0.85em; line-height: 1.6; margin-top: 8px;">
+                                        ${accessList}
+                                    </div>
+                                </div>
+                                <a href="javascript:void(0)" onclick="navigateToEscalation('${encodeURIComponent(analyzeId)}')"
+                                   style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--accent); color: white; border-radius: 6px; text-decoration: none; font-size: 0.85em; font-weight: 500; white-space: nowrap; transition: opacity 0.2s;"
+                                   onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+                                    <span>🔍</span> Analyze
+                                </a>
+                            </div>`;
+                    });
+
+                    html += `
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div></div>';
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('highprivilege-results', 'Error: ' + e.message);
+            }
+        }
+
+        // Live search + role filter for the High Privilege tree. Hides principal
+        // rows that don't match, collapses role groups with no matches, and expands
+        // matching groups so results are visible without manual clicking.
+        function applyHighPrivFilter() {
+            const q = (document.getElementById('hp-search')?.value || '').trim().toLowerCase();
+            const roleF = document.getElementById('hp-role-filter')?.value || '';
+            let shown = 0;
+            document.querySelectorAll('#highprivilege-results .tree-type-group').forEach(g => {
+                const role = g.getAttribute('data-role') || '';
+                const roleOk = (!roleF || role === roleF);
+                let anyRow = false;
+                g.querySelectorAll('.hp-row').forEach(r => {
+                    const txt = r.getAttribute('data-search') || '';
+                    const match = roleOk && (!q || txt.includes(q));
+                    r.style.display = match ? '' : 'none';
+                    if (match) { anyRow = true; shown++; }
+                });
+                g.style.display = (roleOk && anyRow) ? '' : 'none';
+                if ((q || roleF) && anyRow) {
+                    const content = g.querySelector('.tree-type-content');
+                    const toggle = g.querySelector('.tree-toggle');
+                    if (content) content.style.display = 'block';
+                    if (toggle) toggle.textContent = '▼';
+                }
+            });
+            const c = document.getElementById('hp-filter-count');
+            if (c) c.textContent = (q || roleF) ? (shown + ' match' + (shown === 1 ? '' : 'es')) : '';
+        }
+
+        // Secret Scope filter data cache
+        let secretScopeFilterData = { workspaces: [], scopes: [] };
+
+        // Load Secret Scope Filters
+        async function loadSecretScopeFilters() {
+            try {
+                const res = await fetch(`/api/report/secret-scopes-filters?run_id=${currentRunId}`);
+                const result = await res.json();
+
+                if (result.success) {
+                    secretScopeFilterData = result;
+
+                    // Populate workspace dropdown
+                    const wsSelect = document.getElementById('secretscope-workspace-filter');
+                    wsSelect.innerHTML = '<option value="">All Workspaces</option>';
+                    result.workspaces.forEach(ws => {
+                        wsSelect.innerHTML += `<option value="${ws.id}">${ws.name}</option>`;
+                    });
+
+                    // Populate scope dropdown (all scopes initially)
+                    updateScopeDropdown('');
+                }
+            } catch (e) {
+                console.error('Error loading secret scope filters:', e);
+            }
+        }
+
+        // Update scope dropdown based on selected workspace
+        function updateScopeDropdown(workspaceId) {
+            const scopeSelect = document.getElementById('secretscope-scope-filter');
+            scopeSelect.innerHTML = '<option value="">All Scopes</option>';
+
+            let filteredScopes = secretScopeFilterData.scopes;
+            if (workspaceId) {
+                filteredScopes = filteredScopes.filter(s => s.workspace_id === workspaceId);
+            }
+
+            // Group scopes by name (in case same name appears in multiple workspaces)
+            const uniqueScopes = {};
+            filteredScopes.forEach(s => {
+                const key = workspaceId ? s.scope_name : `${s.scope_name} (${s.workspace_name || 'N/A'})`;
+                uniqueScopes[s.scope_name] = key;
+            });
+
+            Object.entries(uniqueScopes).sort((a, b) => a[1].localeCompare(b[1])).forEach(([scopeName, displayName]) => {
+                scopeSelect.innerHTML += `<option value="${scopeName}">${displayName}</option>`;
+            });
+        }
+
+        // Handle workspace filter change
+        function onSecretScopeWorkspaceChange() {
+            const workspaceId = document.getElementById('secretscope-workspace-filter').value;
+            updateScopeDropdown(workspaceId);
+            // Reset scope selection and reload
+            document.getElementById('secretscope-scope-filter').value = '';
+            loadSecretScopeAccess();
+        }
+
+        // Clear all secret scope filters
+        function clearSecretScopeFilters() {
+            document.getElementById('secretscope-workspace-filter').value = '';
+            document.getElementById('secretscope-scope-filter').value = '';
+            updateScopeDropdown('');
+            loadSecretScopeAccess();
+        }
+
+        // Load Secret Scope Access Report
+        async function loadSecretScopeAccess() {
+            const container = document.getElementById('secretscopes-results');
+            container.innerHTML = '<div class="loading">Analyzing secret scope access...</div>';
+
+            // Load filters if not already loaded
+            if (secretScopeFilterData.scopes.length === 0) {
+                await loadSecretScopeFilters();
+            }
+
+            // Get filter values
+            const workspaceId = document.getElementById('secretscope-workspace-filter').value;
+            const scopeName = document.getElementById('secretscope-scope-filter').value;
+
+            try {
+                let url = `/api/report/secret-scope-access?run_id=${currentRunId}`;
+                if (workspaceId) url += `&workspace_id=${encodeURIComponent(workspaceId)}`;
+                if (scopeName) url += `&scope_name=${encodeURIComponent(scopeName)}`;
+
+                const res = await fetch(url);
+                const result = await res.json();
+
+                if (result.error) {
+                    showEmpty('secretscopes-results', result.error);
+                    return;
+                }
+
+                const data = result.data || [];
+                const summary = result.summary || {};
+
+                // Group by principal type, then by principal
+                const byType = { 'Users': {}, 'Groups': {}, 'Service Principals': {} };
+
+                data.forEach(d => {
+                    const ptype = d.principal_type || '';
+                    const pid = d.principal_id || '';
+                    const pname = d.principal_name || pid;
+                    let category = 'Users';
+                    if (ptype.includes('Group')) category = 'Groups';
+                    else if (ptype.includes('ServicePrincipal')) category = 'Service Principals';
+
+                    if (!byType[category][pid]) {
+                        byType[category][pid] = {
+                            name: pname,
+                            email: d.principal_email,
+                            type: ptype,
+                            scopes: []
+                        };
+                    }
+                    byType[category][pid].scopes.push({
+                        scope: d.scope_name,
+                        permission: d.permission_level,
+                        relationship: d.relationship
+                    });
+                });
+
+                // Build active filter indicator
+                const activeFilters = [];
+                if (workspaceId) {
+                    const ws = secretScopeFilterData.workspaces.find(w => w.id === workspaceId);
+                    activeFilters.push(`Workspace: ${ws ? ws.name : workspaceId}`);
+                }
+                if (scopeName) {
+                    activeFilters.push(`Scope: ${scopeName}`);
+                }
+                const filterIndicator = activeFilters.length > 0
+                    ? `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.85em; color: var(--accent);">🔍 Filtered by: ${activeFilters.join(' → ')}</div>`
+                    : '';
+
+                let html = `
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Secret Scope Access Summary</div>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; text-align: center;">
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: var(--accent);">${summary.total_scopes || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Scopes</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #3b82f6;">${summary.users || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Users</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #8b5cf6;">${summary.groups || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Groups</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 1.8em; font-weight: 700; color: #f59e0b;">${summary.service_principals || 0}</div>
+                                <div style="font-size: 0.75em; color: var(--text-muted); text-transform: uppercase;">Service Principals</div>
+                            </div>
+                        </div>
+                        ${filterIndicator}
+                    </div>
+
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">Permission Legend</div>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 8px; font-size: 0.85em;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #8b5cf6;"></span>
+                                <span><strong>MANAGE:</strong> Full control - can read, write, and manage ACLs</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #f59e0b;"></span>
+                                <span><strong>WRITE:</strong> Can read and write secrets</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #3b82f6;"></span>
+                                <span><strong>READ:</strong> Can only read secrets</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Principals with Secret Scope Access</span>
+                            <span class="results-count">${data.length} access grants</span>
+                        </div>
+                        <div class="results-body" style="padding: 0;">`;
+
+                // Render tree structure by principal type
+                const typeOrder = ['Users', 'Groups', 'Service Principals'];
+                const typeIcons = { 'Users': '👤', 'Groups': '👥', 'Service Principals': '🤖' };
+                const typeColors = { 'Users': '#3b82f6', 'Groups': '#8b5cf6', 'Service Principals': '#f59e0b' };
+                const permColors = { 'MANAGE': '#8b5cf6', 'WRITE': '#f59e0b', 'READ': '#3b82f6' };
+
+                typeOrder.forEach((type) => {
+                    const principals = byType[type];
+                    const principalList = Object.values(principals);
+                    if (principalList.length === 0) return;
+
+                    const typeId = 'secretscopes-type-' + type.replace(/\s+/g, '').toLowerCase();
+
+                    html += `
+                        <div class="tree-type-group">
+                            <div class="tree-type-header" onclick="toggleTreeSection('${typeId}')" style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; cursor: pointer; background: var(--bg-input); border-bottom: 1px solid var(--border);">
+                                <span class="tree-toggle" id="${typeId}-toggle" style="color: var(--text-muted); font-size: 12px;">▶</span>
+                                <span style="font-size: 20px;">${typeIcons[type]}</span>
+                                <span style="font-weight: 600; flex: 1; color: ${typeColors[type]};">${type} (${principalList.length})</span>
+                            </div>
+                            <div class="tree-type-content" id="${typeId}-content" style="display: none;">`;
+
+                    // Sort principals alphabetically
+                    const sortedPrincipals = principalList.sort((a, b) => a.name.localeCompare(b.name));
+
+                    sortedPrincipals.forEach((principal, idx) => {
+                        const isLast = idx === sortedPrincipals.length - 1;
+                        const scopeList = principal.scopes.map(s => {
+                            const permColor = permColors[s.permission] || '#64748b';
+                            return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: ${permColor}20; color: ${permColor}; border-radius: 4px; font-size: 0.75em; margin-right: 6px; margin-bottom: 4px;">🔐 ${s.scope} <span style="font-weight: 600;">(${s.permission})</span></span>`;
+                        }).join('');
+
+                        html += `
+                            <div class="tree-resource" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px 24px 12px 56px; border-bottom: ${isLast ? 'none' : '1px solid var(--border)'};">
+                                <span style="color: var(--text-muted);">${isLast ? '└─' : '├─'}</span>
+                                <span style="font-size: 20px;">${typeIcons[type]}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 500; margin-bottom: 4px; word-break: break-all;">${formatPrincipalName(principal.display_name, principal.email, principal.name, null)}</div>
+                                    <div style="font-size: 0.85em; line-height: 1.6; margin-top: 8px;">
+                                        ${scopeList}
+                                    </div>
+                                </div>
+                            </div>`;
+                    });
+
+                    html += `
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div></div>';
+                container.innerHTML = html;
+            } catch (e) {
+                showEmpty('secretscopes-results', 'Error: ' + e.message);
+            }
+        }
+
+        // =====================================================================
+        // IMPERSONATION ANALYSIS FUNCTIONS
+        // =====================================================================
+
+        async function loadSourcePrincipals() {
+            const type = document.getElementById('impersonate-source-type').value;
+            await loadPrincipalsForSelect('impersonate-source-select', type);
+        }
+
+        async function loadTargetPrincipals() {
+            const type = document.getElementById('impersonate-target-type').value;
+            await loadPrincipalsForSelect('impersonate-target-select', type);
+        }
+
+        async function loadPrincipalsForSelect(selectId, principalType) {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '<option value="">Loading...</option>';
+            select.style.display = 'block';
+
+            // Check if currentRunId is set
+            if (!currentRunId) {
+                select.innerHTML = '<option value="">Select a data run first</option>';
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/principals-list?run_id=${currentRunId}&type=${principalType}`);
+
+                // Check if response is OK
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+
+                const result = await res.json();
+
+                if (result.success && result.data.length > 0) {
+                    let html = '<option value="">-- Select from list --</option>';
+                    result.data.forEach(p => {
+                        const displayName = formatPrincipalName(p.display_name, p.email, p.name, p.id);
+                        // displayName is already HTML-escaped via formatPrincipalName.
+                        // Escape the option value separately to prevent attribute injection.
+                        html += `<option value="${escapeHtml(p.email || p.name || p.id)}">${displayName}</option>`;
+                    });
+                    select.innerHTML = html;
+
+                    // Sync selection to input field
+                    select.onchange = () => {
+                        const inputId = selectId.replace('-select', '');
+                        document.getElementById(inputId).value = select.value;
+                    };
+                } else {
+                    select.innerHTML = '<option value="">No principals found</option>';
+                }
+            } catch (e) {
+                console.error('Error loading principals:', e);
+                select.innerHTML = '<option value="">Error loading principals</option>';
+            }
+        }
+
+        async function runImpersonationAnalysis() {
+            const sourceType = document.getElementById('impersonate-source-type').value;
+            const source = document.getElementById('impersonate-source').value.trim();
+            const targetType = document.getElementById('impersonate-target-type').value;
+            const target = document.getElementById('impersonate-target').value.trim();
+            const analysisType = document.querySelector('input[name="analysis-type"]:checked').value;
+
+            if (!source || !target) {
+                showEmpty('impersonation-results', 'Please enter both Source and Target');
+                return;
+            }
+
+            if (!currentRunId) {
+                showEmpty('impersonation-results', 'Please select a data run first');
+                return;
+            }
+
+            const container = document.getElementById('impersonation-results');
+            container.innerHTML = '<div class="loading">Finding impersonation paths...</div>';
+
+            const maxHops = analysisType === 'shortest' ? 10 : 5;
+
+            try {
+                const res = await fetch('/api/impersonation-paths', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        run_id: currentRunId,
+                        source_type: sourceType,
+                        source: source,
+                        target_type: targetType,
+                        target: target,
+                        analysis_type: analysisType,
+                        max_hops: maxHops
+                    })
+                });
+
+                // Check if response is OK before parsing JSON
+                if (!res.ok) {
+                    throw new Error(`Server error: ${res.status}`);
+                }
+
+                const result = await res.json();
+
+                if (!result.success) {
+                    showEmpty('impersonation-results', result.message || 'Analysis failed');
+                    return;
+                }
+
+                const paths = result.paths || [];
+                const sourceInfo = result.source || {};
+                const targetInfo = result.target || {};
+
+                if (paths.length === 0) {
+                    showEmpty('impersonation-results', `No impersonation paths found from ${formatPrincipalName(sourceInfo.display_name, sourceInfo.email, sourceInfo.name, null)} to ${formatPrincipalName(targetInfo.display_name, targetInfo.email, targetInfo.name, null)}`);
+                    return;
+                }
+
+                // Build HTML
+                let html = `
+                    <div style="background: var(--bg-input); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span style="font-weight: 600; color: var(--text-secondary);">Found ${paths.length} impersonation path${paths.length > 1 ? 's' : ''}</span>
+                            </div>
+                            <div style="display: flex; gap: 16px; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 1.2em;">${getNodeIcon(sourceInfo.type)}</span>
+                                    <span style="font-weight: 500;">${formatPrincipalName(sourceInfo.display_name, sourceInfo.email, sourceInfo.name, null)}</span>
+                                </div>
+                                <span style="color: var(--text-muted);">→</span>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 1.2em;">${getNodeIcon(targetInfo.type)}</span>
+                                    <span style="font-weight: 500;">${formatPrincipalName(targetInfo.display_name, targetInfo.email, targetInfo.name, null)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="results-container">
+                        <div class="results-header">
+                            <span class="results-title">Impersonation Paths</span>
+                            <span class="results-count">${paths.length} path${paths.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="results-body" style="padding: 16px;">`;
+
+                // Render each path
+                paths.forEach((path, pathIdx) => {
+                    const hops = path.hops || [];
+                    html += `
+                        <div style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: ${pathIdx < paths.length - 1 ? '1px solid var(--border)' : 'none'};">
+                            <div style="font-weight: 600; margin-bottom: 12px; color: var(--text-secondary);">
+                                Path ${pathIdx + 1} (${hops.length} hop${hops.length > 1 ? 's' : ''})
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">`;
+
+                    hops.forEach((hop, hopIdx) => {
+                        const nodeType = hop.node_type || 'Unknown';
+                        const nodeName = hop.node_name || hop.node_id;
+                        const icon = getNodeIcon(nodeType);
+                        const bgColor = getNodeBgColor(nodeType);
+                        const textColor = getNodeTextColor(nodeType);
+
+                        // Node box
+                        html += `
+                            <div style="display: flex; flex-direction: column; align-items: center; padding: 8px 12px; background: ${bgColor}; border-radius: 8px; border: 1px solid ${bgColor};">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span>${icon}</span>
+                                    <span style="font-weight: 500; color: ${textColor}; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${nodeName}">${nodeName}</span>
+                                </div>
+                                <div style="font-size: 0.7em; color: var(--text-muted); margin-top: 2px;">(${nodeType})</div>
+                            </div>`;
+
+                        // Edge arrow (if not last node)
+                        if (hopIdx < hops.length - 1) {
+                            const nextHop = hops[hopIdx + 1];
+                            const edgeLabel = nextHop.edge_relationship || '';
+                            html += `
+                                <div style="display: flex; flex-direction: column; align-items: center; padding: 0 4px;">
+                                    <div style="font-size: 0.7em; color: var(--accent); font-weight: 500; white-space: nowrap;">${edgeLabel}</div>
+                                    <div style="color: var(--text-muted);">→</div>
+                                </div>`;
+                        }
+                    });
+
+                    html += `
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div></div>';
+                container.innerHTML = html;
+
+            } catch (e) {
+                showEmpty('impersonation-results', 'Error: ' + e.message);
+            }
+        }
+
+        function getNodeIcon(nodeType) {
+            const icons = {
+                'User': '👤', 'AccountUser': '👤',
+                'Group': '👥', 'AccountGroup': '👥',
+                'ServicePrincipal': '🤖', 'AccountServicePrincipal': '🤖',
+                'Job': '⚙️', 'Notebook': '📓', 'Query': '📊', 'SQLQuery': '📊',
+                'File': '📄', 'Pipeline': '🔄', 'Cluster': '🖥️',
+                'Catalog': '📚', 'Schema': '📁', 'Table': '📋'
+            };
+            return icons[nodeType] || '📦';
+        }
+
+        function getNodeBgColor(nodeType) {
+            if (nodeType.includes('User')) return '#3b82f620';
+            if (nodeType.includes('Group')) return '#8b5cf620';
+            if (nodeType.includes('ServicePrincipal')) return '#f59e0b20';
+            if (['Job', 'Query', 'SQLQuery', 'Notebook', 'Pipeline'].includes(nodeType)) return '#ec489920';
+            return '#64748b20';
+        }
+
+        function getNodeTextColor(nodeType) {
+            if (nodeType.includes('User')) return '#3b82f6';
+            if (nodeType.includes('Group')) return '#8b5cf6';
+            if (nodeType.includes('ServicePrincipal')) return '#f59e0b';
+            if (['Job', 'Query', 'SQLQuery', 'Notebook', 'Pipeline'].includes(nodeType)) return '#ec4899';
+            return '#64748b';
+        }
+
+        // Autocomplete functionality for principal search
+        let autocompleteTimeout = null;
+        const principalSearchInput = document.getElementById('principal-search');
+        const autocompleteDropdown = document.getElementById('principal-autocomplete');
+        
+        if (principalSearchInput && autocompleteDropdown) {
+            principalSearchInput.addEventListener('input', function(e) {
+                const query = e.target.value.trim();
+                
+                // Show/hide clear button
+                const clearBtn = document.getElementById('principal-clear-btn');
+                if (clearBtn) {
+                    clearBtn.style.display = query ? 'flex' : 'none';
+                }
+                
+                // Clear the stored identifier when user manually types
+                delete principalSearchInput.dataset.identifier;
+                
+                // Clear existing timeout
+                clearTimeout(autocompleteTimeout);
+                
+                // Hide dropdown if query is too short
+                if (query.length < 2) {
+                    autocompleteDropdown.classList.remove('show');
+                    return;
+                }
+                
+                // Debounce the search
+                autocompleteTimeout = setTimeout(async () => {
+                    try {
+                        const url = `/api/search-principals?q=${encodeURIComponent(query)}&limit=10${currentRunId ? '&run_id=' + currentRunId : ''}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        
+                        if (data.principals && data.principals.length > 0) {
+                            let html = '';
+                            data.principals.forEach(p => {
+                                const typeClass = p.type === 'User' || p.type === 'AccountUser' ? 'user' : 
+                                                 p.type === 'Group' || p.type === 'AccountGroup' ? 'group' : 'sp';
+                                const typeName = p.type.includes('ServicePrincipal') ? 'SP' : p.type.replace('Account', '');
+                                const displayName = p.display_name || p.identifier;
+                                html += `
+                                    <div class="autocomplete-item" onclick="selectPrincipal('${escapeHtml(p.identifier)}', '${escapeHtml(displayName)}')">
+                                        <div class="autocomplete-item-name">
+                                            ${escapeHtml(displayName)}
+                                            <span class="autocomplete-item-type ${typeClass}">${typeName}</span>
+                                        </div>
+                                        ${p.email ? `<div class="autocomplete-item-email">${escapeHtml(p.email)}</div>` : ''}
+                                        <div class="autocomplete-item-id">ID: ${escapeHtml(p.identifier)}</div>
+                                    </div>
+                                `;
+                            });
+                            autocompleteDropdown.innerHTML = html;
+                            autocompleteDropdown.classList.add('show');
+                        } else {
+                            autocompleteDropdown.classList.remove('show');
+                        }
+                    } catch (e) {
+                        console.error('Autocomplete error:', e);
+                        autocompleteDropdown.classList.remove('show');
+                    }
+                }, 300); // 300ms debounce
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.search-box')) {
+                    autocompleteDropdown.classList.remove('show');
+                }
+            });
+        }
+        
+        function selectPrincipal(identifier, displayName) {
+            if (autocompleteDropdown) autocompleteDropdown.classList.remove('show');
+            addPrincipalChip(identifier, displayName || identifier);
+        }
+
+        // --- Multi-principal selection: analyze several principals at once ---
+        let principalSelection = [];  // [{ id, label }]
+
+        function renderPrincipalChips() {
+            const box = document.getElementById('principal-chips');
+            if (!box) return;
+            if (principalSelection.length === 0) { box.innerHTML = ''; return; }
+            box.innerHTML = principalSelection.map(p =>
+                `<span class="principal-chip">${escapeHtml(p.label)}` +
+                `<button type="button" aria-label="Remove" onclick="removePrincipalChip('${escapeHtml(p.id)}')">&times;</button></span>`
+            ).join('') +
+            `<button type="button" class="principal-chip-clear" onclick="clearPrincipalSelection()">Clear all</button>`;
+        }
+
+        function addPrincipalChip(identifier, label) {
+            if (!identifier) return;
+            if (!principalSelection.some(p => p.id === identifier)) {
+                principalSelection.push({ id: identifier, label: label || identifier });
+                renderPrincipalChips();
+            }
+            if (principalSearchInput) {
+                principalSearchInput.value = '';
+                delete principalSearchInput.dataset.identifier;
+                const cb = document.getElementById('principal-clear-btn');
+                if (cb) cb.style.display = 'none';
+                principalSearchInput.focus();
+            }
+        }
+
+        function removePrincipalChip(identifier) {
+            principalSelection = principalSelection.filter(p => p.id !== identifier);
+            renderPrincipalChips();
+        }
+
+        function clearPrincipalSelection() {
+            principalSelection = [];
+            renderPrincipalChips();
+            const r = document.getElementById('principal-results');
+            if (r) r.innerHTML = '';
+        }
+
+        async function analyzeSelectedPrincipals() {
+            // Use the selected chips; if none, fall back to whatever is typed or
+            // selected in the search box, so a single lookup still works without
+            // first adding a chip.
+            let list = principalSelection.slice();
+            if (list.length === 0 && principalSearchInput) {
+                const q = (principalSearchInput.value || '').trim();
+                const id = principalSearchInput.dataset.identifier || q;
+                if (id) list = [{ id: id, label: q || id }];
+            }
+            if (list.length === 0) {
+                showEmpty('principal-results', 'Add one or more principals (search above), then click Analyze.');
+                return;
+            }
+            lastAnalysis.principal = true;  // marker so a data refresh re-runs this
+            if (list.length === 1) {
+                await analyzePrincipal(list[0].id, 'principal-results');
+                return;
+            }
+            // Several principals: render one collapsible panel each so they compare easily.
+            const container = document.getElementById('principal-results');
+            container.innerHTML = list.map((p, i) =>
+                `<details class="principal-multi" open><summary>${escapeHtml(p.label)}</summary>` +
+                `<div id="principal-multi-${i}"></div></details>`
+            ).join('');
+            for (let i = 0; i < list.length; i++) {
+                await analyzePrincipal(list[i].id, `principal-multi-${i}`);
+            }
+        }
+
+        // Clear principal search
+        function clearPrincipalSearch() {
+            const searchInput = document.getElementById('principal-search');
+            const clearBtn = document.getElementById('principal-clear-btn');
+            const resultsDiv = document.getElementById('principal-results');
+            
+            if (searchInput) {
+                searchInput.value = '';
+                delete searchInput.dataset.identifier;
+            }
+            if (clearBtn) {
+                clearBtn.style.display = 'none';
+            }
+            if (resultsDiv) {
+                resultsDiv.innerHTML = '';
+            }
+        }
+
+        // Autocomplete functionality for escalation paths search
+        let pathsAutocompleteTimeout = null;
+        const pathsSearchInput = document.getElementById('paths-search');
+        const pathsAutocompleteDropdown = document.getElementById('paths-autocomplete');
+        
+        if (pathsSearchInput && pathsAutocompleteDropdown) {
+            pathsSearchInput.addEventListener('input', function(e) {
+                const query = e.target.value.trim();
+                
+                // Show/hide clear button
+                const clearBtn = document.getElementById('paths-clear-btn');
+                if (clearBtn) {
+                    clearBtn.style.display = query ? 'flex' : 'none';
+                }
+                
+                // Clear the stored identifier when user manually types
+                delete pathsSearchInput.dataset.identifier;
+                
+                // Clear existing timeout
+                clearTimeout(pathsAutocompleteTimeout);
+                
+                // Hide dropdown if query is too short
+                if (query.length < 2) {
+                    pathsAutocompleteDropdown.classList.remove('show');
+                    return;
+                }
+                
+                // Debounce the search
+                pathsAutocompleteTimeout = setTimeout(async () => {
+                    try {
+                        const url = `/api/search-principals?q=${encodeURIComponent(query)}&limit=10${currentRunId ? '&run_id=' + currentRunId : ''}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        
+                        if (data.principals && data.principals.length > 0) {
+                            let html = '';
+                            data.principals.forEach(p => {
+                                const typeClass = p.type === 'User' || p.type === 'AccountUser' ? 'user' : 
+                                                 p.type === 'Group' || p.type === 'AccountGroup' ? 'group' : 'sp';
+                                const typeName = p.type.includes('ServicePrincipal') ? 'SP' : p.type.replace('Account', '');
+                                const displayName = p.display_name || p.identifier;
+                                html += `
+                                    <div class="autocomplete-item" onclick="selectPathsPrincipal('${escapeHtml(p.identifier)}', '${escapeHtml(displayName)}')">
+                                        <div class="autocomplete-item-name">
+                                            ${escapeHtml(displayName)}
+                                            <span class="autocomplete-item-type ${typeClass}">${typeName}</span>
+                                        </div>
+                                        ${p.email ? `<div class="autocomplete-item-email">${escapeHtml(p.email)}</div>` : ''}
+                                        <div class="autocomplete-item-id">ID: ${escapeHtml(p.identifier)}</div>
+                                    </div>
+                                `;
+                            });
+                            pathsAutocompleteDropdown.innerHTML = html;
+                            pathsAutocompleteDropdown.classList.add('show');
+                        } else {
+                            pathsAutocompleteDropdown.classList.remove('show');
+                        }
+                    } catch (e) {
+                        console.error('Autocomplete error:', e);
+                        pathsAutocompleteDropdown.classList.remove('show');
+                    }
+                }, 300); // 300ms debounce
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.search-box')) {
+                    pathsAutocompleteDropdown.classList.remove('show');
+                }
+            });
+        }
+        
+        function selectPathsPrincipal(identifier, displayName) {
+            if (pathsSearchInput) {
+                // Show display name in the search box, but store the identifier for the API call
+                pathsSearchInput.value = displayName || identifier;
+                pathsSearchInput.dataset.identifier = identifier;
+                // Show clear button
+                document.getElementById('paths-clear-btn').style.display = 'flex';
+            }
+            if (pathsAutocompleteDropdown) {
+                pathsAutocompleteDropdown.classList.remove('show');
+            }
+            findPaths();
+        }
+
+        // Clear paths search
+        function clearPathsSearch() {
+            const searchInput = document.getElementById('paths-search');
+            const clearBtn = document.getElementById('paths-clear-btn');
+            const resultsDiv = document.getElementById('paths-results');
+            
+            if (searchInput) {
+                searchInput.value = '';
+                delete searchInput.dataset.identifier;
+            }
+            if (clearBtn) {
+                clearBtn.style.display = 'none';
+            }
+            if (resultsDiv) {
+                resultsDiv.innerHTML = '';
+            }
+        }
+
+        // Clear resource search
+        function clearResourceSearch() {
+            const searchInput = document.getElementById('resource-search');
+            const clearBtn = document.getElementById('resource-clear-btn');
+            const resultsDiv = document.getElementById('resource-results');
+            
+            if (searchInput) {
+                searchInput.value = '';
+            }
+            if (clearBtn) {
+                clearBtn.style.display = 'none';
+            }
+            if (resultsDiv) {
+                resultsDiv.innerHTML = '';
+            }
+        }
+
+        // Resource search input event listener for clear button
+        const resourceSearchInput = document.getElementById('resource-search');
+        const resourceAutocompleteDropdown = document.getElementById('resource-autocomplete');
+        let resourceAutocompleteTimeout = null;
+        
+        if (resourceSearchInput && resourceAutocompleteDropdown) {
+            resourceSearchInput.addEventListener('input', function(e) {
+                const query = e.target.value.trim();
+                const clearBtn = document.getElementById('resource-clear-btn');
+                if (clearBtn) {
+                    clearBtn.style.display = query ? 'flex' : 'none';
+                }
+                
+                // Clear the stored resource ID when user manually types
+                delete resourceSearchInput.dataset.resourceId;
+                
+                // Clear existing timeout
+                clearTimeout(resourceAutocompleteTimeout);
+                
+                // Hide dropdown if query is too short
+                if (query.length < 2) {
+                    resourceAutocompleteDropdown.classList.remove('show');
+                    return;
+                }
+                
+                // Debounce the search
+                resourceAutocompleteTimeout = setTimeout(async () => {
+                    try {
+                        const url = `/api/search-resources?q=${encodeURIComponent(query)}&limit=10${currentRunId ? '&run_id=' + currentRunId : ''}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        
+                        if (data.resources && data.resources.length > 0) {
+                            let html = '';
+                            data.resources.forEach(r => {
+                                // Map resource types to colors
+                                const typeColors = {
+                                    'Catalog': '#667eea',
+                                    'Schema': '#8b5cf6',
+                                    'Table': '#3b82f6',
+                                    'View': '#06b6d4',
+                                    'Volume': '#10b981',
+                                    'Function': '#f59e0b',
+                                    'Cluster': '#ef4444',
+                                    'ClusterPolicy': '#f87171',
+                                    'Job': '#f97316',
+                                    'Warehouse': '#ec4899',
+                                    'ServingEndpoint': '#a855f7',
+                                    'SecretScope': '#6366f1',
+                                    'Metastore': '#14b8a6'
+                                };
+                                const typeColor = typeColors[r.type] || '#6b7280';
+                                // Use data attributes for both ID and name
+                                html += `
+                                    <div class="autocomplete-item resource-autocomplete-item" data-resource-id="${escapeHtml(r.identifier)}" data-resource-name="${escapeHtml(r.name)}">
+                                        <div class="autocomplete-item-name">
+                                            ${escapeHtml(r.name)}
+                                            <span class="autocomplete-item-type" style="background: ${typeColor}20; color: ${typeColor}; border: 1px solid ${typeColor}40;">${r.type}</span>
+                                        </div>
+                                        <div class="autocomplete-item-id">ID: ${escapeHtml(r.identifier)}</div>
+                                    </div>
+                                `;
+                            });
+                            resourceAutocompleteDropdown.innerHTML = html;
+                            resourceAutocompleteDropdown.classList.add('show');
+                            
+                            // Add click event listeners to the items
+                            document.querySelectorAll('.resource-autocomplete-item').forEach(item => {
+                                item.addEventListener('click', function() {
+                                    const resourceId = this.getAttribute('data-resource-id');
+                                    const resourceName = this.getAttribute('data-resource-name');
+                                    selectResource(resourceId, resourceName);
+                                });
+                            });
+                        } else {
+                            resourceAutocompleteDropdown.classList.remove('show');
+                        }
+                    } catch (e) {
+                        console.error('Autocomplete error:', e);
+                        resourceAutocompleteDropdown.classList.remove('show');
+                    }
+                }, 300); // 300ms debounce
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.search-box')) {
+                    resourceAutocompleteDropdown.classList.remove('show');
+                }
+            });
+        }
+        
+        function selectResource(resourceId, resourceName) {
+            if (resourceSearchInput) {
+                // Show display name in the search box, but store the ID for the API call
+                resourceSearchInput.value = resourceName || resourceId;
+                resourceSearchInput.dataset.resourceId = resourceId;
+                // Show clear button
+                document.getElementById('resource-clear-btn').style.display = 'flex';
+            }
+            if (resourceAutocompleteDropdown) {
+                resourceAutocompleteDropdown.classList.remove('show');
+            }
+            analyzeResource();
+        }
+
+        // escapeHtml is defined earlier — see top of inline <script>.
+
+        // Enter key handlers
+        ['principal', 'resource', 'paths', 'risk'].forEach(id => {
+            document.getElementById(id + '-search')?.addEventListener('keypress', e => {
+                if (e.key === 'Enter') {
+                    const fn = {principal: analyzeSelectedPrincipals, resource: analyzeResource, paths: findPaths, risk: assessRisk};
+                    fn[id]();
+                }
+            });
+        });
+    </script>
+</body>
+</html>'''
+
+
+# ============================================================================
+# API ENDPOINTS
+# ============================================================================
+
+@app.route('/health')
+def health():
+    return '{"status":"healthy","service":"security-analysis-tool"}'
+
+
+@app.route('/api/debug')
+def api_debug():
+    """Debug endpoint to test database connection"""
+    import os
+    debug_info = {
+        'catalog': CATALOG,
+        'schema': SCHEMA,
+        'metadata_table': METADATA_TABLE,
+        'vertices_table': VERTICES_TABLE,
+        'edges_table': EDGES_TABLE,
+        'warehouse_id_env': os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or 'using_default',
+    }
+
+    # Test connection
+    try:
+        workspace_client, warehouse_id = get_connection()
+        debug_info['warehouse_id_used'] = warehouse_id
+        debug_info['connection'] = 'OK'
+    except Exception as e:
+        debug_info['connection'] = f'FAILED: {str(e)}'
+        return jsonify(debug_info), 500
+
+    # Test simple query
+    try:
+        result = exec_query(f"SELECT COUNT(*) FROM {METADATA_TABLE}")
+        debug_info['metadata_count'] = result
+        debug_info['metadata_query'] = 'OK'
+    except Exception as e:
+        debug_info['metadata_query'] = f'FAILED: {str(e)}'
+
+    # Test vertices query
+    try:
+        result = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE}")
+        debug_info['vertices_count'] = result
+        debug_info['vertices_query'] = 'OK'
+    except Exception as e:
+        debug_info['vertices_query'] = f'FAILED: {str(e)}'
+
+    # Test edges query
+    try:
+        result = exec_query(f"SELECT COUNT(*) FROM {EDGES_TABLE}")
+        debug_info['edges_count'] = result
+        debug_info['edges_query'] = 'OK'
+    except Exception as e:
+        debug_info['edges_query'] = f'FAILED: {str(e)}'
+
+    return jsonify(debug_info)
+
+
+@app.route('/api/config')
+def api_config():
+    """Get current configuration (catalog, schema, tables)"""
+    return jsonify({
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+        "vertices_table": VERTICES_TABLE,
+        "edges_table": EDGES_TABLE,
+        "metadata_table": METADATA_TABLE,
+        "config_source": "Determined at app startup - check logs for details"
+    })
+
+
+@app.route('/api/runs')
+def api_runs():
+    """Get available collection runs for the run selector dropdown"""
+    try:
+        logger.debug(f"/api/runs called")
+        logger.debug(f"CATALOG={CATALOG}, SCHEMA={SCHEMA}")
+        logger.debug(f"METADATA_TABLE={METADATA_TABLE}")
+
+        runs = get_available_runs(limit=10)
+        logger.debug(f"get_available_runs returned {len(runs) if runs else 0} runs")
+
+        latest_run = get_latest_run_id()
+        logger.debug(f"latest_run_id={latest_run}")
+
+        return jsonify({
+            'success': True,
+            'runs': runs,
+            'current_run_id': latest_run
+        })
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'error': 'internal error',
+                        'request_id': req_id, 'runs': []}), 500
+
+
+def _dedupe_principal_rows(rows, id_field='id'):
+    """Collapse the account-level and workspace-level representations of the same
+    identity into one row. The same person is collected twice -- once from the
+    account SCIM directory (account_user:X) and once from a workspace's SCIM
+    directory (ws_<workspaceId>_user:X) -- and the workspace copy often has an
+    empty email, so email alone can't unify them. They share the id *core* (the
+    part after the last colon), so key on (category, core) and keep the
+    account-level row (it carries the email). Groups across levels have distinct
+    cores, so genuinely different groups are never merged. Order is preserved."""
+    def parts(r):
+        pid = str(r.get(id_field) or '')
+        head = pid.split(':', 1)[0] if ':' in pid else pid
+        core = pid.split(':')[-1] if ':' in pid else pid
+        blob = (str(r.get('node_type') or r.get('type') or '') + ' ' + head).lower()
+        if 'group' in blob:
+            cat = 'g'
+        elif 'serviceprincipal' in blob or 'sp' in head.lower().split('_'):
+            cat = 's'
+        else:
+            cat = 'u'
+        is_account = blob.lstrip().startswith('account') or head.lower().startswith('account')
+        return cat, core, is_account
+
+    best, order = {}, []
+    for r in rows:
+        cat, core, is_account = parts(r)
+        if not core:
+            continue
+        key = (cat, core)
+        if key not in best:
+            best[key] = r
+            order.append(key)
+        else:
+            cur = best[key]
+            _, _, cur_account = parts(cur)
+            if (is_account and not cur_account) or \
+               (is_account == cur_account and r.get('email') and not cur.get('email')):
+                best[key] = r
+    return [best[k] for k in order]
+
+
+@app.route('/api/search-principals')
+def api_search_principals():
+    """Search for principals (users, groups, service principals) by name or email"""
+    try:
+        query = request.args.get('q', '').strip()
+        limit = int(request.args.get('limit', 10))
+        
+        if not query or len(query) < 2:
+            return jsonify({'principals': []})
+        
+        # Get current run_id
+        run_id = get_current_run_id()
+        if not run_id:
+            return jsonify({'principals': [], 'error': 'No data collection runs available'})
+        
+        # Build LIKE patterns from user input. `query` is bound via params
+        # below — string interpolation only happens server-side, against
+        # the bound value, so the user can't inject SQL.
+        search_pattern = f"%{query}%"
+        starts_with_pattern = f"{query}%"
+
+        # Search - filter to only principals and current run_id
+        # Prioritize results that START with the query
+        sql = f"""
+            SELECT DISTINCT id, name, node_type, display_name, email
+            FROM {VERTICES_TABLE}
+            WHERE run_id = :run_id
+            AND node_type IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+            AND (
+                LOWER(COALESCE(name, '')) LIKE LOWER(:search_pattern)
+                OR LOWER(COALESCE(display_name, '')) LIKE LOWER(:search_pattern)
+                OR LOWER(COALESCE(email, '')) LIKE LOWER(:search_pattern)
+            )
+            ORDER BY
+                CASE
+                    WHEN LOWER(name) LIKE LOWER(:starts_with_pattern) THEN 1
+                    WHEN LOWER(display_name) LIKE LOWER(:starts_with_pattern) THEN 2
+                    WHEN LOWER(email) LIKE LOWER(:starts_with_pattern) THEN 3
+                    ELSE 4
+                END,
+                name
+            LIMIT {limit}
+        """
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "search_pattern": search_pattern,
+            "starts_with_pattern": starts_with_pattern,
+        })
+        principals = []
+        
+        for row in results:
+            principal = {
+                'identifier': row.get('id', ''),
+                'name': row.get('name', ''),
+                'type': row.get('node_type', ''),
+                'display_name': row.get('display_name') or row.get('name', ''),
+                'email': row.get('email')
+            }
+            principals.append(principal)
+
+        # Collapse account/workspace twins of the same identity into one entry.
+        principals = _dedupe_principal_rows(principals, id_field='identifier')
+        return jsonify({'principals': principals})
+        
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
+
+
+@app.route('/api/search-resources')
+def api_search_resources():
+    """Search for resources (catalogs, schemas, tables, etc.) by name"""
+    try:
+        query = request.args.get('q', '').strip()
+        limit = int(request.args.get('limit', 10))
+        
+        if not query or len(query) < 2:
+            return jsonify({'resources': []})
+        
+        # Get current run_id
+        run_id = get_current_run_id()
+        if not run_id:
+            return jsonify({'resources': [], 'error': 'No data collection runs available'})
+        
+        search_pattern = f"%{query}%"
+        starts_with_pattern = f"{query}%"
+
+        # Search - filter to only resources and current run_id
+        # Prioritize results that START with the query
+        sql = f"""
+            SELECT DISTINCT id, name, node_type
+            FROM {VERTICES_TABLE}
+            WHERE run_id = :run_id
+            AND node_type IN ('Catalog', 'Schema', 'Table', 'View', 'Volume', 'Function',
+                              'Cluster', 'ClusterPolicy', 'Job', 'Warehouse', 'ServingEndpoint',
+                              'SecretScope', 'Metastore', 'Notebook', 'Directory', 'Repo')
+            AND LOWER(COALESCE(name, '')) LIKE LOWER(:search_pattern)
+            ORDER BY
+                CASE
+                    WHEN LOWER(name) LIKE LOWER(:starts_with_pattern) THEN 1
+                    ELSE 2
+                END,
+                node_type,
+                name
+            LIMIT {limit}
+        """
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "search_pattern": search_pattern,
+            "starts_with_pattern": starts_with_pattern,
+        })
+        resources = []
+        
+        for row in results:
+            resource = {
+                'identifier': row.get('id', ''),  # Use ID as identifier for exact matching
+                'name': row.get('name', ''),
+                'type': row.get('node_type', '')
+            }
+            resources.append(resource)
+        
+        return jsonify({'resources': resources})
+        
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
+
+
+@app.route('/api/browse-resources-by-type', methods=['POST'])
+def api_browse_resources_by_type():
+    """Get all resources of a specific type"""
+    try:
+        data = request.get_json() or {}
+        resource_type = data.get('resource_type', '')
+        run_id = get_current_run_id()
+        
+        if not resource_type:
+            return jsonify({'success': False, 'message': 'Resource type is required'})
+        
+        if not run_id:
+            return jsonify({'success': False, 'message': 'No data collection runs available'})
+
+        # Query all resources of the specified type — bound parameters only,
+        # no string interpolation of user input.
+        sql = f"""
+            SELECT id, name, owner
+            FROM {VERTICES_TABLE}
+            WHERE run_id = :run_id
+            AND node_type = :resource_type
+            ORDER BY name
+        """
+
+        results = exec_query_df(sql, params={
+            "run_id": run_id,
+            "resource_type": resource_type,
+        })
+        resources = []
+
+        for row in results:
+            resource = {
+                'id': row.get('id', ''),
+                'name': row.get('name', ''),
+                'owner': row.get('owner', '')
+            }
+            resources.append(resource)
+
+        return jsonify({
+            'success': True,
+            'resources': resources,
+            'resource_type': resource_type,
+            'count': len(resources)
+        })
+        
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'message': 'internal error',
+                        'request_id': req_id}), 500
+
+
+@app.route('/api/browse-principals-by-type', methods=['POST'])
+def api_browse_principals_by_type():
+    """Get all principals of a specific type"""
+    try:
+        data = request.get_json() or {}
+        principal_type = data.get('principal_type', '')
+        run_id = get_current_run_id()
+        
+        if not principal_type:
+            return jsonify({'success': False, 'message': 'Principal type is required'})
+        
+        if not run_id:
+            return jsonify({'success': False, 'message': 'No data collection runs available'})
+
+        # Map to include both Account and non-Account types
+        if principal_type == 'User':
+            type_filter = ['User', 'AccountUser']
+        elif principal_type == 'Group':
+            type_filter = ['Group', 'AccountGroup']
+        elif principal_type == 'ServicePrincipal':
+            type_filter = ['ServicePrincipal', 'AccountServicePrincipal']
+        else:
+            type_filter = [principal_type]
+
+        # Build a bound IN list — one named param per element, no string
+        # interpolation of user input.
+        placeholders = ", ".join(f":t{i}" for i in range(len(type_filter)))
+        sql_params = {"run_id": run_id}
+        for i, t in enumerate(type_filter):
+            sql_params[f"t{i}"] = t
+
+        sql = f"""
+            SELECT id, name, display_name, email, node_type
+            FROM {VERTICES_TABLE}
+            WHERE run_id = :run_id
+            AND node_type IN ({placeholders})
+            ORDER BY COALESCE(display_name, name, email, id)
+        """
+
+        results = exec_query_df(sql, params=sql_params)
+        principals = []
+        
+        for row in results:
+            principal = {
+                'id': row.get('id', ''),
+                'name': row.get('name', ''),
+                'display_name': row.get('display_name', ''),
+                'email': row.get('email', ''),
+                'node_type': row.get('node_type', ''),
+            }
+            principals.append(principal)
+
+        # Collapse account/workspace twins of the same identity into one entry.
+        principals = _dedupe_principal_rows(principals, id_field='id')
+        return jsonify({
+            'success': True,
+            'principals': principals,
+            'principal_type': principal_type,
+            'count': len(principals)
+        })
+        
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'message': 'internal error',
+                        'request_id': req_id}), 500
+
+
+@app.route('/api/stats')
+def api_stats():
+    try:
+        run_id = get_current_run_id()
+        if not run_id:
+            return jsonify({'error': 'No collection runs available'}), 404
+
+        # Principal counts
+        users = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type IN ('User', 'AccountUser')")
+        groups = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type IN ('Group', 'AccountGroup')")
+        service_principals = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type IN ('ServicePrincipal', 'AccountServicePrincipal')")
+
+        # Resource counts by type
+        catalogs = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type = 'Catalog'")
+        schemas = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type = 'Schema'")
+        tables = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type = 'Table'")
+        clusters = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type = 'Cluster'")
+        jobs = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type = 'Job'")
+        warehouses = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type = 'Warehouse'")
+
+        # Total resources (excluding principals)
+        resources = exec_query(f"SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id = '{run_id}' AND node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')")
+
+        # Grant counts
+        grants = exec_query(f"SELECT COUNT(*) FROM {EDGES_TABLE} WHERE run_id = '{run_id}' AND permission_level IS NOT NULL")
+
+        # Collection metadata for this run
+        collection_timestamp = None
+        collected_by = None
+        try:
+            metadata = exec_query_df(f"SELECT CAST(collection_timestamp AS STRING) as ts, collected_by as cb FROM {METADATA_TABLE} WHERE run_id = '{run_id}' LIMIT 1")
+            if metadata and len(metadata) > 0:
+                row = metadata[0]
+                # Try different possible key names (SDK might return col0, col1 if column names fail)
+                collection_timestamp = row.get('ts') or row.get('col0')
+                collected_by = row.get('cb') or row.get('col1')
+        except NoAccessError:
+            raise
+        except Exception as e:
+            logger.exception("loading collection metadata")
+            pass  # Table may not exist yet
+
+        # Get workspace coverage
+        coverage = get_collection_coverage(run_id)
+        workspaces_collected = coverage.get('workspaces_collected', []) if coverage else []
+        workspaces_failed = coverage.get('workspaces_failed', []) if coverage else []
+        collection_mode = coverage.get('collection_mode', 'unknown') if coverage else 'unknown'
+
+        return jsonify({
+            # Principals
+            'users': users,
+            'groups': groups,
+            'service_principals': service_principals,
+            # Resources
+            'resources': resources,
+            'catalogs': catalogs,
+            'schemas': schemas,
+            'tables': tables,
+            'clusters': clusters,
+            'jobs': jobs,
+            'warehouses': warehouses,
+            # Grants
+            'grants': grants,
+            # Metadata
+            'collection_timestamp': collection_timestamp,
+            'collected_by': collected_by,
+            'run_id': run_id,
+            # Workspace coverage
+            'collection_mode': collection_mode,
+            'workspaces_collected': workspaces_collected,
+            'workspaces_failed': workspaces_failed
+        })
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'error': 'internal error', 'request_id': req_id}), 500
+
+
+@app.route('/api/collection-coverage')
+def api_collection_coverage():
+    """Get workspace coverage information for the current collection run"""
+    try:
+        run_id = get_current_run_id()
+        if not run_id:
+            return jsonify({'success': False, 'error': 'No collection runs available'}), 404
+
+        coverage = get_collection_coverage(run_id)
+        if not coverage:
+            return jsonify({'success': False, 'error': 'No coverage data found'}), 404
+
+        return jsonify({
+            'success': True,
+            'run_id': run_id,
+            **coverage
+        })
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({'success': False, 'error': 'internal error',
+                        'request_id': req_id}), 500
+
+
+@app.route('/api/who-can-access', methods=['POST'])
+def api_who_can_access():
+    """Find all principals with access to a resource, including via group inheritance"""
+    data = request.get_json() or {}
+    resource_id = data.get('resource', '')
+
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'success': False, 'message': 'No collection runs available', 'data': []})
+
+    resource = find_resource(resource_id, run_id)
+    if not resource:
+        return jsonify({'success': False, 'message': f"Resource '{resource_id}' not found", 'data': []})
+
+    r_id = resource['id']
+    r_name = resource['name'] or ''
+    r_owner = resource['owner'] or ''
+
+    query = f"""
+    WITH RECURSIVE
+    -- First, find all groups with direct access to this resource
+    groups_with_access AS (
+        SELECT
+            g.id as group_id,
+            g.name as group_name,
+            e.permission_level
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON (e.src = g.id OR e.src = g.name) AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.dst = '{sanitize(r_id)}'
+          AND g.node_type IN ('Group', 'AccountGroup')
+          AND e.permission_level IS NOT NULL
+    ),
+    -- Recursively expand group membership to find all members (including nested)
+    group_members_recursive AS (
+        -- Base case: direct members of groups with access
+        SELECT
+            member.id as member_id,
+            member.name as member_name,
+            member.display_name as member_display_name,
+            member.email as member_email,
+            member.node_type as member_type,
+            gwa.permission_level,
+            gwa.group_name as inheritance_path,
+            1 as depth
+        FROM groups_with_access gwa
+        JOIN {EDGES_TABLE} membership ON (membership.dst = gwa.group_id OR membership.dst = gwa.group_name) AND membership.relationship = 'MemberOf' AND membership.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} member ON (membership.src = member.id OR membership.src = member.name OR membership.src = member.email) AND member.run_id = '{run_id}'
+
+        UNION ALL
+
+        -- Recursive case: members of nested groups
+        SELECT
+            member.id as member_id,
+            member.name as member_name,
+            member.display_name as member_display_name,
+            member.email as member_email,
+            member.node_type as member_type,
+            gmr.permission_level,
+            CONCAT(member.name, ' → ', gmr.inheritance_path) as inheritance_path,
+            gmr.depth + 1 as depth
+        FROM group_members_recursive gmr
+        JOIN {VERTICES_TABLE} nested_group ON gmr.member_id = nested_group.id AND nested_group.run_id = '{run_id}'
+        JOIN {EDGES_TABLE} membership ON (membership.dst = nested_group.id OR membership.dst = nested_group.name) AND membership.relationship = 'MemberOf' AND membership.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} member ON (membership.src = member.id OR membership.src = member.name OR membership.src = member.email) AND member.run_id = '{run_id}'
+        WHERE nested_group.node_type IN ('Group', 'AccountGroup')
+          AND gmr.depth < 10  -- Prevent infinite loops
+    ),
+    direct_grants AS (
+        -- Direct grants to individual principals (users, SPs)
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name) as principal_name,
+            v.node_type as principal_type,
+            v.email as principal_email,
+            e.permission_level,
+            'Direct' as grant_type,
+            CAST(NULL AS STRING) as inheritance_path
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name) AND v.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.dst = '{sanitize(r_id)}'
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND e.permission_level IS NOT NULL
+    ),
+    implicit_grants AS (
+        -- Grants whose grantee has no vertex row. Databricks implicit groups
+        -- ('account users', '_workspace_users_<workspace_id>') are only ever edge
+        -- sources, yet they include every user in the account or workspace — so a
+        -- grant to one is effectively public. The other CTEs inner-join the
+        -- grantee to a vertex and therefore miss these entirely.
+        SELECT
+            e.src as principal_id,
+            e.src as principal_name,
+            'ImplicitGroup' as principal_type,
+            CAST(NULL AS STRING) as principal_email,
+            e.permission_level,
+            'Direct' as grant_type,
+            CAST(NULL AS STRING) as inheritance_path
+        FROM {EDGES_TABLE} e
+        LEFT JOIN {VERTICES_TABLE} v
+               ON (e.src = v.id OR e.src = v.email OR e.src = v.name)
+              AND v.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.dst = '{sanitize(r_id)}'
+          AND e.permission_level IS NOT NULL
+          AND v.id IS NULL
+    ),
+    group_grants AS (
+        -- Direct grants to groups (show the group itself)
+        SELECT
+            g.id as principal_id,
+            g.name as principal_name,
+            g.node_type as principal_type,
+            CAST(NULL AS STRING) as principal_email,
+            e.permission_level,
+            'Direct' as grant_type,
+            CAST(NULL AS STRING) as inheritance_path
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON (e.src = g.id OR e.src = g.name) AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.dst = '{sanitize(r_id)}'
+          AND g.node_type IN ('Group', 'AccountGroup')
+          AND e.permission_level IS NOT NULL
+    ),
+    inherited_access AS (
+        -- Users/SPs who inherit access via group membership
+        SELECT
+            gmr.member_id as principal_id,
+            COALESCE(gmr.member_display_name, gmr.member_name) as principal_name,
+            gmr.member_type as principal_type,
+            gmr.member_email as principal_email,
+            gmr.permission_level,
+            'Group' as grant_type,
+            gmr.inheritance_path
+        FROM group_members_recursive gmr
+        WHERE gmr.member_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+    ),
+    ownership AS (
+        -- Owner has implicit ALL PRIVILEGES
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name) as principal_name,
+            v.node_type as principal_type,
+            v.email as principal_email,
+            'ALL PRIVILEGES' as permission_level,
+            'Ownership' as grant_type,
+            CAST(NULL AS STRING) as inheritance_path
+        FROM {VERTICES_TABLE} v
+        WHERE v.run_id = '{run_id}'
+          AND (v.id = '{sanitize(r_owner)}' OR v.email = '{sanitize(r_owner)}' OR v.name = '{sanitize(r_owner)}')
+          AND v.node_type IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+          AND '{sanitize(r_owner)}' != ''
+    ),
+    parent_grants AS (
+        -- Principals with DIRECT access via parent resources (e.g., access to Catalog grants access to its Schemas/Tables)
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name) as principal_name,
+            v.node_type as principal_type,
+            v.email as principal_email,
+            e.permission_level,
+            'Parent' as grant_type,
+            parent.name as inheritance_path
+        FROM {EDGES_TABLE} contains
+        JOIN {VERTICES_TABLE} parent ON contains.src = parent.id AND parent.run_id = '{run_id}'
+        JOIN {EDGES_TABLE} e ON e.dst = parent.id AND e.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name) AND v.run_id = '{run_id}'
+        WHERE contains.run_id = '{run_id}'
+          AND contains.dst = '{sanitize(r_id)}'
+          AND contains.relationship = 'Contains'
+          AND e.permission_level IS NOT NULL
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+    ),
+    parent_groups_with_access AS (
+        -- Groups with access to parent resources
+        SELECT
+            g.id as group_id,
+            g.name as group_name,
+            e.permission_level,
+            parent.name as parent_name
+        FROM {EDGES_TABLE} contains
+        JOIN {VERTICES_TABLE} parent ON contains.src = parent.id AND parent.run_id = '{run_id}'
+        JOIN {EDGES_TABLE} e ON e.dst = parent.id AND e.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} g ON (e.src = g.id OR e.src = g.name) AND g.run_id = '{run_id}'
+        WHERE contains.run_id = '{run_id}'
+          AND contains.dst = '{sanitize(r_id)}'
+          AND contains.relationship = 'Contains'
+          AND e.permission_level IS NOT NULL
+          AND g.node_type IN ('Group', 'AccountGroup')
+    ),
+    parent_group_members_recursive AS (
+        -- Base case: direct members of groups with parent access
+        SELECT
+            member.id as member_id,
+            member.name as member_name,
+            member.display_name as member_display_name,
+            member.email as member_email,
+            member.node_type as member_type,
+            pgwa.permission_level,
+            CONCAT(pgwa.group_name, ' → ', pgwa.parent_name) as inheritance_path,
+            1 as depth
+        FROM parent_groups_with_access pgwa
+        JOIN {EDGES_TABLE} membership ON (membership.dst = pgwa.group_id OR membership.dst = pgwa.group_name) AND membership.relationship = 'MemberOf' AND membership.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} member ON (membership.src = member.id OR membership.src = member.name OR membership.src = member.email) AND member.run_id = '{run_id}'
+
+        UNION ALL
+
+        -- Recursive case: members of nested groups
+        SELECT
+            member.id as member_id,
+            member.name as member_name,
+            member.display_name as member_display_name,
+            member.email as member_email,
+            member.node_type as member_type,
+            pgmr.permission_level,
+            CONCAT(member.name, ' → ', pgmr.inheritance_path) as inheritance_path,
+            pgmr.depth + 1 as depth
+        FROM parent_group_members_recursive pgmr
+        JOIN {VERTICES_TABLE} nested_group ON pgmr.member_id = nested_group.id AND nested_group.run_id = '{run_id}'
+        JOIN {EDGES_TABLE} membership ON (membership.dst = nested_group.id OR membership.dst = nested_group.name) AND membership.relationship = 'MemberOf' AND membership.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} member ON (membership.src = member.id OR membership.src = member.name OR membership.src = member.email) AND member.run_id = '{run_id}'
+        WHERE nested_group.node_type IN ('Group', 'AccountGroup')
+          AND pgmr.depth < 10
+    ),
+    parent_access_via_groups AS (
+        -- Users/SPs who inherit parent resource access via group membership
+        SELECT
+            pgmr.member_id as principal_id,
+            COALESCE(pgmr.member_display_name, pgmr.member_name) as principal_name,
+            pgmr.member_type as principal_type,
+            pgmr.member_email as principal_email,
+            pgmr.permission_level,
+            'Parent' as grant_type,
+            pgmr.inheritance_path
+        FROM parent_group_members_recursive pgmr
+        WHERE pgmr.member_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+    ),
+    all_access AS (
+        SELECT * FROM direct_grants
+        UNION ALL
+        SELECT * FROM implicit_grants
+        UNION ALL
+        SELECT * FROM group_grants
+        UNION ALL
+        SELECT * FROM inherited_access
+        UNION ALL
+        SELECT * FROM ownership
+        UNION ALL
+        SELECT * FROM parent_grants
+        UNION ALL
+        SELECT * FROM parent_access_via_groups
+    ),
+    deduplicated AS (
+        -- Deduplicate by canonical ID (extract base ID from variants like ws_XXX_user:ID or account_user:ID)
+        SELECT
+            principal_id,
+            principal_name,
+            principal_email,
+            principal_type,
+            permission_level,
+            grant_type,
+            inheritance_path,
+            -- Extract canonical ID: take part after last ':', or whole ID if no ':'
+            CASE
+                WHEN principal_id LIKE '%:%' THEN SPLIT(principal_id, ':')[1]
+                ELSE principal_id
+            END as canonical_id,
+            -- Prefer account-level principals over workspace-level
+            ROW_NUMBER() OVER (
+                PARTITION BY
+                    CASE
+                        WHEN principal_id LIKE '%:%' THEN SPLIT(principal_id, ':')[1]
+                        ELSE principal_id
+                    END,
+                    COALESCE(principal_email, principal_name),
+                    permission_level,
+                    grant_type
+                ORDER BY
+                    CASE principal_type
+                        WHEN 'AccountUser' THEN 1
+                        WHEN 'AccountGroup' THEN 1
+                        WHEN 'AccountServicePrincipal' THEN 1
+                        WHEN 'User' THEN 2
+                        WHEN 'Group' THEN 2
+                        WHEN 'ServicePrincipal' THEN 2
+                        ELSE 3
+                    END,
+                    principal_id
+            ) as rn
+        FROM all_access
+    )
+    SELECT
+        principal_id,
+        principal_name,
+        principal_email,
+        principal_type,
+        permission_level,
+        grant_type,
+        inheritance_path
+    FROM deduplicated
+    WHERE rn = 1
+    ORDER BY
+        CASE grant_type WHEN 'Direct' THEN 1 WHEN 'Ownership' THEN 2 WHEN 'Group' THEN 3 ELSE 4 END,
+        principal_type,
+        principal_name
+    """
+
+    results = exec_query_df(query)
+
+    # Calculate summary statistics
+    total = len(results)
+    direct_count = sum(1 for r in results if r.get('grant_type') == 'Direct')
+    group_count = sum(1 for r in results if r.get('grant_type') == 'Group')
+    ownership_count = sum(1 for r in results if r.get('grant_type') == 'Ownership')
+    parent_count = sum(1 for r in results if r.get('grant_type') == 'Parent')
+
+    return jsonify({
+        'success': True,
+        'message': f"{total} principal(s) have access to {resource['name']}",
+        'resource_info': {
+            'id': resource['id'],
+            'name': resource['name'],
+            'type': resource['node_type'],
+            'owner': resource.get('owner')
+        },
+        'summary': {
+            'total': total,
+            'direct': direct_count,
+            'via_groups': group_count,
+            'via_ownership': ownership_count,
+            'via_parent': parent_count
+        },
+        'data': results
+    })
+
+
+@app.route('/api/what-can-access', methods=['POST'])
+def api_what_can_access():
+    """Find all resources a principal can access, including via group inheritance"""
+    data = request.get_json() or {}
+    principal_id = data.get('principal', '')
+    resource_type = data.get('resource_type', 'All')
+
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'success': False, 'message': 'No collection runs available', 'data': []})
+
+    principal = find_principal(principal_id, run_id)
+    if not principal:
+        return jsonify({'success': False, 'message': f"Principal '{principal_id}' not found", 'data': []})
+
+    p_id = principal['id']
+    p_email = principal['email'] or ''
+    p_name = principal['name'] or ''
+
+    # Handle ID format variations (account_user:123 vs 123)
+    # MemberOf edges might use different formats depending on workspace vs account level
+    p_id_variants = [p_id]
+    if ':' in p_id:
+        # If ID is prefixed (e.g., account_user:123), also try just the numeric part
+        p_id_variants.append(p_id.split(':')[-1])
+    else:
+        # If ID is just numeric, also try all prefixed versions
+        p_id_variants.append(f"account_user:{p_id}")
+        p_id_variants.append(f"account_group:{p_id}")
+        p_id_variants.append(f"account_sp:{p_id}")
+
+    # The same person exists as both an account-level vertex (account_user:X) and a
+    # workspace-level one (ws_<workspaceId>_user:X), each carrying different ACLs
+    # (UC grants / account roles vs workspace object permissions). Since the lists
+    # now show one deduped entry, resolve EVERY vertex that shares this id core so
+    # analysis covers both -- whichever representation was picked.
+    try:
+        _core = p_id.split(':')[-1] if ':' in p_id else p_id
+        if _core:
+            for _s in exec_query_df(f"""
+                SELECT DISTINCT id FROM {VERTICES_TABLE}
+                WHERE run_id = '{run_id}' AND substring_index(id, ':', -1) = '{sanitize(_core)}'
+                  AND node_type IN ('User','AccountUser','ServicePrincipal','AccountServicePrincipal','Group','AccountGroup')
+            """):
+                _sid = _s.get('id')
+                if _sid and _sid not in p_id_variants:
+                    p_id_variants.append(_sid)
+    except Exception:  # noqa: BLE001
+        logger.debug("sibling id resolution failed", exc_info=True)
+
+    logger.debug(f"Principal found: id={p_id}, email={p_email}, name={p_name}")
+    logger.debug(f"ID variants to search: {p_id_variants}")
+
+    # Bind resource_type as a named SQL parameter rather than interpolating
+    # the user-supplied value — eliminates the only direct-POST-input
+    # site in this handler that would otherwise hit a sanitize-only path.
+    type_filter = "AND v.node_type = :resource_type" if resource_type and resource_type != 'All' else ""
+
+    # Build SQL condition for all principal ID variants
+    id_conditions = ' OR '.join([f"e.src = '{sanitize(vid)}'" for vid in p_id_variants])
+    if p_email:
+        id_conditions += f" OR e.src = '{sanitize(p_email)}'"
+    if p_name:
+        id_conditions += f" OR e.src = '{sanitize(p_name)}'"
+
+    logger.debug(f"ID conditions for groups query: {id_conditions}")
+
+    # Build owner condition for owned_resources (uses v.owner instead of e.src)
+    owner_conditions = ' OR '.join([f"v.owner = '{sanitize(vid)}'" for vid in p_id_variants])
+    if p_email:
+        owner_conditions += f" OR v.owner = '{sanitize(p_email)}'"
+    if p_name:
+        owner_conditions += f" OR v.owner = '{sanitize(p_name)}'"
+
+    # Query groups first (like notebook does) - this is more reliable than recursive CTE
+    groups_query = f"""
+    WITH RECURSIVE
+    all_groups AS (
+        -- Level 0: Direct group memberships
+        -- Match MemberOf edges where dst could be group ID or group name
+        SELECT
+            g.id as group_id,
+            g.name as group_name,
+            g.name as inheritance_path,
+            0 as depth
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON (e.dst = g.id OR e.dst = g.name) AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND ({id_conditions})
+          AND g.node_type IN ('Group', 'AccountGroup')
+
+        UNION ALL
+
+        -- Level 1+: Nested group memberships
+        -- Group could be member of parent using either ID or name format
+        SELECT
+            parent_g.id as group_id,
+            parent_g.name as group_name,
+            CONCAT(ag.inheritance_path, ' → ', parent_g.name) as inheritance_path,
+            ag.depth + 1 as depth
+        FROM all_groups ag
+        JOIN {EDGES_TABLE} e ON (e.src = ag.group_id OR e.src = ag.group_name) AND e.relationship = 'MemberOf' AND e.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} parent_g ON (e.dst = parent_g.id OR e.dst = parent_g.name) AND parent_g.run_id = '{run_id}'
+        WHERE parent_g.node_type IN ('Group', 'AccountGroup')
+          AND ag.depth < 10
+    )
+    SELECT DISTINCT group_id, group_name, inheritance_path FROM all_groups
+    """
+    groups_result = exec_query_df(groups_query)
+
+    # Build lists of group IDs and names (like notebook)
+    group_ids = [g['group_id'] for g in groups_result]
+    group_names = [g['group_name'] for g in groups_result]
+    group_paths = {g['group_id']: g['inheritance_path'] for g in groups_result}
+    group_name_paths = {g['group_name']: g['inheritance_path'] for g in groups_result}
+
+    logger.debug(f"Found {len(group_ids)} groups for principal {p_id}: {group_names}")
+    logger.debug(f"Groups query returned {len(groups_result)} rows")
+
+    # Build SQL-safe lists for IN clauses
+    group_ids_sql = ','.join([f"'{sanitize(gid)}'" for gid in group_ids]) if group_ids else "'__none__'"
+    group_names_sql = ','.join([f"'{sanitize(gname)}'" for gname in group_names]) if group_names else "'__none__'"
+
+    # Build CASE statement for inheritance paths (match by both ID and name)
+    path_cases_list = []
+    for gid, path in group_paths.items():
+        path_cases_list.append(f"WHEN e.src = '{sanitize(gid)}' THEN '{sanitize(path)}'")
+    for gname, path in group_name_paths.items():
+        path_cases_list.append(f"WHEN e.src = '{sanitize(gname)}' THEN '{sanitize(path)}'")
+
+    # Build the inheritance_path expression - use e.src as fallback, or just e.src if no groups
+    if path_cases_list:
+        inheritance_path_expr = f"CASE {' '.join(path_cases_list)} ELSE e.src END"
+    else:
+        inheritance_path_expr = "e.src"
+
+    logger.debug(f"path_cases_list has {len(path_cases_list)} entries")
+
+    query = f"""
+    WITH direct_access AS (
+        -- Direct permissions granted to the principal
+        SELECT
+            v.id as resource_id,
+            v.name as resource_name,
+            v.node_type as resource_type,
+            e.permission_level,
+            'Direct' as grant_type,
+            CAST(NULL AS STRING) as inheritance_path
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON e.dst = v.id AND v.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND ({id_conditions})
+          AND e.permission_level IS NOT NULL
+          AND v.node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+          {type_filter}
+    ),
+    group_access AS (
+        -- Permissions inherited via group membership (matching by both ID and name)
+        SELECT
+            v.id as resource_id,
+            v.name as resource_name,
+            v.node_type as resource_type,
+            e.permission_level,
+            'Group' as grant_type,
+            {inheritance_path_expr} as inheritance_path
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON e.dst = v.id AND v.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND (e.src IN ({group_ids_sql}) OR e.src IN ({group_names_sql}))
+          AND e.permission_level IS NOT NULL
+          AND v.node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+          {type_filter}
+    ),
+    owned_resources AS (
+        -- Resources owned by the principal (implicit ALL PRIVILEGES)
+        SELECT
+            v.id as resource_id,
+            v.name as resource_name,
+            v.node_type as resource_type,
+            'ALL PRIVILEGES' as permission_level,
+            'Ownership' as grant_type,
+            CAST(NULL AS STRING) as inheritance_path
+        FROM {VERTICES_TABLE} v
+        WHERE v.run_id = '{run_id}'
+          AND ({owner_conditions})
+          AND v.node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+          {type_filter}
+    ),
+    parent_access AS (
+        -- Inherited from parent resources (e.g., Catalog -> Schema -> Table)
+        -- If principal has access to a catalog, they can access schemas/tables within it
+        SELECT
+            child.id as resource_id,
+            child.name as resource_name,
+            child.node_type as resource_type,
+            e.permission_level,
+            'Parent' as grant_type,
+            parent.name as inheritance_path
+        FROM {EDGES_TABLE} contains
+        JOIN {VERTICES_TABLE} parent ON contains.src = parent.id AND parent.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} child ON contains.dst = child.id AND child.run_id = '{run_id}'
+        JOIN {EDGES_TABLE} e ON e.dst = parent.id AND e.run_id = '{run_id}'
+        WHERE contains.run_id = '{run_id}'
+          AND contains.relationship = 'Contains'
+          AND (
+              -- Direct principal access to parent (with ID variants)
+              {id_conditions}
+              -- Group access to parent (by ID or name)
+              OR e.src IN ({group_ids_sql})
+              OR e.src IN ({group_names_sql})
+          )
+          AND e.permission_level IS NOT NULL
+          AND child.node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+          {type_filter}
+    )
+    SELECT DISTINCT
+        resource_id,
+        resource_name,
+        resource_type,
+        permission_level,
+        grant_type,
+        inheritance_path
+    FROM (
+        SELECT * FROM direct_access
+        UNION ALL
+        SELECT * FROM group_access
+        UNION ALL
+        SELECT * FROM owned_resources
+        UNION ALL
+        SELECT * FROM parent_access
+    )
+    ORDER BY resource_type, resource_name
+    """
+
+    logger.debug(f"Executing main query...")
+    main_query_params = {}
+    if resource_type and resource_type != 'All':
+        main_query_params["resource_type"] = resource_type
+    results = exec_query_df(query, params=main_query_params or None)
+    logger.debug(f"Main query returned {len(results)} results")
+
+    # Debug: Print first few results if any
+    if results:
+        logger.debug(f"First result: {results[0]}")
+    else:
+        logger.debug(f"No results! Trying simplified direct_access query...")
+        # Try a simple query to test
+        test_query = f"""
+        SELECT COUNT(*) as cnt FROM {EDGES_TABLE} e
+        WHERE (e.src = '{sanitize(p_id)}' OR e.src = '{sanitize(p_email)}' OR e.src = '{sanitize(p_name)}')
+          AND e.permission_level IS NOT NULL
+        """
+        test_result = exec_query_df(test_query)
+        logger.debug(f"Test query (edges with permission): {test_result}")
+
+    # Calculate summary statistics
+    total = len(results)
+    direct_count = sum(1 for r in results if r.get('grant_type') == 'Direct')
+    group_count = sum(1 for r in results if r.get('grant_type') == 'Group')
+    ownership_count = sum(1 for r in results if r.get('grant_type') == 'Ownership')
+    parent_count = sum(1 for r in results if r.get('grant_type') == 'Parent')
+
+    # Count by resource type
+    type_counts = {}
+    for r in results:
+        rt = r.get('resource_type', 'Unknown')
+        type_counts[rt] = type_counts.get(rt, 0) + 1
+
+    # Get member count if principal is a group
+    member_count = 0
+    if principal.get('node_type') in ('Group', 'AccountGroup'):
+        # Count how many principals are members of this group (edges where dst is the group ID)
+        member_query = f"""
+        SELECT COUNT(DISTINCT src) as member_count
+        FROM {EDGES_TABLE}
+        WHERE run_id = '{run_id}'
+          AND relationship = 'MemberOf'
+          AND dst = '{sanitize(p_id)}'
+        """
+        member_result = exec_query_df(member_query)
+        if member_result and len(member_result) > 0:
+            member_count = member_result[0].get('member_count', 0)
+
+    # Admin / privileged roles the principal itself holds. Reuses the same
+    # detection as the High Privilege report (identify_privileged_principals_query)
+    # so Principal Analysis shows whether this identity is an Account / Workspace /
+    # Metastore Admin (or Catalog Owner) -- not just what it can reach.
+    admin_roles = []
+    try:
+        p_email_l = (p_email or '').lower()
+        p_name_l = (p_name or '').lower()
+        role_risk = {}
+        for _row in identify_privileged_principals_query(run_id):
+            _matches = (
+                _row.get('principal_id', '') == p_id
+                or (p_email_l and (_row.get('principal_email') or '').lower() == p_email_l)
+                or (p_name_l and (_row.get('principal_name') or '').lower() == p_name_l)
+            )
+            if not _matches:
+                continue
+            _role = _row.get('privileged_role', '')
+            if _role:
+                role_risk.setdefault(_role, _row.get('risk_level', 'UNKNOWN'))
+
+        if role_risk:
+            # Resolve the specific resources behind each resource-scoped admin role
+            # (which workspaces / metastores / catalogs) so the UI can name them.
+            role_resources = _principal_admin_resources(run_id, p_id_variants, p_email, p_name)
+            _order = ['Account Admin', 'Metastore Admin', 'Workspace Admin', 'Catalog Owner']
+            for _role in sorted(role_risk, key=lambda r: _order.index(r) if r in _order else 99):
+                admin_roles.append({
+                    'role': _role,
+                    'risk_level': role_risk[_role],
+                    'scope': 'account' if _role == 'Account Admin' else 'resource',
+                    'resources': role_resources.get(_role, []),
+                })
+    except NoAccessError:
+        raise
+    except Exception:
+        admin_roles = []
+
+    return jsonify({
+        'success': True,
+        'message': f"{total} resource(s) accessible to {principal['display_name'] or principal['name']}",
+        'principal_info': {
+            'id': principal['id'],
+            'name': principal['name'],
+            'display_name': principal['display_name'],
+            'email': principal['email'],
+            'type': principal['node_type'],
+            'member_count': member_count,
+            'admin_roles': admin_roles
+        },
+        'summary': {
+            'total': total,
+            'direct': direct_count,
+            'via_groups': group_count,
+            'via_ownership': ownership_count,
+            'via_parent': parent_count,
+            'by_type': type_counts
+        },
+        'data': results
+    })
+
+
+def build_graph_from_db(run_id):
+    """Build a graph structure from database for path analysis"""
+    # Get all vertices
+    vertices_query = f"""
+    SELECT id, name, display_name, email, node_type, owner
+    FROM {VERTICES_TABLE}
+    WHERE run_id = '{run_id}'
+    """
+    vertices = exec_query_df(vertices_query)
+
+    # Get all edges with relationship info
+    edges_query = f"""
+    SELECT src, dst, relationship, permission_level
+    FROM {EDGES_TABLE}
+    WHERE run_id = '{run_id}'
+    """
+    edges = exec_query_df(edges_query)
+
+    # Build adjacency list, node info, and edge info
+    graph = {}  # node_id -> list of neighbor_ids
+    node_info = {}  # node_id -> node attributes
+    edge_info = {}  # (src, dst) -> edge attributes
+    id_variants = {}  # Maps variant IDs to canonical ID (e.g., "123" -> "account_user:123")
+
+    for v in vertices:
+        vid = v.get('id', '')
+        if vid:
+            graph[vid] = []
+            node_info[vid] = {
+                'name': v.get('email') or v.get('name') or v.get('display_name') or vid,
+                'display_name': v.get('display_name'),
+                'node_type': v.get('node_type'),
+                'email': v.get('email'),
+                'owner': v.get('owner')
+            }
+            # Build ID variant mappings for edge resolution
+            # e.g., "account_user:123" -> also index "123"
+            if ':' in vid:
+                short_id = vid.split(':')[-1]
+                id_variants[short_id] = vid
+
+    # Helper to resolve edge src/dst to canonical vertex ID
+    def resolve_id(edge_id):
+        if edge_id in graph:
+            return edge_id
+        if edge_id in id_variants:
+            return id_variants[edge_id]
+        return edge_id
+
+    for e in edges:
+        src_raw = e.get('src', '')
+        dst_raw = e.get('dst', '')
+        if src_raw and dst_raw:
+            # Resolve to canonical IDs
+            src = resolve_id(src_raw)
+            dst = resolve_id(dst_raw)
+
+            if src not in graph:
+                graph[src] = []
+            graph[src].append(dst)
+            edge_info[(src, dst)] = {
+                'relationship': e.get('relationship'),
+                'permission_level': e.get('permission_level')
+            }
+
+    return graph, node_info, edge_info
+
+
+def identify_escalation_targets_query(run_id):
+    """
+    Get escalation targets - GROUPS and RESOURCES that confer privileged access when joined/obtained.
+
+    This returns the TARGET groups/roles for escalation path analysis -
+    NOT the users who already have these roles.
+
+    Targets include:
+    - Account Admin groups ('admins', 'account admins')
+    - Metastore Admin groups and metastores
+    - Workspace Admin groups
+    - Catalogs (ownership grants Catalog Owner)
+    """
+    query = f"""
+    WITH
+    -- Account Admin Groups: Groups that grant Account Admin when joined
+    -- Account-level 'admins' group (by node_type OR id prefix) or groups with 'account admin' in name
+    account_admin_groups AS (
+        SELECT
+            v.id as target_id,
+            v.name as target_name,
+            v.node_type as target_type,
+            'Account Admin' as privileged_role,
+            v.name as resource_name,
+            'CRITICAL' as risk_level
+        FROM {VERTICES_TABLE} v
+        WHERE v.run_id = '{run_id}'
+          AND v.node_type IN ('Group', 'AccountGroup')
+          AND (((v.node_type = 'AccountGroup' OR v.id LIKE 'account_group:%') AND LOWER(v.name) = 'admins')
+               OR LOWER(v.name) = 'account admins'
+               OR LOWER(v.name) LIKE '%account%admin%')
+    ),
+    -- Metastore Admin Groups: Groups that grant Metastore Admin when joined
+    metastore_admin_groups AS (
+        SELECT
+            v.id as target_id,
+            v.name as target_name,
+            v.node_type as target_type,
+            'Metastore Admin' as privileged_role,
+            v.name as resource_name,
+            'CRITICAL' as risk_level
+        FROM {VERTICES_TABLE} v
+        WHERE v.run_id = '{run_id}'
+          AND v.node_type IN ('Group', 'AccountGroup')
+          AND LOWER(v.name) LIKE '%metastore%admin%'
+        UNION ALL
+        -- Metastore itself (ownership grants metastore admin)
+        SELECT
+            m.id as target_id,
+            m.name as target_name,
+            m.node_type as target_type,
+            'Metastore Admin' as privileged_role,
+            m.name as resource_name,
+            'CRITICAL' as risk_level
+        FROM {VERTICES_TABLE} m
+        WHERE m.run_id = '{run_id}'
+          AND m.node_type = 'Metastore'
+    ),
+    -- Workspace Admin Groups: Groups that grant Workspace Admin when joined
+    -- Workspace-level 'admins' group (not account-level) or groups with 'workspace admin' in name
+    workspace_admin_groups AS (
+        SELECT
+            v.id as target_id,
+            v.name as target_name,
+            v.node_type as target_type,
+            'Workspace Admin' as privileged_role,
+            v.name as resource_name,
+            'HIGH' as risk_level
+        FROM {VERTICES_TABLE} v
+        WHERE v.run_id = '{run_id}'
+          AND v.node_type IN ('Group', 'AccountGroup')
+          AND ((v.node_type = 'Group' AND v.id NOT LIKE 'account_group:%' AND LOWER(v.name) = 'admins')
+               OR LOWER(v.name) LIKE '%workspace%admin%'
+               OR LOWER(v.name) = 'workspace admins')
+    ),
+    -- Catalog Owner targets: Catalogs where gaining ownership grants Catalog Owner
+    catalog_owner_targets AS (
+        SELECT
+            c.id as target_id,
+            c.name as target_name,
+            c.node_type as target_type,
+            'Catalog Owner' as privileged_role,
+            c.name as resource_name,
+            'HIGH' as risk_level
+        FROM {VERTICES_TABLE} c
+        WHERE c.run_id = '{run_id}'
+          AND c.node_type = 'Catalog'
+    )
+    SELECT DISTINCT * FROM (
+        SELECT * FROM account_admin_groups
+        UNION ALL
+        SELECT * FROM metastore_admin_groups
+        UNION ALL
+        SELECT * FROM workspace_admin_groups
+        UNION ALL
+        SELECT * FROM catalog_owner_targets
+    )
+    ORDER BY
+        CASE risk_level WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END,
+        privileged_role
+    """
+    return exec_query_df(query)
+
+
+def _principal_admin_resources(run_id, id_variants, email, name):
+    """The specific resources behind one principal's resource-scoped admin roles:
+    which workspaces (Workspace Admin, via WorkspaceAdmin edges), which metastores
+    (Metastore Admin, by ownership), which catalogs (Catalog Owner). Resolved for
+    the principal directly and through the groups it belongs to. Account Admin is
+    account-wide, so it has no list. Returns {role: [names]}."""
+    out = {'Workspace Admin': [], 'Metastore Admin': [], 'Catalog Owner': []}
+    seeds = {str(v) for v in (list(id_variants or []) + [email, name]) if v}
+    if not seeds or not run_id:
+        return out
+
+    # The same person appears as both an account-level id (account_user:X) and a
+    # workspace-level id (ws_<wsid>_user:X), and the workspace vertex often has an
+    # empty email. Account-level edges (WorkspaceAdmin, MemberOf) key off
+    # account_user:X, so bridge every representation by the shared id core, and
+    # recover the canonical email/name from any matching vertex.
+    cores = {s.split(':')[-1] for s in seeds if ':' in s} | {s for s in seeds if s.isdigit()}
+    idents = set(seeds)
+    for c in cores:
+        idents |= {c, f'account_user:{c}', f'account_group:{c}', f'account_sp:{c}'}
+    id_in = ','.join("'" + sanitize(v) + "'" for v in idents) or "''"
+
+    emails = {email.lower()} if email else set()
+    names = {name.lower()} if name else set()
+    try:
+        for r in exec_query_df(f"""
+            SELECT DISTINCT email, name FROM {VERTICES_TABLE}
+            WHERE run_id = '{run_id}' AND id IN ({id_in})
+        """):
+            if r.get('email'):
+                emails.add(str(r['email']).lower())
+            if r.get('name'):
+                names.add(str(r['name']).lower())
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Groups (direct membership) the principal belongs to, as (id, name) pairs.
+    groups = []
+    try:
+        for r in exec_query_df(f"""
+            SELECT DISTINCT g.id AS gid, g.name AS gname
+            FROM {EDGES_TABLE} e
+            JOIN {VERTICES_TABLE} g ON e.dst = g.id AND g.run_id = '{run_id}'
+            WHERE e.run_id = '{run_id}' AND e.relationship = 'MemberOf'
+              AND g.node_type IN ('Group', 'AccountGroup')
+              AND e.src IN ({id_in})
+        """):
+            groups.append((r.get('gid'), r.get('gname')))
+    except Exception:  # noqa: BLE001
+        pass
+
+    all_grp_ids = [gid for gid, _ in groups if gid]
+    # Universal groups (everyone belongs) must NOT attribute ownership: many
+    # metastores/catalogs are owned by "account users", and counting those would
+    # falsely make every account user an admin of them.
+    _universal = {'account users', 'users'}
+    own_grp_ids = [gid for gid, gname in groups if gid and (gname or '').lower() not in _universal]
+    own_grp_names = [gname for _, gname in groups if gname and gname.lower() not in _universal]
+
+    src_vals = idents | set(all_grp_ids)
+    src_in = ','.join("'" + sanitize(v) + "'" for v in src_vals) or "''"
+    owner_vals = {str(v).lower() for v in (emails | names | idents | set(own_grp_ids) | set(own_grp_names))}
+    owner_in = ','.join("'" + sanitize(v) + "'" for v in owner_vals) or "''"
+
+    ws_names = set()
+    # Path 1: account workspace-assignment ADMIN (directly or via a group).
+    try:
+        for r in exec_query_df(f"""
+            SELECT DISTINCT w.name AS name
+            FROM {EDGES_TABLE} e
+            JOIN {VERTICES_TABLE} w ON e.dst = w.id AND w.run_id = '{run_id}' AND w.node_type = 'Workspace'
+            WHERE e.run_id = '{run_id}' AND e.relationship = 'WorkspaceAdmin' AND e.src IN ({src_in})
+        """):
+            if r.get('name'):
+                ws_names.add(r['name'])
+    except Exception:  # noqa: BLE001
+        pass
+    # Path 2: membership in a workspace-local 'admins' group (id like
+    # ws_<workspaceId>_group:...). That makes the principal an admin of THAT
+    # workspace even without an assignment edge -- which is how admins of the
+    # workspace SAT runs in are represented.
+    try:
+        for r in exec_query_df(f"""
+            SELECT DISTINCT COALESCE(w.name, CONCAT('workspace ', regexp_extract(g.id, '^ws_([0-9]+)_', 1))) AS name
+            FROM {EDGES_TABLE} me
+            JOIN {VERTICES_TABLE} g ON me.dst = g.id AND g.run_id = '{run_id}'
+                 AND g.node_type = 'Group' AND LOWER(g.name) = 'admins'
+            LEFT JOIN {VERTICES_TABLE} w ON w.run_id = '{run_id}' AND w.node_type = 'Workspace'
+                 AND w.id = CONCAT('workspace:', regexp_extract(g.id, '^ws_([0-9]+)_', 1))
+            WHERE me.run_id = '{run_id}' AND me.relationship = 'MemberOf'
+              AND regexp_extract(g.id, '^ws_([0-9]+)_', 1) != ''
+              AND me.src IN ({src_in})
+        """):
+            if r.get('name'):
+                ws_names.add(r['name'])
+    except Exception:  # noqa: BLE001
+        pass
+    out['Workspace Admin'] = sorted(ws_names)
+    try:
+        out['Metastore Admin'] = [r['name'] for r in exec_query_df(f"""
+            SELECT DISTINCT name FROM {VERTICES_TABLE}
+            WHERE run_id = '{run_id}' AND node_type = 'Metastore' AND LOWER(owner) IN ({owner_in})
+            ORDER BY name
+        """) if r.get('name')]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out['Catalog Owner'] = [r['name'] for r in exec_query_df(f"""
+            SELECT DISTINCT name FROM {VERTICES_TABLE}
+            WHERE run_id = '{run_id}' AND node_type = 'Catalog' AND LOWER(owner) IN ({owner_in})
+            ORDER BY name
+        """) if r.get('name')]
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def identify_privileged_principals_query(run_id):
+    """
+    Get principals who ALREADY hold privileged roles.
+    Used for finding indirect escalation paths (jobs/notebooks owned by admins).
+    """
+    query = f"""
+    WITH
+    -- Account Admins via direct AccountAdmin edge (from roles field in SCIM API)
+    account_admins_direct AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Account Admin' as privileged_role,
+            'Direct Role Assignment' as resource_name,
+            'CRITICAL' as risk_level
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name) AND v.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'AccountAdmin'
+    ),
+    -- Account Admins: Members of account-level 'admins' (by node_type OR id prefix) or 'account admins' group
+    account_admins_group AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Account Admin' as privileged_role,
+            g.name as resource_name,
+            'CRITICAL' as risk_level
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name) AND v.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} g ON e.dst = g.id AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND g.node_type IN ('Group', 'AccountGroup')
+          AND (((g.node_type = 'AccountGroup' OR g.id LIKE 'account_group:%') AND LOWER(g.name) = 'admins')
+               OR LOWER(g.name) = 'account admins'
+               OR LOWER(g.name) LIKE '%account%admin%')
+    ),
+    -- Metastore Admins: Members of metastore admin groups
+    metastore_admins AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Metastore Admin' as privileged_role,
+            g.name as resource_name,
+            'CRITICAL' as risk_level
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name) AND v.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} g ON e.dst = g.id AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND g.node_type IN ('Group', 'AccountGroup')
+          AND LOWER(g.name) LIKE '%metastore%admin%'
+    ),
+    -- Workspace Admins: Members of workspace-level 'admins' (not account-level) or workspace admin groups
+    workspace_admins AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Workspace Admin' as privileged_role,
+            g.name as resource_name,
+            'HIGH' as risk_level
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name) AND v.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} g ON e.dst = g.id AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND g.node_type IN ('Group', 'AccountGroup')
+          AND ((g.node_type = 'Group' AND g.id NOT LIKE 'account_group:%' AND LOWER(g.name) = 'admins')
+               OR LOWER(g.name) LIKE '%workspace%admin%'
+               OR LOWER(g.name) = 'workspace admins')
+    ),
+    -- Workspace Admins via the account workspace-assignment API (ADMIN), assigned
+    -- directly to a user / service principal -- account-wide (every workspace).
+    workspace_admins_assign AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Workspace Admin' as privileged_role,
+            w.name as resource_name,
+            'HIGH' as risk_level
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name) AND v.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} w ON e.dst = w.id AND w.run_id = '{run_id}' AND w.node_type = 'Workspace'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'WorkspaceAdmin'
+    ),
+    -- Members of groups granted Workspace Admin via assignment inherit it.
+    workspace_admins_assign_group AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Workspace Admin' as privileged_role,
+            g.name as resource_name,
+            'HIGH' as risk_level
+        FROM {EDGES_TABLE} ae
+        JOIN {VERTICES_TABLE} g ON ae.src = g.id AND g.run_id = '{run_id}' AND g.node_type IN ('Group', 'AccountGroup')
+        JOIN {EDGES_TABLE} me ON me.dst = g.id AND me.run_id = '{run_id}' AND me.relationship = 'MemberOf'
+        JOIN {VERTICES_TABLE} v ON (me.src = v.id OR me.src = v.email OR me.src = v.name) AND v.run_id = '{run_id}'
+        WHERE ae.run_id = '{run_id}'
+          AND ae.relationship = 'WorkspaceAdmin'
+    ),
+    -- Catalog Owners: Owners of catalogs
+    catalog_owners AS (
+        SELECT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Catalog Owner' as privileged_role,
+            c.name as resource_name,
+            'HIGH' as risk_level
+        FROM {VERTICES_TABLE} c
+        JOIN {VERTICES_TABLE} v ON (c.owner = v.id OR c.owner = v.email OR c.owner = v.name) AND v.run_id = '{run_id}'
+        WHERE c.run_id = '{run_id}'
+          AND c.node_type = 'Catalog'
+          AND v.node_type IN ('User', 'ServicePrincipal', 'Group', 'AccountUser', 'AccountServicePrincipal', 'AccountGroup')
+    )
+    SELECT DISTINCT * FROM (
+        SELECT * FROM account_admins_direct
+        UNION ALL
+        SELECT * FROM account_admins_group
+        UNION ALL
+        SELECT * FROM metastore_admins
+        UNION ALL
+        SELECT * FROM workspace_admins
+        UNION ALL
+        SELECT * FROM workspace_admins_assign
+        UNION ALL
+        SELECT * FROM workspace_admins_assign_group
+        UNION ALL
+        SELECT * FROM catalog_owners
+    )
+    ORDER BY
+        CASE risk_level WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END,
+        privileged_role
+    """
+    return exec_query_df(query)
+
+
+# For backward compatibility
+def identify_privileged_targets_query(run_id):
+    """Alias for identify_escalation_targets_query() for backward compatibility"""
+    return identify_escalation_targets_query(run_id)
+
+
+def find_all_paths_bfs(graph, node_info, edge_info, start, targets, max_depth=5, membership_only=True):
+    """
+    Find all paths from start to targets using BFS, with edge information.
+
+    Args:
+        graph: Adjacency list graph
+        node_info: Node metadata dict
+        edge_info: Edge metadata dict
+        start: Starting node ID
+        targets: Set of target node IDs
+        max_depth: Maximum path depth
+        membership_only: If True, only follow MemberOf/HasMember edges (for group escalation)
+
+    Returns:
+        List of path dictionaries with hops and metadata
+    """
+    from collections import deque
+
+    if start not in graph:
+        return []
+
+    all_paths = []
+    queue = deque([(start, [start])])
+    visited_paths = set()
+
+    while queue:
+        current, path = queue.popleft()
+
+        if len(path) > max_depth + 1:
+            continue
+
+        path_key = tuple(path)
+        if path_key in visited_paths:
+            continue
+        visited_paths.add(path_key)
+
+        if current in targets and current != start:
+            # Validate path: if membership_only, all edges must be MemberOf/HasMember
+            is_valid_path = True
+            if membership_only:
+                for i in range(1, len(path)):
+                    edge_data = edge_info.get((path[i-1], path[i]), {})
+                    rel = edge_data.get('relationship', '')
+                    if rel not in ('MemberOf', 'HasMember'):
+                        is_valid_path = False
+                        break
+
+            if not is_valid_path:
+                continue
+
+            # Build detailed hop information
+            hops = []
+            for i, node_id in enumerate(path):
+                node_data = node_info.get(node_id, {})
+                hop = {
+                    'node_id': node_id,
+                    'node_name': node_data.get('email') or node_data.get('name') or node_id,
+                    'node_type': node_data.get('node_type', 'Unknown')
+                }
+                if i > 0:
+                    prev_node = path[i-1]
+                    edge_data = edge_info.get((prev_node, node_id), {})
+                    hop['edge_relationship'] = edge_data.get('relationship', 'Connected')
+                    hop['edge_permission'] = edge_data.get('permission_level')
+                hops.append(hop)
+
+            all_paths.append({
+                'target_id': current,
+                'path_length': len(path) - 1,
+                'hops': hops
+            })
+
+        for neighbor in graph.get(current, []):
+            if neighbor in path:  # Avoid cycles
+                continue
+            # In membership_only mode, only walk group-membership edges while
+            # traversing. The result is identical to filtering completed paths
+            # afterwards, but pruning here keeps the BFS inside the (small)
+            # membership subgraph instead of exploring every edge in the graph.
+            if membership_only:
+                rel = edge_info.get((current, neighbor), {}).get('relationship', '')
+                if rel not in ('MemberOf', 'HasMember'):
+                    continue
+            queue.append((neighbor, path + [neighbor]))
+
+    return all_paths
+
+
+def find_indirect_escalation_paths(principal, node_info, edge_info, run_id):
+    """
+    Find indirect escalation paths where a user has CAN_MANAGE/CAN_RUN on
+    a Job or CAN_EDIT on a Notebook owned by a privileged principal.
+
+    Returns:
+        List of attack path dictionaries
+    """
+    p_id = principal['id']
+    p_email = principal.get('email', '')
+    p_name = principal.get('name', '')
+    p_display = principal.get('display_name') or principal.get('name') or principal.get('email') or p_id
+
+    # Get privileged principals
+    privileged_df = identify_privileged_principals_query(run_id)
+
+    # Build map of privileged principal identifiers
+    privileged_principals = {}
+    for row in privileged_df:
+        pid = row.get('principal_id', '')
+        if pid:
+            if pid not in privileged_principals:
+                privileged_principals[pid] = []
+            privileged_principals[pid].append({
+                'role': row.get('privileged_role', 'Unknown'),
+                'resource': row.get('resource_name', ''),
+                'risk_level': row.get('risk_level', 'UNKNOWN')
+            })
+            # Also index by email if available
+            email = row.get('principal_email', '')
+            if email:
+                if email not in privileged_principals:
+                    privileged_principals[email] = []
+                privileged_principals[email].append({
+                    'role': row.get('privileged_role', 'Unknown'),
+                    'resource': row.get('resource_name', ''),
+                    'risk_level': row.get('risk_level', 'UNKNOWN')
+                })
+
+    # Query for jobs/notebooks where principal has CAN_MANAGE
+    indirect_query = f"""
+    WITH
+    principal_managed_resources AS (
+        SELECT
+            r.id as resource_id,
+            r.name as resource_name,
+            r.node_type as resource_type,
+            r.owner as resource_owner,
+            e.permission_level
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} r ON e.dst = r.id AND r.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND (e.src = '{sanitize(p_id)}' OR e.src = '{sanitize(p_email)}' OR e.src = '{sanitize(p_name)}')
+          AND r.node_type IN ('Job', 'Notebook', 'Pipeline')
+          AND e.permission_level IN ('CAN_MANAGE', 'CAN_RUN', 'CAN_EDIT', 'IS_OWNER')
+    )
+    SELECT DISTINCT
+        pmr.resource_id,
+        pmr.resource_name,
+        pmr.resource_type,
+        pmr.resource_owner,
+        pmr.permission_level
+    FROM principal_managed_resources pmr
+    WHERE pmr.resource_owner IS NOT NULL AND pmr.resource_owner != ''
+    """
+
+    try:
+        results = exec_query_df(indirect_query)
+    except NoAccessError:
+        raise
+    except Exception as e:
+        logger.debug(f"  Warning: Error finding indirect paths: {e}")
+        return []
+
+    indirect_paths = []
+
+    for row in results:
+        resource_id = row.get('resource_id', '')
+        resource_name = row.get('resource_name', '')
+        resource_type = row.get('resource_type', '')
+        resource_owner = row.get('resource_owner', '')
+        permission = row.get('permission_level', '')
+
+        # Check if owner is a privileged principal
+        owner_roles = privileged_principals.get(resource_owner)
+        if not owner_roles:
+            continue
+
+        # Build the indirect escalation path
+        role_info = owner_roles[0]
+        hops = [
+            {
+                'node_id': p_id,
+                'node_name': p_display,
+                'node_type': principal.get('node_type', 'User')
+            },
+            {
+                'node_id': resource_id,
+                'node_name': resource_name,
+                'node_type': resource_type,
+                'edge_relationship': permission,
+                'edge_permission': permission
+            },
+            {
+                'node_id': resource_owner,
+                'node_name': resource_owner,
+                'node_type': 'PrivilegedPrincipal',
+                'edge_relationship': 'OwnedBy',
+                'edge_permission': None
+            },
+            {
+                'node_id': f"role:{role_info['role']}",
+                'node_name': role_info['role'],
+                'node_type': 'PrivilegedRole',
+                'edge_relationship': 'Grants',
+                'edge_permission': None
+            }
+        ]
+
+        indirect_paths.append({
+            'target_id': resource_owner,
+            'target_name': resource_owner,
+            'target_roles': owner_roles,
+            'risk_level': role_info['risk_level'],
+            'path_length': 4,
+            'path_type': 'INDIRECT_ESCALATION',
+            'escalation_resource': resource_name,
+            'escalation_resource_type': resource_type,
+            'hops': hops
+        })
+
+    logger.debug(f"  Found {len(indirect_paths)} indirect escalation paths")
+    return indirect_paths
+
+
+@app.route('/api/escalation-paths', methods=['POST'])
+def api_escalation_paths():
+    """
+    Find attack paths to Databricks privileged roles.
+    Matches notebook's find_escalation_paths() function.
+    """
+    data = request.get_json() or {}
+    principal_id = data.get('principal', '')
+    max_depth = int(data.get('max_depth', 5))
+
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'success': False, 'message': 'No collection runs available', 'data': []})
+
+    principal = find_principal(principal_id, run_id)
+    if not principal:
+        return jsonify({'success': False, 'message': f"Principal '{principal_id}' not found", 'data': []})
+
+    p_id = principal['id']
+    p_name = principal.get('display_name') or principal.get('name') or principal.get('email') or p_id
+    p_type = principal.get('node_type', 'Unknown')
+
+    logger.debug("=" * 60)
+    logger.debug(f"Finding escalation paths for: {p_name}")
+    logger.debug(f"Principal ID: {p_id}")
+    logger.debug(f"Principal email: {principal.get('email')}")
+
+    # Build graph
+    graph, node_info, edge_info = build_graph_from_db(run_id)
+    total_edges = sum(len(v) for v in graph.values())
+    logger.debug(f"Built graph with {len(graph)} nodes and {total_edges} edges")
+
+    # Find ALL node IDs that match this principal (by email or name)
+    # This handles account-level vs workspace-level user ID differences
+    p_email = principal.get('email', '')
+    p_name_lower = p_name.lower() if p_name else ''
+    p_display_name = principal.get('display_name', '')
+    all_principal_ids = [p_id]  # Start with the found ID
+
+    for nid, ndata in node_info.items():
+        if nid == p_id:
+            continue
+        # Match by email (case-insensitive)
+        if p_email and ndata.get('email') and ndata.get('email').lower() == p_email.lower():
+            all_principal_ids.append(nid)
+            logger.debug(f"Found additional node with same email: {nid} ({ndata.get('node_type')})")
+            continue
+        # Match by name/display_name (for users with same identity)
+        node_name = ndata.get('name', '').lower()
+        node_display = (ndata.get('display_name') or '').lower()
+        if ndata.get('node_type') in ('User', 'AccountUser') and p_email:
+            # Check if name matches email prefix
+            email_prefix = p_email.split('@')[0].lower() if '@' in p_email else ''
+            if email_prefix and (email_prefix in node_name or email_prefix in node_display):
+                all_principal_ids.append(nid)
+                logger.debug(f"Found additional node with matching name: {nid} ({ndata.get('node_type')}) - name: {ndata.get('name')}")
+
+    logger.debug(f"All principal IDs to search from: {all_principal_ids}")
+
+    # Check neighbors for all principal IDs
+    total_neighbors = []
+    for pid in all_principal_ids:
+        if pid in graph:
+            neighbors = graph[pid]
+            logger.debug(f"Principal {pid} has {len(neighbors)} direct neighbors")
+            for n in neighbors[:3]:
+                n_info = node_info.get(n, {})
+                e_info = edge_info.get((pid, n), {})
+                logger.debug(f"  -> {n}: {n_info.get('name')} ({n_info.get('node_type')}) via {e_info.get('relationship')}")
+            total_neighbors.extend(neighbors)
+
+    # Debug: Show some MemberOf edges
+    logger.debug(f"Sample MemberOf edges:")
+    memberof_count = 0
+    for (src, dst), edata in edge_info.items():
+        if edata.get('relationship') == 'MemberOf':
+            memberof_count += 1
+            if memberof_count <= 3:
+                src_info = node_info.get(src, {})
+                dst_info = node_info.get(dst, {})
+                logger.debug(f"  {src} ({src_info.get('node_type')}) -> {dst} ({dst_info.get('node_type')})")
+    logger.debug(f"Total MemberOf edges: {memberof_count}")
+
+    # Get privileged targets (admin groups, catalogs, schemas, metastores)
+    privileged_df = identify_privileged_targets_query(run_id)
+    logger.debug(f"Found {len(privileged_df)} privileged target rows")
+
+    # Build map of target_id -> role info
+    privileged_map = {}
+    for row in privileged_df:
+        tid = row.get('target_id', '')
+        if tid and tid != p_id:
+            if tid not in privileged_map:
+                privileged_map[tid] = []
+            privileged_map[tid].append({
+                'role': row.get('privileged_role', 'Unknown'),
+                'resource': row.get('resource_name', ''),
+                'risk_level': row.get('risk_level', 'UNKNOWN')
+            })
+
+    privileged_ids = set(privileged_map.keys())
+    logger.debug(f"Unique privileged target IDs: {len(privileged_ids)}")
+
+    # Check if any targets are in graph
+    targets_in_graph = [t for t in privileged_ids if t in graph]
+    logger.debug(f"Targets that exist in graph: {len(targets_in_graph)}")
+
+    # Show admin groups specifically
+    logger.debug(f"Admin group targets:")
+    for tid, roles in privileged_map.items():
+        if any('Admin' in r.get('role', '') for r in roles):
+            t_info = node_info.get(tid, {})
+            in_graph = "YES" if tid in graph else "NO"
+            logger.debug(f"  {tid}: {t_info.get('name')} - in graph: {in_graph}")
+            if tid in graph:
+                # Check if reachable from principal
+                logger.debug(f"    Neighbors of this target: {len(graph.get(tid, []))}")
+
+    logger.debug("=" * 60)
+
+    if not privileged_ids:
+        return jsonify({
+            'success': True,
+            'message': 'No privileged targets found',
+            'principal': {'id': p_id, 'name': p_name, 'type': p_type},
+            'summary': {'total_paths': 0},
+            'paths': []
+        })
+
+    # Check for DIRECT AccountAdmin edges first (Account Admin via direct role assignment)
+    direct_admin_paths = []
+    for pid in all_principal_ids:
+        for (src, dst), edata in edge_info.items():
+            if src == pid and edata.get('relationship') == 'AccountAdmin':
+                dst_info = node_info.get(dst, {})
+                logger.debug(f"Found direct AccountAdmin edge: {pid} -> {dst}")
+                direct_admin_paths.append({
+                    'start_id': pid,
+                    'target_id': dst,
+                    'target_name': dst_info.get('name', dst),
+                    'target_roles': [{'role': 'Account Admin', 'resource': 'Direct Role Assignment', 'risk_level': 'CRITICAL'}],
+                    'risk_level': 'CRITICAL',
+                    'path_type': 'DIRECT_ROLE',
+                    'path_length': 1,
+                    'hops': [
+                        {
+                            'node_id': pid,
+                            'node_name': node_info.get(pid, {}).get('name', pid),
+                            'node_type': node_info.get(pid, {}).get('node_type', 'Unknown'),
+                            'edge_relationship': None,
+                            'edge_permission': None
+                        },
+                        {
+                            'node_id': dst,
+                            'node_name': dst_info.get('name', dst),
+                            'node_type': dst_info.get('node_type', 'Account'),
+                            'edge_relationship': 'AccountAdmin',
+                            'edge_permission': None
+                        },
+                        {
+                            'node_id': 'role:Account Admin',
+                            'node_name': 'Account Admin',
+                            'node_type': 'PrivilegedRole',
+                            'edge_relationship': 'Grants',
+                            'edge_permission': None
+                        }
+                    ]
+                })
+
+    logger.debug(f"Found {len(direct_admin_paths)} direct Account Admin paths")
+
+    # Find all GROUP MEMBERSHIP paths from ALL principal IDs
+    raw_paths = []
+    for pid in all_principal_ids:
+        logger.debug(f"Searching group membership paths from: {pid}")
+        paths_from_pid = find_all_paths_bfs(graph, node_info, edge_info, pid, privileged_ids, max_depth, membership_only=True)
+        logger.debug(f"  Found {len(paths_from_pid)} paths from {pid}")
+        raw_paths.extend(paths_from_pid)
+
+    # Enrich group membership paths with role info and add privileged role as final node
+    attack_paths = []
+    for path in raw_paths:
+        target_id = path['target_id']
+        roles = privileged_map.get(target_id, [{'role': 'Unknown', 'risk_level': 'UNKNOWN'}])
+        role_info = roles[0]
+
+        # Add the privileged role as the final "virtual" node
+        path['hops'].append({
+            'node_id': f"role:{role_info['role']}",
+            'node_name': role_info['role'],
+            'node_type': 'PrivilegedRole',
+            'edge_relationship': 'Grants',
+            'edge_permission': None
+        })
+
+        path['target_name'] = path['hops'][-2]['node_name'] if len(path['hops']) > 1 else target_id
+        path['target_roles'] = roles
+        path['risk_level'] = role_info['risk_level']
+        path['path_type'] = 'GROUP_MEMBERSHIP'
+        path['path_length'] = len(path['hops']) - 1  # Update to include role node
+        attack_paths.append(path)
+
+    # Add direct Account Admin paths
+    attack_paths.extend(direct_admin_paths)
+
+    # Find INDIRECT escalation paths (jobs/notebooks owned by admins)
+    logger.debug("Searching for indirect escalation paths...")
+    indirect_paths = find_indirect_escalation_paths(principal, node_info, edge_info, run_id)
+    attack_paths.extend(indirect_paths)
+
+    # Sort by risk level then path length
+    risk_order = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3, 'UNKNOWN': 4}
+    attack_paths.sort(key=lambda p: (risk_order.get(p['risk_level'], 4), p['path_length']))
+
+    # Build summary
+    summary = {
+        'total_paths': len(attack_paths),
+        'critical_paths': len([p for p in attack_paths if p['risk_level'] == 'CRITICAL']),
+        'high_paths': len([p for p in attack_paths if p['risk_level'] == 'HIGH']),
+        'medium_paths': len([p for p in attack_paths if p['risk_level'] == 'MEDIUM']),
+        'shortest_path': min([p['path_length'] for p in attack_paths]) if attack_paths else None,
+        'unique_targets': len(set(p['target_id'] for p in attack_paths)),
+        'group_membership_paths': len([p for p in attack_paths if p.get('path_type') == 'GROUP_MEMBERSHIP']),
+        'indirect_paths': len([p for p in attack_paths if p.get('path_type') == 'INDIRECT_ESCALATION']),
+        'direct_role_paths': len([p for p in attack_paths if p.get('path_type') == 'DIRECT_ROLE'])
+    }
+
+    return jsonify({
+        'success': True,
+        'message': f"Escalation path analysis for {p_name}",
+        'principal': {'id': p_id, 'name': p_name, 'type': p_type},
+        'summary': summary,
+        'paths': attack_paths
+    })
+
+
+@app.route('/api/debug-graph', methods=['POST'])
+def api_debug_graph():
+    """Debug endpoint to inspect graph structure"""
+    data = request.get_json() or {}
+    principal_id = data.get('principal', '')
+
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'success': False, 'message': 'No collection runs available'})
+
+    principal = find_principal(principal_id, run_id)
+    if not principal:
+        return jsonify({'success': False, 'message': f"Principal '{principal_id}' not found"})
+
+    p_id = principal['id']
+
+    # Build graph
+    graph, node_info, id_lookup = build_graph_from_db(run_id)
+
+    # Get neighbors of the principal
+    neighbors = graph.get(p_id, [])
+    neighbor_info = []
+    for n in neighbors:
+        info = node_info.get(n, {})
+        neighbor_info.append({
+            'id': n,
+            'name': info.get('name'),
+            'node_type': info.get('node_type')
+        })
+
+    # Get privileged principals
+    privileged = identify_privileged_principals_query(run_id)
+
+    return jsonify({
+        'success': True,
+        'principal': {
+            'id': p_id,
+            'name': principal.get('name'),
+            'display_name': principal.get('display_name'),
+            'email': principal.get('email')
+        },
+        'graph_stats': {
+            'total_nodes': len(graph),
+            'total_edges': sum(len(v) for v in graph.values())
+        },
+        'direct_neighbors': neighbor_info,
+        'privileged_count': len(privileged),
+        'privileged_sample': privileged[:5] if privileged else []
+    })
+
+
+@app.route('/api/blast-radius', methods=['POST'])
+def api_blast_radius():
+    """Calculate blast radius for a principal, including via group inheritance"""
+    data = request.get_json() or {}
+    principal_id = data.get('principal', '')
+
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'success': False, 'message': 'No collection runs available', 'data': []})
+
+    principal = find_principal(principal_id, run_id)
+    if not principal:
+        return jsonify({'success': False, 'message': f"Principal '{principal_id}' not found", 'data': []})
+
+    p_id = principal['id']
+    p_email = principal['email'] or ''
+    p_name = principal['name'] or ''
+
+    # Query groups first (like notebook does) - match on both group ID and name
+    groups_query = f"""
+    WITH RECURSIVE
+    all_groups AS (
+        -- Level 0: Direct group memberships (match dst by ID or name)
+        SELECT g.id as group_id, g.name as group_name, g.name as inheritance_path, 0 as depth
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON (e.dst = g.id OR e.dst = g.name) AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND (e.src = '{sanitize(p_id)}' OR e.src = '{sanitize(p_email)}' OR e.src = '{sanitize(p_name)}')
+          AND g.node_type IN ('Group', 'AccountGroup')
+        UNION ALL
+        -- Level 1+: Nested group memberships (match src/dst by ID or name)
+        SELECT parent_g.id, parent_g.name, CONCAT(ag.inheritance_path, ' → ', parent_g.name), ag.depth + 1
+        FROM all_groups ag
+        JOIN {EDGES_TABLE} e ON (e.src = ag.group_id OR e.src = ag.group_name) AND e.relationship = 'MemberOf' AND e.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} parent_g ON (e.dst = parent_g.id OR e.dst = parent_g.name) AND parent_g.run_id = '{run_id}'
+        WHERE parent_g.node_type IN ('Group', 'AccountGroup') AND ag.depth < 10
+    )
+    SELECT DISTINCT group_id, group_name FROM all_groups
+    """
+    groups_result = exec_query_df(groups_query)
+    group_ids = [g['group_id'] for g in groups_result]
+    group_names = [g['group_name'] for g in groups_result]
+
+    group_ids_sql = ','.join([f"'{sanitize(gid)}'" for gid in group_ids]) if group_ids else "'__none__'"
+    group_names_sql = ','.join([f"'{sanitize(gname)}'" for gname in group_names]) if group_names else "'__none__'"
+
+    query = f"""
+    WITH direct_access AS (
+        -- Direct permissions granted to the principal
+        SELECT DISTINCT v.id, v.node_type, 'Direct' as access_type
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON e.dst = v.id AND v.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND (e.src = '{sanitize(p_id)}' OR e.src = '{sanitize(p_email)}' OR e.src = '{sanitize(p_name)}')
+          AND e.permission_level IS NOT NULL
+          AND v.node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+    ),
+    group_access AS (
+        -- Permissions inherited via group membership
+        SELECT DISTINCT v.id, v.node_type, 'Group' as access_type
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON e.dst = v.id AND v.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND (e.src IN ({group_ids_sql}) OR e.src IN ({group_names_sql}))
+          AND e.permission_level IS NOT NULL
+          AND v.node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+    ),
+    owned_resources AS (
+        -- Resources owned by the principal
+        SELECT DISTINCT v.id, v.node_type, 'Ownership' as access_type
+        FROM {VERTICES_TABLE} v
+        WHERE v.run_id = '{run_id}'
+          AND (v.owner = '{sanitize(p_id)}' OR v.owner = '{sanitize(p_email)}' OR v.owner = '{sanitize(p_name)}')
+          AND v.node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+    ),
+    parent_access AS (
+        -- Inherited from parent resources (e.g., Catalog -> Schema -> Table)
+        SELECT DISTINCT child.id, child.node_type, 'Parent' as access_type
+        FROM {EDGES_TABLE} contains
+        JOIN {VERTICES_TABLE} parent ON contains.src = parent.id AND parent.run_id = '{run_id}'
+        JOIN {VERTICES_TABLE} child ON contains.dst = child.id AND child.run_id = '{run_id}'
+        JOIN {EDGES_TABLE} e ON e.dst = parent.id AND e.run_id = '{run_id}'
+        WHERE contains.run_id = '{run_id}'
+          AND contains.relationship = 'Contains'
+          AND (
+              e.src = '{sanitize(p_id)}' OR e.src = '{sanitize(p_email)}' OR e.src = '{sanitize(p_name)}'
+              OR e.src IN ({group_ids_sql})
+              OR e.src IN ({group_names_sql})
+          )
+          AND e.permission_level IS NOT NULL
+          AND child.node_type NOT IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+    ),
+    all_accessible AS (
+        SELECT * FROM direct_access
+        UNION
+        SELECT * FROM group_access
+        UNION
+        SELECT * FROM owned_resources
+        UNION
+        SELECT * FROM parent_access
+    )
+    SELECT
+        node_type as resource_type,
+        COUNT(DISTINCT id) as count,
+        SUM(CASE WHEN access_type = 'Direct' THEN 1 ELSE 0 END) as direct_count,
+        SUM(CASE WHEN access_type = 'Group' THEN 1 ELSE 0 END) as group_count,
+        SUM(CASE WHEN access_type = 'Ownership' THEN 1 ELSE 0 END) as ownership_count,
+        SUM(CASE WHEN access_type = 'Parent' THEN 1 ELSE 0 END) as parent_count
+    FROM all_accessible
+    GROUP BY node_type
+    ORDER BY count DESC
+    """
+
+    results = exec_query_df(query)
+    total = sum(int(r.get('count', 0)) for r in results)
+    direct_total = sum(int(r.get('direct_count', 0)) for r in results)
+    group_total = sum(int(r.get('group_count', 0)) for r in results)
+    ownership_total = sum(int(r.get('ownership_count', 0)) for r in results)
+    parent_total = sum(int(r.get('parent_count', 0)) for r in results)
+
+    risk = 'LOW'
+    if total > 100:
+        risk = 'CRITICAL'
+    elif total > 50:
+        risk = 'HIGH'
+    elif total > 20:
+        risk = 'MEDIUM'
+
+    return jsonify({
+        'success': True,
+        'message': f"Blast Radius: {total} resources exposed ({risk} risk) - {direct_total} direct, {group_total} via groups, {parent_total} via parent",
+        'summary': {
+            'total': total,
+            'direct': direct_total,
+            'via_groups': group_total,
+            'via_ownership': ownership_total,
+            'via_parent': parent_total,
+            'risk_level': risk
+        },
+        'data': results
+    })
+
+
+@app.route('/api/impersonation-paths', methods=['POST'])
+def api_impersonation_paths():
+    """
+    Find impersonation paths from source principal to target principal.
+    Discovers how one entity can impersonate another through various attack vectors:
+    - Group membership chains
+    - Jobs/Notebooks that run as other users
+    - Resources (queries, files) owned by other users
+    """
+    try:
+        data = request.get_json() or {}
+        source_type = data.get('source_type', 'User')  # User, Group, ServicePrincipal
+        source_value = data.get('source', '')
+        target_type = data.get('target_type', 'User')
+        target_value = data.get('target', '')
+        analysis_type = data.get('analysis_type', 'all')  # 'all' or 'shortest'
+        max_hops = int(data.get('max_hops', 5))
+
+        # Get run_id from request body, then query params, then fallback to current
+        run_id = get_current_run_id()
+        if not run_id:
+            return jsonify({'success': False, 'message': 'No collection runs available', 'paths': []})
+
+        if not source_value or not target_value:
+            return jsonify({'success': False, 'message': 'Source and Target are required', 'paths': []})
+
+        # Find source principal
+        source_principal = find_principal(source_value, run_id)
+        if not source_principal:
+            return jsonify({'success': False, 'message': f"Source '{source_value}' not found", 'paths': []})
+
+        # Find target principal
+        target_principal = find_principal(target_value, run_id)
+        if not target_principal:
+            return jsonify({'success': False, 'message': f"Target '{target_value}' not found", 'paths': []})
+
+        source_id = source_principal['id']
+        target_id = target_principal['id']
+        source_name = source_principal.get('display_name') or source_principal.get('name') or source_principal.get('email') or source_id
+        target_name = target_principal.get('display_name') or target_principal.get('name') or target_principal.get('email') or target_id
+
+        logger.debug("=" * 60)
+        logger.debug(f"Finding impersonation paths")
+        logger.debug(f"Source: {source_name} ({source_principal.get('node_type')})")
+        logger.debug(f"Target: {target_name} ({target_principal.get('node_type')})")
+
+        # Build graph
+        graph, node_info, edge_info = build_graph_from_db(run_id)
+
+        # Find ALL node IDs that match source/target (handles account vs workspace level)
+        source_ids = set([source_id])
+        target_ids = set([target_id])
+
+        source_email = (source_principal.get('email') or '').lower()
+        target_email = (target_principal.get('email') or '').lower()
+
+        for nid, ndata in node_info.items():
+            node_email = (ndata.get('email') or '').lower()
+            if source_email and node_email == source_email:
+                source_ids.add(nid)
+            if target_email and node_email == target_email:
+                target_ids.add(nid)
+
+        logger.debug(f"Source IDs: {source_ids}")
+        logger.debug(f"Target IDs: {target_ids}")
+
+        # BFS to find paths from source to target
+        all_paths = []
+
+        for start_id in source_ids:
+            if start_id not in graph:
+                continue
+
+            # BFS with path tracking
+            queue = [(start_id, [start_id], [])]  # (current_node, path_nodes, path_edges)
+            visited_paths = set()
+
+            while queue and len(all_paths) < 100:  # Limit to 100 paths
+                current, path_nodes, path_edges = queue.pop(0)
+
+                # Check if we reached target
+                if current in target_ids:
+                    path_key = tuple(path_nodes)
+                    if path_key not in visited_paths:
+                        visited_paths.add(path_key)
+                        all_paths.append({
+                            'nodes': path_nodes,
+                            'edges': path_edges
+                        })
+                    continue
+
+                if len(path_nodes) >= max_hops + 1:
+                    continue
+
+                # Explore neighbors
+                for neighbor in graph.get(current, []):
+                    if neighbor not in path_nodes:  # Avoid cycles
+                        edge = edge_info.get((current, neighbor), {})
+                        new_path_nodes = path_nodes + [neighbor]
+                        new_path_edges = path_edges + [edge]
+                        queue.append((neighbor, new_path_nodes, new_path_edges))
+
+        logger.debug(f"Found {len(all_paths)} paths")
+
+        # Format paths for response
+        formatted_paths = []
+        for path in all_paths:
+            hops = []
+            for i, node_id in enumerate(path['nodes']):
+                node_data = node_info.get(node_id, {})
+                hop = {
+                    'node_id': node_id,
+                    'node_name': node_data.get('display_name') or node_data.get('name') or node_id,
+                    'node_type': node_data.get('node_type', 'Unknown')
+                }
+                if i > 0:
+                    edge = path['edges'][i-1]
+                    hop['edge_relationship'] = edge.get('relationship', '')
+                    hop['edge_permission'] = edge.get('permission_level')
+                hops.append(hop)
+
+            formatted_paths.append({
+                'path_length': len(path['nodes']),
+                'hops': hops
+            })
+
+        # Sort by path length
+        formatted_paths.sort(key=lambda p: p['path_length'])
+
+        # If shortest path only, return just the first one
+        if analysis_type == 'shortest' and formatted_paths:
+            formatted_paths = [formatted_paths[0]]
+
+        return jsonify({
+            'success': True,
+            'message': f"Found {len(formatted_paths)} impersonation path(s) from {source_name} to {target_name}",
+            'source': {
+                'id': source_id,
+                'name': source_name,
+                'type': source_principal.get('node_type')
+            },
+            'target': {
+                'id': target_id,
+                'name': target_name,
+                'type': target_principal.get('node_type')
+            },
+            'paths': formatted_paths
+        })
+
+    except NoAccessError:
+        # Surface to the Flask errorhandler as the friendly 403 banner.
+        raise
+    except Exception:
+        req_id = uuid.uuid4().hex[:8]
+        logger.exception("%s failed (req=%s)", request.path, req_id)
+        return jsonify({
+            'success': False,
+            'message': 'internal error',
+            'request_id': req_id,
+            'paths': []
+        }), 500
+
+
+@app.route('/api/principals-list')
+def api_principals_list():
+    """Get list of principals for dropdown selection"""
+    run_id = get_current_run_id()
+    principal_type = request.args.get('type', 'all')  # User, Group, ServicePrincipal, or all
+
+    if not run_id:
+        return jsonify({'success': False, 'data': []})
+
+    type_filter = ""
+    if principal_type == 'User':
+        type_filter = "AND node_type IN ('User', 'AccountUser')"
+    elif principal_type == 'Group':
+        type_filter = "AND node_type IN ('Group', 'AccountGroup')"
+    elif principal_type == 'ServicePrincipal':
+        type_filter = "AND node_type IN ('ServicePrincipal', 'AccountServicePrincipal')"
+    else:
+        type_filter = "AND node_type IN ('User', 'AccountUser', 'Group', 'AccountGroup', 'ServicePrincipal', 'AccountServicePrincipal')"
+
+    # Deduplicate by unique identifier:
+    # - Users: email
+    # - Groups: name
+    # - SPs: application_id (stable identifier across workspace/account levels)
+    query = f"""
+    WITH ranked_principals AS (
+        SELECT
+            id,
+            display_name,
+            name,
+            email,
+            application_id,
+            node_type,
+            ROW_NUMBER() OVER (
+                PARTITION BY
+                    CASE
+                        -- Users: dedupe by the id core (the part after the last
+                        -- colon), which is shared by the account-level
+                        -- (account_user:X) and workspace-level (ws_<id>_user:X)
+                        -- copies of the same person. Email can't be used: the
+                        -- workspace copy often has none, so the two wouldn't merge.
+                        WHEN node_type IN ('User', 'AccountUser')
+                        THEN CONCAT('u:', substring_index(id, ':', -1))
+                        -- SPs: dedupe by application_id (consistent across workspace/account)
+                        WHEN node_type IN ('ServicePrincipal', 'AccountServicePrincipal')
+                        THEN CONCAT('s:', LOWER(COALESCE(application_id, substring_index(id, ':', -1))))
+                        -- Groups: dedupe by name
+                        ELSE CONCAT('g:', LOWER(COALESCE(name, id)))
+                    END
+                ORDER BY
+                    -- Prefer Account-level nodes (they typically have more complete info)
+                    CASE WHEN node_type LIKE 'Account%' THEN 0 ELSE 1 END,
+                    display_name NULLS LAST
+            ) as rn
+        FROM {VERTICES_TABLE}
+        WHERE run_id = '{run_id}'
+          {type_filter}
+    )
+    SELECT
+        id,
+        -- Format: "Display Name (identifier)" for Users with email, just name for SPs/Groups
+        CASE
+            WHEN node_type IN ('User', 'AccountUser')
+                 AND email IS NOT NULL AND display_name IS NOT NULL AND display_name != email
+            THEN CONCAT(display_name, ' (', email, ')')
+            WHEN node_type IN ('User', 'AccountUser')
+                 AND email IS NOT NULL
+            THEN email
+            ELSE COALESCE(display_name, name, id)
+        END as name,
+        email,
+        node_type
+    FROM ranked_principals
+    WHERE rn = 1
+    ORDER BY name
+    LIMIT 500
+    """
+
+    results = exec_query_df(query)
+    return jsonify({'success': True, 'data': results})
+
+
+# ============================================================================
+# REPORT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/report/isolated')
+def report_isolated_principals():
+    """
+    Find principals with minimal connections in the security graph.
+    These may be orphaned accounts or misconfigured users.
+    """
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'error': 'No run_id available'})
+
+    # Get all principals with their connectivity metrics
+    # Note: Edges may reference principals by id, email, or name, so we need to match on all
+    # Deduplicate by email (for Users) or application_id/name (for SPs) to avoid counting same person twice
+    # But aggregate counts across ALL vertices for the same logical principal
+    query = f"""
+    WITH all_principals AS (
+        SELECT id, name, email, application_id, node_type, display_name,
+            -- Create a canonical key to identify the same logical principal across workspace/account levels
+            CASE
+                WHEN node_type IN ('User', 'AccountUser')
+                THEN LOWER(COALESCE(email, name, id))
+                WHEN node_type IN ('ServicePrincipal', 'AccountServicePrincipal')
+                THEN LOWER(COALESCE(application_id, name, id))
+                ELSE LOWER(COALESCE(name, id))
+            END as principal_key
+        FROM {VERTICES_TABLE}
+        WHERE run_id = '{run_id}'
+          AND node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+    ),
+    -- Count group memberships across ALL vertices with the same principal_key
+    group_memberships AS (
+        SELECT
+            p.principal_key,
+            COUNT(DISTINCT e.dst) as group_count
+        FROM all_principals p
+        LEFT JOIN {EDGES_TABLE} e ON e.run_id = '{run_id}'
+            AND e.relationship = 'MemberOf'
+            AND (e.src = p.id OR e.src = p.email OR e.src = p.name)
+        GROUP BY p.principal_key
+    ),
+    -- Count direct permissions across ALL vertices with the same principal_key
+    direct_permissions AS (
+        SELECT
+            p.principal_key,
+            COUNT(DISTINCT e.dst) as permission_count
+        FROM all_principals p
+        LEFT JOIN {EDGES_TABLE} e ON e.run_id = '{run_id}'
+            AND e.permission_level IS NOT NULL
+            AND (e.src = p.id OR e.src = p.email OR e.src = p.name)
+        GROUP BY p.principal_key
+    ),
+    -- Count owned resources across ALL vertices with the same principal_key
+    owned_resources AS (
+        SELECT
+            p.principal_key,
+            COUNT(DISTINCT v.id) as owned_count
+        FROM all_principals p
+        LEFT JOIN {VERTICES_TABLE} v ON v.run_id = '{run_id}'
+            AND v.owner IS NOT NULL
+            AND (v.owner = p.id OR v.owner = p.email OR v.owner = p.name)
+        GROUP BY p.principal_key
+    ),
+    -- Deduplicate to get one row per logical principal (prefer account-level)
+    principals AS (
+        SELECT id, name, email, application_id, node_type, display_name, principal_key,
+            ROW_NUMBER() OVER (
+                PARTITION BY principal_key
+                ORDER BY
+                    CASE node_type
+                        WHEN 'AccountUser' THEN 1
+                        WHEN 'User' THEN 2
+                        WHEN 'AccountServicePrincipal' THEN 1
+                        WHEN 'ServicePrincipal' THEN 2
+                        ELSE 3
+                    END
+            ) as rn
+        FROM all_principals
+    )
+    SELECT
+        p.id,
+        CASE
+            -- Users: show "Display Name (email)"
+            WHEN p.node_type IN ('User', 'AccountUser') AND p.email IS NOT NULL AND p.email != '' AND COALESCE(p.display_name, p.name) != p.email
+            THEN CONCAT(COALESCE(p.display_name, p.name), ' (', p.email, ')')
+            -- SPs: show "Display Name (application_id)" if available
+            WHEN p.node_type IN ('ServicePrincipal', 'AccountServicePrincipal') AND p.application_id IS NOT NULL AND COALESCE(p.display_name, p.name) != p.application_id
+            THEN CONCAT(COALESCE(p.display_name, p.name), ' (', p.application_id, ')')
+            ELSE COALESCE(p.display_name, p.name, p.email, p.application_id)
+        END as name,
+        p.email,
+        p.application_id,
+        p.node_type,
+        COALESCE(gm.group_count, 0) as groups,
+        COALESCE(dp.permission_count, 0) as permissions,
+        COALESCE(o.owned_count, 0) as owned,
+        (COALESCE(gm.group_count, 0) * 5 + COALESCE(dp.permission_count, 0) + COALESCE(o.owned_count, 0) * 2) as connectivity_score,
+        CASE
+            WHEN COALESCE(gm.group_count, 0) = 0 AND COALESCE(dp.permission_count, 0) = 0 AND COALESCE(o.owned_count, 0) = 0 THEN 'Highly Isolated'
+            WHEN (COALESCE(gm.group_count, 0) * 5 + COALESCE(dp.permission_count, 0) + COALESCE(o.owned_count, 0) * 2) < 5 THEN 'Moderately Isolated'
+            WHEN (COALESCE(gm.group_count, 0) * 5 + COALESCE(dp.permission_count, 0) + COALESCE(o.owned_count, 0) * 2) < 10 THEN 'Slightly Isolated'
+            ELSE 'Well Connected'
+        END as isolation_risk
+    FROM principals p
+    LEFT JOIN group_memberships gm ON p.principal_key = gm.principal_key
+    LEFT JOIN direct_permissions dp ON p.principal_key = dp.principal_key
+    LEFT JOIN owned_resources o ON p.principal_key = o.principal_key
+    WHERE p.rn = 1
+    ORDER BY connectivity_score ASC
+    """
+
+    results = exec_query_df(query)
+
+    # Calculate summary
+    summary = {'highly_isolated': 0, 'moderately_isolated': 0, 'slightly_isolated': 0, 'well_connected': 0}
+    for r in results:
+        risk = r.get('isolation_risk', 'Well Connected')
+        if risk == 'Highly Isolated':
+            summary['highly_isolated'] += 1
+        elif risk == 'Moderately Isolated':
+            summary['moderately_isolated'] += 1
+        elif risk == 'Slightly Isolated':
+            summary['slightly_isolated'] += 1
+        else:
+            summary['well_connected'] += 1
+
+    return jsonify({
+        'success': True,
+        'summary': summary,
+        'data': results
+    })
+
+
+@app.route('/api/report/orphaned')
+def report_orphaned_resources():
+    """
+    Find resources with no explicit permission grants.
+    These are only accessible via ownership or inheritance.
+    """
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'error': 'No run_id available'})
+
+    query = f"""
+    WITH granted_resources AS (
+        SELECT DISTINCT dst as resource_id
+        FROM {EDGES_TABLE}
+        WHERE run_id = '{run_id}'
+          AND permission_level IS NOT NULL
+    )
+    SELECT
+        v.id,
+        v.name,
+        v.node_type,
+        v.owner
+    FROM {VERTICES_TABLE} v
+    LEFT JOIN granted_resources gr ON v.id = gr.resource_id
+    WHERE gr.resource_id IS NULL
+      AND v.run_id = '{run_id}'
+      AND v.node_type IN ('Table', 'View', 'Schema', 'Catalog', 'Volume', 'Function')
+    ORDER BY v.node_type, v.name
+    """
+
+    results = exec_query_df(query)
+
+    # Calculate summary
+    types = set()
+    for r in results:
+        types.add(r.get('node_type', 'Unknown'))
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total': len(results),
+            'types': len(types)
+        },
+        'data': results
+    })
+
+
+@app.route('/api/report/shared-to-account')
+def report_shared_to_account():
+    """Resources shared with the built-in 'account users' group.
+
+    Reads the latest snapshot from brickhound_shared_to_account, which is
+    populated by the SAT shared-to-account-users detection notebook/job
+    (notebooks/brickhound/05_share_to_account.py). This endpoint is read-only;
+    remediation happens only in the notebook/job which holds SP credentials.
+    """
+    # This report has its own run_id (per detection run), independent of the
+    # graph collection run_id. Query runs as the calling user (OBO), so Unity
+    # Catalog enforces their grants on the findings table.
+    query = f"""
+    WITH latest AS (
+        SELECT MAX(run_id) AS run_id FROM {SHARED_TO_ACCOUNT_TABLE}
+    )
+    SELECT
+        s.resource_type,
+        s.resource_id,
+        s.workspace_id,
+        s.workspace_name,
+        s.resource_url,
+        s.shared_by,
+        s.shared_by_display_name,
+        s.permission,
+        s.group_name,
+        CAST(s.event_time AS STRING)          AS event_time,
+        CAST(s.detection_timestamp AS STRING) AS detection_timestamp,
+        s.auto_remediated
+    FROM {SHARED_TO_ACCOUNT_TABLE} s
+    JOIN latest l ON s.run_id = l.run_id
+    ORDER BY s.event_time DESC
+    """
+
+    try:
+        results = exec_query_df(query)
+    except Exception as e:
+        # Table absent (job never run) or no read grant — surface a friendly hint.
+        logger.warning("shared-to-account report query failed: %s", e)
+        return jsonify({
+            'error': (
+                'No shared-to-account-users data available yet. Run the '
+                '"SAT Permissions Analysis - Shared to Account Users" job (or the '
+                'notebooks/brickhound/05_share_to_account.py notebook) to populate it.'
+            )
+        })
+
+    # Statement Execution returns booleans as strings ('true'/'false'); normalize.
+    for r in results:
+        r['auto_remediated'] = _truthy(r.get('auto_remediated'))
+    remediated = sum(1 for r in results if r['auto_remediated'])
+    outstanding = len(results) - remediated
+
+    # Header context: detection run timestamp + the distinct workspaces where
+    # shares were found (in-report). Scope = the metastore the system tables
+    # (system.access.audit) are read from, since detection is account-wide over
+    # that metastore rather than a per-workspace scan.
+    detection_timestamp = results[0]['detection_timestamp'] if results else None
+    workspaces = sorted({
+        (r.get('workspace_name') or r.get('workspace_id') or '')
+        for r in results if (r.get('workspace_name') or r.get('workspace_id'))
+    })
+    metastores = []
+    try:
+        rows = exec_query_df("SELECT current_metastore() AS m")
+        if rows and rows[0].get('m'):
+            metastores = [rows[0]['m']]
+    except Exception:
+        metastores = []
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total': len(results),
+            'outstanding': outstanding,
+            'remediated': remediated,
+        },
+        'metastores': metastores,
+        'detection_timestamp': detection_timestamp,
+        'workspaces': workspaces,
+        'data': results,
+    })
+
+
+@app.route('/api/report/privileged-non-idp')
+def report_privileged_non_idp():
+    """Privileged identities that are not IdP-managed.
+
+    Reads the latest snapshot from brickhound_privileged_non_idp, populated by
+    notebooks/brickhound/06_privileged_non_idp_identities.py. Read-only;
+    remediation happens in the notebook/job (which holds SP credentials).
+    """
+    query = f"""
+    WITH latest AS (
+        SELECT MAX(run_id) AS run_id FROM {PRIVILEGED_NON_IDP_TABLE}
+    )
+    SELECT
+        p.finding_type,
+        p.principal_type,
+        p.principal_id,
+        p.principal_name,
+        p.principal_email,
+        p.application_id,
+        p.is_idp_managed,
+        p.scope,
+        p.workspace_id,
+        p.workspace_name,
+        p.console_url,
+        CAST(p.detection_timestamp AS STRING) AS detection_timestamp,
+        p.auto_remediated
+    FROM {PRIVILEGED_NON_IDP_TABLE} p
+    JOIN latest l ON p.run_id = l.run_id
+    ORDER BY p.finding_type, p.is_idp_managed, p.principal_name
+    """
+
+    try:
+        results = exec_query_df(query)
+    except Exception as e:
+        logger.warning("privileged-non-idp report query failed: %s", e)
+        return jsonify({
+            'error': (
+                'No privileged-non-IdP data available yet. Run the '
+                '"SAT Permissions Analysis - Privileged Non-IdP Identities" job (or the '
+                'notebooks/brickhound/06_privileged_non_idp_identities.py notebook) to populate it.'
+            )
+        })
+
+    # Normalize boolean-ish string cells to real bools for the JS layer too,
+    # so client-side conditionals (item.is_idp_managed) behave correctly.
+    for r in results:
+        r['is_idp_managed'] = _truthy(r.get('is_idp_managed'))
+        r['auto_remediated'] = _truthy(r.get('auto_remediated'))
+
+    non_idp = sum(1 for r in results if not r['is_idp_managed'])
+    account_admin = sum(1 for r in results if r.get('finding_type') == 'account_admin')
+    workspace_admin = sum(1 for r in results if r.get('finding_type') == 'workspace_admin')
+    remediated = sum(1 for r in results if r['auto_remediated'])
+
+    detection_timestamp = results[0]['detection_timestamp'] if results else None
+
+    # workspaces_scanned / workspaces_failed are large JSON blobs stored
+    # identically on every row (workspace-admin coverage), so we fetch them from
+    # a single row separately. Selecting them in the main query would multiply
+    # the blob by the row count and blow past the Statement Execution 25 MB
+    # inline result limit, which the endpoint would surface as a false "no data".
+    cov_rows = exec_query_df(f"""
+        WITH latest AS (
+            SELECT MAX(run_id) AS run_id FROM {PRIVILEGED_NON_IDP_TABLE}
+        )
+        SELECT p.workspaces_scanned, p.workspaces_failed
+        FROM {PRIVILEGED_NON_IDP_TABLE} p
+        JOIN latest l ON p.run_id = l.run_id
+        LIMIT 1
+    """)
+
+    def _cov(col):
+        if cov_rows and cov_rows[0].get(col):
+            try:
+                items = json.loads(cov_rows[0][col])
+                # tolerate legacy plain-string entries
+                return [x if isinstance(x, dict) else {'workspace': str(x), 'reason': 'ok'} for x in items]
+            except Exception:
+                return []
+        return []
+    scanned = _cov('workspaces_scanned')
+    failed = _cov('workspaces_failed')
+
+    # "Workspaces in this report" = distinct workspaces whose findings appear
+    # (workspace-admin findings carry a workspace_name; account-level ones don't).
+    in_report = sorted({r['workspace_name'] for r in results
+                        if r.get('workspace_name')})
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total': len(results),
+            'non_idp': non_idp,
+            'account_admin': account_admin,
+            'workspace_admin': workspace_admin,
+            'remediated': remediated,
+        },
+        'detection_timestamp': detection_timestamp,
+        'workspaces_scanned': scanned,
+        'workspaces_failed': failed,
+        'workspaces_in_report': in_report,
+        'data': results,
+    })
+
+
+@app.route('/api/report/denylist-candidates')
+def report_denylist_candidates():
+    """Account groups ranked by inactive-member count (denylist candidates).
+
+    Reads the latest snapshot from brickhound_denylist_candidates, populated by
+    notebooks/brickhound/07_denylist_candidates.py. Read-only.
+    """
+    query = f"""
+    WITH latest AS (
+        SELECT MAX(run_id) AS run_id FROM {DENYLIST_CANDIDATES_TABLE}
+    )
+    SELECT
+        c.group_id,
+        c.group_name,
+        c.is_idp_managed,
+        c.total_members,
+        c.inactive_members,
+        c.active_members,
+        c.inactive_pct,
+        c.inactive_days,
+        c.candidate_reason,
+        c.console_url,
+        CAST(c.detection_timestamp AS STRING) AS detection_timestamp
+    FROM {DENYLIST_CANDIDATES_TABLE} c
+    JOIN latest l ON c.run_id = l.run_id
+    ORDER BY c.inactive_members DESC, c.inactive_pct DESC
+    """
+
+    try:
+        results = exec_query_df(query)
+    except Exception as e:
+        logger.warning("denylist-candidates report query failed: %s", e)
+        return jsonify({
+            'error': (
+                'No denylist-candidate data available yet. Run the '
+                '"SAT Permissions Analysis - Denylist Candidates" job (or the '
+                'notebooks/brickhound/07_denylist_candidates.py notebook) to populate it.'
+            )
+        })
+
+    # Statement Execution returns everything as strings; normalize for the JS layer.
+    for r in results:
+        r['is_idp_managed'] = _truthy(r.get('is_idp_managed'))
+
+    detection_timestamp = results[0]['detection_timestamp'] if results else None
+    inactive_days = results[0]['inactive_days'] if results else None
+    # Denylist analysis is account-level (account SCIM groups). Surface the
+    # metastore for environment context.
+    metastores = []
+    try:
+        rows = exec_query_df("SELECT current_metastore() AS m")
+        if rows and rows[0].get('m'):
+            metastores = [rows[0]['m']]
+    except Exception:
+        metastores = []
+
+    # The account id is embedded in each group's console deep link
+    # (…/user-management/groups/{id}?account_id={acct}); pull it from the first
+    # row so the coverage block can name the account this report covers.
+    account_id = None
+    if results and results[0].get('console_url'):
+        try:
+            from urllib.parse import urlparse, parse_qs
+            account_id = parse_qs(urlparse(results[0]['console_url']).query).get('account_id', [None])[0]
+        except Exception:
+            account_id = None
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total_groups': len(results),
+            'total_inactive': sum(int(r.get('inactive_members') or 0) for r in results),
+        },
+        'detection_timestamp': detection_timestamp,
+        'inactive_days': inactive_days,
+        'metastores': metastores,
+        'account_id': account_id,
+        'data': results,
+    })
+
+
+@app.route('/api/report/overprivileged')
+def report_overprivileged_principals():
+    """
+    Find principals with excessive permissions.
+    Identifies users with ALL PRIVILEGES on multiple catalogs or MANAGE on many resources.
+    """
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'error': 'No run_id available'})
+
+    query = f"""
+    WITH all_principals AS (
+        SELECT
+            id,
+            name,
+            email,
+            application_id,
+            node_type,
+            display_name,
+            CASE
+                WHEN node_type IN ('User', 'AccountUser') THEN LOWER(COALESCE(email, name, id))
+                WHEN node_type IN ('ServicePrincipal', 'AccountServicePrincipal') THEN LOWER(COALESCE(application_id, name, id))
+                ELSE LOWER(COALESCE(name, id))
+            END as principal_key
+        FROM {VERTICES_TABLE}
+        WHERE node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND run_id = '{run_id}'
+    ),
+    permission_counts AS (
+        -- Count permissions across ALL node variants with same principal_key
+        SELECT
+            p.principal_key,
+            COUNT(DISTINCT e.dst) as total_resources,
+            COUNT(DISTINCT CASE WHEN r.node_type = 'Catalog' THEN r.id END) as catalog_count,
+            COUNT(DISTINCT CASE WHEN r.node_type = 'Schema' THEN r.id END) as schema_count,
+            COUNT(DISTINCT CASE WHEN r.node_type = 'Table' THEN r.id END) as table_count,
+            COUNT(DISTINCT CASE WHEN e.permission_level IN ('ALL PRIVILEGES', 'ALL_PRIVILEGES', 'MANAGE', 'CAN_MANAGE') THEN r.id END) as admin_grants
+        FROM {EDGES_TABLE} e
+        JOIN all_principals p ON (e.src = p.id OR e.src = p.email OR e.src = p.name)
+        JOIN {VERTICES_TABLE} r ON e.dst = r.id AND r.run_id = '{run_id}'
+        WHERE e.permission_level IS NOT NULL
+          AND e.run_id = '{run_id}'
+        GROUP BY p.principal_key
+    ),
+    deduplicated_principals AS (
+        -- Keep one row per principal_key (prefer account-level nodes)
+        SELECT
+            id as principal_id,
+            COALESCE(display_name, name) as principal_name,
+            email as principal_email,
+            node_type as principal_type,
+            principal_key,
+            ROW_NUMBER() OVER (
+                PARTITION BY principal_key
+                ORDER BY
+                    CASE
+                        WHEN node_type = 'AccountUser' THEN 1
+                        WHEN node_type = 'User' THEN 2
+                        WHEN node_type = 'AccountServicePrincipal' THEN 1
+                        WHEN node_type = 'ServicePrincipal' THEN 2
+                        ELSE 3
+                    END
+            ) as rn
+        FROM all_principals
+    )
+    SELECT
+        d.principal_id,
+        d.principal_name,
+        d.principal_email,
+        d.principal_type,
+        p.total_resources,
+        p.catalog_count,
+        p.schema_count,
+        p.table_count,
+        p.admin_grants,
+        CASE
+            WHEN p.catalog_count >= 3 OR p.admin_grants >= 10 THEN 'HIGH'
+            WHEN p.catalog_count >= 1 OR p.admin_grants >= 5 THEN 'MEDIUM'
+            ELSE 'LOW'
+        END as risk_level
+    FROM deduplicated_principals d
+    JOIN permission_counts p ON d.principal_key = p.principal_key
+    WHERE d.rn = 1
+      AND (p.admin_grants > 0 OR p.catalog_count > 0)
+    ORDER BY p.admin_grants DESC, p.catalog_count DESC, p.total_resources DESC
+    """
+
+    results = exec_query_df(query)
+
+    # Calculate summary
+    summary = {'high': 0, 'medium': 0, 'low': 0}
+    for r in results:
+        risk = r.get('risk_level', 'LOW').lower()
+        if risk in summary:
+            summary[risk] += 1
+
+    return jsonify({
+        'success': True,
+        'summary': summary,
+        'data': results
+    })
+
+
+@app.route('/api/report/high-privilege')
+def report_high_privilege_principals():
+    """
+    Find principals with high privilege roles using graph traversal.
+    Identifies effective privileges through:
+    - Direct group membership to admin groups
+    - Nested group membership (group in admin group)
+    - Direct permissions (MANAGE/ALL PRIVILEGES on metastores)
+    - Ownership (catalog owners with ALL PRIVILEGES)
+
+    Privileged Roles:
+    - Account Admin: Members of 'admins' or account admin groups
+    - Metastore Admin: MANAGE on metastore or metastore admin groups
+    - Workspace Admin: Members of workspace admin groups
+    - Catalog Owner: ALL PRIVILEGES or ownership on catalogs
+    """
+    run_id = get_current_run_id()
+    if not run_id:
+        return jsonify({'error': 'No run_id available'})
+
+    # Query that finds effective high privileges through graph traversal
+    # Including nested group membership (up to 3 levels deep)
+    # AND direct role assignments via AccountAdmin edge
+    query = f"""
+    WITH
+    -- Account Admins via direct AccountAdmin edge (from roles field in SCIM API)
+    -- This captures users/SPs with account_admin role directly assigned
+    account_admins_direct AS (
+        SELECT DISTINCT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Account Admin' as role,
+            'Direct Role' as via,
+            'Direct' as access_type
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name)
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'AccountAdmin'
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND v.run_id = '{run_id}'
+    ),
+
+    -- Level 1: Identify admin groups directly
+    -- Key distinction: Account-level 'admins' group = Account Admin
+    --                  Workspace-level 'admins' group = Workspace Admin
+    -- Use both node_type AND id prefix to identify (id prefix is more reliable)
+    admin_groups AS (
+        SELECT id, name, node_type, admin_role FROM (
+            SELECT id, name, node_type,
+                CASE
+                    -- Account-level admins group (by node_type OR id prefix) or groups with 'account admin' in name
+                    WHEN ((node_type = 'AccountGroup' OR id LIKE 'account_group:%') AND LOWER(name) = 'admins')
+                         OR LOWER(name) LIKE '%account%admin%' THEN 'Account Admin'
+                    WHEN LOWER(name) LIKE '%metastore%admin%' THEN 'Metastore Admin'
+                    -- Workspace-level admins group (not account-level) or groups with 'workspace admin' in name
+                    WHEN (node_type = 'Group' AND id NOT LIKE 'account_group:%' AND LOWER(name) = 'admins')
+                         OR LOWER(name) LIKE '%workspace%admin%'
+                         OR LOWER(name) = 'workspace admins' THEN 'Workspace Admin'
+                END as admin_role
+            FROM {VERTICES_TABLE}
+            WHERE run_id = '{run_id}'
+              AND node_type IN ('Group', 'AccountGroup')
+              AND (LOWER(name) = 'admins'
+                   OR LOWER(name) LIKE '%account%admin%'
+                   OR LOWER(name) LIKE '%metastore%admin%'
+                   OR LOWER(name) LIKE '%workspace%admin%'
+                   OR LOWER(name) = 'workspace admins')
+        )
+        UNION
+        -- Groups granted Workspace Admin via the account workspace-assignment API
+        -- (account-wide, every workspace). Their members/nested members inherit it.
+        SELECT g.id, g.name, g.node_type, 'Workspace Admin' as admin_role
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON e.src = g.id AND g.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'WorkspaceAdmin'
+          AND g.node_type IN ('Group', 'AccountGroup')
+    ),
+
+    -- Level 2: Groups that are members of admin groups (nested level 1)
+    nested_groups_l1 AS (
+        SELECT g.id, g.name, g.node_type, ag.admin_role, ag.name as admin_group_name
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON e.src = g.id
+        JOIN admin_groups ag ON e.dst = ag.id
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND g.node_type IN ('Group', 'AccountGroup')
+          AND g.run_id = '{run_id}'
+    ),
+
+    -- Level 3: Groups that are members of nested groups (nested level 2)
+    nested_groups_l2 AS (
+        SELECT g.id, g.name, g.node_type, ng.admin_role, ng.admin_group_name
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} g ON e.src = g.id
+        JOIN nested_groups_l1 ng ON e.dst = ng.id
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND g.node_type IN ('Group', 'AccountGroup')
+          AND g.run_id = '{run_id}'
+    ),
+
+    -- All admin groups (direct + nested)
+    all_admin_groups AS (
+        SELECT id, name, admin_role, name as via_group, 'Direct' as path_type FROM admin_groups
+        UNION ALL
+        SELECT id, name, admin_role, admin_group_name as via_group, 'Nested (L1)' as path_type FROM nested_groups_l1
+        UNION ALL
+        SELECT id, name, admin_role, admin_group_name as via_group, 'Nested (L2)' as path_type FROM nested_groups_l2
+    ),
+
+    -- Principals in admin groups (direct or via nested groups)
+    principals_via_groups AS (
+        SELECT DISTINCT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            aag.admin_role as role,
+            aag.name as via,
+            CASE aag.path_type
+                WHEN 'Direct' THEN 'Group'
+                ELSE 'Nested'
+            END as access_type
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name)
+        JOIN all_admin_groups aag ON e.dst = aag.id
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'MemberOf'
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND v.run_id = '{run_id}'
+    ),
+
+    -- Metastore admins via direct permission
+    metastore_admins_direct AS (
+        SELECT DISTINCT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Metastore Admin' as role,
+            m.name as via,
+            'Direct' as access_type
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name)
+        JOIN {VERTICES_TABLE} m ON e.dst = m.id
+        WHERE e.run_id = '{run_id}'
+          AND m.node_type = 'Metastore'
+          AND e.permission_level IN ('MANAGE', 'ALL PRIVILEGES', 'ALL_PRIVILEGES', 'CAN_MANAGE')
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND v.run_id = '{run_id}'
+          AND m.run_id = '{run_id}'
+    ),
+
+    -- Catalog owners (have full control)
+    catalog_owners AS (
+        SELECT DISTINCT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Catalog Owner' as role,
+            c.name as via,
+            'Owner' as access_type
+        FROM {VERTICES_TABLE} c
+        JOIN {VERTICES_TABLE} v ON (c.owner = v.id OR c.owner = v.email OR c.owner = v.name)
+        WHERE c.run_id = '{run_id}'
+          AND c.node_type = 'Catalog'
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND v.run_id = '{run_id}'
+    ),
+
+    -- Catalog ALL PRIVILEGES holders
+    catalog_all_privileges AS (
+        SELECT DISTINCT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Catalog Owner' as role,
+            c.name as via,
+            'Grant' as access_type
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name)
+        JOIN {VERTICES_TABLE} c ON e.dst = c.id
+        WHERE e.run_id = '{run_id}'
+          AND c.node_type = 'Catalog'
+          AND e.permission_level IN ('ALL PRIVILEGES', 'ALL_PRIVILEGES')
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND v.run_id = '{run_id}'
+          AND c.run_id = '{run_id}'
+    ),
+
+    -- Workspace Admins assigned directly (user/SP) via the account
+    -- workspace-assignment API -- account-wide, covers every workspace, not just
+    -- the one the app runs in. Group assignments are folded into admin_groups
+    -- above so their members expand through principals_via_groups.
+    ws_admins_direct AS (
+        SELECT DISTINCT
+            v.id as principal_id,
+            COALESCE(v.display_name, v.name, v.email) as principal_name,
+            v.email as principal_email,
+            v.node_type as principal_type,
+            'Workspace Admin' as role,
+            w.name as via,
+            'Assignment' as access_type
+        FROM {EDGES_TABLE} e
+        JOIN {VERTICES_TABLE} v ON (e.src = v.id OR e.src = v.email OR e.src = v.name)
+        JOIN {VERTICES_TABLE} w ON e.dst = w.id AND w.run_id = '{run_id}' AND w.node_type = 'Workspace'
+        WHERE e.run_id = '{run_id}'
+          AND e.relationship = 'WorkspaceAdmin'
+          AND v.node_type IN ('User', 'ServicePrincipal', 'AccountUser', 'AccountServicePrincipal')
+          AND v.run_id = '{run_id}'
+    )
+
+    SELECT principal_id, principal_name, principal_email, principal_type, role, via, access_type
+    FROM (
+        SELECT * FROM account_admins_direct
+        UNION ALL
+        SELECT * FROM principals_via_groups
+        UNION ALL
+        SELECT * FROM metastore_admins_direct
+        UNION ALL
+        SELECT * FROM catalog_owners
+        UNION ALL
+        SELECT * FROM catalog_all_privileges
+        UNION ALL
+        SELECT * FROM ws_admins_direct
+    )
+    ORDER BY
+        CASE role
+            WHEN 'Account Admin' THEN 1
+            WHEN 'Metastore Admin' THEN 2
+            WHEN 'Workspace Admin' THEN 3
+            WHEN 'Catalog Owner' THEN 4
+            ELSE 5
+        END,
+        CASE principal_type
+            WHEN 'User' THEN 1
+            WHEN 'AccountUser' THEN 1
+            WHEN 'ServicePrincipal' THEN 2
+            WHEN 'AccountServicePrincipal' THEN 2
+            ELSE 3
+        END,
+        principal_name
+    """
+
+    results = exec_query_df(query)
+
+    # Build summary. Count DISTINCT principals per role: a principal can legitimately
+    # appear on several rows for the same role (e.g. direct assignment AND via a
+    # group, or across multiple workspaces), so counting rows would over-report.
+    role_sets = {
+        'account_admin': set(),
+        'metastore_admin': set(),
+        'workspace_admin': set(),
+        'catalog_owner': set(),
+    }
+    role_keys = {
+        'Account Admin': 'account_admin',
+        'Metastore Admin': 'metastore_admin',
+        'Workspace Admin': 'workspace_admin',
+        'Catalog Owner': 'catalog_owner',
+    }
+    total_principals = set()
+    for r in results:
+        role = r.get('role', '')
+        pid = r.get('principal_id', '')
+        total_principals.add(pid)
+        key = role_keys.get(role)
+        if key:
+            role_sets[key].add(pid)
+
+    summary = {k: len(v) for k, v in role_sets.items()}
+    summary['total_principals'] = len(total_principals)
+
+    return jsonify({
+        'success': True,
+        'summary': summary,
+        'data': results
+    })
+
+
+@app.route('/api/report/secret-scope-access')
+def report_secret_scope_access():
+    """
+    Find principals with access to secret scopes.
+    Shows who can READ, WRITE, or MANAGE secrets.
+    Supports optional filters: workspace_id, scope_name
+    """
+    run_id = get_current_run_id()
+    workspace_id = request.args.get('workspace_id', '')
+    scope_name_filter = request.args.get('scope_name', '')
+
+    if not run_id:
+        return jsonify({'error': 'No run_id available'})
+
+    # Build additional WHERE clauses for filters
+    filter_clauses = ""
+    if scope_name_filter:
+        safe_scope = sanitize(scope_name_filter)
+        filter_clauses += f" AND s.name = '{safe_scope}'"
+    if workspace_id:
+        safe_ws = sanitize(workspace_id)
+        # Filter by workspace_id in properties JSON
+        filter_clauses += f" AND s.properties LIKE '%\"workspace_id\": \"{safe_ws}\"%'"
+
+    query = f"""
+    WITH all_principals AS (
+        SELECT
+            id,
+            name,
+            email,
+            application_id,
+            node_type,
+            display_name,
+            CASE
+                WHEN node_type IN ('User', 'AccountUser') THEN LOWER(COALESCE(email, name, id))
+                WHEN node_type IN ('ServicePrincipal', 'AccountServicePrincipal') THEN LOWER(COALESCE(application_id, name, id))
+                WHEN node_type IN ('Group', 'AccountGroup') THEN LOWER(COALESCE(name, id))
+                ELSE LOWER(COALESCE(name, id))
+            END as principal_key
+        FROM {VERTICES_TABLE}
+        WHERE run_id = '{run_id}'
+          AND node_type IN ('User', 'Group', 'ServicePrincipal', 'AccountUser', 'AccountGroup', 'AccountServicePrincipal')
+    ),
+    secret_access AS (
+        SELECT DISTINCT
+            p.principal_key,
+            s.name as scope_name,
+            s.properties as scope_properties,
+            e.permission_level,
+            e.relationship
+        FROM {EDGES_TABLE} e
+        JOIN all_principals p ON (e.src = p.id OR e.src = p.email OR e.src = p.name)
+        JOIN {VERTICES_TABLE} s ON e.dst = s.id AND s.run_id = '{run_id}'
+        WHERE e.run_id = '{run_id}'
+          AND s.node_type = 'SecretScope'
+          AND e.permission_level IS NOT NULL
+          {filter_clauses}
+    ),
+    deduplicated_principals AS (
+        SELECT
+            id,
+            COALESCE(display_name, name, email, application_id) as principal_name,
+            email as principal_email,
+            node_type as principal_type,
+            principal_key,
+            ROW_NUMBER() OVER (
+                PARTITION BY principal_key
+                ORDER BY
+                    CASE
+                        WHEN node_type = 'AccountUser' THEN 1
+                        WHEN node_type = 'User' THEN 2
+                        WHEN node_type = 'AccountGroup' THEN 1
+                        WHEN node_type = 'Group' THEN 2
+                        WHEN node_type = 'AccountServicePrincipal' THEN 1
+                        WHEN node_type = 'ServicePrincipal' THEN 2
+                        ELSE 3
+                    END
+            ) as rn
+        FROM all_principals
+    )
+    SELECT
+        d.id as principal_id,
+        d.principal_name,
+        d.principal_email,
+        d.principal_type,
+        sa.scope_name,
+        sa.scope_properties,
+        sa.permission_level,
+        sa.relationship
+    FROM secret_access sa
+    JOIN deduplicated_principals d ON sa.principal_key = d.principal_key AND d.rn = 1
+    ORDER BY
+        CASE d.principal_type
+            WHEN 'User' THEN 1
+            WHEN 'AccountUser' THEN 1
+            WHEN 'Group' THEN 2
+            WHEN 'AccountGroup' THEN 2
+            WHEN 'ServicePrincipal' THEN 3
+            WHEN 'AccountServicePrincipal' THEN 3
+            ELSE 4
+        END,
+        d.principal_name,
+        sa.scope_name
+    """
+
+    results = exec_query_df(query)
+
+    # Group by principal type for summary
+    summary = {'users': 0, 'groups': 0, 'service_principals': 0, 'total_scopes': set()}
+    principals_seen = {'users': set(), 'groups': set(), 'sps': set()}
+
+    for r in results:
+        ptype = r.get('principal_type', '')
+        pid = r.get('principal_id', '')
+        scope = r.get('scope_name', '')
+        summary['total_scopes'].add(scope)
+
+        if 'User' in ptype:
+            principals_seen['users'].add(pid)
+        elif 'Group' in ptype:
+            principals_seen['groups'].add(pid)
+        elif 'ServicePrincipal' in ptype:
+            principals_seen['sps'].add(pid)
+
+    summary['users'] = len(principals_seen['users'])
+    summary['groups'] = len(principals_seen['groups'])
+    summary['service_principals'] = len(principals_seen['sps'])
+    summary['total_scopes'] = len(summary['total_scopes'])
+
+    return jsonify({
+        'success': True,
+        'summary': summary,
+        'data': results
+    })
+
+
+@app.route('/api/report/secret-scopes-filters')
+def report_secret_scopes_filters():
+    """
+    Get available workspaces and secret scopes for filter dropdowns.
+    """
+    run_id = get_current_run_id()
+    workspace_id = request.args.get('workspace_id', '')
+
+    if not run_id:
+        return jsonify({'error': 'No run_id available', 'run_id_received': run_id})
+
+    # Debug: Check what node_types exist that contain 'Secret'
+    try:
+        debug_query = f"""
+        SELECT node_type, COUNT(*) as cnt
+        FROM {VERTICES_TABLE}
+        WHERE run_id = '{run_id}'
+          AND (LOWER(node_type) LIKE '%secret%')
+        GROUP BY node_type
+        """
+        debug_node_types = exec_query_df(debug_query)
+    except:
+        debug_node_types = []
+
+    # Get all secret scopes with their workspace info from properties
+    scopes_query = f"""
+    SELECT
+        id as scope_id,
+        name as scope_name,
+        properties as scope_properties
+    FROM {VERTICES_TABLE}
+    WHERE run_id = '{run_id}'
+      AND node_type = 'SecretScope'
+    """
+
+    query_error = None
+    try:
+        scopes_results = exec_query_df(scopes_query)
+    except NoAccessError:
+        raise
+    except Exception as e:
+        scopes_results = []
+        query_error = str(e)
+
+    # Parse workspace info from scope properties and build lists
+    workspaces = {}  # {workspace_id: workspace_name}
+    scopes = []  # [{scope_id, scope_name, workspace_id, workspace_name}]
+
+    import json
+
+    for r in scopes_results:
+        scope_id = r.get('scope_id', '')
+        scope_name = r.get('scope_name', '')
+        props_raw = r.get('scope_properties')
+
+        # Parse properties - could be JSON string, dict, or None
+        props = {}
+        if props_raw:
+            if isinstance(props_raw, dict):
+                props = props_raw
+            elif isinstance(props_raw, str):
+                try:
+                    props = json.loads(props_raw)
+                except:
+                    props = {}
+
+        # Also try to extract workspace from scope_id (format: ws_{ws_id}_secret_scope:{name})
+        ws_id = props.get('workspace_id', '')
+        ws_name = props.get('workspace_name', '')
+
+        if not ws_id and scope_id and scope_id.startswith('ws_'):
+            # Extract from ID format: ws_{ws_id}_secret_scope:{name}
+            try:
+                parts = scope_id.split('_')
+                if len(parts) >= 2:
+                    ws_id = parts[1]
+            except:
+                pass
+
+        if ws_id and ws_name:
+            workspaces[ws_id] = ws_name
+
+        scopes.append({
+            'scope_id': scope_id,
+            'scope_name': scope_name,
+            'workspace_id': ws_id,
+            'workspace_name': ws_name
+        })
+
+    # Convert workspaces dict to sorted list
+    workspace_list = [{'id': k, 'name': v} for k, v in workspaces.items()]
+    workspace_list.sort(key=lambda x: x['name'])
+
+    # Filter scopes by workspace if specified
+    if workspace_id:
+        scopes = [s for s in scopes if s['workspace_id'] == workspace_id]
+
+    # Debug: include raw scope count for troubleshooting
+    return jsonify({
+        'success': True,
+        'workspaces': workspace_list,
+        'scopes': scopes,
+        'debug': {
+            'run_id': run_id,
+            'total_scopes_found': len(scopes_results),
+            'workspaces_extracted': len(workspaces),
+            'secret_node_types': debug_node_types,
+            'query_error': query_error,
+            'query': scopes_query.strip()
+        }
+    })
+
+
+# ---------------------------------------------------------------------------
+# Secret scanning
+#
+# Reads notebooks_secret_scan_results and clusters_secret_scan_results, written
+# by the SAT secret scanner job. Each scan gets a run_id; these views report the
+# latest completed run per workspace.
+#
+# A row with secret_sha256 IS NULL and secrets_found = 0 is a tracking marker
+# meaning "this workspace was scanned and was clean" — not a finding. Every
+# query filters those out of finding counts while still using them to tell
+# "scanned clean" apart from "never scanned".
+#
+# secrets_found is deliberately never SUMmed: it repeats the per-object count on
+# every row for that object, so summing over-counts. Rows are counted instead.
+# ---------------------------------------------------------------------------
+
+# NOTEBOOK_SECRETS_TABLE / CLUSTER_SECRETS_TABLE are set by _apply_runtime_config,
+# so they follow a schema change made through in-app setup.
+
+_SECRETS_NOT_READY = (
+    'No secret scan results yet. The SAT Secrets Scanner job populates these '
+    'tables — it runs on a schedule after installation, and can also be '
+    'triggered from the Jobs UI.'
+)
+
+
+# Table-existence checks were the dominant cost of the Credential Exposure page:
+# every one of its endpoints ran a SHOW TABLES per table, so a single page load
+# spent a dozen round-trips just proving the scan tables are there. Now one
+# SHOW TABLES lists the schema and answers every check, and the result is cached
+# briefly (it only changes when a scan first creates a table -- still visible
+# within the TTL).
+_secrets_tables_cache = {'key': None, 'names': None, 'ts': 0.0}
+_secrets_table_lock = threading.Lock()
+_SECRETS_TABLE_TTL = 45.0
+
+
+def _secrets_schema_tables():
+    """Lowercased set of table names in the SAT schema (cached briefly)."""
+    key = (CATALOG, SCHEMA)
+    now = time.time()
+    with _secrets_table_lock:
+        c = _secrets_tables_cache
+        if c['key'] == key and c['names'] is not None and (now - c['ts']) < _SECRETS_TABLE_TTL:
+            return c['names']
+    try:
+        rows = exec_query_df(f"SHOW TABLES IN `{CATALOG}`.`{SCHEMA}`")
+    except NoAccessError:
+        raise
+    except Exception:
+        logger.info("listing SAT schema tables failed", exc_info=True)
+        return set()  # don't cache a transient failure
+    names = set()
+    for r in rows:
+        n = (r.get('tableName') or r.get('col1') or '')
+        if n:
+            names.add(str(n).lower())
+    with _secrets_table_lock:
+        _secrets_tables_cache.update({'key': key, 'names': names, 'ts': now})
+    return names
+
+
+def _secrets_table_present(table_name):
+    """True if a table exists in the SAT schema (served from the cached list)."""
+    return table_name.lower() in _secrets_schema_tables()
+
+
+def _secrets_sources():
+    """Which scan tables exist: (notebooks, clusters)."""
+    names = _secrets_schema_tables()
+    return (
+        'notebooks_secret_scan_results' in names,
+        'clusters_secret_scan_results' in names,
+    )
+
+
+def _latest_runs_cte(has_nb, has_cl):
+    """Newest run_id per workspace across whichever scan tables exist."""
+    parts = []
+    if has_nb:
+        parts.append(f"SELECT workspace_id, run_id FROM {NOTEBOOK_SECRETS_TABLE}")
+    if has_cl:
+        parts.append(f"SELECT workspace_id, run_id FROM {CLUSTER_SECRETS_TABLE}")
+    union = "\n        UNION ALL\n        ".join(parts)
+    return f"""latest_runs AS (
+        SELECT workspace_id, MAX(run_id) AS latest_run_id
+        FROM (
+        {union}
+        )
+        GROUP BY workspace_id
+    )"""
+
+
+def _findings_cte(has_nb, has_cl):
+    """Normalise both scan tables into one shape so views treat them alike."""
+    parts = []
+    if has_nb:
+        parts.append(f"""
+        SELECT COALESCE(s.object_type, 'notebook') AS source_type, s.workspace_id, s.run_id,
+               s.notebook_id AS object_id, s.notebook_name AS object_name,
+               s.notebook_path AS object_path,
+               s.detector_name, s.secret_sha256, s.verified, s.scan_time
+        FROM {NOTEBOOK_SECRETS_TABLE} s
+        JOIN latest_runs r ON s.workspace_id = r.workspace_id
+                          AND s.run_id = r.latest_run_id
+        WHERE s.secret_sha256 IS NOT NULL""")
+    if has_cl:
+        parts.append(f"""
+        SELECT 'cluster' AS source_type, s.workspace_id, s.run_id,
+               s.cluster_id AS object_id, s.cluster_name AS object_name,
+               CONCAT(s.config_field, COALESCE(CONCAT('.', s.config_key), '')) AS object_path,
+               s.detector_name, s.secret_sha256, s.verified, s.scan_time
+        FROM {CLUSTER_SECRETS_TABLE} s
+        JOIN latest_runs r ON s.workspace_id = r.workspace_id
+                          AND s.run_id = r.latest_run_id
+        WHERE s.secret_sha256 IS NOT NULL""")
+    return "findings AS (" + "\n        UNION ALL".join(parts) + "\n    )"
+
+
+def _custom_detectors_path():
+    """Workspace path of the customer-managed detector/settings file the scanners
+    read at run time. Lives beside the shipped configs in the app SP's home, which
+    the SP can write and which survives redeploys (the bundle never ships this
+    name)."""
+    base = _config_file_path().rsplit('/', 1)[0]  # /Users/<sp>/.sat
+    return f'{base}/configs/custom_trufflehog_detectors.yaml'
+
+
+# Built-in TruffleHog detectors SAT always excludes (shown in the UI, not editable
+# here); customer additions are appended.
+_DEFAULT_EXCLUDED_DETECTORS = ['DatabricksToken']
+
+
+def _secrets_scan_config():
+    """Current secret-scan settings for the UI, read back from the scanner's own
+    config file (custom_trufflehog_detectors.yaml). That file is the single source
+    of truth — the same bytes the collection jobs read — so the panel always shows
+    exactly what the next scan will use, with no drift between the UI and the
+    scanner. Absent file (nothing customised yet) → shipped defaults."""
+    days_back, custom_detectors, excluded, scan_clusters = 0, [], [], True
+    try:
+        import yaml
+        raw = _config_client().workspace.download(_custom_detectors_path()).read()
+        doc = yaml.safe_load(raw) or {}
+        settings = (doc.get('settings') or {}) if isinstance(doc, dict) else {}
+        ss = settings.get('search_settings') or {}
+        try:
+            days_back = max(0, int(ss.get('days_back', 0)))
+        except (TypeError, ValueError):
+            days_back = 0
+        sc_val = settings.get('scan_clusters')
+        scan_clusters = True if sc_val is None else bool(sc_val)
+        excluded = [str(x) for x in (settings.get('excluded_detectors') or [])]
+        for d in (doc.get('detectors') or []):
+            if not isinstance(d, dict) or not d.get('name'):
+                continue
+            rx = d.get('regex')
+            if isinstance(rx, dict) and rx:
+                pattern = str(next(iter(rx.values())) or '')
+            else:
+                pattern = str(rx or '')
+            kws = d.get('keywords') or []
+            if isinstance(kws, str):
+                kws = [k.strip() for k in kws.split(',') if k.strip()]
+            custom_detectors.append({
+                'name': d.get('name'),
+                'keywords': list(kws),
+                'regex': pattern,
+                'description': d.get('description', ''),
+            })
+    except Exception:  # noqa: BLE001 - file absent (nothing customised) or unreadable
+        pass
+    return {
+        'days_back': days_back,
+        'custom_detectors': custom_detectors,
+        'excluded_detectors': excluded,
+        'scan_clusters': scan_clusters,
+        'default_excluded': _DEFAULT_EXCLUDED_DETECTORS,
+    }
+
+
+def _write_custom_detectors_file(days_back, detectors, excluded, scan_clusters=True):
+    """Write custom_trufflehog_detectors.yaml to the SP-home configs folder so the
+    next scan picks up the coverage window, custom rules, and whether cluster
+    configs are scanned — no redeploy, no notebook edit. Writing an empty rule set
+    still writes the file so a cleared setting reverts to shipped defaults on the
+    next run."""
+    import io
+    import yaml
+    from databricks.sdk.service.workspace import ImportFormat
+    settings = {'search_settings': {'days_back': int(days_back)},
+                'scan_clusters': bool(scan_clusters)}
+    if excluded:
+        settings['excluded_detectors'] = list(excluded)
+    doc = {'settings': settings}
+    if detectors:
+        doc['detectors'] = detectors
+    body = ("# Managed by the SAT app (Secrets -> Scan settings). Edits here are\n"
+            "# overwritten the next time it is saved from the app.\n"
+            + yaml.safe_dump(doc, default_flow_style=False, sort_keys=False))
+    client = _config_client()
+    path = _custom_detectors_path()
+    client.workspace.mkdirs(path.rsplit('/', 1)[0])
+    client.workspace.upload(path, io.BytesIO(body.encode()),
+                            format=ImportFormat.RAW, overwrite=True)
+
+
+@app.route('/api/secrets/config', methods=['GET', 'POST'])
+def api_secrets_config():
+    """Read or update the secret-scan settings (coverage window + custom detection
+    rules). Both read and write go through the scanner's own config file
+    (custom_trufflehog_detectors.yaml) in the app SP's home — one source of truth,
+    read back by this GET and by the collection jobs at run time — so a saved
+    setting persists and takes effect on the next scan without a redeploy."""
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup first.'}), 409
+
+    if request.method == 'GET':
+        return jsonify(_secrets_scan_config())
+
+    payload = request.get_json(silent=True) or {}
+
+    # Coverage window. 0 = scan all objects (complete); N > 0 = only those
+    # modified in the last N days.
+    try:
+        days_back = int(payload.get('days_back', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Coverage days must be a whole number.'}), 400
+    if days_back < 0 or days_back > 3650:
+        return jsonify({'error': 'Coverage days must be between 0 and 3650 (0 = all objects).'}), 400
+
+    # Whether cluster configurations are scanned (default on). When off, the
+    # orchestrator skips the cluster sub-scan and only scans notebooks.
+    scan_clusters = payload.get('scan_clusters', True) is not False
+
+    # Custom detectors. Each needs a name, at least one keyword (TruffleHog uses
+    # keywords to prefilter), and a regex that compiles.
+    raw = payload.get('custom_detectors') or []
+    if not isinstance(raw, list):
+        return jsonify({'error': 'custom_detectors must be a list.'}), 400
+    if len(raw) > 100:
+        return jsonify({'error': 'At most 100 custom detectors.'}), 400
+
+    detectors = []
+    seen = set()
+    for i, d in enumerate(raw, 1):
+        if not isinstance(d, dict):
+            return jsonify({'error': f'Rule {i} is malformed.'}), 400
+        name = (d.get('name') or '').strip()
+        if not re.match(r'^[A-Za-z0-9_\- ]{1,64}$', name):
+            return jsonify({'error': f'Rule {i}: name must be 1–64 chars (letters, numbers, space, _ or -).'}), 400
+        if name.lower() in seen:
+            return jsonify({'error': f'Duplicate rule name "{name}".'}), 400
+        seen.add(name.lower())
+        pattern = (d.get('regex') or '').strip()
+        if not pattern:
+            return jsonify({'error': f'Rule "{name}": a regex is required.'}), 400
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            return jsonify({'error': f'Rule "{name}": invalid regex — {exc}'}), 400
+        kws = d.get('keywords')
+        if isinstance(kws, str):
+            kws = [k.strip() for k in kws.split(',')]
+        kws = [k for k in (kws or []) if k]
+        if not kws:
+            return jsonify({'error': f'Rule "{name}": at least one keyword is required (TruffleHog uses it to prefilter).'}), 400
+        entry = {'name': name, 'keywords': kws, 'regex': {'id': pattern}}
+        desc = (d.get('description') or '').strip()
+        if desc:
+            entry['description'] = desc
+        detectors.append(entry)
+
+    excluded = [str(x).strip() for x in (payload.get('excluded_detectors') or []) if str(x).strip()]
+
+    try:
+        _write_custom_detectors_file(days_back, detectors, excluded, scan_clusters)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('failed to write custom detector config')
+        return jsonify({'error': f'Could not save scanner config: {exc}'}), 500
+
+    # The config file is the single source of truth (read back by the GET and by
+    # the scanners), so there is nothing else to persist — re-read it so the
+    # response reflects exactly what was written.
+    return jsonify({'ok': True, **_secrets_scan_config()})
+
+
+@app.route('/api/secrets/summary')
+def api_secrets_summary():
+    """Headline exposure counts across the fleet."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+
+    # One round trip: the headline aggregates over findings plus the count of
+    # scanned workspaces (a scalar subquery over the same CTE), rather than a
+    # second query just for that count.
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT
+      COUNT(*)                                          AS total_findings,
+      COUNT(DISTINCT secret_sha256)                     AS distinct_secrets,
+      COUNT(DISTINCT CONCAT(source_type, ':', COALESCE(object_id, ''))) AS affected_objects,
+      COUNT(DISTINCT workspace_id)                      AS affected_workspaces,
+      SUM(CASE WHEN verified THEN 1 ELSE 0 END)         AS verified_findings,
+      SUM(CASE WHEN source_type = 'notebook' THEN 1 ELSE 0 END) AS notebook_findings,
+      SUM(CASE WHEN source_type = 'file'     THEN 1 ELSE 0 END) AS file_findings,
+      SUM(CASE WHEN source_type = 'cluster'  THEN 1 ELSE 0 END) AS cluster_findings,
+      MAX(scan_time)                                    AS last_scan_time,
+      (SELECT COUNT(*) FROM latest_runs)                AS workspaces_scanned
+    FROM findings
+    """)
+    summary = rows[0] if rows else {}
+    workspaces_scanned = (summary.get('workspaces_scanned') if summary else 0) or 0
+
+    # Tables can exist while holding no rows — created by an earlier install and
+    # never populated. That is "not scanned", not "scanned clean"; reporting zero
+    # findings for it would be false assurance.
+    try:
+        if int(workspaces_scanned) == 0:
+            return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+    except (TypeError, ValueError):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+
+    # Link the "Last scan" stat to the scanner job so users can jump to its runs.
+    scan_job_url = None
+    try:
+        jid = _collection_job_id('secrets')
+        host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+        if jid and host:
+            if not host.startswith('http'):
+                host = 'https://' + host
+            scan_job_url = f"{host}/jobs/{jid}"
+    except Exception:  # noqa: BLE001
+        scan_job_url = None
+
+    return jsonify({'ready': True, 'summary': summary, 'scan_job_url': scan_job_url})
+
+
+@app.route('/api/secrets/by-detector')
+def api_secrets_by_detector():
+    """Findings grouped by detector type."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT detector_name,
+           COUNT(*) AS findings,
+           COUNT(DISTINCT secret_sha256) AS distinct_secrets,
+           SUM(CASE WHEN verified THEN 1 ELSE 0 END) AS verified
+    FROM findings
+    GROUP BY detector_name
+    ORDER BY findings DESC
+    """)
+    return jsonify({'ready': True, 'rows': rows})
+
+
+# Workspace display names live at the account level, not in any scanned table, so
+# resolve them with the app's stored account SP credentials and cache the result
+# (names rarely change). Best-effort: returns {} when account_id/credentials are
+# absent or the SP is not an account admin, and callers fall back to the id.
+_account_ws_names_cache = {'names': None, 'ts': 0.0}
+_account_ws_names_lock = threading.Lock()
+_ACCOUNT_WS_NAMES_TTL = 3600.0
+
+
+def _account_host():
+    """Account console host for this workspace's cloud, gov clouds included.
+
+    Derived from the workspace host's domain suffix (TLD) rather than hardcoded
+    hosts, so government clouds resolve correctly: AWS commercial (.com) and
+    GovCloud/FedRAMP (.us) share the accounts.cloud.databricks.<tld> shape, while
+    AWS DoD IL5 (.mil) uses the distinct accounts-dod.cloud.databricks.mil host.
+    Azure uses accounts.azuredatabricks.<tld>, GCP accounts.gcp.databricks.<tld>.
+    An explicit ACCOUNT_CONSOLE_HOST env override wins —
+    the escape hatch for any isolated/special environment."""
+    override = (os.getenv('ACCOUNT_CONSOLE_HOST') or '').strip()
+    if override:
+        return override.rstrip('/')
+    host = (os.getenv('DATABRICKS_HOST') or '').strip().lower()
+    # TLD after 'databricks.' (e.g. com, net, us, mil, com.br); fall back by cloud.
+    m = re.search(r"databricks\.([a-z][a-z.]*?)(?:[:/]|$)", host)
+    tld = m.group(1) if m else ('net' if 'azure' in host else 'com')
+    if 'azuredatabricks' in host:
+        return f"https://accounts.azuredatabricks.{tld}"
+    if 'gcp.databricks' in host:
+        return f"https://accounts.gcp.databricks.{tld}"
+    # AWS DoD IL5 account console uses the 'accounts-dod' prefix, unlike
+    # commercial (.com) and GovCloud/FedRAMP (.us) which use 'accounts'.
+    if tld == 'mil':
+        return 'https://accounts-dod.cloud.databricks.mil'
+    return f"https://accounts.cloud.databricks.{tld}"
+
+
+def _account_workspace_names():
+    """Map {workspace_id(str): workspace_name} from the Account API."""
+    now = time.time()
+    with _account_ws_names_lock:
+        c = _account_ws_names_cache
+        if c['names'] is not None and (now - c['ts']) < _ACCOUNT_WS_NAMES_TTL:
+            return c['names']
+    names = {}
+    try:
+        account_id = (_app_config.get('account_id') or os.getenv('ACCOUNT_ID') or '').strip()
+        client_id = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+        client_secret = uc_secret_value(CREDENTIAL_KEYS['client_secret'])
+        if account_id and client_id and client_secret:
+            from databricks.sdk import AccountClient
+            ac = AccountClient(host=_account_host(), account_id=account_id,
+                               client_id=client_id, client_secret=client_secret)
+            for w in ac.workspaces.list():
+                wid = getattr(w, 'workspace_id', None)
+                wname = getattr(w, 'workspace_name', None)
+                if wid is not None and wname:
+                    names[str(wid)] = wname
+    except Exception:  # noqa: BLE001
+        logger.info("account workspace name lookup failed", exc_info=True)
+    with _account_ws_names_lock:
+        # Cache a hit for the full TTL; an empty result (no creds yet) for ~60s so
+        # it picks up credentials added mid-session without a restart.
+        _account_ws_names_cache.update(
+            {'names': names, 'ts': now if names else (now - _ACCOUNT_WS_NAMES_TTL + 60)})
+    return names
+
+
+@app.route('/api/secrets/by-workspace')
+def api_secrets_by_workspace():
+    """Per-workspace rollup, including workspaces that scanned clean."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT l.workspace_id,
+           l.latest_run_id AS run_id,
+           COUNT(f.secret_sha256) AS findings,
+           COUNT(DISTINCT f.secret_sha256) AS distinct_secrets,
+           SUM(CASE WHEN f.verified THEN 1 ELSE 0 END) AS verified,
+           SUM(CASE WHEN f.source_type = 'notebook' THEN 1 ELSE 0 END) AS notebook_findings,
+           SUM(CASE WHEN f.source_type = 'cluster'  THEN 1 ELSE 0 END) AS cluster_findings,
+           MAX(f.scan_time) AS last_scan_time
+    FROM latest_runs l
+    LEFT JOIN findings f ON f.workspace_id = l.workspace_id
+    GROUP BY l.workspace_id, l.latest_run_id
+    ORDER BY findings DESC, l.workspace_id
+    """)
+
+    # Resolve real names from the account; leave null so the UI falls back to id.
+    name_map = _account_workspace_names()
+    for r in rows:
+        r['workspace_name'] = name_map.get(str(r.get('workspace_id'))) or None
+    return jsonify({'ready': True, 'rows': rows})
+
+
+def _secret_object_url(row):
+    """Deep link to the scanned object in its OWN workspace, or None if we can't
+    build one. Uses that workspace's deployment_url (so findings from other
+    workspaces point at the right host, not the app's), the object id when present
+    (robust against odd paths), else the notebook path.
+    """
+    dep = str(row.get('deployment_url') or '').strip().rstrip('/')
+    if not dep:
+        return None
+    host = dep if dep.startswith('http') else 'https://' + dep
+    oid = str(row.get('object_id') or '').strip()
+    stype = row.get('source_type')
+    path = str(row.get('object_path') or '').strip()
+    if stype == 'cluster':
+        return f'{host}/compute/clusters/{oid}' if oid else None
+    if stype == 'file':
+        # Workspace file: open by path in the workspace browser, not the notebook
+        # editor (opening a .py/.json file as a notebook is wrong).
+        return f'{host}/#workspace{path if path.startswith("/") else "/" + path}' if path else None
+    # notebook
+    if oid:
+        return f'{host}/#notebook/{oid}'
+    return f'{host}/#workspace{path if path.startswith("/") else "/" + path}' if path else None
+
+
+@app.route('/api/secrets/findings')
+def api_secrets_findings():
+    """Detail table. Filters: workspace_id, source_type, detector, verified_only."""
+    has_nb, has_cl = _secrets_sources()
+    if not (has_nb or has_cl):
+        return jsonify({'ready': False, 'message': _SECRETS_NOT_READY})
+
+    try:
+        limit = max(1, min(2000, int(request.args.get('limit', 500))))
+    except (TypeError, ValueError):
+        limit = 500
+
+    where = []
+    params = {}
+    workspace_id = request.args.get('workspace_id')
+    if workspace_id:
+        where.append("workspace_id = :workspace_id")
+        params['workspace_id'] = workspace_id
+    source_type = request.args.get('source_type')
+    if source_type in ('notebook', 'file', 'cluster'):
+        where.append("source_type = :source_type")
+        params['source_type'] = source_type
+    detector = request.args.get('detector')
+    if detector:
+        where.append("detector_name = :detector")
+        params['detector'] = detector
+    if request.args.get('verified_only', 'false').lower() == 'true':
+        where.append("verified")
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
+    acct_ws = f"`{CATALOG}`.`{SCHEMA}`.account_workspaces"
+    rows = exec_query_df(f"""
+    WITH {_latest_runs_cte(has_nb, has_cl)},
+    {_findings_cte(has_nb, has_cl)}
+    SELECT f.source_type, f.workspace_id, f.run_id, f.object_id, f.object_name, f.object_path,
+           f.detector_name, f.secret_sha256, f.verified, f.scan_time,
+           (SELECT aw.deployment_url FROM {acct_ws} aw
+            WHERE aw.workspace_id = f.workspace_id LIMIT 1) AS deployment_url
+    FROM findings f
+    {where_sql}
+    ORDER BY f.verified DESC, f.workspace_id, f.source_type, f.object_name
+    LIMIT {limit}
+    """, params or None)
+    # Deep-link each finding to its object in the owning workspace (built here so
+    # cross-workspace findings use the right host). Drop the helper column.
+    for _r in rows:
+        _r['object_url'] = _secret_object_url(_r)
+        _r.pop('deployment_url', None)
+    return jsonify({
+        'ready': True,
+        'rows': rows,
+        'count': len(rows),
+        'truncated': len(rows) >= limit,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Security assistant (Databricks Genie)
+#
+# Answers natural-language questions over the SAT results schema by driving a
+# Genie space's Conversation API as the signed-in user (OBO), so Unity Catalog
+# enforces that user's own grants. Genie generates and runs the SQL and stores
+# every conversation server-side; the app issues no SQL of its own for the
+# assistant and keeps no conversation table -- the browser holds the Genie
+# conversation_id for follow-ups.
+# ---------------------------------------------------------------------------
+
+# Seed prompts for an empty conversation, chosen to span both datasets and to
+# show the cross-dataset chaining the assistant is good at.
+ASSISTANT_SUGGESTIONS = [
+    "Which service principals hold admin or ownership rights?",
+    "What is exposed to everyone in the account?",
+    "Who can read the production secret scopes?",
+    "What can the SAT service principal access?",
+    "Are there hardcoded credentials confirmed active right now?",
+]
+
+def _assistant_user():
+    """Best-effort identity of the signed-in user, for session ownership."""
+    forwarded = (request.headers.get('X-Forwarded-Email')
+                 or request.headers.get('X-Forwarded-Preferred-Username'))
+    if forwarded:
+        return forwarded
+    try:
+        workspace_client, _ = get_connection()
+        me = workspace_client.current_user.me()
+        return me.user_name or me.display_name or 'unknown'
+    except Exception:  # noqa: BLE001
+        return 'unknown'
+
+
+# ---------------------------------------------------------------------------
+# Settings and health
+#
+# Reports whether every dependency the app needs is actually reachable, and where
+# to fix each one that is not. This exists because the failure modes are hard to
+# tell apart from a normal page: an expired service principal secret, a revoked
+# UC grant and an empty scan table all render as "no data".
+#
+# Configuration is READ here, never written. The app's secret bindings are
+# READ-only by design, and the values it depends on -- warehouse, schema, job
+# ids, OAuth scopes -- are bound to the app resource at deploy time. Editing them
+# from inside the app would either not take effect until a redeploy or require
+# granting the app write access to its own credentials, which would make the app
+# a means of privilege escalation. So this page diagnoses precisely and links out
+# to the right place to fix.
+# ---------------------------------------------------------------------------
+
+def _sql_rows(client, warehouse_id, statement):
+    """Run one statement and return its rows, or None if it did not succeed.
+
+    Used by the settings probes, which need an explicit client because they run
+    off the request thread.
+    """
+    from databricks.sdk.service.sql import StatementState
+
+    try:
+        result = client.statement_execution.execute_statement(
+            warehouse_id=warehouse_id,
+            catalog=CATALOG,
+            schema=SCHEMA,
+            statement=statement,
+            wait_timeout='30s',
+        )
+        state = result.status.state if result.status else None
+        if state != StatementState.SUCCEEDED:
+            return None
+        return (result.result.data_array or []) if result.result else []
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _settings_probe(label, fn, remedy):
+    """Run one dependency check, capturing failure rather than raising.
+
+    Each probe returns (ok, detail). A probe that raises is reported as failing
+    with its error text, so one broken dependency cannot hide the state of the
+    others.
+    """
+    try:
+        ok, detail = fn()
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, str(exc)[:400]
+    entry = {'label': label, 'ok': bool(ok), 'detail': detail}
+    if not ok:
+        entry['remedy'] = remedy
+    return entry
+
+
+def _run_settings_probes(specs):
+    """Run every dependency check concurrently, preserving the declared order.
+
+    Each check is an independent network round trip. Run one after another they
+    added up to roughly two seconds, which is most of the time the panel took to
+    open. Flask's request context does not follow a worker thread, so anything a
+    check needs from the request is captured before the fan-out.
+    """
+    import concurrent.futures
+
+    results = [None] * len(specs)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(specs)) as pool:
+        futures = {
+            pool.submit(_settings_probe, label, fn, remedy): index
+            for index, (label, fn, remedy) in enumerate(specs)
+        }
+        for future in concurrent.futures.as_completed(futures):
+            index = futures[future]
+            label, _, remedy = specs[index]
+            try:
+                results[index] = future.result()
+            except Exception as exc:  # noqa: BLE001
+                results[index] = {'label': label, 'ok': False,
+                                  'detail': str(exc)[:400], 'remedy': remedy}
+    return results
+
+
+# Settings changed from the app. Held in memory and applied over the deployed
+# configuration, so a change takes effect on the next request without a redeploy.
+# A restart falls back to the values the installer bound, which stay the source of
+# truth; every setting here is read per request rather than cached at import.
+_SETTING_SPECS = {
+    'warehouse_id': {
+        'env': 'WAREHOUSE_ID',
+        'label': 'SQL warehouse',
+        'help': 'Runs every query and every alert.',
+    },
+    'schema': {
+        'env': 'SAT_SCHEMA',
+        'label': 'Results schema',
+        'help': 'Unity Catalog schema holding collection results, as catalog.schema.',
+    },
+    'genie_space_id': {
+        'env': 'GENIE_SPACE_ID',
+        'label': 'Genie space',
+        'help': 'The Genie space the assistant answers from. Auto-created over your results schema if left empty.',
+    },
+    'per_user_filtering': {
+        'env': 'ALLOW_SERVICE_PRINCIPAL_FALLBACK',
+        'label': 'Per-user data filtering',
+        'help': 'When on, each person sees only what their own Unity Catalog grants allow.',
+        'type': 'boolean',
+        'inverted': True,
+    },
+}
+
+
+def _apply_setting(key, value):
+    """Write one setting into the process environment.
+
+    Booleans are stored inverted where the underlying variable is a negative
+    (ALLOW_SERVICE_PRINCIPAL_FALLBACK disables filtering), so the UI can offer the
+    positive statement without the operator having to reason about the negation.
+    """
+    spec = _SETTING_SPECS[key]
+    if spec.get('type') == 'boolean':
+        enabled = bool(value)
+        # ALLOW_SERVICE_PRINCIPAL_FALLBACK disables filtering, so the stored value
+        # is the negation of what the panel offers.
+        stored = (not enabled) if spec.get('inverted') else enabled
+        os.environ[spec['env']] = 'true' if stored else 'false'
+        return
+    os.environ[spec['env']] = str(value or '').strip()
+
+
+def _validate_setting(key, value):
+    """Return an error string, or None when the value is usable.
+
+    Values are checked against the workspace before being applied: a mistyped
+    warehouse or schema would otherwise turn every page into an error, from a
+    panel whose whole purpose is telling the operator what is wrong.
+    """
+    if key == 'per_user_filtering':
+        return None
+
+    text = str(value or '').strip()
+
+    if key == 'schema':
+        parts = [p.strip().strip('`').strip('"') for p in text.split('.') if p.strip()]
+        if len(parts) != 2:
+            return "Enter the schema as catalog.schema."
+        try:
+            exec_query_df(f"SELECT 1 FROM `{parts[0]}`.`{parts[1]}`.brickhound_vertices LIMIT 1")
+        except NoAccessError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            return f"Could not read that schema: {str(exc)[:200]}"
+        return None
+
+    if key == 'warehouse_id':
+        if not text:
+            return "A SQL warehouse is required."
+        try:
+            _sp_workspace_client().warehouses.get(id=text)
+        except Exception as exc:  # noqa: BLE001
+            return f"No warehouse with that id: {str(exc)[:160]}"
+        return None
+
+    if key == 'genie_space_id':
+        if not text:
+            return None
+        try:
+            _sp_workspace_client().genie.get_space(space_id=text)
+        except Exception as exc:  # noqa: BLE001
+            return f"Could not open that Genie space: {str(exc)[:160]}"
+        return None
+
+    return None
+
+
+@app.route('/api/settings', methods=['PATCH'])
+def api_settings_update():
+    """Change one or more settings, validating each against the workspace."""
+    payload = request.get_json(silent=True) or {}
+    unknown = [k for k in payload if k not in _SETTING_SPECS]
+    if unknown:
+        return jsonify({'error': f"Unknown setting: {', '.join(sorted(unknown))}"}), 400
+    if not payload:
+        return jsonify({'error': 'Nothing to change.'}), 400
+
+    errors = {}
+    for key, value in payload.items():
+        message = _validate_setting(key, value)
+        if message:
+            errors[key] = message
+    if errors:
+        return jsonify({'errors': errors}), 400
+
+    # Captured before applying, so a real schema change can be detected and the
+    # collection jobs re-pointed at the new schema.
+    previous_schema = (_app_config.get('schema') or '').strip()
+
+    for key, value in payload.items():
+        _apply_setting(key, value)
+
+    response = {'saved': True, 'changed': sorted(payload)}
+
+    # A schema change must persist and take effect process-wide, not just set the
+    # env var: CATALOG/SCHEMA and every derived table name are module globals that
+    # only _apply_runtime_config refreshes, and the change has to survive a
+    # restart. Then re-point the collection jobs (which bake the schema into their
+    # parameters at provision time) at the new schema.
+    if 'schema' in payload:
+        new_schema = '.'.join(
+            p.strip().strip('`').strip('"')
+            for p in str(payload['schema'] or '').split('.') if p.strip())
+        config = dict(_app_config)
+        config['schema'] = new_schema
+        try:
+            write_persisted_config(config)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('settings schema persist failed')
+            return jsonify({'error': f'Could not save the schema: {str(exc)[:180]}'}), 500
+        _apply_runtime_config(config)
+        change = _on_schema_change(previous_schema)
+        if change:
+            response.update(change)
+
+    # A new warehouse or schema invalidates cached run state.
+    if 'warehouse_id' in payload or 'schema' in payload:
+        _invalidate_collection_cache()
+
+    logger.info("settings changed by %s: %s", _assistant_user(), sorted(payload))
+    return jsonify(response)
+
+
+# Account API credentials, stored as Unity Catalog secrets in the SAT schema and
+# used by the collection jobs to read account-level configuration. UC secrets are
+# governed by UC grants and survive a restart, so they are the durable store for
+# the one setting that genuinely cannot live in process memory.
+CREDENTIAL_KEYS = {
+    'client_id': 'client-id',
+    'client_secret': 'client-secret',
+}
+
+
+def _verify_account_credentials(client_id, client_secret):
+    """Exchange the credentials for a token. Returns an error string, or None on
+    success -- so a mistyped secret is caught here rather than in a job log hours
+    later."""
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    if host and not host.startswith('http'):
+        host = f'https://{host}'
+    if not host:
+        return None  # cannot verify without a host; store and let the job surface it
+    try:
+        import base64
+        import urllib.parse
+        import urllib.request
+
+        body = urllib.parse.urlencode({
+            'grant_type': 'client_credentials', 'scope': 'all-apis'}).encode()
+        credential = base64.b64encode(f'{client_id}:{client_secret}'.encode()).decode()
+        probe = urllib.request.Request(
+            f'{host}/oidc/v1/token', data=body,
+            headers={'Authorization': f'Basic {credential}',
+                     'Content-Type': 'application/x-www-form-urlencoded'})
+        with urllib.request.urlopen(probe, timeout=30) as response:
+            if 'access_token' not in json.loads(response.read()):
+                return 'Those credentials did not return a token.'
+    except Exception as exc:  # noqa: BLE001
+        return ('Those credentials were rejected by the workspace. Check the client '
+                f'ID and secret, then try again. ({str(exc)[:120]})')
+    return None
+
+
+def _credential_status():
+    """Whether each credential is stored. Values are never returned."""
+    if not is_configured():
+        return {'present': {'client_id': False, 'client_secret': False},
+                'writable': False, 'configured': False}
+    client = _config_client()
+    present = {field: uc_secret_present(key, client=client)
+               for field, key in CREDENTIAL_KEYS.items()}
+    return {'present': present, 'writable': True, 'configured': True}
+
+
+@app.route('/api/settings/credentials')
+def api_settings_credentials():
+    try:
+        return jsonify(_credential_status())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('credential status failed')
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/settings/credentials/reveal', methods=['POST'])
+def api_settings_credentials_reveal():
+    """Return the stored client ID, but never the secret.
+
+    The ID is an identifier, useful for confirming which service principal is
+    configured. The secret is withheld: the app is reachable by anyone who can open
+    it, so returning it would make app access equivalent to credential access. The
+    eye control on the secret field reveals only what the operator has just typed.
+    """
+    if not is_configured():
+        return jsonify({'error': 'Finish setup before reading credentials.'}), 409
+    try:
+        value = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': f'Could not read the stored client ID: {str(exc)[:180]}'}), 500
+    logger.info('stored client id revealed to %s', _assistant_user())
+    return jsonify({'client_id': value or ''})
+
+
+@app.route('/api/settings/credentials', methods=['PUT'])
+def api_settings_credentials_update():
+    """Store account API credentials as UC secrets.
+
+    Both values are replaced together: a client id paired with a stale secret
+    fails at the next collection run, so a partial update is refused. The pair is
+    verified against the workspace before being written.
+    """
+    if not is_configured():
+        return jsonify({'error': 'Finish setup before storing credentials.'}), 409
+
+    payload = request.get_json(silent=True) or {}
+    client_id = (payload.get('client_id') or '').strip()
+    client_secret = (payload.get('client_secret') or '').strip()
+
+    if not client_id or not client_secret:
+        return jsonify({
+            'error': 'Enter both the client ID and the client secret. Updating one '
+                     'without the other leaves the pair mismatched.'
+        }), 400
+    if len(client_id) > 256 or len(client_secret) > 1024:
+        return jsonify({'error': 'That value is longer than a Databricks credential.'}), 400
+
+    verify_error = _verify_account_credentials(client_id, client_secret)
+    if verify_error:
+        return jsonify({'error': verify_error}), 400
+
+    try:
+        uc_secret_put('client-id', client_id, comment='SAT account API client id')
+        uc_secret_put('client-secret', client_secret, comment='SAT account API secret')
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('writing credentials failed')
+        message = str(exc)
+        if 'PERMISSION' in message.upper() or 'does not have' in message:
+            return jsonify({
+                'error': f'This app cannot write secrets in {CATALOG}.{SCHEMA}. Its '
+                         f'service principal needs CREATE SECRET on the schema (it '
+                         f'gets this by owning the schema it created at setup).'
+            }), 403
+        return jsonify({'error': f'Could not store the credentials: {message[:200]}'}), 500
+
+    logger.info('account credentials updated by %s', _assistant_user())
+    return jsonify({'saved': True})
+
+
+# --- First-run setup endpoints ---------------------------------------------
+@app.route('/api/setup/status')
+def api_setup_status():
+    """Whether the app still needs first-run setup. Drives the welcome gate."""
+    configured = is_configured()
+    has_credentials = False
+    if configured:
+        try:
+            has_credentials = uc_secret_present('client-secret')
+        except Exception:  # noqa: BLE001
+            has_credentials = False
+    return jsonify({
+        'needs_setup': not configured,
+        'configured': configured,
+        'catalog': CATALOG,
+        'schema': SCHEMA,
+        # Current selections, so re-running setup can pre-fill them.
+        'warehouse_id': os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '',
+        'account_id': _app_config.get('account_id') or '',
+        'has_credentials': has_credentials,
+        'assistant_disabled': bool(_app_config.get('assistant_disabled')),
+        'scan_scope': _app_config.get('scan_scope') or 'current',
+        'job_compute': _app_config.get('job_compute') or 'serverless',
+        'collect_notebooks': bool(_app_config.get('collect_notebooks')),
+    })
+
+
+@app.route('/api/setup/requirements')
+def api_setup_requirements():
+    """Live checklist of the grants and settings the app's service principal needs,
+    each with a concrete, copy-pasteable fix. Surfaces the permissions a customer
+    must configure, so they appear as actionable items rather than cryptic job
+    failures. Everything is probed as the app service principal -- the identity the
+    collection jobs run as."""
+    sp = (os.getenv('DATABRICKS_CLIENT_ID') or '').strip()
+    checks = []
+
+    def add(label, ok, detail, fix='', optional=False):
+        checks.append({'label': label, 'ok': bool(ok), 'detail': detail,
+                       'fix': fix, 'optional': optional})
+
+    if not is_configured():
+        return jsonify({'configured': False, 'checks': [],
+                        'message': 'Complete first-run setup to see the requirements checklist.'})
+
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'configured': True, 'checks': [], 'error': str(exc)[:200]})
+
+    wh = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or ''
+
+    # 1. SQL warehouse: the app and the assistant run every query here.
+    try:
+        client.statement_execution.execute_statement(
+            warehouse_id=wh, statement='SELECT 1', wait_timeout='30s')
+        add('SQL warehouse access', True, f'The app can run queries on warehouse {wh}.')
+    except Exception as exc:  # noqa: BLE001
+        add('SQL warehouse access', False,
+            f'Cannot run queries on the warehouse: {str(exc)[:160]}',
+            f'Grant the app service principal CAN USE on the SQL warehouse '
+            f'(SQL Warehouses -> your warehouse -> Permissions -> add {sp} as "Can use").')
+
+    # 2. Results schema: created and owned by the app SP; read a core table.
+    try:
+        _sql_rows(client, wh, f'SELECT 1 FROM {CATALOG}.{SCHEMA}.run_number_table LIMIT 1')
+        add('Results schema', True, f'{CATALOG}.{SCHEMA} is readable and initialised.')
+    except Exception as exc:  # noqa: BLE001
+        add('Results schema', False,
+            f'{CATALOG}.{SCHEMA} is not readable or not initialised: {str(exc)[:140]}',
+            'Run the initializer (Data Collection -> Manage -> Re-run initializer).')
+
+    # 3. System tables: account-level detections read system.access.
+    try:
+        _sql_rows(client, wh, 'SELECT 1 FROM system.access.audit LIMIT 1')
+        add('System tables (system.access)', True, 'The app can read system.access.')
+    except Exception as exc:  # noqa: BLE001
+        add('System tables (system.access)', False,
+            f'Cannot read system.access: {str(exc)[:140]}',
+            'Enable the system.access schema for the metastore, then grant the app '
+            f'service principal USE SCHEMA + SELECT on it: '
+            f'GRANT USE SCHEMA, SELECT ON SCHEMA system.access TO `{sp}`;', optional=True)
+
+    # 4. Account credentials for account-level scans.
+    acct_id = (_app_config.get('account_id') or '').strip()
+    has_creds = False
+    try:
+        has_creds = uc_secret_present('client-secret') and uc_secret_present('client-id')
+    except Exception:  # noqa: BLE001
+        has_creds = False
+    add('Account credentials', bool(acct_id and has_creds),
+        'Account ID and credentials are set.' if (acct_id and has_creds)
+        else 'Account ID and/or service principal credentials are not set.',
+        'Add them in Settings -> Re-run setup (Account credentials). Needed for all '
+        'account-wide data: Account/Workspace/Metastore Admin detection, account '
+        'users & groups, High Privilege, Shared to All Users, Privileged Non-IdP, '
+        'and Denylist. Without them SAT reports on this workspace only.',
+        optional=True)
+
+    # 5. Account admin: verified against the stored credentials when present.
+    if acct_id and has_creds:
+        try:
+            cid = uc_secret_value('client-id')
+            csec = uc_secret_value('client-secret')
+            err = _verify_account_credentials(cid, csec)
+            add('Account admin role', not err,
+                'The account-credential service principal authenticates to the account.' if not err
+                else f'Account authentication failed: {err}',
+                'Grant the service principal whose client ID and secret you entered '
+                'the Account Admin role (Account console -> User management -> '
+                'Service principals -> that principal -> Roles -> Account admin). '
+                'It can be this app\'s service principal or any other service principal.',
+                optional=True)
+        except Exception as exc:  # noqa: BLE001
+            add('Account admin role', False, f'Could not verify: {str(exc)[:140]}',
+                'Grant the account-credential service principal (the one whose client '
+                'ID/secret you entered) the Account Admin role in the account console.',
+                optional=True)
+
+    required_fail = [c for c in checks if not c['ok'] and not c['optional']]
+    return jsonify({'configured': True, 'service_principal': sp, 'checks': checks,
+                    'all_required_ok': not required_fail})
+
+
+@app.route('/api/scope')
+def api_scope():
+    """Scope status for the whole app: whether account-wide data is being
+    collected, live counts that prove it, the resource-scan scope/compute, and
+    plain guidance on how to enable or disable each. The UI uses this to badge
+    every page and to tell the customer exactly what to change."""
+    sp = (os.getenv('DATABRICKS_CLIENT_ID') or '').strip()
+    if not is_configured():
+        return jsonify({'configured': False})
+
+    account_id = (_app_config.get('account_id') or '').strip()
+    try:
+        creds_present = uc_secret_present('client-id') and uc_secret_present('client-secret')
+    except Exception:  # noqa: BLE001
+        creds_present = False
+    account_configured = bool(account_id and creds_present)
+    # The account-credential service principal's application id (the stored
+    # client-id). It's an identifier, not a secret, so it's safe to surface -- it
+    # gives customers visibility into which SP is used for account-wide scanning.
+    account_sp = ''
+    if creds_present:
+        try:
+            account_sp = (uc_secret_value('client-id') or '').strip()
+        except Exception:  # noqa: BLE001
+            account_sp = ''
+
+    # Live counts from the current run prove whether account-wide data actually
+    # landed (the account SP authenticated and had the Account Admin role).
+    counts = {'workspaces_total': 0, 'account_users': 0, 'account_groups': 0,
+              'account_admins': 0, 'metastores': 0}
+    coverage = None
+    run_id = None
+    try:
+        run_id = get_current_run_id()
+    except Exception:  # noqa: BLE001
+        run_id = None
+    if run_id:
+        try:
+            rows = exec_query_df(f"""
+                SELECT
+                  (SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id='{run_id}' AND node_type='Workspace') AS workspaces_total,
+                  (SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id='{run_id}' AND node_type='AccountUser') AS account_users,
+                  (SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id='{run_id}' AND node_type='AccountGroup') AS account_groups,
+                  (SELECT COUNT(DISTINCT src) FROM {EDGES_TABLE} WHERE run_id='{run_id}' AND relationship='AccountAdmin') AS account_admins,
+                  (SELECT COUNT(*) FROM {VERTICES_TABLE} WHERE run_id='{run_id}' AND node_type='Metastore') AS metastores
+            """)
+            if rows:
+                counts = {k: int(rows[0].get(k) or 0) for k in counts}
+        except Exception:  # noqa: BLE001
+            logger.info('scope counts query failed', exc_info=True)
+        try:
+            coverage = get_collection_coverage(run_id)
+        except Exception:  # noqa: BLE001
+            coverage = None
+
+    # Account-wide is "active" when the account data is actually present, not just
+    # when credentials were entered -- that is what the customer can trust.
+    account_active = account_configured and (
+        counts['account_admins'] > 0 or counts['account_groups'] > 0 or counts['workspaces_total'] > 0)
+
+    scan_scope = _scan_scope()
+    compute = _job_compute()
+    mode = (coverage or {}).get('collection_mode') or 'single-workspace'
+    ws_collected = (coverage or {}).get('workspaces_collected') or []
+    ws_failed = (coverage or {}).get('workspaces_failed') or []
+
+    # Live count of workspaces that actually have resource data in this run --
+    # read from the data (distinct workspace_id tagged on resources), not just the
+    # config, so the UI can truthfully say "1 workspace" vs "N workspaces".
+    resource_ws_count = None
+    if run_id:
+        try:
+            r = exec_query_df(f"""
+                SELECT COUNT(DISTINCT get_json_object(properties, '$.workspace_id')) AS c
+                FROM {VERTICES_TABLE}
+                WHERE run_id = '{run_id}'
+                  AND get_json_object(properties, '$.workspace_id') IS NOT NULL
+            """)
+            if r:
+                resource_ws_count = int(r[0].get('c') or 0)
+        except Exception:  # noqa: BLE001
+            resource_ws_count = None
+    if not resource_ws_count:
+        resource_ws_count = len(ws_collected) if ws_collected else (1 if mode == 'single-workspace' else None)
+
+    enable_account = (
+        'Account-wide data is collected using account API credentials — a service '
+        'principal with the Account admin role (the app\'s own service principal, '
+        'or any other one you choose). To enable it: in the account console grant '
+        'that service principal the "Account admin" role, then in Settings → Re-run '
+        'setup add the Account ID and that service principal\'s OAuth client ID + secret.')
+    disable_account = (
+        'To turn account-wide scanning off, remove the account credentials in '
+        'Settings → Re-run setup (leave Account ID / client ID / secret blank). '
+        'The app then reports on this workspace only: Account/Metastore/Workspace '
+        'Admin detection, account users & groups, Shared to All Users, Privileged '
+        'Non-IdP and Denylist stop populating. Already-collected data is kept.')
+    enable_multi = (
+        'Multi-workspace scanning needs the app service principal added as a '
+        'workspace admin on each workspace you want scanned. Set scope to '
+        '"Multiple workspaces" (Data Collection → Manage, or Settings → Re-run '
+        'setup) — switching to Multiple runs a workspace sync for you. On classic '
+        'compute this works today; on serverless it needs cross-workspace access '
+        '(unreachable workspaces are skipped and reported — ask your account team '
+        'to enroll you). To add or remove a workspace later, add or remove the '
+        'service principal as a workspace admin there and run Data Collection → '
+        'Manage → Sync workspaces; no re-setup or initializer re-run is needed.')
+    disable_multi = (
+        'To scan this workspace only, set the collection scope to "This '
+        'workspace" (Data Collection → Manage, or Settings → Re-run setup).')
+
+    return jsonify({
+        'configured': True,
+        'service_principal': sp,
+        'account_id': account_id,
+        'account_wide': {
+            'credentials_present': creds_present,
+            'account_id_present': bool(account_id),
+            'configured': account_configured,
+            'active': account_active,
+            'service_principal': account_sp,
+            'counts': counts,
+            'enable_guidance': enable_account,
+            'disable_guidance': disable_account,
+        },
+        'resource_scan': {
+            'scope': scan_scope,
+            'compute': compute,
+            'collection_mode': mode,
+            'workspace_count': resource_ws_count,
+            'workspaces_scanned': ws_collected,
+            'workspaces_failed': ws_failed,
+            'enable_guidance': enable_multi,
+            'disable_guidance': disable_multi,
+        },
+    })
+
+
+@app.route('/api/setup/options')
+def api_setup_options():
+    """Catalogs, warehouses and models the welcome form offers. Works before the
+    app is configured, so it uses only account/workspace listings."""
+    catalogs, warehouses, models = [], [], []
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+    try:
+        catalogs = [c.name for c in client.catalogs.list()
+                    if c.name not in ('system', 'samples', '__databricks_internal')]
+    except Exception:  # noqa: BLE001
+        logger.info('could not list catalogs', exc_info=True)
+    try:
+        warehouses = [{'id': w.id, 'name': w.name,
+                       'state': str(getattr(w, 'state', '') or '').split('.')[-1]}
+                      for w in client.warehouses.list() if w.id]
+    except Exception:  # noqa: BLE001
+        logger.info('could not list warehouses', exc_info=True)
+    return jsonify({
+        'catalogs': sorted(catalogs),
+        'warehouses': sorted(warehouses, key=lambda w: (w['name'] or '').lower()),
+        'default_schema': 'security_analysis',
+        # So the compute picker can disable Classic when this workspace can't run
+        # it (the SP lacks allow-cluster-create, e.g. serverless-only).
+        'classic_available': _classic_compute_available(client),
+    })
+
+
+@app.route('/api/setup/complete', methods=['POST'])
+def api_setup_complete():
+    """Complete first-run setup: create the schema, persist config, store creds.
+
+    Runs as the app's own service principal, which becomes the schema owner and so
+    can manage UC secrets there. Ordered so a failure leaves nothing half-applied
+    that would strand the app: the schema and config come first, credentials last.
+    """
+    payload = request.get_json(silent=True) or {}
+    # Captured before anything mutates config, so an actual catalog/schema change
+    # can be detected and the collection jobs re-pointed at the new schema.
+    previous_schema = (_app_config.get('schema') or '').strip()
+    catalog = (payload.get('catalog') or '').strip().strip('`')
+    schema = (payload.get('schema') or 'security_analysis').strip().strip('`')
+    warehouse_id = (payload.get('warehouse_id') or '').strip()
+    genie_space_id = (payload.get('genie_space_id') or '').strip()
+    account_id = (payload.get('account_id') or '').strip()
+    client_id = (payload.get('client_id') or '').strip()
+    client_secret = (payload.get('client_secret') or '').strip()
+    scan_scope = 'all' if (payload.get('scan_scope') or 'current') == 'all' else 'current'
+    job_compute = 'classic' if (payload.get('job_compute') or 'serverless') == 'classic' else 'serverless'
+    collect_notebooks = bool(payload.get('collect_notebooks'))
+
+    if not catalog:
+        return jsonify({'error': 'Choose a catalog for SAT to use.'}), 400
+    if not warehouse_id:
+        return jsonify({'error': 'Choose a SQL warehouse.'}), 400
+    if not re.match(r'^[A-Za-z0-9_]+$', schema):
+        return jsonify({'error': 'Schema name may use only letters, numbers and underscores.'}), 400
+    # Credentials are optional here (workspace-only installs skip them), but if one
+    # is given the other must be too, and the pair is verified before anything is
+    # written.
+    if bool(client_id) != bool(client_secret):
+        return jsonify({'error': 'Enter both the client ID and secret, or neither.'}), 400
+    if client_id and client_secret:
+        verify_error = _verify_account_credentials(client_id, client_secret)
+        if verify_error:
+            return jsonify({'error': verify_error}), 400
+
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    try:
+        schema_state = _ensure_schema(catalog, schema, client=client)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('setup schema creation failed')
+        message = str(exc)
+        if 'PERMISSION' in message.upper() or 'does not have' in message:
+            return jsonify({
+                'error': f'This app cannot create a schema in {catalog}. Its service '
+                         f'principal needs CREATE SCHEMA (and USE CATALOG) on {catalog}, '
+                         f'or point it at a catalog it owns.'
+            }), 403
+        return jsonify({'error': f'Could not create {catalog}.{schema}: {message[:200]}'}), 500
+
+    config = dict(_app_config)
+    config.update({
+        'schema': f'{catalog}.{schema}',
+        'warehouse_id': warehouse_id,
+        'genie_space_id': genie_space_id,
+        # Kept when blank so re-running setup without re-entering it is safe.
+        'account_id': account_id or config.get('account_id', ''),
+        # Collection scope and compute, read by provisioning and the collectors.
+        'scan_scope': scan_scope,
+        'job_compute': job_compute,
+        'collect_notebooks': collect_notebooks,
+    })
+    try:
+        write_persisted_config(config)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('setup config write failed')
+        return jsonify({'error': f'Could not save configuration: {str(exc)[:200]}'}), 500
+
+    # Apply immediately so the running process is configured without a restart.
+    _apply_runtime_config(config)
+
+    # Auto-provision the assistant's Genie space when the customer didn't supply
+    # one, so the assistant works out of the box. Best-effort: setup still
+    # succeeds if Genie is unavailable, and the space can be created later from
+    # Settings. Skipped when a space id was entered (GENIE_SPACE_ID is set above).
+    if not (os.getenv('GENIE_SPACE_ID') or '').strip() and not _app_config.get('assistant_disabled'):
+        try:
+            space_id = _provision_genie_space(client)
+            config['genie_space_id'] = space_id
+            _app_config['genie_space_id'] = space_id
+            os.environ['GENIE_SPACE_ID'] = space_id
+            write_persisted_config(config)
+            logger.info('auto-created genie space %s during setup', space_id)
+        except Exception:  # noqa: BLE001
+            logger.warning('genie space auto-provision skipped', exc_info=True)
+
+    if client_id and client_secret:
+        try:
+            uc_secret_put('client-id', client_id, comment='SAT account API client id')
+            uc_secret_put('client-secret', client_secret, comment='SAT account API secret')
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('setup credential write failed')
+            return jsonify({
+                'error': f'Configuration saved, but storing credentials failed: '
+                         f'{str(exc)[:180]}. You can add them from Settings.'
+            }), 500
+
+    _invalidate_collection_cache()
+    logger.info('first-run setup completed by %s: %s.%s (schema %s)',
+                _assistant_user(), catalog, schema, schema_state)
+
+    # If the catalog/schema changed, carry the account credentials into the new
+    # schema and re-point the existing jobs at it, so the change is seamless. No-op
+    # on a first-run setup (no prior schema, no jobs yet) -- the jobs are created
+    # from Data Collection and the credentials entered above already land here.
+    response = {'configured': True, 'catalog': catalog, 'schema': schema,
+                'schema_state': schema_state}
+    change = _on_schema_change(previous_schema)
+    if change:
+        response.update(change)
+    # If the customer chose "Multiple workspaces", discover and enable the
+    # workspaces the SP administers now. Best-effort: on a first-ever setup the
+    # account_workspaces table may not exist until collection is provisioned, so
+    # this no-ops and the customer Syncs from Data Collection afterwards.
+    sync = _auto_sync_workspaces_if_multi()
+    if sync is not None:
+        response['sync'] = sync
+    return jsonify(response)
+
+
+@app.route('/api/settings/choices')
+def api_settings_choices():
+    """Values the settings panel offers in its selects."""
+    warehouses, endpoints, spaces = [], [], []
+    client = None
+    try:
+        client = _sp_workspace_client()
+    except Exception:  # noqa: BLE001
+        logger.info('settings choices unavailable', exc_info=True)
+
+    if client is not None:
+        try:
+            warehouses = [
+                {'id': w.id, 'name': w.name,
+                 'state': str(getattr(w, 'state', '') or '').split('.')[-1]}
+                for w in client.warehouses.list() if w.id
+            ]
+        except Exception:  # noqa: BLE001
+            logger.info('could not list warehouses', exc_info=True)
+        try:
+            spaces = [
+                {'id': sp.space_id, 'name': sp.title or sp.space_id}
+                for sp in client.genie.list_spaces().spaces or []
+            ]
+        except Exception:  # noqa: BLE001
+            logger.info('could not list genie spaces', exc_info=True)
+
+    return jsonify({
+        'warehouses': sorted(warehouses, key=lambda w: (w['name'] or '').lower()),
+        'genie_spaces': sorted(spaces, key=lambda s: (s['name'] or '').lower()),
+    })
+
+
+@app.route('/api/settings')
+def api_settings():
+    """Configuration and a live health check of every dependency."""
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    if host and not host.startswith('http'):
+        host = f'https://{host}'
+    warehouse_id = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or ''
+    schema = os.getenv('SAT_SCHEMA') or os.getenv('BRICKHOUND_SCHEMA') or ''
+
+    # Health/permission probes are reported by the lazily-loaded checklist
+    # (/api/setup/requirements); running them here too made the settings panel
+    # wait on ~7 workspace calls before it could render. /api/settings now
+    # returns configuration only and stays fast.
+    genie_space = (os.getenv('GENIE_SPACE_ID') or '').strip()
+    checks = []
+    failing = []
+    return jsonify({
+        'healthy': not failing,
+        'failing_count': len(failing),
+        'checks': checks,
+        'config': {
+            'workspace_host': host,
+            'workspace_id': (os.getenv('WORKSPACE_ID') or '').strip(),
+            'schema': schema,
+            'warehouse_id': warehouse_id,
+            'genie_space_id': genie_space,
+            'assistant_disabled': bool(_app_config.get('assistant_disabled')),
+            'sp_fallback_allowed': (
+                os.getenv('ALLOW_SERVICE_PRINCIPAL_FALLBACK', 'false').strip().lower()
+                == 'true'),
+            'jobs': {
+                kind: {'label': spec['label'], 'connected': bool(_collection_job_id(kind))}
+                for kind, spec in COLLECTION_JOBS.items()
+            },
+        },
+        'links': {
+            'app_settings': f'{host}/apps' if host else None,
+            'warehouse': (f'{host}/sql/warehouses/{warehouse_id}'
+                          if host and warehouse_id else None),
+            'alerts': f'{host}/sql/alerts' if host else None,
+            'secret_scope': f'{host}/#secrets' if host else None,
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# Secret-scanning alerts
+#
+# These are ordinary Databricks SQL alerts (the alerts/v2 API), created and
+# managed through the app rather than reimplemented in it. That means the
+# schedule, evaluation, notification destinations and history all behave exactly
+# as they do for any hand-built alert, and an alert made here remains fully
+# editable in the workspace UI. The app supplies the query and sensible defaults
+# so an operator does not have to write SQL against the scan tables.
+# ---------------------------------------------------------------------------
+
+# Marks alerts this app created, so the list view can show only SAT's own without
+# touching a user's unrelated alerts.
+ALERT_NAME_PREFIX = "SAT Secrets"
+
+
+def _alert_templates():
+    """Alert definitions offered in the UI, keyed by template id.
+
+    ``column`` must match the alias the query returns: the alerts API evaluates a
+    named column, not the first column by position.
+    """
+    return {
+        'total_findings': {
+            'label': 'Hardcoded Credentials Detected',
+            'description': (
+                'The latest scan found hardcoded secrets in notebook source, '
+                'workspace files, or cluster configuration.'
+            ),
+            'column': 'total_findings',
+            'default_threshold': 0,
+            'default_operator': 'GREATER_THAN',
+            'severity': 'high',
+            'query': f"""SELECT
+  (SELECT COUNT(*) FROM {NOTEBOOK_SECRETS_TABLE}
+    WHERE secret_sha256 IS NOT NULL
+      AND run_id = (SELECT MAX(run_id) FROM {NOTEBOOK_SECRETS_TABLE}))
+  +
+  (SELECT COUNT(*) FROM {CLUSTER_SECRETS_TABLE}
+    WHERE secret_sha256 IS NOT NULL
+      AND run_id = (SELECT MAX(run_id) FROM {CLUSTER_SECRETS_TABLE}))
+  AS total_findings""",
+        },
+        'new_findings': {
+            'label': 'Findings Increased Since Previous Scan',
+            'description': (
+                'The latest scan found more hardcoded secrets than the previous '
+                'scan — exposure is growing.'
+            ),
+            'column': 'new_findings',
+            'default_threshold': 0,
+            'default_operator': 'GREATER_THAN',
+            'severity': 'high',
+            'query': f"""WITH runs AS (
+  SELECT run_id, ROW_NUMBER() OVER (ORDER BY run_id DESC) AS rn
+  FROM (
+    SELECT run_id FROM {NOTEBOOK_SECRETS_TABLE}
+    UNION
+    SELECT run_id FROM {CLUSTER_SECRETS_TABLE}
+  )
+),
+found AS (
+  SELECT run_id, secret_sha256 FROM {NOTEBOOK_SECRETS_TABLE} WHERE secret_sha256 IS NOT NULL
+  UNION ALL
+  SELECT run_id, secret_sha256 FROM {CLUSTER_SECRETS_TABLE} WHERE secret_sha256 IS NOT NULL
+),
+counts AS (
+  SELECT r.rn, COUNT(f.secret_sha256) AS findings
+  FROM runs r
+  LEFT JOIN found f ON f.run_id = r.run_id
+  WHERE r.rn <= 2
+  GROUP BY r.rn
+)
+SELECT COALESCE(MAX(CASE WHEN rn = 1 THEN findings END), 0)
+     - COALESCE(MAX(CASE WHEN rn = 2 THEN findings END), 0) AS new_findings
+FROM counts""",
+        },
+        'stale_scan': {
+            'label': 'Scanner Has Not Run Recently',
+            'description': (
+                'The secret scanner has not completed a run within the threshold — '
+                'its schedule may be broken and results may be stale.'
+            ),
+            'column': 'hours_since_scan',
+            'default_threshold': 48,
+            'default_operator': 'GREATER_THAN',
+            'severity': 'medium',
+            'query': f"""SELECT COALESCE(
+         CAST((unix_timestamp(current_timestamp())
+               - unix_timestamp(MAX(scan_time))) / 3600 AS DOUBLE), 999999
+       ) AS hours_since_scan
+FROM (
+  SELECT scan_time FROM {NOTEBOOK_SECRETS_TABLE}
+  UNION ALL
+  SELECT scan_time FROM {CLUSTER_SECRETS_TABLE}
+)""",
+        },
+    }
+
+
+def _alert_schedule_presets():
+    return [
+        {'label': 'Every minute (for testing — switch back after)', 'cron': '0 * * * * ?'},
+        {'label': 'Every hour', 'cron': '0 0 * * * ?'},
+        {'label': 'Every 6 hours', 'cron': '0 0 0/6 * * ?'},
+        {'label': 'Daily at 08:00', 'cron': '0 0 8 * * ?'},
+        {'label': 'Daily at 18:00', 'cron': '0 0 18 * * ?'},
+        {'label': 'Weekly, Monday 08:00', 'cron': '0 0 8 ? * MON'},
+    ]
+
+
+def _serialise_alert(alert, templates=None):
+    """Flatten an AlertV2 into the shape the UI renders."""
+    templates = templates or _alert_templates()
+    evaluation = getattr(alert, 'evaluation', None)
+    notification = getattr(evaluation, 'notification', None) if evaluation else None
+    schedule = getattr(alert, 'schedule', None)
+
+    def enum_name(value):
+        return str(value).split('.')[-1] if value is not None else None
+
+    threshold = None
+    operand = getattr(evaluation, 'threshold', None) if evaluation else None
+    value = getattr(operand, 'value', None) if operand else None
+    if value is not None:
+        for attr in ('double_value', 'string_value', 'bool_value'):
+            got = getattr(value, attr, None)
+            if got is not None:
+                threshold = got
+                break
+
+    # The template is recovered from the evaluated column name, which is stable;
+    # the display name is user-editable and cannot be relied on.
+    column = getattr(getattr(evaluation, 'source', None), 'name', None)
+    template_id = next(
+        (tid for tid, spec in templates.items() if spec['column'] == column), None)
+
+    pause_status = enum_name(
+        getattr(schedule, 'pause_status', None)
+        or getattr(schedule, 'effective_pause_status', None))
+
+    return {
+        'id': alert.id,
+        'display_name': alert.display_name,
+        'template_id': template_id,
+        'severity': (templates.get(template_id) or {}).get('severity'),
+        'column': column,
+        'operator': enum_name(getattr(evaluation, 'comparison_operator', None)),
+        'threshold': threshold,
+        'state': enum_name(getattr(evaluation, 'state', None)),
+        'lifecycle_state': enum_name(getattr(alert, 'lifecycle_state', None)),
+        'last_evaluated_at': getattr(evaluation, 'last_evaluated_at', None),
+        'cron': getattr(schedule, 'quartz_cron_schedule', None),
+        'timezone_id': getattr(schedule, 'timezone_id', None),
+        'paused': pause_status == 'PAUSED',
+        'notify_on_ok': bool(getattr(notification, 'notify_on_ok', False)),
+        'retrigger_seconds': getattr(notification, 'retrigger_seconds', None),
+        'subscribers': [
+            s.user_email for s in (getattr(notification, 'subscriptions', None) or [])
+            if getattr(s, 'user_email', None)
+        ],
+        'destination_ids': [
+            s.destination_id for s in (getattr(notification, 'subscriptions', None) or [])
+            if getattr(s, 'destination_id', None)
+        ],
+        'owner': getattr(alert, 'owner_user_name', None),
+        'description': getattr(alert, 'custom_description', None),
+        'url': _alert_url(alert.id),
+    }
+
+
+def _alert_url(alert_id):
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    if not host or not alert_id:
+        return None
+    if not host.startswith('http'):
+        host = f"https://{host}"
+    return f"{host}/sql/alerts/{alert_id}"
+
+
+def _build_alert_object(payload, template, existing=None):
+    """Construct an AlertV2 from a UI payload.
+
+    Raises ValueError with a user-facing message on invalid input, so the caller
+    can return 400 rather than surfacing an SDK error.
+    """
+    from databricks.sdk.service import sql as sql_service
+
+    warehouse_id = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID')
+    if not warehouse_id:
+        raise ValueError('No SQL warehouse is configured for this app.')
+
+    name = (payload.get('display_name') or '').strip()
+    if not name:
+        name = f"{ALERT_NAME_PREFIX}: {template['label']}"
+    if len(name) > 200:
+        raise ValueError('Name is too long (200 character limit).')
+
+    operator = (payload.get('operator') or template['default_operator']).strip().upper()
+    valid_operators = {o.name for o in sql_service.ComparisonOperator}
+    if operator not in valid_operators:
+        raise ValueError(f"Unsupported comparison '{operator}'.")
+
+    raw_threshold = payload.get('threshold')
+    if raw_threshold is None or raw_threshold == '':
+        raw_threshold = template['default_threshold']
+    try:
+        threshold = float(raw_threshold)
+    except (TypeError, ValueError):
+        raise ValueError('Threshold must be a number.')
+
+    subscribers = payload.get('subscribers') or []
+    if isinstance(subscribers, str):
+        subscribers = re.split(r'[,;\s]+', subscribers)
+    emails = [e.strip() for e in subscribers if e and e.strip()]
+    for email in emails:
+        if '@' not in email or len(email) > 320:
+            raise ValueError(f"'{email}' is not a valid email address.")
+
+    destination_ids = [
+        d.strip() for d in (payload.get('destination_ids') or []) if d and d.strip()
+    ]
+    if not emails and not destination_ids:
+        raise ValueError(
+            'Add at least one email address or notification destination, '
+            'otherwise the alert has nobody to notify.')
+
+    subscriptions = [
+        sql_service.AlertV2Subscription(user_email=email) for email in emails
+    ] + [
+        sql_service.AlertV2Subscription(destination_id=d) for d in destination_ids
+    ]
+
+    cron = (payload.get('cron') or '0 0 8 * * ?').strip()
+    timezone_id = (payload.get('timezone_id') or 'UTC').strip()
+
+    try:
+        retrigger = int(payload.get('retrigger_seconds') or 3600)
+    except (TypeError, ValueError):
+        raise ValueError('Re-notify interval must be a whole number of seconds.')
+    retrigger = max(0, min(retrigger, 86400 * 7))
+
+    pause = bool(payload.get('paused'))
+
+    description = (payload.get('description') or '').strip() or template['description']
+    if len(description) > 1000:
+        raise ValueError('Description is too long (1000 character limit).')
+
+    return sql_service.AlertV2(
+        display_name=name,
+        query_text=template['query'],
+        warehouse_id=warehouse_id,
+        custom_description=description,
+        evaluation=sql_service.AlertV2Evaluation(
+            source=sql_service.AlertV2OperandColumn(name=template['column']),
+            comparison_operator=getattr(sql_service.ComparisonOperator, operator),
+            # An empty result means the scan tables hold no matching rows, which is
+            # the healthy case for every template here.
+            empty_result_state=sql_service.AlertEvaluationState.OK,
+            threshold=sql_service.AlertV2Operand(
+                value=sql_service.AlertV2OperandValue(double_value=threshold)),
+            notification=sql_service.AlertV2Notification(
+                notify_on_ok=bool(payload.get('notify_on_ok')),
+                retrigger_seconds=retrigger,
+                subscriptions=subscriptions,
+            ),
+        ),
+        schedule=sql_service.CronSchedule(
+            quartz_cron_schedule=cron,
+            timezone_id=timezone_id,
+            pause_status=(sql_service.SchedulePauseStatus.PAUSED if pause
+                          else sql_service.SchedulePauseStatus.UNPAUSED),
+        ),
+    )
+
+
+def _alert_error_message(exc):
+    """Turn an alerts API error into something a user can act on.
+
+    The API rejects a subscriber who is not a member of the workspace, but says
+    so as "Failed to get user id for email: ...", which reads like an internal
+    fault rather than the input problem it is.
+    """
+    raw = str(exc)
+    match = re.search(r'Failed to get user id for email:\s*([^\s]+)', raw)
+    if match:
+        return (f"{match.group(1)} is not a member of this workspace. Databricks "
+                f"alerts can only notify existing workspace users -- add them to "
+                f"the workspace first, or use a notification destination such as "
+                f"Slack or a webhook for external recipients.")
+    if 'PERMISSION_DENIED' in raw or 'does not have' in raw:
+        return (f"Not permitted to manage alerts in this workspace: {raw}")
+    return f"Could not save the alert: {raw}"
+
+
+def _caller_is_admin():
+    """Whether the signed-in user may manage alerts: True only for a workspace
+    admin or an account admin.
+
+    Workspace admin = member of the workspace ``admins`` group, checked live as
+    the user via their forwarded OBO token. Account admin = holds the
+    ``account_admin`` role, checked via the account API (the same signal the
+    collector uses), best-effort and only when account credentials are set.
+
+    Fails closed: alert management runs as the app service principal, so without
+    this gate any app viewer could create/modify/delete alerts. If the caller's
+    identity cannot be verified (no OBO token on the request), return False so the
+    privileged action is refused rather than silently allowed.
+    """
+    try:
+        user_token = request.headers.get('x-forwarded-access-token')
+    except RuntimeError:
+        user_token = None
+    if not user_token:
+        return False
+
+    email = ''
+    # 1) Workspace admin — membership in the workspace 'admins' group, as the user.
+    try:
+        uc = WorkspaceClient(host=os.getenv('DATABRICKS_HOST'),
+                             token=user_token, auth_type='pat')
+        me = uc.current_user.me()
+        for g in (me.groups or []):
+            if (getattr(g, 'display', '') or '').strip().lower() == 'admins':
+                return True
+        email = (me.user_name or '').strip()
+    except Exception:  # noqa: BLE001
+        logger.info('workspace-admin check failed', exc_info=True)
+    if not email:
+        email = (get_user_email() or '').strip()
+
+    # 2) Account admin — account_admin role on the account SCIM user. Best-effort;
+    # only possible when account credentials are configured.
+    if '@' in email:
+        try:
+            account_id = (_app_config.get('account_id') or os.getenv('ACCOUNT_ID') or '').strip()
+            client_id = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+            client_secret = uc_secret_value(CREDENTIAL_KEYS['client_secret'])
+            if account_id and client_id and client_secret:
+                from databricks.sdk import AccountClient
+                ac = AccountClient(host=_account_host(), account_id=account_id,
+                                   client_id=client_id, client_secret=client_secret)
+                for u in ac.users.list(filter=f'userName eq "{email}"'):
+                    full = ac.users.get(u.id)
+                    roles = [str(getattr(r, 'value', '') or '') for r in (full.roles or [])]
+                    if 'account_admin' in roles:
+                        return True
+        except Exception:  # noqa: BLE001
+            logger.info('account-admin check failed', exc_info=True)
+    return False
+
+
+_ALERT_ADMIN_ONLY = ("Only workspace admins or account admins can create or change "
+                     "alerts. If you are an admin and see this, make sure the app has "
+                     "user authorization (OBO) enabled so it can verify your role.")
+
+
+@app.route('/api/secrets/alerts/options')
+def api_secrets_alert_options():
+    """Templates, schedule presets and destinations for the alert editor."""
+    templates = [
+        {
+            'id': tid,
+            'label': spec['label'],
+            'description': spec['description'],
+            'severity': spec['severity'],
+            'default_threshold': spec['default_threshold'],
+            'default_operator': spec['default_operator'],
+            'column': spec['column'],
+            'query': spec['query'],
+        }
+        for tid, spec in _alert_templates().items()
+    ]
+
+    # Notification destinations (Slack, PagerDuty, webhooks) are workspace-level
+    # objects. Listing them is best-effort: email subscriptions work regardless.
+    destinations = []
+    try:
+        client = _sp_workspace_client()
+        for dest in client.notification_destinations.list():
+            destinations.append({
+                'id': dest.id,
+                'display_name': dest.display_name,
+                'type': str(getattr(dest, 'destination_type', '') or '').split('.')[-1],
+            })
+    except Exception:  # noqa: BLE001
+        logger.info('could not list notification destinations', exc_info=True)
+
+    # Only a real address is offered as the default recipient. _assistant_user()
+    # falls back to a service principal id when no user identity is forwarded,
+    # and prefilling that would create an alert that notifies nobody.
+    user = _assistant_user()
+    default_recipient = user if user and '@' in user else ''
+
+    return jsonify({
+        'templates': templates,
+        'schedule_presets': _alert_schedule_presets(),
+        'destinations': destinations,
+        'current_user': default_recipient,
+        'warehouse_configured': bool(
+            os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID')),
+    })
+
+
+@app.route('/api/secrets/alerts')
+def api_secrets_alerts_list():
+    """Alerts this app manages, newest first."""
+    try:
+        client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    templates = _alert_templates()
+    known_columns = {spec['column'] for spec in templates.values()}
+    alerts = []
+    try:
+        for alert in client.alerts_v2.list_alerts():
+            lifecycle = str(getattr(alert, 'lifecycle_state', '') or '').split('.')[-1]
+            if lifecycle == 'DELETED':
+                continue
+            entry = _serialise_alert(alert, templates)
+            # Show only secret-scanning alerts: either created from a template
+            # (recognised by evaluated column) or named as one.
+            if entry['column'] in known_columns or (
+                    entry['display_name'] or '').startswith(ALERT_NAME_PREFIX):
+                alerts.append(entry)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('listing alerts failed')
+        return jsonify({'error': str(exc)}), 500
+
+    alerts.sort(key=lambda a: (a['paused'], a['display_name'] or ''))
+    # can_manage lets the UI hide the create/edit/delete controls for non-admins;
+    # the write endpoints enforce the same check server-side regardless.
+    return jsonify({'alerts': alerts, 'count': len(alerts), 'can_manage': _caller_is_admin()})
+
+
+@app.route('/api/secrets/alerts', methods=['POST'])
+def api_secrets_alerts_create():
+    """Create a Databricks SQL alert from one of the secret-scanning templates."""
+    if not _caller_is_admin():
+        return jsonify({'error': _ALERT_ADMIN_ONLY}), 403
+    payload = request.get_json(silent=True) or {}
+    template_id = (payload.get('template_id') or '').strip()
+    templates = _alert_templates()
+    if template_id not in templates:
+        return jsonify({'error': f"Unknown alert type '{template_id}'."}), 400
+
+    try:
+        alert = _build_alert_object(payload, templates[template_id])
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    try:
+        client = _sp_workspace_client()
+        created = client.alerts_v2.create_alert(alert=alert)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('alert creation failed')
+        return jsonify({'error': _alert_error_message(exc)}), 400
+
+    logger.info('created secrets alert %s (%s) by %s',
+                created.id, template_id, _assistant_user())
+    return jsonify({'alert': _serialise_alert(created, templates), 'created': True})
+
+
+@app.route('/api/secrets/alerts/<alert_id>', methods=['PATCH'])
+def api_secrets_alerts_update(alert_id):
+    """Update an alert, or pause/resume it.
+
+    A body of {"paused": true|false} alone toggles the schedule and leaves
+    everything else untouched, so the list view's switch does not have to
+    round-trip the whole definition.
+    """
+    if not _caller_is_admin():
+        return jsonify({'error': _ALERT_ADMIN_ONLY}), 403
+    payload = request.get_json(silent=True) or {}
+    try:
+        client = _sp_workspace_client()
+        current = client.alerts_v2.get_alert(id=alert_id)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    from databricks.sdk.service import sql as sql_service
+
+    pause_only = set(payload.keys()) <= {'paused'}
+    if pause_only:
+        if 'paused' not in payload:
+            return jsonify({'error': 'Nothing to update.'}), 400
+        if current.schedule is None:
+            return jsonify({'error': 'This alert has no schedule to pause.'}), 400
+        current.schedule.pause_status = (
+            sql_service.SchedulePauseStatus.PAUSED if payload['paused']
+            else sql_service.SchedulePauseStatus.UNPAUSED)
+        try:
+            updated = client.alerts_v2.update_alert(
+                id=alert_id, alert=current, update_mask='schedule')
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('alert pause toggle failed')
+            return jsonify({'error': str(exc)}), 500
+        return jsonify({'alert': _serialise_alert(updated), 'updated': True})
+
+    templates = _alert_templates()
+    template_id = (payload.get('template_id') or '').strip()
+    if template_id not in templates:
+        # Fall back to the template the alert was built from, so a partial edit
+        # does not need to restate its type.
+        template_id = _serialise_alert(current, templates).get('template_id')
+    if template_id not in templates:
+        return jsonify({'error': 'This alert is not managed by SAT.'}), 400
+
+    try:
+        rebuilt = _build_alert_object(payload, templates[template_id], existing=current)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    try:
+        updated = client.alerts_v2.update_alert(
+            id=alert_id, alert=rebuilt,
+            update_mask='display_name,query_text,evaluation,schedule,custom_description')
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('alert update failed')
+        return jsonify({'error': _alert_error_message(exc)}), 400
+
+    logger.info('updated secrets alert %s by %s', alert_id, _assistant_user())
+    return jsonify({'alert': _serialise_alert(updated, templates), 'updated': True})
+
+
+@app.route('/api/secrets/alerts/<alert_id>', methods=['DELETE'])
+def api_secrets_alerts_delete(alert_id):
+    """Move an alert to trash. Recoverable in the workspace UI."""
+    if not _caller_is_admin():
+        return jsonify({'error': _ALERT_ADMIN_ONLY}), 403
+    try:
+        client = _sp_workspace_client()
+        client.alerts_v2.trash_alert(id=alert_id)
+    except Exception as exc:  # noqa: BLE001
+        # Already trashed is the outcome the caller asked for, so it is reported as
+        # success rather than an error the user can do nothing about.
+        if 'already trashed' in str(exc).lower():
+            return jsonify({'deleted': True, 'id': alert_id, 'already_deleted': True})
+        logger.exception('alert delete failed')
+        return jsonify({'error': _alert_error_message(exc)}), 400
+    logger.info('trashed secrets alert %s by %s', alert_id, _assistant_user())
+    return jsonify({'deleted': True, 'id': alert_id})
+
+
+@app.route('/api/secrets/alerts/run-check', methods=['POST'])
+def api_secrets_alerts_run_check():
+    """Evaluate an alert's condition right now and report the current value and
+    whether it would fire. SQL Alerts only email on their schedule and have no
+    on-demand send, so this is a live preview of the condition, not an email."""
+    payload = request.get_json(silent=True) or {}
+    templates = _alert_templates()
+    tpl = templates.get(payload.get('template_id'))
+    if not tpl:
+        return jsonify({'error': 'Unknown alert type.'}), 400
+    operator = (payload.get('operator') or tpl['default_operator']).strip().upper()
+    raw = payload.get('threshold')
+    try:
+        threshold = float(raw if raw not in (None, '') else tpl['default_threshold'])
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Threshold must be a number.'}), 400
+    try:
+        rows = exec_query_df(tpl['query'])
+        value = 0.0
+        if rows:
+            r0 = rows[0]
+            got = r0.get(tpl['column'])
+            if got is None and r0:
+                got = next(iter(r0.values()), None)
+            value = float(got) if got is not None else 0.0
+    except NoAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': f'Could not run the check: {str(exc)[:200]}'}), 500
+    cmp = {
+        'GREATER_THAN': value > threshold,
+        'GREATER_THAN_OR_EQUAL': value >= threshold,
+        'EQUAL': value == threshold,
+        'NOT_EQUAL': value != threshold,
+        'LESS_THAN': value < threshold,
+        'LESS_THAN_OR_EQUAL': value <= threshold,
+    }
+    return jsonify({'value': value, 'column': tpl['column'], 'threshold': threshold,
+                    'operator': operator, 'would_fire': bool(cmp.get(operator, False))})
+
+
+GENIE_SPACE_TITLE = 'Security Analysis Tool (SAT) Assistant'
+
+
+def _provision_genie_space(client):
+    """Create -- or reuse -- the assistant's Genie space over the results schema.
+
+    The template (genie_space_template.py) carries the SAT tables, column hints,
+    instructions, and sample questions; {UC_SCHEMA} is replaced with the
+    configured catalog.schema. Idempotent: a space already titled
+    GENIE_SPACE_TITLE is reused and its definition refreshed, so repeated
+    provisions do not accumulate duplicates (Genie otherwise auto-appends a
+    timestamp to a colliding title). Returns the space_id.
+    """
+    if not (CATALOG and SCHEMA):
+        raise RuntimeError('Configure a results schema before creating the Genie space.')
+    warehouse = (os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '').strip()
+    if not warehouse:
+        raise RuntimeError('Configure a SQL warehouse before creating the Genie space.')
+    from genie_space_template import SPACE_TEMPLATE
+    serialized = json.dumps(SPACE_TEMPLATE).replace('{UC_SCHEMA}', f'{CATALOG}.{SCHEMA}')
+    description = 'Natural-language Q&A over SAT security analysis results.'
+
+    # Reuse an existing space with the same title rather than creating a duplicate.
+    existing_id = None
+    try:
+        for sp in (client.genie.list_spaces().spaces or []):
+            if (sp.title or '') == GENIE_SPACE_TITLE:
+                existing_id = sp.space_id
+                break
+    except Exception:  # noqa: BLE001
+        logger.info('could not list genie spaces for reuse', exc_info=True)
+
+    if existing_id:
+        try:
+            client.genie.update_space(
+                space_id=existing_id, serialized_space=serialized, warehouse_id=warehouse,
+                title=GENIE_SPACE_TITLE, description=description)
+        except Exception:  # noqa: BLE001
+            logger.warning('could not refresh existing genie space %s', existing_id, exc_info=True)
+        space_id = existing_id
+    else:
+        space = client.genie.create_space(
+            warehouse_id=warehouse, serialized_space=serialized,
+            title=GENIE_SPACE_TITLE, description=description)
+        space_id = space.space_id
+
+    # Let every workspace user run the assistant (CAN_RUN). This only grants the
+    # ability to ask — because chat runs on-behalf-of the user, Unity Catalog
+    # still enforces that user's own grants on the tables behind each answer, so
+    # broad CAN_RUN here exposes nothing a user could not already query. Owner
+    # (the app SP) keeps CAN_MANAGE; the PATCH is additive and non-fatal.
+    try:
+        client.api_client.do(
+            'PATCH', f'/api/2.0/permissions/genie/{space_id}',
+            body={'access_control_list': [
+                {'group_name': 'users', 'permission_level': 'CAN_RUN'}]})
+    except Exception:  # noqa: BLE001
+        logger.warning('could not share genie space %s with users', space_id, exc_info=True)
+    return space_id
+
+
+@app.route('/api/assistant/genie/create', methods=['POST'])
+def api_assistant_genie_create():
+    """Provision the assistant's Genie space and persist its id.
+
+    Created by the app service principal so the app owns the space; the id is
+    then stored in config and bridged to GENIE_SPACE_ID for the running process.
+    """
+    try:
+        space_id = _provision_genie_space(_sp_workspace_client())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('genie space creation failed')
+        return jsonify({'error': str(exc)}), 400
+    _app_config['genie_space_id'] = space_id
+    try:
+        write_persisted_config(_app_config)
+    except Exception:  # noqa: BLE001
+        logger.warning('could not persist genie_space_id', exc_info=True)
+    os.environ['GENIE_SPACE_ID'] = space_id
+    logger.info('genie space %s created by %s', space_id, _assistant_user())
+    return jsonify({'genie_space_id': space_id, 'created': True})
+
+
+@app.route('/api/assistant/disable', methods=['POST'])
+def api_assistant_disable():
+    """Turn the assistant off: stop using and auto-provisioning the Genie space.
+    The space itself is kept, so turning it back on reuses it."""
+    _app_config['assistant_disabled'] = True
+    try:
+        write_persisted_config(_app_config)
+    except Exception:  # noqa: BLE001
+        logger.warning('could not persist assistant_disabled', exc_info=True)
+    logger.info('assistant turned off by %s', _assistant_user())
+    return jsonify({'disabled': True})
+
+
+@app.route('/api/assistant/enable', methods=['POST'])
+def api_assistant_enable():
+    """Turn the assistant back on; the next open provisions a space if needed."""
+    _app_config['assistant_disabled'] = False
+    try:
+        write_persisted_config(_app_config)
+    except Exception:  # noqa: BLE001
+        logger.warning('could not persist assistant_disabled', exc_info=True)
+    logger.info('assistant turned on by %s', _assistant_user())
+    return jsonify({'disabled': False})
+
+
+@app.route('/api/assistant/config')
+def api_assistant_config():
+    """Whether the Genie-backed assistant can answer, plus suggested prompts."""
+    from agent import genie_chat
+    if _app_config.get('assistant_disabled'):
+        return jsonify({'ready': False, 'disabled': True,
+                        'message': 'The security assistant is turned off. Turn it on in Settings.'})
+    space_id = genie_chat.space_id()
+
+    # Auto-provision once when no space is set, as the app service principal so
+    # the SP owns the space it will later query (a space created by anyone else
+    # is not reachable by the SP). Persisted so this happens at most once.
+    if not space_id:
+        try:
+            space_id = _provision_genie_space(_sp_workspace_client())
+            _app_config['genie_space_id'] = space_id
+            try:
+                write_persisted_config(_app_config)
+            except Exception:  # noqa: BLE001
+                logger.warning('could not persist auto-created genie_space_id', exc_info=True)
+            os.environ['GENIE_SPACE_ID'] = space_id
+            logger.info('auto-created genie space %s on first assistant open', space_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('genie space auto-provision failed')
+            return jsonify({'ready': False, 'needs_space': True,
+                            'message': f'Could not create the assistant automatically: {str(exc)[:200]}'})
+
+    # Confirm the space is reachable for THIS user (OBO), so "you don't have
+    # access" is reported here rather than mid-chat. Genie runs as the signed-in
+    # user (see api_assistant_chat).
+    try:
+        client, _ = get_connection()
+        client.genie.get_space(space_id=space_id)
+    except Exception as exc:  # noqa: BLE001
+        # A set-but-unreachable space (e.g. created by another identity) can be
+        # recovered by creating a fresh SP-owned one from the panel.
+        return jsonify({'ready': False, 'needs_space': True,
+                        'message': (f'The assistant\'s Genie space is not reachable '
+                                    f'({str(exc)[:160]}). Create a new one to continue.')})
+    return jsonify({
+        'ready': True,
+        'suggestions': ASSISTANT_SUGGESTIONS,
+        'read_only': True,
+        'genie_space_id': space_id,
+    })
+
+
+@app.route('/api/assistant/chat', methods=['POST'])
+def api_assistant_chat():
+    """Answer one turn by continuing (or starting) a Genie conversation.
+
+    Conversation state lives in Genie, not in this app. The browser holds the
+    Genie conversation_id for the current thread and sends it back on each
+    follow-up, so there is no app-side session table to maintain. Genie stores
+    every conversation and message server-side (per user) -- that is also the
+    audit record of what was asked and answered.
+    """
+    from agent import genie_chat
+
+    if not genie_chat.space_id():
+        return jsonify({'error': 'The security assistant has no Genie space configured.'}), 503
+
+    payload = request.get_json(silent=True) or {}
+    message = (payload.get('message') or '').strip()
+    conversation_id = (payload.get('conversation_id') or '').strip() or None
+    if not message:
+        return jsonify({'error': 'message is required'}), 400
+    if len(message) > 4000:
+        return jsonify({'error': 'message is too long (4000 character limit)'}), 400
+
+    # OBO: Genie runs as the signed-in user. The app requests the 'genie' user
+    # scope, so the forwarded user token drives the Genie Conversation API and
+    # Unity Catalog enforces that user's own grants on the tables behind the
+    # answer. The app service principal only creates and owns the space.
+    try:
+        client, _ = get_connection()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': f'Could not connect to the workspace: {exc}'}), 503
+
+    result = genie_chat.answer(client, message, conversation_id=conversation_id)
+    if result.get('error'):
+        return jsonify({'error': result['error'],
+                        'conversation_id': result.get('conversation_id')}), 502
+
+    return jsonify({
+        'conversation_id': result.get('conversation_id'),
+        'answer': result.get('answer', ''),
+        'sql': result.get('sql'),
+        'description': result.get('description'),
+        'columns': result.get('columns', []),
+        'rows': result.get('rows', []),
+        'row_count': result.get('row_count', 0),
+        'truncated': result.get('truncated', False),
+    })
+
+
+@app.route('/api/assistant/conversations')
+def api_assistant_conversations():
+    """The signed-in user's past Genie conversations, newest first."""
+    from agent import genie_chat
+    if not genie_chat.space_id():
+        return jsonify({'conversations': []})
+    try:
+        client, _ = get_connection()
+        return jsonify({'conversations': genie_chat.list_conversations(client)})
+    except Exception as exc:  # noqa: BLE001
+        logger.info('listing genie conversations failed: %s', exc)
+        return jsonify({'conversations': [], 'error': str(exc)[:200]})
+
+
+@app.route('/api/assistant/conversation/<conversation_id>')
+def api_assistant_conversation(conversation_id):
+    """Reload one past conversation's turns so the pane can reopen it."""
+    from agent import genie_chat
+    if not genie_chat.space_id():
+        return jsonify({'turns': []})
+    try:
+        client, _ = get_connection()
+        turns = genie_chat.conversation_turns(client, conversation_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.info('loading genie conversation failed: %s', exc)
+        return jsonify({'error': str(exc)[:200]}), 502
+    return jsonify({'conversation_id': conversation_id, 'turns': turns})
+
+
+# In-flight assistant turns, so a Stop from the browser can halt the tool loop
+# server-side. Without this the fetch is abandoned but the loop keeps calling the
+# model and running tools, spending tokens on an answer nobody will read.
+_active_turns = {}
+_turns_lock = threading.Lock()
+_MAX_TRACKED_TURNS = 256
+
+
+def _register_turn(turn_id):
+    with _turns_lock:
+        # Bound the map so a client that never completes a turn cannot grow it
+        # without limit; oldest entries go first.
+        while len(_active_turns) >= _MAX_TRACKED_TURNS:
+            _active_turns.pop(next(iter(_active_turns)), None)
+        _active_turns[turn_id] = False
+
+
+def _release_turn(turn_id):
+    with _turns_lock:
+        _active_turns.pop(turn_id, None)
+
+
+def _turn_cancelled(turn_id):
+    with _turns_lock:
+        return bool(_active_turns.get(turn_id))
+
+
+@app.route('/api/assistant/cancel', methods=['POST'])
+def api_assistant_cancel():
+    """Ask an in-flight assistant turn to stop at its next checkpoint."""
+    payload = request.get_json(silent=True) or {}
+    turn_id = (payload.get('turn_id') or '').strip()
+    if not turn_id:
+        return jsonify({'error': 'turn_id is required'}), 400
+    with _turns_lock:
+        known = turn_id in _active_turns
+        if known:
+            _active_turns[turn_id] = True
+    # An unknown id means the turn already finished -- not an error worth
+    # surfacing, since the user's intent (it is not running) already holds.
+    return jsonify({'cancelled': known, 'turn_id': turn_id})
+
+
+# Cached service-principal client; see _sp_workspace_client for why.
+_sp_client = None
+_sp_client_lock = threading.Lock()
+
+
+def _sp_workspace_client():
+    """WorkspaceClient authenticated as the app's service principal.
+
+    Job control uses this rather than the calling user's token. The job resource
+    binding in app.yaml grants CAN_MANAGE_RUN to the app's service principal, and
+    Databricks Apps exposes no user-authorization scope for the Jobs API — so an
+    on-behalf-of-user token cannot start a run no matter its UC grants.
+
+    Reading security data still runs as the user (see get_connection), so UC
+    continues to enforce per-user visibility on findings.
+
+    The client is cached: constructing one resolves credentials from scratch,
+    which measured 0.65-1.0s and was the largest single cost in loading the data
+    collection page. The SDK refreshes the underlying OAuth token itself, so a
+    long-lived client keeps working. This is the app's own identity and carries no
+    per-user state, so sharing one across requests is safe -- unlike
+    get_connection(), which must stay per-request because it binds a user token.
+    """
+    global _sp_client
+    if _sp_client is None:
+        with _sp_client_lock:
+            if _sp_client is None:
+                from databricks.sdk import WorkspaceClient
+                _sp_client = WorkspaceClient()
+    return _sp_client
+
+
+
+# ---------------------------------------------------------------------------
+# Data collection control
+#
+# Lets an operator refresh the permissions graph or re-run the secret scanners
+# without leaving the app.
+#
+# Scope is deliberately narrow: only the job IDs bound in this app's
+# configuration can be started. There is no endpoint that accepts an arbitrary
+# job ID, nothing here edits a job definition, and the security assistant has no
+# tool that reaches these routes — it can explain findings but cannot cause
+# anything to run.
+# ---------------------------------------------------------------------------
+
+# Logical name -> env vars that may carry that job's ID. Databricks Apps exposes
+# a bound job resource as DATABRICKS_JOB_ID_<RESOURCE_NAME>; the plain names are
+# accepted as an override and for local runs.
+COLLECTION_JOBS = {
+    'permissions': {
+        'label': 'Permissions Graph',
+        'group': 'Access',
+        'description': 'Collects identities, groups, and grants, then builds the access graph.',
+        'env': ('PERMISSIONS_JOB_ID', 'DATABRICKS_JOB_ID_PERMISSIONS_JOB'),
+        'feeds': 'Principal and resource analysis, escalation paths, high privilege',
+        'job_name_match': 'Data Collection',
+    },
+    'secrets': {
+        'label': 'Secret Scanner',
+        'group': 'Secrets',
+        'description': 'Scans notebook source, workspace files, and cluster environment variables for credentials.',
+        'env': ('SECRETS_JOB_ID', 'DATABRICKS_JOB_ID_SECRETS_JOB'),
+        'feeds': 'Credential exposure, secret findings',
+        'job_name_match': 'Secrets Scanner',
+    },
+    'shared_to_account': {
+        'label': 'Shared to All Users',
+        'group': 'Access',
+        'description': 'Finds dashboards, Genie spaces, and apps shared with every account user.',
+        'env': ('SHARED_TO_ACCOUNT_JOB_ID',),
+        'feeds': 'Shared to All Users',
+        'job_name_match': 'Shared to Account Users',
+    },
+    'privileged_non_idp': {
+        'label': 'Privileged Non-IdP Identities',
+        'group': 'Identity',
+        'description': 'Finds admin roles held outside identity-provider-managed groups.',
+        'env': ('PRIVILEGED_NON_IDP_JOB_ID',),
+        'feeds': 'Privileged Non-IdP',
+        'job_name_match': 'Privileged Non-IdP',
+    },
+    'denylist_candidates': {
+        'label': 'Denylist Candidates',
+        'group': 'Identity',
+        'description': 'Ranks IdP groups whose members show no recent Databricks activity.',
+        'env': ('DENYLIST_JOB_ID',),
+        'feeds': 'Denylist Builder',
+        'job_name_match': 'Denylist Candidates',
+    },
+}
+
+# Display order for the groups above.
+COLLECTION_GROUPS = ('Access', 'Identity', 'Secrets')
+
+# Run states that mean a collection is still in flight.
+_ACTIVE_RUN_STATES = {
+    'PENDING', 'RUNNING', 'QUEUED', 'TERMINATING', 'BLOCKED', 'WAITING_FOR_RETRY',
+}
+
+
+# Job ids discovered from the workspace, keyed by collection. Populated on first
+# use and refreshed when a lookup misses, so a job deployed after the app started
+# is picked up without a restart.
+_discovered_jobs: dict[str, str] = {}
+_discovery_lock = threading.Lock()
+_discovery_checked_at = 0.0
+_DISCOVERY_TTL_SECONDS = 60.0
+
+
+def _discover_collection_jobs(force=False):
+    """Map each collection to the id of its job in this workspace.
+
+    Jobs are matched on the names the installer deploys. Discovering them here
+    means a job added to the workspace works immediately: the app does not need a
+    reinstall to learn a new job id, and no secret has to be written to carry it.
+    """
+    global _discovery_checked_at
+
+    now = time.time()
+    with _discovery_lock:
+        fresh = now - _discovery_checked_at < _DISCOVERY_TTL_SECONDS
+        complete = len(_discovered_jobs) == len(COLLECTION_JOBS)
+        if _discovered_jobs and (complete or fresh) and not force:
+            return dict(_discovered_jobs)
+
+    found: dict[str, str] = {}
+    try:
+        jobs = list(_sp_workspace_client().jobs.list())
+    except Exception:  # noqa: BLE001
+        logger.info("could not list jobs for discovery", exc_info=True)
+        jobs = []
+
+    for kind, spec in COLLECTION_JOBS.items():
+        pattern = spec['job_name_match'].lower()
+        for job in jobs:
+            name = ((job.settings.name if job.settings else "") or "").lower()
+            if pattern in name and job.job_id:
+                found[kind] = str(job.job_id)
+                break
+
+    with _discovery_lock:
+        _discovered_jobs.update(found)
+        _discovery_checked_at = now
+        return dict(_discovered_jobs)
+
+
+def _collection_job_id(kind):
+    """Resolve a job id for one collection, or None when its job is absent.
+
+    An explicitly configured id wins, so an operator can point the app at a
+    specific job; otherwise the id is discovered from the workspace.
+    """
+    spec = COLLECTION_JOBS.get(kind)
+    if not spec:
+        return None
+    for var in spec['env']:
+        value = (os.getenv(var) or '').strip()
+        if value.isdigit():
+            return value
+    return _discover_collection_jobs().get(kind)
+
+
+# --- In-app provisioning of the collection jobs ----------------------------
+# The app carries the collection notebooks and creates the jobs itself, so a
+# workspace can be set up entirely from the app with no separate installer.
+
+# Notebook (relative to the bundled notebooks/ tree, no extension) and any
+# notebook-specific parameters, per collection. The job name embeds the pattern
+# _discover_collection_jobs matches on, so a job created here is picked up by
+# discovery the moment it exists -- no restart, no id to record.
+PROVISION_SPECS = {
+    # Reads the account-admin credentials from Unity Catalog secrets to collect
+    # group memberships as the account SP (the app SP can't read SCIM members), so
+    # it needs client >= 4 for the UC-secret read (client 3 returns empty).
+    'permissions': {
+        'job_name': 'SAT Permissions Analysis - Data Collection',
+        'notebook': 'permission_analysis_data_collection',
+        'params': {},
+        'client': '4',
+    },
+    # The secrets scanner mints an account OAuth token from the client-id/
+    # client-secret UC secrets to call the workspace APIs, so it needs client >= 4
+    # for the UC-secret read (client 3 returns empty).
+    'secrets': {
+        'job_name': 'SAT Secrets Scanner',
+        'notebook': 'security_analysis_secrets_scanner',
+        'params': {},
+        'client': '4',
+    },
+    # The three account-level jobs read the account-admin credentials from Unity
+    # Catalog secrets, which serverless can only do on environment client >= 4
+    # (client 3 returns empty). The other jobs stay on 3, where they're verified.
+    'shared_to_account': {
+        'job_name': 'SAT Permissions Analysis - Shared to Account Users',
+        'notebook': 'brickhound/05_share_to_account',
+        'params': {'remediate': 'no'},
+        'client': '4',
+    },
+    'privileged_non_idp': {
+        'job_name': 'SAT Permissions Analysis - Privileged Non-IdP Identities',
+        'notebook': 'brickhound/06_privileged_non_idp_identities',
+        'params': {'finding_types': 'account_admin,workspace_admin',
+                   'include_idp_managed': 'no', 'remediate': 'no'},
+        'client': '4',
+    },
+    'denylist_candidates': {
+        'job_name': 'SAT Permissions Analysis - Denylist Candidates',
+        'notebook': 'brickhound/07_denylist_candidates',
+        'params': {},
+        'client': '4',
+    },
+}
+_INITIALIZER_NOTEBOOK = 'security_analysis_initializer'
+_INITIALIZER_JOB_NAME = 'SAT Initializer Notebook'
+
+
+def _notebooks_workspace_dir():
+    """Where the app imports its notebooks: the app service principal's own home,
+    the one place it can both write and run jobs from. The app's deployed source
+    under /Applications is owned by the deployer, so the SP cannot read those
+    notebook objects in a job -- hence the copy into its home."""
+    base = _config_file_path().rsplit('/', 1)[0]  # /Users/<sp>/.sat
+    return f'{base}/notebooks'
+
+
+def _import_notebooks(client):
+    """Import the notebooks into the app SP's home and place the SAT SDK wheel +
+    reference configs beside them.
+
+    The whole asset tree (notebooks/, lib/, configs/) ships base64-encoded in the
+    ``assets_data`` Python module. The Apps build drops bare binary files from the
+    container, but always includes .py modules, so embedding the archive there is
+    the one reliable way to carry it. Notebooks are imported as SOURCE (so jobs can
+    run them as notebooks); the wheel and configs go in as raw files. Returns the
+    workspace directory the notebooks now live in.
+    """
+    import base64, io, zipfile
+    from databricks.sdk.service.workspace import ImportFormat, Language
+    import assets_data
+
+    dest_root = _notebooks_workspace_dir()          # /Users/<sp>/.sat/notebooks
+    base_dest = dest_root.rsplit('/', 1)[0]         # /Users/<sp>/.sat
+    archive = io.BytesIO(base64.b64decode(assets_data.ASSETS_ZIP_B64))
+
+    # Clear the tree first so each redeploy is a clean import. Without this, an
+    # object that changes kind between versions lingers in both forms -- e.g. a
+    # file wrongly imported as the notebook `dependencies` stays alongside the new
+    # `dependencies.py` file, and both resolve to the same path, so `import
+    # dependencies` still hits the stale notebook (NotebookImportException).
+    try:
+        client.workspace.delete(dest_root, recursive=True)
+    except Exception:  # noqa: BLE001 - absent on first provision
+        pass
+
+    notebooks = assets = 0
+    with zipfile.ZipFile(archive) as zf:
+        for name in zf.namelist():
+            if name.endswith('/'):
+                continue
+            data = zf.read(name)
+            if name.startswith('notebooks/'):
+                rel = name[len('notebooks/'):]
+                # A .py that starts with the notebook marker is a runnable notebook
+                # (import as SOURCE, no extension). Everything else under notebooks/
+                # -- plain Python modules the notebooks import, YAML/CSV data files --
+                # is a file the notebooks read or import, so it must stay a workspace
+                # file with its extension (importing such a module as a notebook makes
+                # `import <module>` fail with NotebookImportException).
+                is_notebook = name.endswith('.py') and data[:64].lstrip().startswith(
+                    b'# Databricks notebook source')
+                if is_notebook:
+                    ws_path = f'{dest_root}/{rel[:-3]}'
+                    client.workspace.mkdirs(ws_path.rsplit('/', 1)[0])
+                    client.workspace.import_(
+                        path=ws_path, content=base64.b64encode(data).decode(),
+                        format=ImportFormat.SOURCE, language=Language.PYTHON, overwrite=True)
+                    notebooks += 1
+                else:
+                    ws_path = f'{dest_root}/{rel}'
+                    client.workspace.mkdirs(ws_path.rsplit('/', 1)[0])
+                    client.workspace.upload(ws_path, io.BytesIO(data),
+                                            format=ImportFormat.RAW, overwrite=True)
+                    assets += 1
+            elif name.startswith('lib/') or name.startswith('configs/'):
+                # Kept beside the notebooks so they resolve as <parent>/lib and
+                # <parent>/configs, exactly where the notebooks look for them.
+                ws_path = f'{base_dest}/{name}'
+                client.workspace.mkdirs(ws_path.rsplit('/', 1)[0])
+                client.workspace.upload(ws_path, io.BytesIO(data),
+                                        format=ImportFormat.RAW, overwrite=True)
+                assets += 1
+    logger.info('imported %d notebooks and %d asset file(s) to %s', notebooks, assets, dest_root)
+    return dest_root
+
+
+def _scan_scope():
+    """'all' to collect resources from every workspace the SP can reach, else
+    'current' (default) for the app's own workspace only. Set in setup/settings."""
+    return 'all' if (_app_config.get('scan_scope') or 'current') == 'all' else 'current'
+
+
+def _job_compute():
+    """'classic' to run collection jobs on a single-node job cluster, else
+    'serverless' (default). Classic is the historical multi-workspace path."""
+    return 'classic' if (_app_config.get('job_compute') or 'serverless') == 'classic' else 'serverless'
+
+
+def _collect_notebooks():
+    """True to collect notebook/folder permissions (opt-in, default off). Heavier
+    than the other collectors, so customers choose to pay the collection time."""
+    return bool(_app_config.get('collect_notebooks'))
+
+
+def _job_base_parameters(extra=None):
+    """Config every collection notebook needs, passed as job parameters so the
+    notebooks read them without any secret scope (see notebooks/Utils/initialize)."""
+    params = {
+        'analysis_schema_name': f'{CATALOG}.{SCHEMA}' if CATALOG and SCHEMA else '',
+        'sql_warehouse_id': os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID') or '',
+        'account_id': os.getenv('ACCOUNT_ID', ''),
+        'proxies': '{}',
+        # Resource-collection scope; the permissions collector reads this to decide
+        # single- vs multi-workspace (see permission_analysis_data_collection.py).
+        'scan_scope': _scan_scope(),
+        # Opt-in notebook/folder permission collection.
+        'collect_notebooks': 'true' if _collect_notebooks() else 'false',
+    }
+    if extra:
+        params.update(extra)
+    return params
+
+
+def _serverless_job_body(name, notebook_path, base_parameters, task_key, client='3'):
+    """A serverless single-task job in the shape the Jobs 2.1 API expects.
+
+    ``client`` is the serverless environment version; jobs that read Unity Catalog
+    secrets need >= 4 (3 cannot read them)."""
+    return {
+        'name': name,
+        'tags': {'Application': 'SAT'},
+        'tasks': [{
+            'task_key': task_key,
+            'notebook_task': {
+                'notebook_path': notebook_path,
+                'base_parameters': base_parameters,
+            },
+            'environment_key': 'default',
+            # No task timeout: a large workspace's scan/collection can legitimately
+            # run for hours, and an artificial cap would kill it mid-run.
+            'timeout_seconds': 0,
+        }],
+        'environments': [{
+            'environment_key': 'default',
+            'spec': {'client': client},
+        }],
+        'max_concurrent_runs': 1,
+    }
+
+
+# Cache the cloud-valid cluster defaults so we resolve them once per process.
+_classic_cluster_defaults = None
+
+
+def _classic_cluster_spec(client):
+    """A single-node job-cluster spec valid for this workspace's cloud.
+
+    Spark version and node type are resolved from the workspace (not hard-coded),
+    so this works on AWS/Azure/GCP. Single-user security mode runs the cluster as
+    the job's run_as (the app SP) and allows the Unity Catalog secret reads the
+    account-level collectors need."""
+    global _classic_cluster_defaults
+    if _classic_cluster_defaults is None:
+        try:
+            spark_version = client.clusters.select_spark_version(long_term_support=True)
+        except Exception:  # noqa: BLE001
+            spark_version = '15.4.x-scala2.12'
+        try:
+            node_type_id = client.clusters.select_node_type(local_disk=True)
+        except Exception:  # noqa: BLE001
+            node_type_id = 'i3.xlarge'
+        _classic_cluster_defaults = (spark_version, node_type_id)
+    spark_version, node_type_id = _classic_cluster_defaults
+    sp = (os.getenv('DATABRICKS_CLIENT_ID') or '').strip()
+    spec = {
+        'spark_version': spark_version,
+        'node_type_id': node_type_id,
+        'num_workers': 0,
+        'spark_conf': {
+            'spark.master': 'local[*]',
+            'spark.databricks.cluster.profile': 'singleNode',
+        },
+        'custom_tags': {'ResourceClass': 'SingleNode', 'Application': 'SAT'},
+        'data_security_mode': 'SINGLE_USER',
+    }
+    if sp:
+        spec['single_user_name'] = sp
+    return spec
+
+
+def _classic_job_body(name, notebook_path, base_parameters, task_key, client, **_ignore):
+    """A classic single-node job-cluster job. Used when job_compute == 'classic';
+    this is the historical path that supports multi-workspace collection."""
+    return {
+        'name': name,
+        'tags': {'Application': 'SAT'},
+        'tasks': [{
+            'task_key': task_key,
+            'notebook_task': {
+                'notebook_path': notebook_path,
+                'base_parameters': base_parameters,
+            },
+            'new_cluster': _classic_cluster_spec(client),
+            # No task timeout (see serverless body) — large scans must not be capped.
+            'timeout_seconds': 0,
+        }],
+        'max_concurrent_runs': 1,
+    }
+
+
+def _build_job_body(client, name, notebook_path, base_parameters, task_key, client_env='3'):
+    """Build a job body for the configured compute: classic job-cluster or
+    serverless. ``client_env`` is the serverless environment version (ignored for
+    classic)."""
+    if _job_compute() == 'classic':
+        return _classic_job_body(name, notebook_path, base_parameters, task_key, client)
+    return _serverless_job_body(name, notebook_path, base_parameters, task_key, client=client_env)
+
+
+def _find_job_id_by_name(client, name):
+    for job in client.jobs.list(name=name):
+        if job.settings and job.settings.name == name and job.job_id:
+            return job.job_id
+    return None
+
+
+def _upsert_job(client, body):
+    """Create the job, or reset an existing one of the same name. Returns id."""
+    existing = _find_job_id_by_name(client, body['name'])
+    if existing:
+        client.api_client.do('POST', '/api/2.1/jobs/reset',
+                             body={'job_id': existing, 'new_settings': body})
+        return existing
+    created = client.api_client.do('POST', '/api/2.1/jobs/create', body=body)
+    return created.get('job_id')
+
+
+def _provision_collection(run_initializer=True):
+    """Create every collection job, pointed at the notebooks deployed with the
+    app. Idempotent: existing jobs of the same name are updated in place. Returns
+    a per-collection result."""
+    client = _sp_workspace_client()
+    notebooks_dir = _import_notebooks(client)
+
+    results = {}
+    # Initializer first: it creates the schema and result tables the others fill.
+    # sat_init tells initialize.py to run the one-time schema/table setup. Only the
+    # initializer carries it, so concurrent collection jobs don't re-run that DDL.
+    init_body = _build_job_body(
+        client, _INITIALIZER_JOB_NAME, f'{notebooks_dir}/{_INITIALIZER_NOTEBOOK}',
+        _job_base_parameters({'sat_init': 'true'}), 'Initializer')
+    init_id = _upsert_job(client, init_body)
+    results['initializer'] = {'job_id': init_id}
+    init_run = None
+    if run_initializer and init_id:
+        started = client.api_client.do('POST', '/api/2.1/jobs/run-now',
+                                       body={'job_id': init_id})
+        init_run = started.get('run_id')
+        results['initializer']['run_id'] = init_run
+
+    for kind, spec in PROVISION_SPECS.items():
+        body = _build_job_body(
+            client, spec['job_name'], f"{notebooks_dir}/{spec['notebook']}",
+            _job_base_parameters(spec['params']), spec['notebook'].split('/')[-1],
+            client_env=spec.get('client', '3'))
+        try:
+            results[kind] = {'job_id': _upsert_job(client, body)}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('provisioning %s failed', kind)
+            results[kind] = {'error': str(exc)[:200]}
+
+    _invalidate_collection_cache()
+    _discover_collection_jobs(force=True)
+    return {'notebooks_dir': notebooks_dir, 'jobs': results,
+            'initializer_run_id': init_run}
+
+
+def _normalise_schema_ref(value):
+    """Canonical catalog.schema for comparing two configured values: backticks,
+    quotes, surrounding whitespace and case removed. UC folds identifiers to
+    lowercase, so `SAT`.x and sat.x are the same schema and must compare equal --
+    otherwise a pure case edit would trigger a pointless re-provision."""
+    parts = [p.strip().strip('`').strip('"').lower()
+             for p in str(value or '').split('.') if p.strip()]
+    return '.'.join(parts)
+
+
+def _resync_jobs_on_schema_change(previous_schema):
+    """Re-point the already-provisioned collection jobs at the current
+    catalog.schema after the configured value changes.
+
+    The jobs bake ``analysis_schema_name`` into their parameters when they are
+    provisioned, so a catalog/schema change in setup or settings does not reach
+    them until they are re-provisioned -- until then they keep running against the
+    old schema (and fail if it no longer exists). This closes that gap.
+
+    No-op when the schema did not actually change (case-insensitively) or when no
+    jobs exist yet -- a fresh install has nothing to re-point, and the operator
+    creates those jobs from Data Collection, which already uses the new schema.
+    Re-provisioning is idempotent and the initializer's DDL is CREATE ... IF NOT
+    EXISTS, so it is safe whether or not the new schema is already initialized.
+
+    Must be called after CATALOG/SCHEMA have been refreshed for the new value.
+    Never raises: the config change it follows has already been saved, so a
+    re-provision failure is reported to the caller, not thrown. Returns one of:
+    ``None`` (nothing to do), ``{'reprovisioned': n}``, or ``{'error': msg}``.
+    """
+    current = f'{CATALOG}.{SCHEMA}' if (CATALOG and SCHEMA) else ''
+    if not current or _normalise_schema_ref(previous_schema) == _normalise_schema_ref(current):
+        return None
+    try:
+        if not _discover_collection_jobs(force=True):
+            return None
+    except Exception:  # noqa: BLE001
+        logger.info('job discovery failed during schema-change resync', exc_info=True)
+        return None
+    try:
+        result = _provision_collection(run_initializer=True)
+        count = len(result.get('jobs', {}) or {})
+        logger.info('re-provisioned %d job(s) after schema change %r -> %r',
+                    count, previous_schema, current)
+        return {'reprovisioned': count}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('auto re-provision after schema change failed')
+        return {'error': str(exc)[:220]}
+
+
+# Account-credential secrets the jobs read from the results schema. All clouds
+# use Databricks OAuth (client-id / client-secret) -- there is no Microsoft Entra
+# tenant or Azure subscription secret. Copying a key that does not exist is a
+# harmless no-op.
+_MIGRATABLE_SECRET_KEYS = ('client-id', 'client-secret')
+
+
+def _migrate_account_secrets(previous_schema):
+    """Copy the app-managed account credential secrets from the previous results
+    schema into the current one after a schema change.
+
+    Account credentials live as Unity Catalog secrets *inside* the results schema
+    ({catalog}.{schema}.<key>), and the collection jobs read them from the schema
+    they are pointed at. So changing the schema would otherwise strand the
+    credentials in the old schema and the account-wide jobs would fail until the
+    operator re-entered them. This carries them across so the change is seamless.
+
+    Best-effort and never raises: an unreadable old secret or an unwritable new
+    schema just means that key is skipped (the operator can still re-enter it).
+    A value already present in the new schema is left untouched -- an explicit
+    entry there wins over a copy. Returns the list of keys copied.
+
+    Must be called after CATALOG/SCHEMA have been refreshed to the new value.
+    """
+    parts = [p.strip().strip('`').strip('"')
+             for p in str(previous_schema or '').split('.') if p.strip()]
+    if len(parts) != 2 or not (CATALOG and SCHEMA):
+        return []
+    old_catalog, old_schema = parts
+    if _normalise_schema_ref(previous_schema) == _normalise_schema_ref(f'{CATALOG}.{SCHEMA}'):
+        return []
+    try:
+        client = _config_client()
+    except Exception:  # noqa: BLE001
+        logger.info('secret migration skipped: no config client', exc_info=True)
+        return []
+
+    copied = []
+    for key in _MIGRATABLE_SECRET_KEYS:
+        try:
+            # An explicit value already in the new schema wins; don't clobber it.
+            if _uc_secret_read_at(client, CATALOG, SCHEMA, key) is not None:
+                continue
+            value = _uc_secret_read_at(client, old_catalog, old_schema, key)
+            if value is None:
+                continue
+            _uc_secret_write_at(client, CATALOG, SCHEMA, key, value,
+                                comment='Carried over by SAT on a results-schema change')
+            copied.append(key)
+        except Exception:  # noqa: BLE001
+            logger.info('secret migration skipped for %s', key, exc_info=True)
+    if copied:
+        logger.info('migrated %d account secret(s) from %s.%s to %s.%s',
+                    len(copied), old_catalog, old_schema, CATALOG, SCHEMA)
+    return copied
+
+
+def _on_schema_change(previous_schema):
+    """Apply everything a configured catalog/schema change needs to stay seamless:
+    carry the account-credential secrets into the new schema, then re-point the
+    existing collection jobs at it (which also runs the initializer to create the
+    new schema's tables). Order matters -- secrets are copied before the jobs run.
+
+    Returns None when nothing changed, else a dict with any of ``migrated_secrets``
+    (list of keys), ``reprovisioned`` (count), and ``reprovision_error`` (message).
+    Never raises.
+    """
+    current = f'{CATALOG}.{SCHEMA}' if (CATALOG and SCHEMA) else ''
+    if not current or _normalise_schema_ref(previous_schema) == _normalise_schema_ref(current):
+        return None
+    result = {}
+    migrated = _migrate_account_secrets(previous_schema)
+    if migrated:
+        result['migrated_secrets'] = migrated
+    resync = _resync_jobs_on_schema_change(previous_schema)
+    if resync and 'reprovisioned' in resync:
+        result['reprovisioned'] = resync['reprovisioned']
+    elif resync and 'error' in resync:
+        result['reprovision_error'] = resync['error']
+    return result
+
+
+def _normalise_run(run):
+    """Flatten a Jobs API run into what the UI needs.
+
+    The API carries both a legacy ``state`` and a newer ``status``; whichever is
+    populated is used so this works across workspace versions.
+    """
+    if run is None:
+        return None
+    life_cycle = None
+    result = None
+    status = getattr(run, 'status', None)
+    if status is not None:
+        life_cycle = str(getattr(status, 'state', '') or '').split('.')[-1] or None
+        details = getattr(status, 'termination_details', None)
+        result = str(getattr(details, 'code', '') or '').split('.')[-1] or None
+    if life_cycle is None:
+        state = getattr(run, 'state', None)
+        if state is not None:
+            life_cycle = str(getattr(state, 'life_cycle_state', '') or '').split('.')[-1] or None
+            result = str(getattr(state, 'result_state', '') or '').split('.')[-1] or None
+    # Task counts let the UI show real progress instead of an indefinite spinner.
+    tasks_total = 0
+    tasks_done = 0
+    current_stage = None
+    for task in (getattr(run, 'tasks', None) or []):
+        tasks_total += 1
+        t_status = getattr(task, 'status', None)
+        t_state = getattr(task, 'state', None)
+        t_life = None
+        if t_status is not None:
+            t_life = str(getattr(t_status, 'state', '') or '').split('.')[-1] or None
+        if t_life is None and t_state is not None:
+            t_life = str(getattr(t_state, 'life_cycle_state', '') or '').split('.')[-1] or None
+        if (t_life or '').upper() == 'TERMINATED':
+            tasks_done += 1
+        elif (t_life or '').upper() in _ACTIVE_RUN_STATES and current_stage is None:
+            current_stage = getattr(task, 'task_key', None)
+
+    return {
+        'run_id': getattr(run, 'run_id', None),
+        'state': life_cycle,
+        'result': result,
+        'active': (life_cycle or '').upper() in _ACTIVE_RUN_STATES,
+        'start_time': getattr(run, 'start_time', None),
+        'end_time': getattr(run, 'end_time', None),
+        'run_page_url': getattr(run, 'run_page_url', None),
+        'tasks_total': tasks_total,
+        'tasks_done': tasks_done,
+        'current_stage': current_stage,
+    }
+
+
+def _latest_run(workspace_client, job_id):
+    try:
+        runs = list(workspace_client.jobs.list_runs(job_id=int(job_id), limit=1))
+    except Exception:  # noqa: BLE001
+        logger.info("list_runs failed for job %s", job_id, exc_info=True)
+        return None
+    return _normalise_run(runs[0]) if runs else None
+
+
+# Cached collection-run state. Keyed by nothing: there is one set of jobs and the
+# lookups run as the app, so every caller sees the same answer.
+_COLLECTION_CACHE_TTL = 4.0
+_collection_cache = {'at': 0.0, 'runs': None}
+_collection_cache_lock = threading.Lock()
+
+
+def _fetch_collection_runs(workspace_client, configured):
+    """Latest run per configured job, fetched concurrently."""
+    import concurrent.futures
+
+    runs = {}
+    if not configured:
+        return runs
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(configured)) as pool:
+        futures = {
+            pool.submit(_latest_run, workspace_client, job_id): kind
+            for kind, job_id in configured.items()
+        }
+        for future in concurrent.futures.as_completed(futures):
+            kind = futures[future]
+            try:
+                runs[kind] = future.result()
+            except Exception:  # noqa: BLE001
+                logger.info("latest run lookup failed for %s", kind, exc_info=True)
+                runs[kind] = None
+    return runs
+
+
+def _cached_collection_runs(workspace_client, configured, force=False):
+    """Run state for every configured job, cached briefly.
+
+    Returns (runs, cached_age_seconds). A cache entry is not used when a run is
+    active, so an in-progress collection always reports live state; that is the
+    one case where a stale answer would be visible to the user.
+    """
+    now = time.time()
+    with _collection_cache_lock:
+        cached = _collection_cache['runs']
+        age = now - _collection_cache['at']
+        fresh = cached is not None and age < _COLLECTION_CACHE_TTL
+        any_active = bool(cached) and any(
+            (r or {}).get('active') for r in cached.values())
+        if fresh and not force and not any_active:
+            return cached, round(age, 2)
+
+    runs = _fetch_collection_runs(workspace_client, configured)
+    with _collection_cache_lock:
+        _collection_cache['runs'] = runs
+        _collection_cache['at'] = time.time()
+    return runs, 0.0
+
+
+def _invalidate_collection_cache():
+    """Drop cached run state after an action that changes it."""
+    with _collection_cache_lock:
+        _collection_cache['runs'] = None
+        _collection_cache['at'] = 0.0
+
+
+@app.route('/api/collection/status')
+def api_collection_status():
+    """Configured collection jobs and the state of their most recent run."""
+    try:
+        workspace_client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    # Each job needs its most recent run, which is a ~1s API call. Done serially
+    # across five jobs that made this page take four seconds to load, so the
+    # lookups are fanned out across a small thread pool instead.
+    #
+    # The per-job jobs.get() call that fetched the display name was also dropped:
+    # the name is only used for a tooltip, and the run URL already supplies
+    # everything needed to link to the job.
+    configured = {
+        kind: job_id
+        for kind, job_id in ((k, _collection_job_id(k)) for k in COLLECTION_JOBS)
+        if job_id
+    }
+
+    # Even fanned out, the run lookups cost one Jobs API round trip (~0.6s), which
+    # the page cannot render without. A short cache makes revisits and the
+    # poller's refreshes instant while keeping the data current enough to be
+    # trusted: the TTL is deliberately shorter than the poller's fastest interval,
+    # and any run in flight bypasses the cache so progress is never stale.
+    refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+    runs, _cached_age = _cached_collection_runs(
+        workspace_client, configured, force=refresh)
+
+    host = (os.getenv('DATABRICKS_HOST') or '').rstrip('/')
+    workspace_id = (os.getenv('WORKSPACE_ID') or '').strip()
+
+    jobs = []
+    for kind, spec in COLLECTION_JOBS.items():
+        job_id = configured.get(kind)
+        entry = {
+            'kind': kind,
+            'label': spec['label'],
+            'group': spec.get('group', 'Other'),
+            'description': spec['description'],
+            'feeds': spec.get('feeds'),
+            'job_id': job_id,
+            'configured': bool(job_id),
+        }
+        if job_id:
+            entry['latest_run'] = runs.get(kind)
+            # The workspace UI expects /?o=<workspace_id>#job/<id>. Prefer deriving
+            # the prefix from the run URL the API returned, since that is
+            # authoritative; fall back to WORKSPACE_ID when there are no runs yet.
+            run_url = (entry.get('latest_run') or {}).get('run_page_url') or ''
+            if '#job/' in run_url:
+                entry['job_url'] = f"{run_url.split('#job/')[0]}#job/{job_id}"
+            elif host:
+                entry['job_url'] = (
+                    f"{host}/?o={workspace_id}#job/{job_id}" if workspace_id
+                    else f"{host}/#job/{job_id}"
+                )
+            else:
+                entry['job_url'] = None
+        else:
+            entry['message'] = f"{spec['label']} is not set up yet."
+        jobs.append(entry)
+    return jsonify({'jobs': jobs, 'groups': list(COLLECTION_GROUPS), 'cached_age': _cached_age})
+
+
+@app.route('/api/collection/provision', methods=['POST'])
+def api_collection_provision():
+    """Create the collection jobs in this workspace, entirely from the app.
+
+    Imports the bundled notebooks and creates a serverless job per collection,
+    then runs the initializer once. Idempotent -- safe to run again to repair or
+    update the jobs. Requires the app to be configured (catalog/schema set).
+    """
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup before provisioning jobs.'}), 409
+    run_initializer = (request.get_json(silent=True) or {}).get('run_initializer', True)
+    try:
+        result = _provision_collection(run_initializer=bool(run_initializer))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('collection provisioning failed')
+        message = str(exc)
+        if 'PERMISSION' in message.upper() or 'does not have' in message:
+            return jsonify({
+                'error': ('This app cannot create jobs. Its service principal needs '
+                          'CAN_MANAGE on jobs (and access to the results schema).')
+            }), 403
+        return jsonify({'error': f'Provisioning failed: {message[:300]}'}), 500
+    return jsonify({'provisioned': True, **result})
+
+
+def _ws_deployment_url_from_account(w):
+    """deployment_url for an Account API workspace object, per cloud."""
+    if getattr(w, "azure_workspace_info", None):
+        return f"{w.deployment_name}.azuredatabricks.net"
+    if getattr(w, "gcp_managed_network_config", None):
+        return f"{w.workspace_id}.gcp.databricks.com"
+    return f"{w.deployment_name}.cloud.databricks.com"
+
+
+def _sync_account_workspaces():
+    """Discover the account's workspaces and register them in account_workspaces.
+
+    Runs in-process as the app's service principal: lists the account workspaces,
+    works out which ones the SAT service principal is a *workspace admin* of (that
+    is what the scanner needs to read every user's notebooks and files there), and
+    upserts them. analysis_enabled tracks admin status -- so adding the SP as a
+    workspace admin and re-syncing opts a workspace in, and removing it opts the
+    workspace out. The workspace the app runs in is always enabled. When a
+    workspace's admin status can't be read (a transient assignment-listing error),
+    the row is still registered but its analysis_enabled is left untouched on
+    update (defaults enabled on first insert) so a blip can't silently drop it.
+
+    Returns a summary dict; raises on a hard failure (no credentials, no
+    warehouse, MERGE did not succeed) so the caller can report it.
+    """
+    import concurrent.futures
+
+    account_id = (_app_config.get('account_id') or os.getenv('ACCOUNT_ID') or '').strip()
+    client_id = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+    client_secret = uc_secret_value(CREDENTIAL_KEYS['client_secret'])
+    if not (account_id and client_id and client_secret):
+        raise ValueError(
+            "Account credentials are not set. Add the Account ID and the service "
+            "principal's client ID + secret in Settings -> Account credentials, then sync.")
+    warehouse_id = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID')
+    if not warehouse_id:
+        raise ValueError("No SQL warehouse is configured yet; complete first-run setup.")
+
+    from databricks.sdk import AccountClient
+    ac = AccountClient(host=_account_host(), account_id=account_id,
+                       client_id=client_id, client_secret=client_secret)
+
+    this_ws = (os.getenv('WORKSPACE_ID') or '').strip()
+    sat_client_id = (client_id or '').lower()
+
+    def _sp_is_workspace_admin(ws_id):
+        """True / False if determinable, None if the assignment listing failed."""
+        try:
+            for a in ac.workspace_assignment.list(workspace_id=ws_id):
+                spn = (getattr(a.principal, 'service_principal_name', '') or '').lower()
+                if spn and spn == sat_client_id:
+                    perms = getattr(a, 'permissions', None) or []
+                    if any(str(getattr(p, 'value', p)).upper() == 'ADMIN' for p in perms):
+                        return True
+            return False
+        except Exception:  # noqa: BLE001
+            return None
+
+    # RUNNING workspaces are the scan candidates.
+    running = []
+    for w in ac.workspaces.list():
+        status = getattr(w, 'workspace_status', None)
+        status_val = getattr(status, 'value', None) or (str(status) if status else 'RUNNING')
+        if status_val == 'RUNNING':
+            running.append((w, status_val))
+
+    # The admin check is one API call per workspace -- the costly part at scale --
+    # so fan it out. Bounded so a large account does not hammer the account API.
+    admin_of = {}
+    remote = [w for (w, _) in running if not (this_ws and str(w.workspace_id) == this_ws)]
+    if remote:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(remote))) as pool:
+            fut = {pool.submit(_sp_is_workspace_admin, w.workspace_id): w for w in remote}
+            for f in concurrent.futures.as_completed(fut):
+                admin_of[str(fut[f].workspace_id)] = f.result()
+
+    rows, enabled, undetermined = [], 0, 0
+    for (w, status_val) in running:
+        wid = str(w.workspace_id)
+        name = (w.workspace_name or '')
+        dep = _ws_deployment_url_from_account(w)
+        if this_ws and wid == this_ws:
+            en, setf = True, True  # current workspace: always on
+        else:
+            admin = admin_of.get(wid)
+            if admin is None:
+                en, setf, undetermined = True, False, undetermined + 1
+            else:
+                en, setf = admin, True
+        if en:
+            enabled += 1
+        rows.append((wid, dep, name, status_val, en, setf))
+
+    if not rows:
+        return {'registered': 0, 'enabled': 0, 'undetermined': 0}
+
+    def _q(s):
+        return str(s).replace("'", "''")
+    values = ", ".join(
+        f"('{_q(wid)}', '{_q(dep)}', '{_q(name)}', '{_q(st)}', "
+        f"{'true' if en else 'false'}, {'true' if setf else 'false'})"
+        for (wid, dep, name, st, en, setf) in rows
+    )
+    acct_ws = f"`{CATALOG}`.`{SCHEMA}`.account_workspaces"
+    merge = f"""
+        MERGE INTO {acct_ws} t
+        USING (SELECT * FROM VALUES {values}
+               AS s(workspace_id, deployment_url, workspace_name, workspace_status, analysis_enabled, set_enabled))
+        ON t.workspace_id = s.workspace_id
+        WHEN MATCHED AND s.set_enabled THEN UPDATE SET
+            t.deployment_url = s.deployment_url, t.workspace_name = s.workspace_name,
+            t.workspace_status = s.workspace_status, t.analysis_enabled = s.analysis_enabled
+        WHEN MATCHED AND NOT s.set_enabled THEN UPDATE SET
+            t.deployment_url = s.deployment_url, t.workspace_name = s.workspace_name,
+            t.workspace_status = s.workspace_status
+        WHEN NOT MATCHED THEN INSERT
+            (workspace_id, deployment_url, workspace_name, workspace_status, analysis_enabled)
+            VALUES (s.workspace_id, s.deployment_url, s.workspace_name, s.workspace_status, s.analysis_enabled)
+    """
+    result = _sql_rows(_sp_workspace_client(), warehouse_id, merge)
+    if result is None:
+        raise RuntimeError("Could not update account_workspaces (the MERGE did not succeed).")
+    # Bust the name cache so the UI reflects any new workspaces immediately.
+    with _account_ws_names_lock:
+        _account_ws_names_cache.update({'names': None, 'ts': 0.0})
+    return {'registered': len(rows), 'enabled': enabled, 'undetermined': undetermined}
+
+
+@app.route('/api/collection/sync-workspaces', methods=['POST'])
+def api_collection_sync_workspaces():
+    """Discover account workspaces and register which ones to scan.
+
+    Gated to workspace/account admins: it changes which workspaces the secret
+    scanner covers, and runs the MERGE as the app service principal, so an
+    ungated caller could otherwise widen scan scope. Idempotent."""
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup before syncing workspaces.'}), 409
+    if not _caller_is_admin():
+        return jsonify({'error': 'Only a workspace or account admin can sync workspaces.'}), 403
+    try:
+        result = _sync_account_workspaces()
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('workspace sync failed')
+        return jsonify({'error': f'Sync failed: {str(exc)[:300]}'}), 500
+    # Scope is returned so the UI can guide: when scope is "current" but the SP
+    # administers other workspaces, Sync enables them but they are not scanned
+    # until the customer switches scope to "Multiple workspaces".
+    return jsonify({'synced': True, 'scan_scope': _scan_scope(), **result})
+
+
+def _auto_sync_workspaces_if_multi():
+    """When collection scope is multi-workspace, refresh account_workspaces so
+    "Multiple workspaces" works without a separate Sync click. Best-effort and
+    never raises: the scope change that triggers this has already been saved, and
+    on a brand-new install the account_workspaces table may not exist yet (the
+    initializer creates it), in which case this simply returns an error summary and
+    the customer can Sync once collection has been provisioned. Returns the sync
+    summary dict, an {'error': ...} summary, or None when scope is not multi."""
+    if _scan_scope() != 'all':
+        return None
+    try:
+        return _sync_account_workspaces()
+    except Exception as exc:  # noqa: BLE001
+        logger.info('auto-sync after scope change skipped/failed', exc_info=True)
+        return {'error': str(exc)[:200]}
+
+
+def _scan_target_counts():
+    """(enabled, total) workspace counts in account_workspaces, as the app SP.
+
+    Returns (None, None) when it can't be determined yet -- no warehouse, or the
+    account_workspaces table doesn't exist (a fresh install before the initializer
+    has created it). `enabled` is the number with analysis_enabled = true (the set
+    scanned under "Multiple workspaces"); `total` is every registered workspace."""
+    try:
+        wh = os.getenv('WAREHOUSE_ID') or os.getenv('DATABRICKS_WAREHOUSE_ID')
+        if not wh:
+            return (None, None)
+        acct_ws = f"`{CATALOG}`.`{SCHEMA}`.account_workspaces"
+        rows = _sql_rows(
+            _sp_workspace_client(), wh,
+            f"SELECT COUNT_IF(analysis_enabled), COUNT(*) FROM {acct_ws}")
+        if not rows:
+            return (None, None)
+        enabled, total = rows[0][0], rows[0][1]
+        return (int(enabled) if enabled is not None else 0,
+                int(total) if total is not None else 0)
+    except Exception:  # noqa: BLE001
+        return (None, None)
+
+
+_classic_available_cache = None
+
+
+def _workspace_compute_mode():
+    """This workspace's compute_mode via the Account API: 'SERVERLESS', 'HYBRID',
+    or None when it can't be determined (account credentials not set yet, or the
+    lookup failed).
+
+    This is the authoritative signal for whether classic compute exists in the
+    workspace at all. A principal's allow-cluster-create entitlement is NOT that
+    signal -- it is a grantable per-principal permission, so a freshly created app
+    service principal lacks it even in a classic-capable (HYBRID) workspace."""
+    try:
+        account_id = (_app_config.get('account_id') or os.getenv('ACCOUNT_ID') or '').strip()
+        client_id = uc_secret_value(CREDENTIAL_KEYS['client_id'])
+        client_secret = uc_secret_value(CREDENTIAL_KEYS['client_secret'])
+        this_ws = (os.getenv('WORKSPACE_ID') or '').strip()
+        if not (account_id and client_id and client_secret and this_ws):
+            return None
+        from databricks.sdk import AccountClient
+        ac = AccountClient(host=_account_host(), account_id=account_id,
+                           client_id=client_id, client_secret=client_secret)
+        # Raw call so the field is read regardless of the installed SDK version.
+        resp = ac.api_client.do(
+            'GET', f'/api/2.0/accounts/{account_id}/workspaces/{this_ws}')
+        cm = (resp or {}).get('compute_mode')
+        return str(cm).upper() if cm else None
+    except Exception:  # noqa: BLE001
+        logger.info('workspace compute_mode lookup failed', exc_info=True)
+        return None
+
+
+def _classic_compute_available(client=None):
+    """Whether classic (job-cluster) compute can be offered for collection jobs.
+
+    The authoritative signal is the workspace's compute_mode: a SERVERLESS
+    (serverless-only) workspace has no classic compute; a HYBRID one does. The app
+    service principal's allow-cluster-create entitlement is deliberately NOT used
+    -- it is a grantable permission, so a fresh app SP lacks it even in a
+    classic-capable workspace, which is what made classic wrongly show as
+    unavailable. When compute_mode can't be read (no account credentials yet, e.g.
+    during first-run setup) default to available rather than hiding a valid option;
+    if the workspace turns out to be serverless-only, provisioning a classic job
+    surfaces the platform's own clear error.
+
+    A definitive answer is cached per process; an optimistic (unknown) answer is
+    not, so it is re-checked once account credentials are available."""
+    global _classic_available_cache
+    if _classic_available_cache is not None:
+        return _classic_available_cache
+    mode = _workspace_compute_mode()
+    if mode is None:
+        return True  # optimistic, uncached: re-check once credentials exist
+    ok = mode != 'SERVERLESS'
+    _classic_available_cache = ok
+    return ok
+
+
+@app.route('/api/collection/compute', methods=['GET', 'POST'])
+def api_collection_compute():
+    """Get or set the compute and scope the collection jobs run with.
+
+    GET returns the current choice and whether classic compute is available in
+    this workspace. POST persists the choice and re-creates the jobs so it takes
+    effect immediately (serverless <-> classic, this-workspace <-> all)."""
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup first.'}), 409
+
+    if request.method == 'GET':
+        enabled_ws, total_ws = _scan_target_counts()
+        return jsonify({
+            'compute': _job_compute(),
+            'scan_scope': _scan_scope(),
+            'collect_notebooks': _collect_notebooks(),
+            'classic_available': _classic_compute_available(),
+            'enabled_workspaces': enabled_ws,
+            'registered_workspaces': total_ws,
+        })
+
+    payload = request.get_json(silent=True) or {}
+    compute = 'classic' if payload.get('compute') == 'classic' else 'serverless'
+    scan_scope = 'all' if payload.get('scan_scope') == 'all' else 'current'
+    collect_notebooks = bool(payload.get('collect_notebooks'))
+    if compute == 'classic' and not _classic_compute_available():
+        return jsonify({'error': "Classic compute isn't available here: this workspace is "
+                                 "serverless-only (compute_mode SERVERLESS), so it has no "
+                                 "classic compute. Use serverless."}), 400
+
+    config = dict(_app_config)
+    config['job_compute'] = compute
+    config['scan_scope'] = scan_scope
+    config['collect_notebooks'] = collect_notebooks
+    try:
+        write_persisted_config(config)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('compute config write failed')
+        return jsonify({'error': f'Could not save the setting: {str(exc)[:180]}'}), 500
+    _apply_runtime_config(config)
+
+    # Re-create the jobs so the new compute/scope is applied now. Keep the
+    # existing data: the initializer is not re-run here.
+    try:
+        result = _provision_collection(run_initializer=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('re-provision after compute change failed')
+        return jsonify({'error': f'Setting saved, but re-creating the jobs failed: '
+                                 f'{str(exc)[:220]}'}), 500
+    # Switching to "Multiple workspaces" auto-discovers and enables the workspaces
+    # the SP administers, so the setting works without a separate Sync click.
+    sync = _auto_sync_workspaces_if_multi()
+    return jsonify({'saved': True, 'compute': compute, 'scan_scope': scan_scope,
+                    'collect_notebooks': collect_notebooks, 'jobs': result.get('jobs', {}),
+                    'sync': sync})
+
+
+def _provisioned_job_names():
+    """Every job name the app manages, so teardown only touches its own jobs."""
+    names = {spec['job_name'] for spec in PROVISION_SPECS.values()}
+    names.add(_INITIALIZER_JOB_NAME)
+    return names
+
+
+def _teardown_collection():
+    """Delete the collection jobs the app created. Leaves the schema and its data
+    intact -- this removes the jobs only, so it can be re-run to rebuild them."""
+    client = _sp_workspace_client()
+    names = _provisioned_job_names()
+    deleted = []
+    for job in list(client.jobs.list()):
+        name = (job.settings.name if job.settings else '') or ''
+        if name in names and job.job_id:
+            client.api_client.do('POST', '/api/2.1/jobs/delete',
+                                 body={'job_id': job.job_id})
+            deleted.append(name)
+    with _discovery_lock:
+        _discovered_jobs.clear()
+    _invalidate_collection_cache()
+    _discover_collection_jobs(force=True)
+    return deleted
+
+
+@app.route('/api/collection/teardown', methods=['POST'])
+def api_collection_teardown():
+    """Remove all collection jobs from the workspace. The results schema and any
+    collected data are untouched; the jobs can be recreated with Set up."""
+    try:
+        deleted = _teardown_collection()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('collection teardown failed')
+        return jsonify({'error': f'Could not remove jobs: {str(exc)[:200]}'}), 500
+    logger.info('collection teardown removed %d job(s)', len(deleted))
+    return jsonify({'removed': deleted, 'count': len(deleted)})
+
+
+def _teardown_collection_job(kind):
+    """Delete the single collection job for `kind`, leaving the schema and data
+    intact. Returns the deleted job name, or None when no such job is deployed."""
+    spec = COLLECTION_JOBS.get(kind)
+    if not spec:
+        raise RuntimeError(f'Unknown collection: {kind}')
+    client = _sp_workspace_client()
+    job_id = _collection_job_id(kind)
+    if not job_id:
+        return None
+    name = spec.get('label') or kind
+    try:
+        job = client.jobs.get(int(job_id))
+        if job.settings and job.settings.name:
+            name = job.settings.name
+    except Exception:  # noqa: BLE001
+        pass
+    client.api_client.do('POST', '/api/2.1/jobs/delete', body={'job_id': int(job_id)})
+    with _discovery_lock:
+        _discovered_jobs.clear()
+    _invalidate_collection_cache()
+    _discover_collection_jobs(force=True)
+    return name
+
+
+@app.route('/api/collection/teardown/<kind>', methods=['POST'])
+def api_collection_teardown_one(kind):
+    """Remove a single collection job. The schema and collected data are kept;
+    the job can be recreated later with Set up / Finish setup."""
+    if kind not in COLLECTION_JOBS:
+        return jsonify({'error': 'Unknown collection job.'}), 400
+    try:
+        removed = _teardown_collection_job(kind)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('single-job teardown failed')
+        return jsonify({'error': f'Could not remove the job: {str(exc)[:200]}'}), 500
+    if not removed:
+        return jsonify({'error': 'That job is not deployed.'}), 409
+    logger.info('removed collection job %s (%s)', kind, removed)
+    return jsonify({'removed': removed, 'kind': kind})
+
+
+@app.route('/api/collection/initializer', methods=['POST'])
+def api_collection_initializer():
+    """Run the initializer job on its own, to rebuild the schema and result tables
+    without recreating every collection job."""
+    if not is_configured():
+        return jsonify({'error': 'Complete first-run setup first.'}), 409
+    try:
+        client = _sp_workspace_client()
+        job_id = _find_job_id_by_name(client, _INITIALIZER_JOB_NAME)
+        if not job_id:
+            return jsonify({
+                'error': 'The initializer is not set up yet. Use Set up data collection first.'
+            }), 409
+        # The job allows one run at a time. If one is already in flight, attach to
+        # it instead of starting a second (which the platform would reject with
+        # "max concurrent runs exceeded").
+        active = client.api_client.do(
+            'GET', '/api/2.1/jobs/runs/list',
+            query={'job_id': job_id, 'active_only': True, 'limit': 1})
+        running = (active.get('runs') or [])
+        if running:
+            return jsonify({'run_id': running[0].get('run_id'),
+                            'started': False, 'already_running': True})
+        started = client.api_client.do('POST', '/api/2.1/jobs/run-now',
+                                       body={'job_id': job_id})
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('initializer run failed')
+        return jsonify({'error': f'Could not start the initializer: {str(exc)[:200]}'}), 500
+    return jsonify({'run_id': started.get('run_id'), 'started': True})
+
+
+@app.route('/api/collection/run', methods=['POST'])
+def api_collection_run():
+    """Start a collection job. Body: {"kind": "permissions"|"secrets"}.
+
+    Refuses when that job already has a run in flight, so repeated clicks cannot
+    stack concurrent collections writing the same tables.
+    """
+    payload = request.get_json(silent=True) or {}
+    kind = (payload.get('kind') or '').strip()
+    if kind not in COLLECTION_JOBS:
+        return jsonify({'error': f"Unknown collection '{kind}'"}), 400
+
+    job_id = _collection_job_id(kind)
+    if not job_id:
+        return jsonify({
+            'error': (f"{COLLECTION_JOBS[kind]['label']} is not set up yet. "
+                      f"Use Set up data collection first.")
+        }), 409
+
+    try:
+        workspace_client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    existing = _latest_run(workspace_client, job_id)
+    if existing and existing.get('active'):
+        return jsonify({
+            'error': f"{COLLECTION_JOBS[kind]['label']} is already running.",
+            'latest_run': existing,
+        }), 409
+
+    try:
+        started = workspace_client.jobs.run_now(job_id=int(job_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_now failed for %s", kind)
+        return jsonify({
+            'error': (f"Could not start {COLLECTION_JOBS[kind]['label']}: {exc}. The "
+                      f"app needs CAN_MANAGE_RUN on this job.")
+        }), 500
+
+    run_id = getattr(started, 'run_id', None)
+    _invalidate_collection_cache()
+    logger.info("started %s collection job=%s run_id=%s", kind, job_id, run_id)
+    return jsonify({'kind': kind, 'job_id': job_id, 'run_id': run_id, 'started': True})
+
+
+@app.route('/api/collection/run/<int:run_id>')
+def api_collection_run_status(run_id):
+    """Poll one run, so the UI can follow a collection it started."""
+    try:
+        workspace_client = _sp_workspace_client()
+        run = workspace_client.jobs.get_run(run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+    normalised = _normalise_run(run) or {}
+    normalised['run_id'] = run_id
+    return jsonify(normalised)
+
+
+@app.route('/api/collection/cancel', methods=['POST'])
+def api_collection_cancel():
+    """Cancel the in-flight run of a collection job.
+
+    Body: {"kind": "<collection>"} to cancel whatever that job currently has in
+    flight, or {"run_id": <id>} to cancel a specific run. Cancelling by kind is
+    what the UI uses, so a stuck collection can be stopped without the operator
+    having to find the run id.
+    """
+    payload = request.get_json(silent=True) or {}
+    kind = (payload.get('kind') or '').strip()
+    run_id = payload.get('run_id')
+
+    if not kind and not run_id:
+        return jsonify({'error': 'kind or run_id is required'}), 400
+    if kind and kind not in COLLECTION_JOBS:
+        return jsonify({'error': f"Unknown collection '{kind}'"}), 400
+
+    try:
+        workspace_client = _sp_workspace_client()
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    if not run_id:
+        job_id = _collection_job_id(kind)
+        if not job_id:
+            return jsonify({
+                'error': (f"The {COLLECTION_JOBS[kind]['label']} job is not bound to "
+                          f"this app.")
+            }), 409
+        latest = _latest_run(workspace_client, job_id)
+        if not latest or not latest.get('active'):
+            # Nothing running: the caller's intent already holds, so this is not an
+            # error worth surfacing as one.
+            return jsonify({
+                'cancelled': False,
+                'kind': kind,
+                'message': f"{COLLECTION_JOBS[kind]['label']} is not currently running.",
+            })
+        run_id = latest.get('run_id')
+
+    try:
+        run_id = int(run_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'run_id must be numeric'}), 400
+
+    try:
+        workspace_client.jobs.cancel_run(run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("cancel_run failed for run_id=%s", run_id)
+        return jsonify({
+            'error': (f"Could not cancel run {run_id}: {exc}. The app needs "
+                      f"CAN_MANAGE_RUN on this job.")
+        }), 500
+
+    _invalidate_collection_cache()
+    logger.info("cancelled collection run kind=%s run_id=%s by %s",
+                kind or '<by run_id>', run_id, _assistant_user())
+    return jsonify({'cancelled': True, 'kind': kind or None, 'run_id': run_id})
+
+
+@app.route('/api/collection/debug')
+def api_collection_debug():
+    """Which job-related environment variables the app can see.
+
+    Values are reported only as digit-or-not so no configuration leaks; this is
+    for confirming that a job resource binding actually reached the container.
+    """
+    seen = {
+        name: ('<digits>' if (value or '').strip().isdigit() else '<non-numeric>')
+        for name, value in sorted(os.environ.items())
+        if 'JOB' in name.upper()
+    }
+    return jsonify({
+        'job_env_vars': seen,
+        'resolved': {k: _collection_job_id(k) for k in COLLECTION_JOBS},
+    })
+
+
+@app.route('/api/collection/schedule/<kind>')
+def api_collection_schedule(kind):
+    """Current schedule for a collection job."""
+    if kind not in COLLECTION_JOBS:
+        return jsonify({'error': f"Unknown collection '{kind}'"}), 400
+    job_id = _collection_job_id(kind)
+    if not job_id:
+        return jsonify({'error': 'This collection is not connected to the app.'}), 409
+    try:
+        job = _sp_workspace_client().jobs.get(job_id=int(job_id))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    settings = getattr(job, 'settings', None)
+    schedule = getattr(settings, 'schedule', None) if settings else None
+    pause = str(getattr(schedule, 'pause_status', '') or '').split('.')[-1]
+    return jsonify({
+        'kind': kind,
+        'job_id': job_id,
+        'job_name': getattr(settings, 'name', None) if settings else None,
+        'cron': getattr(schedule, 'quartz_cron_expression', None) if schedule else None,
+        'timezone': getattr(schedule, 'timezone_id', None) if schedule else None,
+        'paused': pause.upper() == 'PAUSED',
+        'has_schedule': schedule is not None,
+    })
+
+
+@app.route('/api/collection/schedule/<kind>', methods=['POST'])
+def api_collection_schedule_update(kind):
+    """Change a collection job's schedule.
+
+    Accepts a Quartz cron expression and timezone, or {"paused": true|false} to
+    suspend and resume without discarding the expression. Scoped to the two
+    configured collection jobs — no other job can be modified from here.
+    """
+    if kind not in COLLECTION_JOBS:
+        return jsonify({'error': f"Unknown collection '{kind}'"}), 400
+    job_id = _collection_job_id(kind)
+    if not job_id:
+        return jsonify({'error': 'This collection is not connected to the app.'}), 409
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        client = _sp_workspace_client()
+        job = client.jobs.get(job_id=int(job_id))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({'error': str(exc)}), 500
+
+    settings = getattr(job, 'settings', None)
+    existing = getattr(settings, 'schedule', None) if settings else None
+
+    cron = (payload.get('cron') or '').strip() or (
+        getattr(existing, 'quartz_cron_expression', None) if existing else None)
+    timezone = (payload.get('timezone') or '').strip() or (
+        getattr(existing, 'timezone_id', None) if existing else None) or 'UTC'
+
+    if not cron:
+        return jsonify({'error': 'A schedule expression is required.'}), 400
+
+    # Reject obviously malformed expressions before calling the API, so the user
+    # gets a clear message instead of a generic server error.
+    if len(cron.split()) not in (6, 7):
+        return jsonify({
+            'error': ('That schedule is not a valid Quartz expression. It needs 6 or 7 '
+                      'fields, for example "0 0 8 ? * *" for daily at 08:00.')
+        }), 400
+
+    paused = payload.get('paused')
+    if paused is None and existing is not None:
+        paused = str(getattr(existing, 'pause_status', '') or '').split('.')[-1].upper() == 'PAUSED'
+    paused = bool(paused)
+
+    try:
+        from databricks.sdk.service.jobs import CronSchedule, PauseStatus
+        client.jobs.update(
+            job_id=int(job_id),
+            new_settings={
+                'schedule': CronSchedule(
+                    quartz_cron_expression=cron,
+                    timezone_id=timezone,
+                    pause_status=PauseStatus.PAUSED if paused else PauseStatus.UNPAUSED,
+                ),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("schedule update failed for %s", kind)
+        return jsonify({'error': f'Could not save the schedule: {exc}'}), 500
+
+    logger.info("updated %s schedule cron=%r tz=%s paused=%s", kind, cron, timezone, paused)
+    return jsonify({'kind': kind, 'cron': cron, 'timezone': timezone, 'paused': paused, 'saved': True})
+
+
+@app.route('/api/auth/whoami')
+def api_auth_whoami():
+    """Report what the forwarded user token actually contains.
+
+    Diagnostic for on-behalf-of-user problems. The app config can advertise a
+    scope while the token the platform forwards does not carry it, and the two are
+    indistinguishable from the error text alone. This decodes the token's own
+    claims so the answer is factual rather than inferred.
+
+    The token itself is never returned or logged — only its scope list, issue time
+    and audience.
+    """
+    import base64
+    import datetime
+
+    token = request.headers.get('x-forwarded-access-token')
+    out = {
+        'obo_header_present': bool(token),
+        'forwarded_email': request.headers.get('X-Forwarded-Email'),
+        'app_configured_scopes': None,
+        'token_claims': None,
+    }
+
+    if not token:
+        out['diagnosis'] = (
+            'The platform is not forwarding a user token, so the app falls back to '
+            'its service principal. User authorization is not active for this app.'
+        )
+        return jsonify(out)
+
+    # A Databricks OAuth token is a JWT; the payload is the middle segment.
+    try:
+        parts = token.split('.')
+        if len(parts) < 2:
+            out['diagnosis'] = 'Forwarded token is not a JWT, so its scopes cannot be read.'
+            return jsonify(out)
+        payload_b64 = parts[1] + '=' * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+    except Exception as exc:  # noqa: BLE001
+        out['diagnosis'] = f'Could not decode the forwarded token: {exc}'
+        return jsonify(out)
+
+    scope_claim = claims.get('scope') or claims.get('scp') or ''
+    scopes = scope_claim.split() if isinstance(scope_claim, str) else list(scope_claim)
+    issued = claims.get('iat')
+    out['token_claims'] = {
+        'scopes': scopes,
+        'has_sql_scope': 'sql' in scopes,
+        'issued_at': (datetime.datetime.utcfromtimestamp(issued).isoformat() + 'Z') if issued else None,
+        'expires_at': (datetime.datetime.utcfromtimestamp(claims['exp']).isoformat() + 'Z') if claims.get('exp') else None,
+        'audience': claims.get('aud'),
+        'subject': claims.get('sub'),
+    }
+
+    if 'sql' in scopes:
+        out['diagnosis'] = (
+            'The forwarded token carries the sql scope. If queries still fail, the '
+            'cause is Unity Catalog grants rather than app authorization.'
+        )
+    else:
+        out['diagnosis'] = (
+            'The forwarded token does not carry the sql scope. Compare issued_at '
+            'against when the scope was added: an older timestamp means the session '
+            'predates it, a newer one means the platform is not minting the scope '
+            'for this app.'
+        )
+    return jsonify(out)
+
+
+@app.route('/api/auth/mode')
+def api_auth_mode():
+    """Which identity the app is querying as.
+
+    The UI shows a notice when queries run as the app's service principal rather
+    than as the signed-in user, because in that mode results are not filtered by
+    the viewer's own Unity Catalog permissions.
+    """
+    token = request.headers.get('x-forwarded-access-token')
+    per_user = bool(token) and _token_has_sql_scope(token)
+    return jsonify({
+        'per_user': per_user,
+        'identity': 'signed-in user' if per_user else 'application service principal',
+        'notice': None if per_user else (
+            'Results are not filtered to your own permissions. This app is querying '
+            'with its own service account because your sign-in was not granted query '
+            'access. An administrator can enable it under the app settings.'
+        ),
+    })
+
+
+if __name__ == '__main__':
+    # Debug mode should be explicitly enabled via environment variable
+    # Never enable debug=True in production - it exposes sensitive information
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    # Binding to 0.0.0.0 is required by the Databricks Apps runtime — the
+    # platform's reverse proxy terminates SSO/OAuth and forwards traffic
+    # to the container on this address. The app is not directly reachable
+    # from the public internet.
+    app.run(host='0.0.0.0', port=8000, debug=debug_mode)  # nosemgrep: python.flask.security.audit.app-run-param-config.avoid_app_run_with_bad_host

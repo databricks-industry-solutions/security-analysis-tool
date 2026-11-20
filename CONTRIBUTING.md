@@ -15,20 +15,25 @@ Before you begin:
 
 ```
 security-analysis-tool/
+├── app/security-analysis-tool/    # The SAT Databricks App (Flask): UI, API,
+│                                  #   job provisioning, and the bundled assets
 ├── src/                           # Python SDK source code
-│   ├── securityanalysistoolproject/  # Main SAT SDK
-│   └── brickhound/                # Permissions & Resources Analysis
-├── notebooks/                     # Databricks notebooks
-│   ├── Setup/                     # Installation and configuration
-│   ├── Includes/                  # Helper modules
-│   └── brickhound/               # Permissions & Resources Analysis notebooks
-├── app/brickhound/               # Permissions & Resources Analysis web UI
-├── terraform/                    # Infrastructure as Code SAT Installation
-├── dabs/                        # Databricks Asset Bundles SAT Installation
-├── configs/                     # Configuration files
-├── dashboards/                  # AI/BI dashboard
-└── docs/                        # Documentation site
+│   ├── securityanalysistoolproject/  # Main SAT SDK (dbl-sat-sdk)
+│   └── brickhound/                # Permissions-graph SDK
+├── notebooks/                     # Collection notebooks the app provisions as jobs
+│   ├── Includes/                  # Shared logic (incl. scan_secrets/)
+│   ├── Utils/                     # Bootstrap + common table/helper functions
+│   └── brickhound/                # Permissions-graph config + analysis notebooks
+├── lib/                           # Prebuilt SAT SDK wheel the notebooks install
+├── terraform/                     # Infrastructure-as-Code installer (deploys the app)
+├── dabs/                          # Databricks Asset Bundles installer (deploys the app)
+├── configs/                       # TruffleHog detectors + Genie space template
+└── docs/                          # Documentation site (Docusaurus)
 ```
+
+> **Note:** As of 1.0, SAT is a single Databricks App. The classic security-check
+> CSV, driver job, and Lakeview dashboards are retired. See [AGENTS.md](AGENTS.md)
+> and [CLAUDE.md](CLAUDE.md) for the current architecture.
 
 ## Development Setup
 
@@ -68,7 +73,7 @@ pip install pytest
 We welcome:
 
 1. **Bug Fixes** - Fix issues in existing code
-2. **New Features** - Add new security checks or analysis capabilities
+2. **New Features** - Add permissions/secret-analysis capabilities or app functionality
 3. **Documentation** - Improve or add documentation
 4. **Testing** - Add or improve test coverage
 
@@ -103,8 +108,10 @@ Use descriptive branch names:
 
 ### Submitting a Pull Request
 
-1. **Fork the repository** and create your branch from `main`:
+1. **Create your branch from a `release/*` branch — never from `main`** (main is
+   protected) and never from another feature branch:
 ```bash
+git checkout release/1.0.0        # the active release branch
 git checkout -b feature/your-feature-name
 ```
 
@@ -161,10 +168,14 @@ When making changes:
 
 ### Preview Documentation
 
+Requires **Node 24**. Preview locally, and run a strict build (fails on broken
+internal links) before opening a docs PR:
+
 ```bash
 cd docs/sat
-npm install
-npm start
+yarn install
+yarn start          # preview at http://localhost:3000/security-analysis-tool/
+yarn build          # strict link check
 ```
 
 ## Versioning

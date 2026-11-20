@@ -22,19 +22,20 @@
 # MAGIC **Classic Compute (Recommended for Multi-Workspace):**
 # MAGIC - Collects from all configured workspaces
 # MAGIC - Includes account-level resources (Service Principals, Groups, etc.)
-# MAGIC - Requires Service Principal credentials in `sat_scope`
+# MAGIC - Requires account Service Principal credentials (stored by the app as Unity Catalog secrets)
 # MAGIC
 # MAGIC This notebook automatically detects compute type and adjusts collection scope accordingly.
 # MAGIC
 # MAGIC ## Prerequisites
 # MAGIC
 # MAGIC ### For Multi-Workspace Collection (Recommended)
-# MAGIC Set up a Service Principal with Account Admin access. See **00_config** for detailed instructions.
+# MAGIC Set up a Service Principal with Account Admin access. The SAT app stores its
+# MAGIC credentials as Unity Catalog secrets in the results schema ({catalog}.{schema}.<key>).
 # MAGIC
-# MAGIC **Required Secrets** (in scope "brickhound"):
-# MAGIC - `account-id` - Your Databricks Account UUID
-# MAGIC - `sp-client-id` - Service Principal Application ID
-# MAGIC - `sp-client-secret` - Service Principal OAuth Secret
+# MAGIC **Required secrets:**
+# MAGIC - `account-console-id` - Your Databricks Account UUID
+# MAGIC - `client-id` - Service Principal Application ID
+# MAGIC - `client-secret` - Service Principal OAuth Secret
 # MAGIC
 # MAGIC ### For Single Workspace Collection
 # MAGIC If no SP credentials are configured, collection will only run on the current workspace using the notebook user's permissions.
@@ -100,7 +101,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Install Dependencies
-# MAGIC %pip install databricks-sdk==0.49.0 networkx==3.4.2 tqdm==4.67.1 python-dotenv==1.2.2 --quiet
+# MAGIC %pip install databricks-sdk==0.49.0 networkx==3.4.2 tqdm==4.67.1 --quiet
 
 # COMMAND ----------
 
@@ -264,15 +265,7 @@ print("\n" + "="*80 + "\n")
 import sys
 import os
 
-# Add conditional MSAL import for Azure authentication
-try:
-    import msal
-    MSAL_AVAILABLE = True
-except ImportError:
-    MSAL_AVAILABLE = False
-    print("Warning: msal library not available. Azure authentication will not work.")
-
-# Add conditional import for useragent (matches MSAL pattern above)
+# Add conditional import for useragent
 try:
     from databricks.sdk import WorkspaceClient, AccountClient, useragent
     USERAGENT_AVAILABLE = True
@@ -370,7 +363,6 @@ SP_CREDENTIALS = {
     'client_id': None,
     'client_secret': None,
     'account_host': None,
-    'tenant_id': None  # Required for Azure authentication
 }
 MULTI_WORKSPACE_MODE = False
 
@@ -386,106 +378,106 @@ if cloud_type == 'azure':
 elif cloud_type == 'gcp':
     SP_CREDENTIALS['account_host'] = f"https://accounts.gcp.databricks.{domain}"
 else:  # aws
-    SP_CREDENTIALS['account_host'] = f"https://accounts.cloud.databricks.{domain}"
+    # DoD IL5 (.mil) uses the 'accounts-dod' prefix; commercial (.com) and
+    # GovCloud/FedRAMP (.us) use the standard 'accounts' host.
+    SP_CREDENTIALS['account_host'] = (
+        "https://accounts-dod.cloud.databricks.mil" if domain == 'mil'
+        else f"https://accounts.cloud.databricks.{domain}")
 
 # Store cloud type for later use
 SP_CREDENTIALS['cloud_type'] = cloud_type
 
 print(f"\n1. Loading Service Principal Credentials...")
 
-# Get the secrets scope name (default: "sat_scope" for SAT integration)
-secrets_scope = SECRETS_SCOPE if 'SECRETS_SCOPE' in dir() else "sat_scope"
+# Account API credentials. The SAT app stores these as Unity Catalog secrets in
+# the results schema ({catalog}.{schema}.<key>). Non-fatal on absence -- collection
+# then runs against the current workspace only.
+def _bh_cred(key):
+    try:
+        return dbutils.secrets.get(
+            catalog=CATALOG.strip('`').strip(),
+            schema=SCHEMA.strip('`').strip(),
+            key=key,
+        )
+    except Exception:
+        return None
 
 try:
-    # Updated for SAT integration: using SAT secret key names
-    SP_CREDENTIALS['account_id'] = dbutils.secrets.get(scope=secrets_scope, key="account-console-id")
-    SP_CREDENTIALS['client_id'] = dbutils.secrets.get(scope=secrets_scope, key="client-id")
-    SP_CREDENTIALS['client_secret'] = dbutils.secrets.get(scope=secrets_scope, key="client-secret")
-
-    # Try to load tenant_id for Azure (optional for AWS/GCP)
+    # account_id is not stored as a UC secret (the app passes it as a job
+    # parameter), so fall back to the analysis config (json_ from initialize) /
+    # the account_id widget when the UC secret is absent.
+    _param_account_id = ""
     try:
-        SP_CREDENTIALS['tenant_id'] = dbutils.secrets.get(scope=secrets_scope, key="tenant-id")
-        print(f"   ✓ Loaded tenant-id for Azure authentication")
+        _param_account_id = (json_.get("account_id") or "").strip()
     except Exception:
-        # tenant_id not required for AWS/GCP, only log for debugging
-        print(f"   ℹ Note: tenant-id not found in secrets (only required for Azure)")
+        try:
+            _param_account_id = (dbutils.widgets.get("account_id") or "").strip()
+        except Exception:
+            _param_account_id = ""
+    SP_CREDENTIALS['account_id'] = _bh_cred("account-console-id") or _param_account_id
+
+    # scan_scope decides whether resource collection spans every workspace the SP
+    # can reach ("all") or just the current workspace ("current"). The app passes
+    # it as a job parameter; default is current-workspace for safety.
+    _param_scan_scope = "current"
+    try:
+        _param_scan_scope = (json_.get("scan_scope") or "current").strip().lower()
+    except Exception:
+        try:
+            _param_scan_scope = (dbutils.widgets.get("scan_scope") or "current").strip().lower()
+        except Exception:
+            _param_scan_scope = "current"
+    SCAN_ALL_WORKSPACES = _param_scan_scope in ("all", "all-workspaces", "multi")
+
+    # collect_notebooks (opt-in, default off) turns on notebook/folder permission
+    # collection. It's off by default because walking the workspace tree and
+    # reading per-object ACLs is far heavier than the other collectors.
+    _param_collect_nb = "false"
+    try:
+        _param_collect_nb = str(json_.get("collect_notebooks") or "false").strip().lower()
+    except Exception:
+        try:
+            _param_collect_nb = str(dbutils.widgets.get("collect_notebooks") or "false").strip().lower()
+        except Exception:
+            _param_collect_nb = "false"
+    COLLECT_NOTEBOOKS = _param_collect_nb in ("true", "yes", "1", "on")
+    COLLECTION_CONFIG['collect_notebooks'] = COLLECT_NOTEBOOKS
+    COLLECTION_CONFIG['collect_repos'] = COLLECT_NOTEBOOKS
+
+    SP_CREDENTIALS['client_id'] = _bh_cred("client-id")
+    SP_CREDENTIALS['client_secret'] = _bh_cred("client-secret")
 
     if SP_CREDENTIALS['account_id'] and SP_CREDENTIALS['client_id'] and SP_CREDENTIALS['client_secret']:
-        print(f"   ✓ Loaded credentials from secrets scope '{secrets_scope}'")
+        print(f"   ✓ Loaded Service Principal credentials")
         print(f"   Account ID: {SP_CREDENTIALS['account_id'][:8]}...")
         print(f"   Client ID: {SP_CREDENTIALS['client_id'][:8]}...")
         print(f"   Account Host: {SP_CREDENTIALS['account_host']}")
 
-        # Override for serverless: even with credentials, restrict to current workspace
-        if is_serverless:
-            print(f"   ⚠ Running on SERVERLESS compute - restricting to current workspace only")
-            print(f"   → Switch to Classic Compute for multi-workspace collection")
-            MULTI_WORKSPACE_MODE = False
-        else:
+        # Resource scope follows the scan_scope the app passed, not the compute
+        # type. "all" iterates every workspace the SP can reach (needs the SP added
+        # to each workspace). On serverless this relies on cross-workspace access;
+        # if a workspace is unreachable it fails soft (per-workspace try/except) and
+        # is recorded, so the customer can enroll in the serverless cross-workspace
+        # preview via their account team. "current" (default) stays single-workspace.
+        if SCAN_ALL_WORKSPACES:
             MULTI_WORKSPACE_MODE = True
+            if is_serverless:
+                print(f"   ⚙ scan_scope=all on SERVERLESS: attempting all reachable workspaces")
+                print(f"   → Unreachable workspaces are skipped (enroll in serverless")
+                print(f"     cross-workspace access if remote workspaces are skipped)")
+            else:
+                print(f"   ⚙ scan_scope=all on CLASSIC: collecting from all reachable workspaces")
+        else:
+            MULTI_WORKSPACE_MODE = False
+            print(f"   ⚙ scan_scope=current: collecting resources from this workspace only")
     else:
-        print(f"   ⚠ Some credentials missing in scope '{secrets_scope}'")
+        print(f"   ⚠ Service Principal credentials not configured")
+        print(f"   → Will collect from CURRENT WORKSPACE ONLY")
         MULTI_WORKSPACE_MODE = False
 except Exception as e:
     print(f"   ⚠ Could not load SP credentials: {e}")
     print(f"   → Will collect from CURRENT WORKSPACE ONLY")
-    print(f"   → Set up secrets in scope '{secrets_scope}' for multi-workspace collection")
     MULTI_WORKSPACE_MODE = False
-
-# ============================================================================
-# AZURE AUTHENTICATION HELPER
-# ============================================================================
-def get_azure_databricks_token(client_id, client_secret, tenant_id):
-    """
-    Generate Databricks access token for Azure using MSAL.
-
-    This is required for Azure Service Principals which must authenticate
-    through Azure AD to obtain Databricks API access tokens.
-
-    Args:
-        client_id: Azure SP Application ID
-        client_secret: Azure SP Secret
-        tenant_id: Azure AD Tenant ID
-
-    Returns:
-        str: Access token for Databricks APIs
-
-    Raises:
-        Exception: If token generation fails
-    """
-    if not MSAL_AVAILABLE:
-        raise Exception("msal library is required for Azure authentication. Install with: pip install msal")
-
-    try:
-        # Create MSAL confidential client application
-        authority = f"https://login.microsoftonline.com/{tenant_id}"
-        app = msal.ConfidentialClientApplication(
-            client_id=client_id,
-            authority=authority,
-            client_credential=client_secret
-        )
-
-        # Databricks scope for Azure AD
-        scopes = ['2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default']
-
-        # Try cached token first (performance optimization)
-        token_result = app.acquire_token_silent(scopes=scopes, account=None)
-
-        # If no cached token, acquire new token
-        if not token_result:
-            token_result = app.acquire_token_for_client(scopes=scopes)
-
-        # Validate token response
-        if "access_token" not in token_result:
-            error_msg = token_result.get("error", "Unknown error")
-            error_desc = token_result.get("error_description", "No description")
-            raise Exception(f"MSAL token acquisition failed: {error_msg} - {error_desc}")
-
-        return token_result["access_token"]
-
-    except Exception as e:
-        print(f"Error generating Azure token: {str(e)}")
-        raise
 
 # ============================================================================
 # INITIALIZE CLIENTS
@@ -498,15 +490,28 @@ workspaces_to_collect = []
 # Track workspace collection status for metadata
 WORKSPACE_COLLECTION_STATUS = {}  # {workspace_id: {'name': str, 'status': 'success'|'failed'|'skipped', 'error': str|None}}
 
+# Account-level identity/admin collection (account users, groups, memberships, and
+# Account/Metastore Admin roles) needs only the account service-principal
+# credentials, not classic multi-workspace compute. Enable it whenever those creds
+# are present (requires serverless env client >= 4 to read the UC secret),
+# independently of MULTI_WORKSPACE_MODE -- which still gates the per-workspace
+# RESOURCE iteration that serverless can't do. This is what surfaces Account Admin
+# and Metastore Admin even in single-workspace/serverless mode.
+ACCOUNT_MODE = bool(
+    SP_CREDENTIALS.get('client_id')
+    and SP_CREDENTIALS.get('client_secret')
+    and SP_CREDENTIALS.get('account_id')
+)
+
 # Initialize AccountClient if we have SP credentials
-if MULTI_WORKSPACE_MODE:
+if ACCOUNT_MODE:
     print(f"\n   Testing connection to Accounts Console...")
     print(f"   Host: {SP_CREDENTIALS['account_host']}")
     print(f"   Account ID: {SP_CREDENTIALS['account_id']}")
     print(f"   Cloud Type: {cloud_type}")
 
     # First, do a direct HTTP test to get raw error messages (SDK swallows details)
-    # Note: Skip this test for Azure since it uses MSAL authentication
+    # Note: skipped for Azure here; the AccountClient OAuth path below covers it.
     import requests
     http_test_error = None
 
@@ -531,33 +536,17 @@ if MULTI_WORKSPACE_MODE:
             http_test_error = f"HTTP Request Error: {str(req_err)}"
 
     try:
-        # CONDITIONAL AUTHENTICATION: Azure uses MSAL tokens, AWS/GCP use oauth-m2m
-        if cloud_type == 'azure':
-            # Azure: Generate MSAL token and pass to AccountClient
-            if not SP_CREDENTIALS['tenant_id']:
-                raise Exception("tenant-id secret is required for Azure authentication")
-
-            print(f"   Generating Azure MSAL token...")
-            azure_token = get_azure_databricks_token(
-                client_id=SP_CREDENTIALS['client_id'],
-                client_secret=SP_CREDENTIALS['client_secret'],
-                tenant_id=SP_CREDENTIALS['tenant_id']
-            )
-
-            account_client = AccountClient(
-                host=SP_CREDENTIALS['account_host'],
-                account_id=SP_CREDENTIALS['account_id'],
-                token=azure_token  # Pass MSAL-generated token
-            )
-        else:
-            # AWS/GCP: Use oauth-m2m (Databricks Service Principal)
-            account_client = AccountClient(
-                host=SP_CREDENTIALS['account_host'],
-                account_id=SP_CREDENTIALS['account_id'],
-                client_id=SP_CREDENTIALS['client_id'],
-                client_secret=SP_CREDENTIALS['client_secret'],
-                auth_type="oauth-m2m"
-            )
+        # All clouds authenticate with Databricks OAuth (M2M). The Databricks
+        # account API accepts Databricks-issued tokens on Azure too, so there is no
+        # Microsoft Entra / MSAL step and no tenant id -- the service principal just
+        # needs a Databricks OAuth secret.
+        account_client = AccountClient(
+            host=SP_CREDENTIALS['account_host'],
+            account_id=SP_CREDENTIALS['account_id'],
+            client_id=SP_CREDENTIALS['client_id'],
+            client_secret=SP_CREDENTIALS['client_secret'],
+            auth_type="oauth-m2m"
+        )
 
         # Test connection and get list of workspaces
         workspaces_list = list(account_client.workspaces.list())
@@ -573,6 +562,13 @@ if MULTI_WORKSPACE_MODE:
                 'status': 'pending',
                 'error': None
             }
+
+        # Workspace discovery/registration into account_workspaces is owned by the
+        # app ("Sync workspaces" on the Data Collection page), which lists the
+        # account's workspaces and records which ones the SAT service principal
+        # administers -- so it is intentionally NOT done here. This collector only
+        # reads workspaces_to_collect for the permission graph; coupling workspace
+        # registration to this heavy job is what the app-side sync replaced.
 
     except Exception as e:
         # Try to extract detailed error message from various exception attributes
@@ -647,9 +643,7 @@ if MULTI_WORKSPACE_MODE:
         print(f"\n   Required secrets in scope '{secrets_scope}':")
         print("   • account-console-id: Your Databricks Account UUID")
         print("   • client-id: Service Principal Application ID")
-        print("   • client-secret: Service Principal OAuth Secret")
-        if cloud_type == 'azure':
-            print("   • tenant-id: Azure AD Tenant ID (REQUIRED for Azure)")
+        print("   • client-secret: Service Principal Databricks OAuth Secret")
         print(f"\n" + "="*80)
         print("⛔ EXITING: Cannot proceed without Accounts Console access")
         print("   Please fix the configuration and re-run this notebook.")
@@ -695,26 +689,13 @@ if MULTI_WORKSPACE_MODE and workspaces_to_collect:
             ws_cloud_type = 'aws'
 
         try:
-            # CONDITIONAL AUTHENTICATION for connectivity test
-            if ws_cloud_type == 'azure':
-                # Azure: Use MSAL token
-                if not SP_CREDENTIALS['tenant_id']:
-                    raise Exception(f"tenant-id required for Azure workspace {ws_name}")
-
-                azure_token = get_azure_databricks_token(
-                    client_id=SP_CREDENTIALS['client_id'],
-                    client_secret=SP_CREDENTIALS['client_secret'],
-                    tenant_id=SP_CREDENTIALS['tenant_id']
-                )
-                test_client = WorkspaceClient(host=ws_host, token=azure_token)
-            else:
-                # AWS/GCP: Use oauth-m2m
-                test_client = WorkspaceClient(
-                    host=ws_host,
-                    client_id=SP_CREDENTIALS['client_id'],
-                    client_secret=SP_CREDENTIALS['client_secret'],
-                    auth_type="oauth-m2m"
-                )
+            # Databricks OAuth (M2M) for every cloud, including Azure.
+            test_client = WorkspaceClient(
+                host=ws_host,
+                client_id=SP_CREDENTIALS['client_id'],
+                client_secret=SP_CREDENTIALS['client_secret'],
+                auth_type="oauth-m2m"
+            )
 
             # Simple API call to verify connectivity
             test_client.current_user.me()
@@ -861,30 +842,13 @@ def get_workspace_client(workspace):
         ws_cloud_type = 'aws'
 
     try:
-        # CONDITIONAL AUTHENTICATION
-        if ws_cloud_type == 'azure':
-            # Azure: Generate MSAL token
-            if not SP_CREDENTIALS['tenant_id']:
-                raise Exception(f"tenant-id required for Azure workspace {workspace.workspace_name}")
-
-            azure_token = get_azure_databricks_token(
-                client_id=SP_CREDENTIALS['client_id'],
-                client_secret=SP_CREDENTIALS['client_secret'],
-                tenant_id=SP_CREDENTIALS['tenant_id']
-            )
-
-            ws_client = WorkspaceClient(
-                host=ws_host,
-                token=azure_token  # Pass MSAL-generated token
-            )
-        else:
-            # AWS/GCP: Use oauth-m2m
-            ws_client = WorkspaceClient(
-                host=ws_host,
-                client_id=SP_CREDENTIALS['client_id'],
-                client_secret=SP_CREDENTIALS['client_secret'],
-                auth_type="oauth-m2m"
-            )
+        # Databricks OAuth (M2M) for every cloud, including Azure.
+        ws_client = WorkspaceClient(
+            host=ws_host,
+            client_id=SP_CREDENTIALS['client_id'],
+            client_secret=SP_CREDENTIALS['client_secret'],
+            auth_type="oauth-m2m"
+        )
 
         return ws_client
     except Exception as e:
@@ -905,7 +869,11 @@ print("Collection helper functions defined.")
 # COMMAND ----------
 
 # DBTITLE 1,Account-Level Collection
-if MULTI_WORKSPACE_MODE:
+# Runs whenever the AccountClient initialized (account creds available), including
+# in single-workspace/serverless mode -- this is account-level identity + admin
+# data (Account Admin, Metastore Admin, account groups/memberships) read through
+# one account client, so it does not need the per-workspace resource iteration.
+if account_client is not None:
     import traceback
     print("="*80)
     print("Account-Level Collection")
@@ -1154,7 +1122,24 @@ if MULTI_WORKSPACE_MODE:
         # ================================================================
         print("\n🔗 Collecting Workspace Assignments...")
         assignment_count = 0
+        ws_admin_edge_count = 0
         for ws in tqdm(workspaces_to_collect, desc="Workspace Assignments"):
+            # Workspace vertex so assignment / admin edges resolve to a workspace
+            # name in the app (one per workspace, account-wide).
+            all_vertices.append({
+                'id': f"workspace:{ws.workspace_id}",
+                'node_type': 'Workspace',
+                'name': ws.workspace_name,
+                'display_name': ws.workspace_name,
+                'email': None,
+                'owner': None,
+                'active': True,
+                'created_at': None,
+                'updated_at': None,
+                'comment': None,
+                'properties': None,
+                'metadata': safe_json({'workspace_id': str(ws.workspace_id)})
+            })
             try:
                 assignments = list(account_client.workspace_assignment.list(workspace_id=ws.workspace_id))
                 for assignment in assignments:
@@ -1181,9 +1166,27 @@ if MULTI_WORKSPACE_MODE:
                         'created_at': datetime.now()
                     })
                     assignment_count += 1
+
+                    # Capture the ADMIN permission so Workspace Admins can be
+                    # identified account-wide (every workspace, including remote
+                    # ones) without a per-workspace resource scan. The
+                    # workspace-assignment API returns WorkspacePermission enum
+                    # values (ADMIN / USER); ADMIN == workspace admin here.
+                    perms = getattr(assignment, 'permissions', None) or []
+                    if any(str(getattr(p, 'value', p)).upper() == 'ADMIN' for p in perms):
+                        all_edges.append({
+                            'src': src,
+                            'dst': f"workspace:{ws.workspace_id}",
+                            'relationship': 'WorkspaceAdmin',
+                            'permission_level': 'ADMIN',
+                            'inherited': False,
+                            'properties': None,
+                            'created_at': datetime.now()
+                        })
+                        ws_admin_edge_count += 1
             except Exception as e:
                 pass  # Some workspaces may not allow listing assignments
-        print(f"   ✓ Collected {assignment_count} workspace assignments")
+        print(f"   ✓ Collected {assignment_count} workspace assignments ({ws_admin_edge_count} workspace-admin)")
 
         # ================================================================
         # Collect Metastores
@@ -1291,6 +1294,17 @@ except Exception as e:
     print(f"⚠ Could not determine local metastore ID: {e}")
     print(f"  Remote UC collection will proceed for all metastores found.")
 
+# Workspace-scoped object types: these belong to a specific workspace, so each is
+# tagged with workspace_id + workspace_name below for per-workspace filtering in
+# the app. Account identities and UC objects (catalog/schema/table) are NOT
+# workspace-scoped and are deliberately excluded.
+_WS_OBJECT_TYPES = {
+    'Cluster', 'InstancePool', 'ClusterPolicy', 'ServingEndpoint',
+    'VectorSearchEndpoint', 'Experiment', 'Dashboard', 'Query', 'Alert',
+    'Job', 'Pipeline', 'Warehouse', 'SQLWarehouse', 'SecretScope', 'Secret',
+    'Token', 'App', 'Notebook', 'Directory', 'Repo',
+}
+
 for ws_idx, ws in enumerate(ws_iteration_list):
     # Determine if this is the current workspace
     if ws is None:
@@ -1318,6 +1332,10 @@ for ws_idx, ws in enumerate(ws_iteration_list):
     # Initialize status tracking
     if ws_id not in WORKSPACE_COLLECTION_STATUS:
         WORKSPACE_COLLECTION_STATUS[ws_id] = {'name': ws_name, 'status': 'pending', 'error': None}
+
+    # Remember where this workspace's vertices start so they can be tagged with
+    # the workspace they belong to once collection for it succeeds (see loop end).
+    _ws_vtx_start = len(all_vertices)
 
     mode_label = "FULL" if is_current else "LIMITED"
     print(f"\n{'='*60}")
@@ -1356,9 +1374,30 @@ for ws_idx, ws in enumerate(ws_iteration_list):
         if COLLECTION_CONFIG['collect_groups']:
             print(f"\n   Collecting Groups for {ws_name}...")
             try:
-                # Workspace-level groups.list() returns members inline (unlike
-                # account-level groups.list() which requires per-group .get() calls).
+                # groups.list() returns the group records but does not reliably
+                # include members inline, so each group's members are fetched below.
                 groups = list(ws_client.groups.list())
+
+                # The app service principal that runs this job is not a workspace
+                # admin and so cannot read SCIM group members. When the account
+                # service-principal credentials are available (requires serverless
+                # env client >= 4 to read the UC secret), authenticate as that
+                # account-admin SP to read memberships; otherwise fall back to the
+                # default client (members will be empty for a non-admin caller).
+                member_client = ws_client
+                if SP_CREDENTIALS.get('client_id') and SP_CREDENTIALS.get('client_secret'):
+                    try:
+                        from databricks.sdk import WorkspaceClient as _MemberClient
+                        member_client = _MemberClient(
+                            host=ws_client.config.host,
+                            client_id=SP_CREDENTIALS['client_id'],
+                            client_secret=SP_CREDENTIALS['client_secret'],
+                            auth_type='oauth-m2m',
+                        )
+                    except Exception as e:
+                        print(f"    Could not build account-SP client for memberships ({e}); using default client")
+                        member_client = ws_client
+
                 for group in tqdm(groups, desc="Groups"):
                     all_vertices.append({
                         'id': f"ws_{ws_id}_group:{group.id}",
@@ -1374,9 +1413,19 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                         'properties': safe_json({'workspace_id': str(ws_id)}),
                         'metadata': safe_json({'external_id': safe_get(group, 'external_id')})
                     })
-                    # Collect memberships
-                    if hasattr(group, 'members') and group.members:
-                        for member in group.members:
+                    # Collect memberships. groups.list() usually omits members, so
+                    # fetch the full group with .get() when they're absent --
+                    # otherwise every membership (including the 'admins' group) is
+                    # silently dropped and admin/group-inheritance analysis is blank.
+                    members = getattr(group, 'members', None)
+                    if not members:
+                        try:
+                            members = getattr(member_client.groups.get(group.id), 'members', None)
+                        except Exception as e:
+                            print(f"    Error getting members for group {group.id}: {e}")
+                            members = None
+                    if members:
+                        for member in members:
                             # Determine member type for correct ID prefix
                             member_type = member.type if hasattr(member, 'type') else None
                             ref = member.ref if hasattr(member, 'ref') else ''
@@ -2877,6 +2926,102 @@ for ws_idx, ws in enumerate(ws_iteration_list):
                     # Still mark as attempted so we don't retry on other workspaces with this metastore
                     COLLECTED_METASTORE_IDS.add(remote_metastore_id)
 
+        # Notebooks & folders (opt-in; the heaviest collector). Walk the workspace
+        # tree once, create Directory/Notebook/Repo vertices + a Contains hierarchy,
+        # then read ACLs in a small thread pool and keep only DIRECT (non-inherited)
+        # grants -- inheritance is represented by the Contains edges, so the graph
+        # stays lean. Bounded by a max-object cap so a huge workspace can't run away.
+        if COLLECT_NOTEBOOKS:
+            print(f"\n   Collecting notebooks & folders for {ws_name}...")
+            try:
+                import concurrent.futures
+                _NB_MAX = 20000
+                _ws_objects = []          # (object_id, kind, path)
+                _dir_path_to_id = {}      # path -> directory object_id, for Contains
+                _to_visit = ['/']
+                _visited = set()
+                while _to_visit and len(_ws_objects) < _NB_MAX:
+                    _p = _to_visit.pop()
+                    if _p in _visited:
+                        continue
+                    _visited.add(_p)
+                    try:
+                        _listing = list(ws_client.workspace.list(_p))
+                    except Exception:
+                        continue
+                    for _o in _listing:
+                        _ot = str(getattr(_o, 'object_type', '') or '').split('.')[-1].upper()
+                        _opath = getattr(_o, 'path', '') or ''
+                        _oid = getattr(_o, 'object_id', None)
+                        if _oid is None or not _opath:
+                            continue
+                        if _ot == 'DIRECTORY':
+                            _dir_path_to_id[_opath] = _oid
+                            _ws_objects.append((_oid, 'Directory', _opath))
+                            _to_visit.append(_opath)
+                        elif _ot == 'NOTEBOOK':
+                            _ws_objects.append((_oid, 'Notebook', _opath))
+                        elif _ot == 'REPO':
+                            _ws_objects.append((_oid, 'Repo', _opath))
+                        if len(_ws_objects) >= _NB_MAX:
+                            break
+
+                for _oid, _kind, _opath in _ws_objects:
+                    _vid = f"ws_{ws_id}_{_kind.lower()}:{_oid}"
+                    all_vertices.append({
+                        'id': _vid, 'node_type': _kind,
+                        'name': _opath.rsplit('/', 1)[-1] or _opath,
+                        'display_name': _opath, 'owner': None, 'email': None,
+                        'application_id': None, 'active': True,
+                        'created_at': None, 'updated_at': None, 'comment': None,
+                        'properties': safe_json({'path': _opath, 'workspace_id': str(ws_id), 'workspace_name': ws_name}),
+                        'metadata': None,
+                    })
+                    _parent = _opath.rsplit('/', 1)[0] or '/'
+                    _pid = _dir_path_to_id.get(_parent)
+                    if _pid is not None and _pid != _oid:
+                        all_edges.append({
+                            'src': f"ws_{ws_id}_directory:{_pid}", 'dst': _vid,
+                            'relationship': 'Contains', 'permission_level': None,
+                            'inherited': False, 'properties': None, 'created_at': datetime.now(),
+                        })
+
+                def _nb_fetch(_obj):
+                    _oid, _kind, _opath = _obj
+                    _api = 'directories' if _kind == 'Directory' else ('repos' if _kind == 'Repo' else 'notebooks')
+                    try:
+                        return (_obj, ws_client.permissions.get(_api, str(_oid)))
+                    except Exception:
+                        return (_obj, None)
+
+                _nb_edges = 0
+                if COLLECTION_CONFIG['collect_permissions'] and _ws_objects:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as _ex:
+                        for _obj, _perms in _ex.map(_nb_fetch, _ws_objects):
+                            if not _perms or not getattr(_perms, 'access_control_list', None):
+                                continue
+                            _oid, _kind, _opath = _obj
+                            _vid = f"ws_{ws_id}_{_kind.lower()}:{_oid}"
+                            for _acl in _perms.access_control_list:
+                                _principal = _acl.user_name or _acl.group_name or _acl.service_principal_name
+                                if not _principal or not _acl.all_permissions:
+                                    continue
+                                for _perm in _acl.all_permissions:
+                                    if safe_get(_perm, 'inherited', False):
+                                        continue  # keep direct grants only; inheritance via Contains
+                                    all_edges.append({
+                                        'src': _principal, 'dst': _vid,
+                                        'relationship': safe_get(_perm, 'permission_level'),
+                                        'permission_level': safe_get(_perm, 'permission_level'),
+                                        'inherited': False, 'properties': None,
+                                        'created_at': datetime.now(),
+                                    })
+                                    _nb_edges += 1
+                print(f"    Collected {len(_ws_objects)} notebook/folder objects, {_nb_edges} direct grants"
+                      + (" (capped at %d)" % _NB_MAX if len(_ws_objects) >= _NB_MAX else ""))
+            except Exception as e:
+                print(f"    Error collecting notebooks: {e}")
+
         WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'success'
 
     except Exception as e:
@@ -2884,6 +3029,21 @@ for ws_idx, ws in enumerate(ws_iteration_list):
         WORKSPACE_COLLECTION_STATUS[ws_id]['status'] = 'failed'
         WORKSPACE_COLLECTION_STATUS[ws_id]['error'] = str(e)[:500]
         continue
+
+    # Tag every workspace-scoped object collected this iteration with the
+    # workspace it belongs to, so the app can filter reports by workspace. UC
+    # objects and account identities are left untouched. setdefault keeps any
+    # workspace_id a collector already set.
+    for _v in all_vertices[_ws_vtx_start:]:
+        if _v.get('node_type') in _WS_OBJECT_TYPES:
+            _p = _v.get('properties')
+            try:
+                _pd = json.loads(_p) if isinstance(_p, str) and _p else (_p if isinstance(_p, dict) else {})
+            except Exception:
+                _pd = {}
+            _pd.setdefault('workspace_id', str(ws_id))
+            _pd.setdefault('workspace_name', ws_name)
+            _v['properties'] = safe_json(_pd)
 
 print(f"\n Per-workspace collection complete!")
 print(f"   Vertices: {len(all_vertices)}")
@@ -3201,17 +3361,8 @@ print(f"\n Saved Data:")
 print(f"  Vertices: {vertices_saved.count():,}")
 print(f"  Edges: {edges_saved.count():,}")
 
-# Verify vertices by type
-print(f"\n Vertices by type:")
-display(vertices_saved.groupBy("node_type").count().orderBy(F.desc("count")))
-
-# Verify edges by relationship
-print(f"\n Edges by relationship:")
-display(edges_saved.groupBy("relationship").count().orderBy(F.desc("count")))
-
 # Critical check: permission grants
-permission_grants = edges_saved.filter(F.col("permission_level").isNotNull())
-grant_count = permission_grants.count()
+grant_count = edges_saved.filter(F.col("permission_level").isNotNull()).count()
 
 print(f"\n Permission Grants: {grant_count:,}")
 
@@ -3220,8 +3371,6 @@ if grant_count == 0:
     print("   Permission analysis will NOT work.")
 else:
     print(f"\n SUCCESS! {grant_count} permission grants saved")
-    print("\n Permission types:")
-    display(permission_grants.groupBy("permission_level").count().orderBy(F.desc("count")))
 
 # COMMAND ----------
 

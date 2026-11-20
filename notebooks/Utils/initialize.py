@@ -28,33 +28,61 @@ cloud_type = getCloudType(hostname)
 # MAGIC * **verbosity** (optional). debug, info, warning, error, critical
 # MAGIC * **maxpages** for paginated calls, how many max pages to iterate before stopping
 # MAGIC * **timebetweencalls** time in secs between api calls. This is to prevent rejections with too many api calls
-# MAGIC * **master_name_scope** Secret Scope for Account Name
-# MAGIC * **master_name_key** Secret Key for Account Name
-# MAGIC * **master_pwd_scope** Secret Scope for Account Password
-# MAGIC * **master_pwd_key** Secret Key for Account Password
-# MAGIC * **workspace_pat_scope** Secret Scope for Workspace PAT
-# MAGIC * **workspace_pat_token_prefix** Secret Key prefix for Workspace PAT. Workspace ID will automatically be appended to this per workspace
 # MAGIC * **use_mastercreds** (optional) Use master account credentials for all workspaces
 # MAGIC * **sat_version** Version of the SAT version being used
 
 # COMMAND ----------
 
-SECRETS_SCOPE = "sat_scope"
-
-# COMMAND ----------
-
 import json
 
+# Configuration comes from the job parameters the SAT app sets when it provisions
+# a collection job. Values the app stored as Unity Catalog secrets (in the results
+# schema) are read from there as a fallback. No legacy secret scope is involved.
+for _w in ("account_id", "sql_warehouse_id", "analysis_schema_name", "proxies",
+           "scan_scope", "collect_notebooks"):
+    try:
+        dbutils.widgets.text(_w, "")
+    except Exception:
+        pass
+
+
+def _param(name):
+    try:
+        value = dbutils.widgets.get(name)
+        return value.strip() if value else ""
+    except Exception:
+        return ""
+
+
+def _uc_secret(key):
+    """Read a Unity Catalog secret from the results schema ({catalog}.{schema}),
+    located from the analysis_schema_name parameter. Empty when absent."""
+    schema = _param("analysis_schema_name")
+    parts = schema.split(".") if schema else []
+    if len(parts) >= 2:
+        try:
+            return dbutils.secrets.get(
+                catalog=parts[0].strip("`"), schema=parts[1].strip("`"), key=key)
+        except Exception:
+            return ""
+    return ""
+
+
+def _conf(param_name, secret_key, default=""):
+    return _param(param_name) or _uc_secret(secret_key) or default
+
+
 json_ = {
-    "account_id": dbutils.secrets.get(scope=SECRETS_SCOPE, key="account-console-id"),
-    "sql_warehouse_id": dbutils.secrets.get(scope=SECRETS_SCOPE, key="sql-warehouse-id"),
-    "analysis_schema_name": dbutils.secrets.get(
-        scope=SECRETS_SCOPE, key="analysis_schema_name"
-    ),
+    "account_id": _conf("account_id", "account-console-id"),
+    "sql_warehouse_id": _conf("sql_warehouse_id", "sql-warehouse-id"),
+    "analysis_schema_name": _conf("analysis_schema_name", "analysis_schema_name"),
     "verbosity": "info",
     "maxpages":10,
     "timebetweencalls":1,
-    "proxies": json.loads(dbutils.secrets.get(scope=SECRETS_SCOPE, key="proxies")),
+    "proxies": json.loads(_conf("proxies", "proxies", "{}") or "{}"),
+    # Collection-scope job parameters set by the app (plain params, not secrets).
+    "scan_scope": _param("scan_scope") or "current",
+    "collect_notebooks": _param("collect_notebooks") or "false",
 }
 
 # COMMAND ----------
@@ -81,15 +109,6 @@ json_.update(
 
 json_.update(
     {
-        "master_name_scope": SECRETS_SCOPE,
-        "master_name_key": "user",
-        "master_pwd_scope": SECRETS_SCOPE,
-        "master_pwd_key": "pass",
-        "workspace_pat_scope": SECRETS_SCOPE,
-        "workspace_pat_token_prefix": "sat-token",
-        "dashboard_id": "317f4809-8d9d-4956-a79a-6eee51412217",
-        "dashboard_folder": f"{basePath()}/dashboards/",
-        "dashboard_tag": "SAT",
         "use_mastercreds": True,
         "use_parallel_runs": True,
         # accounts_console: URL for accounts console in special environments (gov cloud, DoD)
@@ -97,7 +116,7 @@ json_.update(
         #   - GovCloud (FedRAMP): "https://accounts.cloud.databricks.us"
         #   - DoD (IL4/IL5): See https://docs.databricks.com/aws/en/security/privacy/gov-cloud
         "accounts_console": "",
-        "sat_version": "0.9.1",
+        "sat_version": "1.0.0",
     }
 )
 
@@ -111,35 +130,22 @@ if cloud_type == "gcp":
         "client_id": "",
         "client_secret_key": "client-secret",
     }
-    try:
-        use_sp_auth = (
-            dbutils.secrets.get(scope=SECRETS_SCOPE, key="use-sp-auth").lower() == "true"
-        )
-        if use_sp_auth:
-            sp_auth["use_sp_auth"] = "True"
-            sp_auth["client_id"] = dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="client-id"
-            )
-    except:
-        pass
+    if _uc_secret("use-sp-auth").lower() == "true":
+        sp_auth["use_sp_auth"] = "True"
+        sp_auth["client_id"] = _uc_secret("client-id")
     json_.update(sp_auth)
 
 # COMMAND ----------
 
 # DBTITLE 1,Azure configurations
 if cloud_type == "azure":
+    # Azure authenticates with Databricks OAuth (M2M), same as AWS/GCP -- no
+    # Microsoft Entra / tenant / subscription. The service principal needs a
+    # Databricks OAuth secret (client-id / client-secret in the results schema).
     json_.update(
         {
-            "subscription_id": dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="subscription-id"
-            ),  # Azure subscriptionId
-            "tenant_id": dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="tenant-id"
-            ),  # The Directory (tenant) ID for the application registered in Azure AD.
-            "client_id": dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="client-id"
-            ),  # The Application (client) ID for the application registered in Azure AD.
-            "client_secret_key": "client-secret",  # The secret generated by AAD during your confidential app registration
+            "client_id": _uc_secret("client-id"),  # Databricks SP application (client) ID
+            "client_secret_key": "client-secret",  # Key of the client secret in UC
             "use_mastercreds": True,
         }
     )
@@ -154,17 +160,9 @@ if cloud_type == "aws":
         "client_id": "",
         "client_secret_key": "client-secret",
     }
-    try:
-        use_sp_auth = (
-            dbutils.secrets.get(scope=SECRETS_SCOPE, key="use-sp-auth").lower() == "true"
-        )
-        if use_sp_auth:
-            sp_auth["use_sp_auth"] = "True"
-            sp_auth["client_id"] = dbutils.secrets.get(
-                scope=SECRETS_SCOPE, key="client-id"
-            )
-    except:
-        pass
+    if _uc_secret("use-sp-auth").lower() == "true":
+        sp_auth["use_sp_auth"] = "True"
+        sp_auth["client_id"] = _uc_secret("client-id")
     json_.update(sp_auth)
 
 # COMMAND ----------
@@ -183,21 +181,21 @@ loggr = LoggingUtils.get_logger()
 
 # COMMAND ----------
 
-create_schema()
-create_security_checks_table()
-create_account_info_table()
-create_account_workspaces_table()
-create_notebooks_secret_scan_results_table()
-create_clusters_secret_scan_results_table()
-create_workspace_run_complete_table()
+# Creating the schema/tables and loading reference data is one-time setup owned by
+# the initializer job. Re-running it in every collection notebook causes Delta
+# metadata-change conflicts on shared tables (e.g. run_number_table) when jobs run
+# concurrently. In app mode (config comes from job parameters) this runs only when
+# the initializer asks for it via the sat_init parameter; a classic installer
+# deployment passes no parameters and always runs it (its driver is sequential, so
+# there is no concurrency to conflict with).
+_app_mode = bool(_param("analysis_schema_name"))
+_run_setup = (not _app_mode) or (_param("sat_init").lower() == "true")
 
-# COMMAND ----------
-
-# Initialize best practices
-readBestPracticesConfigsFile()
-
-# COMMAND ----------
-
-# Initialize sat dasf mapping
-load_sat_dasf_mapping()
+if _run_setup:
+    create_schema()
+    create_account_info_table()
+    create_account_workspaces_table()
+    create_notebooks_secret_scan_results_table()
+    create_clusters_secret_scan_results_table()
+    create_workspace_run_complete_table()
 

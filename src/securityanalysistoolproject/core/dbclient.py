@@ -62,20 +62,23 @@ class SatDBClient:
             LOGGR.info(f"Using provided accounts_console URL: {self._ACCTURL}")
         else:
             # Construct account URL from workspace URL domain
-            # Works for standard (.com) and GovCloud (.us) environments
+            # Works for standard (.com), GovCloud (.us), and DoD IL5 (.mil).
+            # DoD uses the distinct 'accounts-dod' prefix; others use 'accounts'.
             domain = pars.get_domain(self._raw_url)
             if 'aws' in self._cloud_type:
-                self._ACCTURL = f"https://accounts.cloud.databricks.{domain}"
+                self._ACCTURL = ("https://accounts-dod.cloud.databricks.mil"
+                                 if domain == 'mil'
+                                 else f"https://accounts.cloud.databricks.{domain}")
             elif "gcp" in self._cloud_type:
                 self._ACCTURL = f"https://accounts.gcp.databricks.{domain}"
             elif 'azure' in self._cloud_type:
                 self._ACCTURL = f"https://accounts.azuredatabricks.{domain}"
 
-        # Azure management URLs
-        if 'azure' in self._cloud_type:
-            self._MGMTURL = "https://management.azure.com"
-            self._subscription_id = configs['subscription_id'].strip()
-            self._tenant_id = configs['tenant_id'].strip()   
+        # Azure authenticates with Databricks OAuth (M2M), exactly like AWS and
+        # GCP -- no Microsoft Entra / MSAL / tenant, and no Azure Resource Manager
+        # calls. SAT only reads the Databricks account and workspace APIs, which
+        # accept Databricks-issued OAuth tokens, so no Azure management URL,
+        # subscription id, or tenant id is needed.
 
 
     def _update_token_master(self,endpoint=None):
@@ -92,11 +95,8 @@ class SatDBClient:
             } 
             #LOGGR.info(f'GCP self._token {oauth}')
         elif(self._cloud_type == 'azure'):
-            #azure is only oauth to accounts/msmgmt
             self._url=self._ACCTURL
-            oauth = self.getAzureToken(True, endpoint, self._client_id, self._client_secret)
-            if endpoint is None or "?api-version=" in endpoint:
-                self._url = self._MGMTURL
+            oauth = self.getAzureTokenwithOAuth(True, self._client_id, self._client_secret)
             self._token = {
                 "Authorization": f"Bearer {oauth}",
                 "User-Agent": "databricks-sat/0.1.0"
@@ -124,11 +124,11 @@ class SatDBClient:
                 "User-Agent": "databricks-sat/0.1.0"
             } 
         elif self._cloud_type == 'azure':
-            oauth = self.getAzureToken(False, endpoint, self._client_id, self._client_secret)
+            oauth = self.getAzureTokenwithOAuth(False, self._client_id, self._client_secret)
             self._token = {
             "Authorization": f"Bearer {oauth}",
             "User-Agent": "databricks-sat/0.1.0"
-            }                
+            }
         elif self._cloud_type == 'gcp':
             oauth = self.getGCPTokenwithOAuth(False, self._client_id, self._client_secret)
             self._token = {
@@ -153,15 +153,10 @@ class SatDBClient:
     def test_connection(self, master_acct=False):
         '''test connection to workspace and master account'''
         if master_acct: #master acct may use a different credential
-            
-            if (self._cloud_type == 'azure'):
-                self._update_token_master(endpoint='workspaces?api-version=2018-04-01')
-                results = requests.get(f'{self._url}/subscriptions/{self._subscription_id}/providers/Microsoft.Databricks/workspaces?api-version=2018-04-01',
-                            headers=self._token, timeout=60, proxies=self._proxies)
-            else:   
-                self._update_token_master() 
-                results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
-                            headers=self._token, timeout=60, proxies=self._proxies)
+            # All clouds read the Databricks account API for the workspace list.
+            self._update_token_master()
+            results = requests.get(f'{self._url}/api/2.0/accounts/{self._account_id}/workspaces',
+                        headers=self._token, timeout=60, proxies=self._proxies)
         else:
             self._update_token()
             results = requests.get(f'{self._url}/api/2.0/clusters/spark-versions',
@@ -469,19 +464,14 @@ class SatDBClient:
 
     def http_req(self, http_type, endpoint, json_params, version='2.0', files_json=None, master_acct=False):
         '''helpers for http post put patch'''
-        #Azure has two different account api strategies. one goes direct to azure management and 
-        # the other one goes to databricks.
         LOGGR.debug(f"endpoint -> {endpoint}")
         if master_acct:
             self._update_token_master(endpoint)
         else:
             self._update_token(endpoint)
 
-        if self._cloud_type == 'azure' and master_acct and "?api-version=" in endpoint: #Azure accounts API format is different        
-            endpoint = endpoint[1:] if endpoint.startswith('/') else endpoint #remove leading /
-            full_endpoint = f"{self._url}/{endpoint}"
-        else: #all databricks apis
-            full_endpoint = f"{self._url}/api/{version}{endpoint}"
+        # Every cloud, account and workspace, reads the Databricks REST API.
+        full_endpoint = f"{self._url}/api/{version}{endpoint}"
 
         LOGGR.debug(f"http type endpoint -> {http_type}: {full_endpoint}")
         is_paginated = True if SatDBClient.ispaginatedCall(full_endpoint)== True else False
@@ -627,70 +617,41 @@ class SatDBClient:
             cloudtype='gcp'
         return cloudtype
 
-    def getAzureToken(self, baccount, endpoint, client_id, client_secret):
-        LOGGR.debug(f"getAzureToken {endpoint} {baccount}")
-        databrickstype=True
-        #microsoft apis have the api-version string
-        if endpoint is not None and '?api-version=' in endpoint:
-            databrickstype=False
-        if endpoint is None:
-            databrickstype=True
-        if not databrickstype and baccount: #master and to microsoft
-            oauthtok=self.getAzureTokenWithMSAL("msmgmt")
-            return oauthtok #account dbtype
-        elif databrickstype and baccount:  #master but databricks
-            oauthtok=self.getAzureTokenWithMSAL("dbmgmt")
-            return oauthtok #account dbtype
-        elif databrickstype and not baccount: #not master has to be databricks
-            oauthtok=self.getAzureTokenWithMSAL("dbmgmt")
-            return oauthtok #account dbtype
-        else:
-            LOGGR.debug(f"This condition should never happen getAzureToken {endpoint} {baccount}")
-            return None, None #account dbtype              
+    def getAzureTokenwithOAuth(self, baccount, client_id, client_secret):
+        '''generates a Databricks OAuth (M2M) token for Service Principal auth'''
+        '''baccount if generating for account. False for workspace'''
+        # Azure uses Databricks OAuth, same as AWS/GCP: the Databricks account and
+        # workspace APIs accept Databricks-issued tokens, so there is no Microsoft
+        # Entra / MSAL step and no tenant id. The service principal needs a
+        # Databricks OAuth secret (generated in the Databricks account console).
+        response = None
+        user_pass = (client_id, client_secret)
+        oidc_token = {
+            "User-Agent": "databricks-sat/0.1.0"
+        }
+        json_params = {
+            "grant_type": "client_credentials",
+            "scope": "all-apis"
+        }
 
-    def getAzureTokenWithMSAL(self, scopeType):
-        """
-        validate client id and secret from microsoft and google
-        for scopes https://learn.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/app-aad-token#get-azure-ad-tokens-by-using-a-web-browser-and-curl
-        microsoft scope for management api 'https://management.azure.com/.default'
-        databricks scope for rest api '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'
-        some of these will change for govcloud or DoD
-        """
-        import msal  # lazy import — only needed for Azure auth; not available on all serverless envs
-        try:
-            if self._cloud_type != 'azure':
-                raise Exception('works only for Azure')
-            scopes=[]
-            if 'msmgmt' in scopeType.lower():
-                scopes = [f'{self._MGMTURL}/.default'] #ms scope 
-            else:
-                scopes = ['2ff814a6-3304-4ab8-85cb-cd0e6f879c1d/.default'] #databricks scope
+        if baccount is True:
+            full_endpoint = f"{self._ACCTURL}/oidc/accounts/{self._account_id}/v1/token" #url for accounts api
+        else: #workspace
+            full_endpoint = f'{self._raw_url}/oidc/v1/token'
 
-            app = msal.ConfidentialClientApplication(
-                client_id=self._client_id,
-                client_credential=self._client_secret,
-                authority=f"https://login.microsoftonline.com/{self._tenant_id}", #might need to change for govcloud
-            )
+        LOGGR.debug(f"getAzureTokenwithOAuth {full_endpoint} {json_params} {oidc_token}")
+        response = requests.post(full_endpoint, headers=oidc_token,
+                                    auth=user_pass, data=json_params, timeout=60, proxies=self._proxies)
 
-            # The pattern to acquire a token looks like this.
-            token = None
-            # Firstly, looks up a token from cache
-            token = app.acquire_token_silent(scopes=scopes, account=None)
-
-            if not token:
-                token = app.acquire_token_for_client(scopes=scopes)
-            
-            if token.get("access_token") is None:
-                LOGGR.debug('no token')
-                raise Exception('No token')
-            else:
-                return(token.get("access_token"))
-
-
-
-        except Exception as error:
-            print(f"Exception {error}")
-            print(str(error))
+        if response is not None and response.status_code == 200:
+            return response.json()['access_token']
+        # Fail loudly instead of returning None (see getAWSTokenwithOAuth): a None
+        # token becomes an "Authorization: Bearer None" header that the API rejects
+        # with a misleading 401, masking the real token-mint failure.
+        status = response.status_code if response is not None else 'no response'
+        body = response.text if response is not None else ''
+        LOGGR.error(f"Azure OAuth token mint failed (status {status}): {body}")
+        raise Exception(f"Failed to mint Azure OAuth token (status {status})--{body}")
 
 
     def getAWSTokenwithOAuth(self, baccount, client_id, client_secret):

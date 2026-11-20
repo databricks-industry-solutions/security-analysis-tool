@@ -199,3 +199,7 @@ tests/automated/reports/
 
 # Customer-supplied custom TruffleHog detectors (merged at runtime, not shipped)
 configs/custom_trufflehog_detectors.yaml
+
+# The app bundles the SAT SDK wheel to deploy it (overrides the lib/ rule above).
+!app/security-analysis-tool/lib/
+!app/security-analysis-tool/lib/**

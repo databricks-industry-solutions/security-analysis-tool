@@ -54,9 +54,24 @@ print(f"Installing SAT SDK from: {WHEEL_PATH}")
 
 import subprocess, sys
 
-if is_serverless:
+
+def _sdk_already_installed():
+    # Skip the pip install when this session already has the matching SDK version.
+    # A single notebook run can %run this more than once (a pre-flight notebook
+    # plus the job notebook, shared Utils, etc.), and each pip install is a
+    # needless cost. A fresh session reports nothing installed and proceeds.
+    try:
+        from importlib.metadata import version
+        return version("dbl-sat-sdk") == SDK_VERSION
+    except Exception:
+        return False
+
+
+if _sdk_already_installed():
+    print(f"SAT SDK {SDK_VERSION} already installed in this session; skipping install.")
+elif is_serverless:
     # Serverless: PyYAML and requests are pre-installed in all env versions.
-    # msal is only pre-installed in env v4+; it is a lazy import in dbclient.py (Azure-only).
+    # The SDK uses Databricks OAuth on every cloud, so there is no msal dependency.
     # Install the SDK wheel only, with --no-deps to avoid any PyPI resolution.
     subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", WHEEL_PATH], check=True)
 else:

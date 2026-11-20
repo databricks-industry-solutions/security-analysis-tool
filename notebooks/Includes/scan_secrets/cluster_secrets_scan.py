@@ -64,25 +64,29 @@ cloud_type = getCloudType(hostname)
 import requests
 from core import  parser as pars
 from core.dbclient import SatDBClient
-from core.scan_http import AdaptiveRateLimiter, request_with_retry, TokenProvider
+from core.scan_http import AdaptiveRateLimiter, request_with_retry, TokenProvider, completeness_verdict
 
-if cloud_type =='azure': # use client secret
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-elif (cloud_type =='aws' and json_['use_sp_auth'].lower() == 'true'):  
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-  mastername =' ' # this will not be present when using SPs
-  masterpwd = ' '  # we still need to send empty user/pwd.
-  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
-else: # Populate the master key for the Accounts API
-  client_secret = dbutils.secrets.get(json_['master_name_scope'], json_["client_secret_key"])
-  json_.update({'token':'dapijedi', 'client_secret': client_secret})
-  mastername = ' '
-  masterpwd = ' '
-  #mastername = dbutils.secrets.get(json_['master_name_scope'], json_['master_name_key'])
-  #masterpwd = dbutils.secrets.get(json_['master_pwd_scope'], json_['master_pwd_key'])
-  json_.update({'token':'dapijedi', 'mastername':mastername, 'masterpwd':masterpwd})
+# Account API credentials. The SAT app stores these as Unity Catalog secrets in
+# the results schema ({catalog}.{schema}.<key>) and passes analysis_schema_name as
+# a job parameter. Non-fatal on absence -- SatDBClient then fails loudly at token
+# mint rather than here at import.
+def _sat_cred(key):
+    parts = (json_.get("analysis_schema_name") or "").split(".")
+    if len(parts) >= 2:
+        try:
+            return dbutils.secrets.get(
+                catalog=parts[0].strip("`"), schema=parts[1].strip("`"), key=key)
+        except Exception:
+            return ""
+    return ""
+
+json_.update({
+    "token": "dapijedi",
+    "client_id": _sat_cred("client-id"),
+    "client_secret": _sat_cred(json_.get("client_secret_key", "client-secret")),
+    "mastername": " ",
+    "masterpwd": " ",
+})
 
 db_client = SatDBClient(json_)
 
@@ -118,7 +122,7 @@ db_client = SatDBClient(json_)
 # MAGIC   done
 # MAGIC fi
 # MAGIC if [ ! -x "$THBIN" ]; then
-# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Ensure egress to raw.githubusercontent.com / github.com/trufflesecurity, or use an internal mirror."
+# MAGIC   echo "ERROR: TruffleHog unavailable after retries. Allow HTTPS (443) egress to raw.githubusercontent.com, github.com, release-assets.githubusercontent.com and objects.githubusercontent.com (the download redirects across them), or use an internal mirror."
 # MAGIC   exit 1
 # MAGIC fi
 # MAGIC echo "✅ TruffleHog setup verified at $THBIN!"
@@ -138,11 +142,21 @@ import json
 import subprocess
 import time
 import hashlib
+import random
 import logging
+import yaml
+import tempfile
 import concurrent.futures
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timezone
 from urllib.parse import urlparse
+
+# A unique, process-owned temp directory for everything this scan writes. A fixed
+# /tmp path is unsafe on serverless: warm containers are reused across runs, so a
+# file left by an earlier run under a different OS user can't be reopened for write
+# (sticky /tmp) and fails with "Permission denied". mkdtemp always returns a fresh
+# directory owned by this process.
+_SAT_SCAN_TMP = tempfile.mkdtemp(prefix="sat_cluster_scan_")
 
 # db_client (initialized in common setup) is used only to mint a single OAuth
 # token; cluster API calls are issued directly (see get_all_clusters below) so
@@ -186,11 +200,15 @@ print(f"🆔 Run ID: {run_id}")
 class Config:
     """Configuration class for cluster secret scanning"""
 
-    # File paths
+    # File paths. Writable files live under the process-owned temp dir (see
+    # _SAT_SCAN_TMP) so a stale file from an earlier run on a warm serverless
+    # container can never block them. The binary stays at a fixed path -- it is
+    # only ever read/executed, and the installer skips the download when an
+    # executable copy is already present.
     TRUFFLEHOG_BINARY = "/tmp/trufflehog_cluster"
-    TRUFFLEHOG_CONFIG = "/tmp/trufflehog_config.yaml"  # Shared with notebook scanner
-    TEMP_CLUSTERS_DIR = "/tmp/clusters"
-    RESULTS_LOG_FILE = "/tmp/cluster_secrets_scan_results.json"
+    TRUFFLEHOG_CONFIG = os.path.join(_SAT_SCAN_TMP, "trufflehog_config.yaml")
+    TEMP_CLUSTERS_DIR = os.path.join(_SAT_SCAN_TMP, "clusters")
+    RESULTS_LOG_FILE = os.path.join(_SAT_SCAN_TMP, "cluster_secrets_scan_results.json")
 
     # API settings
     API_SLEEP_SECONDS = 10  # Rate limiting between cluster API calls
@@ -200,6 +218,16 @@ class Config:
 
     # Scanning settings
     CONFIG_FIELD = "spark_env_vars"  # Which cluster config field to scan
+    # Job clusters are grouped by their spark_env_vars and only one cluster per
+    # distinct set is scanned (see select_clusters_to_scan). Set to True to
+    # fetch and scan every job cluster individually.
+    SCAN_ALL_JOB_CLUSTERS = False
+
+    # Unscanned-cluster tolerance before a run is failed as incomplete, mirroring
+    # the notebook scanner. A few cluster config fetches can legitimately fail on
+    # a busy workspace; only a large gap (sustained throttling) should fail the run.
+    INCOMPLETE_SCAN_FRACTION = 0.02
+    INCOMPLETE_SCAN_MIN = 25
 
 # Create temporary directories if they don't exist
 try:
@@ -250,9 +278,55 @@ if not os.path.exists(Config.TRUFFLEHOG_BINARY):
 
 logger.info(f"✓ TruffleHog binary verified at: {Config.TRUFFLEHOG_BINARY}")
 
+
+def _load_cluster_detector_config():
+    """Build the cluster scanner's own TruffleHog detector config.
+
+    Loads the shipped configs/trufflehog_detectors.yaml and merges the optional,
+    customer-supplied configs/custom_trufflehog_detectors.yaml (the same file the
+    app writes from Secrets -> Scan settings), then writes the combined detector
+    set to a cluster-local file. Done independently of the notebook scanner so
+    custom detection rules apply to cluster configs reliably -- previously the
+    cluster scanner reused the notebook scanner's /tmp file, which races when the
+    two run concurrently. Returns (config_path, excluded_detectors). Falls back to
+    the shared file + DatabricksToken exclusion if anything fails.
+    """
+    try:
+        cfg_dir = getConfigPath()
+        with open(f"{cfg_dir}/trufflehog_detectors.yaml", "r") as fh:
+            data = yaml.safe_load(fh) or {}
+        detectors = {d.get("name"): d for d in (data.get("detectors") or []) if isinstance(d, dict) and d.get("name")}
+        excluded = list((data.get("settings") or {}).get("excluded_detectors") or ["DatabricksToken"])
+
+        custom_path = f"{cfg_dir}/custom_trufflehog_detectors.yaml"
+        if os.path.exists(custom_path):
+            with open(custom_path, "r") as fh:
+                custom = yaml.safe_load(fh) or {}
+            if isinstance(custom, dict):
+                for d in (custom.get("detectors") or []):
+                    if isinstance(d, dict) and d.get("name"):
+                        detectors[d["name"]] = d  # custom overrides shipped on name clash
+                for x in ((custom.get("settings") or {}).get("excluded_detectors") or []):
+                    if x not in excluded:
+                        excluded.append(x)
+                logger.info("Merged customer custom detectors into the cluster scan config")
+
+        out_path = os.path.join(_SAT_SCAN_TMP, "trufflehog_config_cluster.yaml")
+        with open(out_path, "w") as fh:
+            yaml.dump({"detectors": list(detectors.values())}, fh, default_flow_style=False)
+        logger.info(f"Cluster detector config written to {out_path} ({len(detectors)} detector(s))")
+        return out_path, excluded
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not build cluster detector config ({e}); using shared config + default exclusion")
+        return Config.TRUFFLEHOG_CONFIG, ["DatabricksToken"]
+
+
+Config.TRUFFLEHOG_CONFIG, Config.EXCLUDED_DETECTORS = _load_cluster_detector_config()
+
 print("✅ Configuration loaded and directories setup successfully!")
 print(f"📁 Temp directory: {Config.TEMP_CLUSTERS_DIR}")
 print(f"🔧 Config field to scan: {Config.CONFIG_FIELD}")
+print(f"🔧 Detector config: {Config.TRUFFLEHOG_CONFIG}; excluding {Config.EXCLUDED_DETECTORS}")
 
 # COMMAND ----------
 
@@ -324,6 +398,35 @@ def get_all_clusters() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Failed to get cluster list: {str(e)}")
         raise
+
+
+def select_clusters_to_scan(clusters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep every non-job cluster, and one job cluster per distinct env-var set.
+
+    Every job run creates its own job cluster, so clusters/list can return tens
+    of thousands of job clusters (every run in the last 30 days) that carry a
+    handful of distinct `spark_env_vars` sets. The list response already
+    includes `spark_env_vars`, so job clusters are grouped by their content
+    and only the most recent cluster in each group is fetched and scanned. Job
+    clusters with no env vars have nothing to scan and are dropped. Non-job
+    clusters always go through the full per-cluster fetch.
+    """
+    if Config.SCAN_ALL_JOB_CLUSTERS:
+        return clusters
+    selected: List[Dict[str, Any]] = []
+    latest: Dict[str, Dict[str, Any]] = {}
+    for cluster in clusters:
+        if cluster.get("cluster_source") != "JOB":
+            selected.append(cluster)
+            continue
+        env_vars = cluster.get(Config.CONFIG_FIELD)
+        if not env_vars:
+            continue
+        fingerprint = hashlib.sha256(json.dumps(env_vars, sort_keys=True).encode()).hexdigest()
+        current = latest.get(fingerprint)
+        if current is None or (cluster.get("start_time") or 0) > (current.get("start_time") or 0):
+            latest[fingerprint] = cluster
+    return selected + list(latest.values())
 
 
 def get_cluster_config(cluster_id: str) -> Optional[Dict[str, Any]]:
@@ -460,91 +563,56 @@ print("✅ Utility functions defined successfully!")
 
 # COMMAND ----------
 
-def scan_cluster_config_for_secrets(file_path: str) -> tuple:
+def scan_cluster_config_for_secrets(file_path: str) -> List[Dict]:
     """
-    Run TruffleHog dual-scan (built-in + custom detectors) on cluster config file.
+    Run a single TruffleHog pass on a cluster config file: the built-in detectors
+    (minus DatabricksToken) together with the custom SAT detectors via --config.
+
+    --config augments the built-in detector set rather than replacing it, so one
+    scan covers both. Running a separate custom pass as well -- as this used to --
+    re-ran every built-in detector and reported each built-in secret twice,
+    doubling both the findings and the scan time.
 
     Args:
         file_path: Path to temp file containing cluster config
 
     Returns:
-        tuple: (built_in_results, custom_results) as lists of dicts
+        List[Dict]: TruffleHog findings as a list of dicts
     """
-    built_in_results = []
-    custom_results = []
+    excluded = ",".join(getattr(Config, "EXCLUDED_DETECTORS", ["DatabricksToken"]))
+    cmd = [
+        Config.TRUFFLEHOG_BINARY,
+        "filesystem",
+        file_path,
+        "--config",
+        Config.TRUFFLEHOG_CONFIG,
+        f"--exclude-detectors={excluded}",
+        "--no-update",
+        "--no-verification",
+        "-j",
+    ]
 
     try:
-        # Scan 1: Built-in detectors (excluding DatabricksToken)
-        logger.info(f"Running built-in detectors scan on {file_path}")
-        built_in_cmd = [
-            Config.TRUFFLEHOG_BINARY,
-            "filesystem",
-            file_path,
-            "--exclude-detectors=DatabricksToken",
-            "--no-update",
-            "-j"
-        ]
-
-        logger.info(f"Built-in scan command: {' '.join(built_in_cmd)}")
-
-        built_in_process = subprocess.run(
-            built_in_cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
-
-        logger.info(f"Built-in scan exit code: {built_in_process.returncode}")
-
-        if built_in_process.stdout:
-            built_in_results = [
+        logger.info(f"Running TruffleHog scan on {file_path}")
+        logger.info(f"Scan command: {' '.join(cmd)}")
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        logger.info(f"Scan exit code: {proc.returncode}")
+        if proc.stdout:
+            results = [
                 json.loads(line)
-                for line in built_in_process.stdout.strip().split('\n')
+                for line in proc.stdout.strip().split('\n')
                 if line.strip()
             ]
-            logger.info(f"Built-in detectors scan completed with {len(built_in_results)} output lines")
-        else:
-            logger.info("Built-in detectors scan completed with no secrets found")
-
-        # Scan 2: Custom detectors (Databricks-specific)
-        logger.info(f"Running custom detectors scan on {file_path}")
-        custom_cmd = [
-            Config.TRUFFLEHOG_BINARY,
-            "filesystem",
-            file_path,
-            "--no-update",
-            "--config",
-            Config.TRUFFLEHOG_CONFIG,
-            "-j"
-        ]
-
-        custom_process = subprocess.run(
-            custom_cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
-
-        logger.info(f"Custom scan exit code: {custom_process.returncode}")
-
-        if custom_process.stdout:
-            custom_results = [
-                json.loads(line)
-                for line in custom_process.stdout.strip().split('\n')
-                if line.strip()
-            ]
-            logger.info(f"Custom detectors scan completed with {len(custom_results)} output lines")
-        else:
-            logger.info("Custom detectors scan completed with no secrets found")
-
-        return (built_in_results, custom_results)
-
+            logger.info(f"Scan completed with {len(results)} finding line(s)")
+            return results
+        logger.info("Scan completed with no secrets found")
+        return []
     except subprocess.TimeoutExpired:
         logger.error(f"TruffleHog scan timed out for {file_path}")
-        return ([], [])
+        return []
     except Exception as e:
         logger.error(f"Failed to scan cluster config for secrets: {str(e)}")
-        return ([], [])
+        return []
 
 
 def extract_config_key_from_finding(file_content_lines: List[str], raw_secret: str) -> Optional[str]:
@@ -581,14 +649,13 @@ def extract_config_key_from_finding(file_content_lines: List[str], raw_secret: s
         return None
 
 
-def process_trufflehog_output(built_in_results: List[Dict], custom_results: List[Dict],
+def process_trufflehog_output(results: List[Dict],
                                cluster_id: str, cluster_name: str, file_path: str) -> List[Dict]:
     """
     Process TruffleHog scan results and extract secret metadata.
 
     Args:
-        built_in_results: Results from built-in detectors scan
-        custom_results: Results from custom detectors scan
+        results: Findings from the TruffleHog scan
         cluster_id: Cluster ID
         cluster_name: Cluster name
         file_path: Path to scanned file
@@ -605,10 +672,7 @@ def process_trufflehog_output(built_in_results: List[Dict], custom_results: List
     except:
         file_content_lines = []
 
-    # Combine all results
-    all_results = built_in_results + custom_results
-
-    for result in all_results:
+    for result in results:
         try:
             detector_name = result.get('DetectorName', 'Unknown')
             raw_secret = result.get('Raw', '')
@@ -656,69 +720,139 @@ print("✅ Scanning functions defined successfully!")
 
 # COMMAND ----------
 
+# Table setup runs once per scan rather than once per finding.
+_results_table_ready = False
+
+# Findings attempted vs. actually persisted. Used to detect a partial write so a
+# finding dropped on a Delta conflict fails the run instead of silently reading
+# as a clean cluster.
+insert_stats = {"attempted": 0, "written": 0, "failed": 0}
+
+
+def ensure_results_table() -> None:
+    """Create the results table once per scan (loaded via %run ../../Utils/common)."""
+    global _results_table_ready
+    if _results_table_ready:
+        return
+    create_clusters_secret_scan_results_table()
+    _results_table_ready = True
+
+
+def _sql_str(value: Any) -> str:
+    """Render a value as a single-quoted SQL literal, escaping embedded quotes."""
+    return "'" + str(value or "").replace("'", "''") + "'"
+
+
+def _insert_cluster_values(rows: List[str]) -> None:
+    """Run a single INSERT for the given VALUES tuples. Raises on failure."""
+    spark.sql(
+        f"""
+        INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
+        (workspace_id, cluster_id, cluster_name, config_field, config_key,
+         detector_name, secret_sha256, source_file, verified, secrets_found,
+         run_id, scan_time)
+        VALUES {", ".join(rows)}
+        """
+    )
+
+
+def _persist_cluster_rows(rows: List[str]) -> Tuple[int, int]:
+    """Persist finding rows durably, returning (written, failed).
+
+    Tries the whole batch with a few retries, then falls back to inserting each
+    row on its own. The retries handle transient Spark errors and -- the reason
+    this matters under load -- Delta concurrent-write conflicts
+    (ConcurrentAppendException / ConcurrentWriteException / MetadataChangedException)
+    raised when several workspace scans insert into this shared results table at
+    once. Row-by-row fallback isolates a single unpersistable row so one bad
+    finding can't drop the whole batch.
+    """
+    max_batch_attempts = 3
+    for attempt in range(max_batch_attempts):
+        try:
+            _insert_cluster_values(rows)
+            return len(rows), 0
+        except Exception as e:
+            if attempt == max_batch_attempts - 1:
+                logger.warning(
+                    f"Batch insert of {len(rows)} cluster finding(s) failed after "
+                    f"{max_batch_attempts} attempts ({str(e)}); falling back to row-by-row"
+                )
+                break
+            backoff = 1.0 * (2 ** attempt) + random.uniform(0, 1)
+            logger.warning(
+                f"Batch insert attempt {attempt + 1}/{max_batch_attempts} failed "
+                f"({str(e)}); retrying in {backoff:.1f}s"
+            )
+            time.sleep(backoff)
+
+    written = 0
+    for row in rows:
+        for attempt in range(2):
+            try:
+                _insert_cluster_values([row])
+                written += 1
+                break
+            except Exception as e:
+                if attempt == 1:
+                    logger.error(f"Dropping unpersistable cluster finding after retries: {str(e)}")
+                else:
+                    time.sleep(0.5 + random.uniform(0, 0.5))
+    return written, len(rows) - written
+
+
 def insert_cluster_secret_scan_results(workspace_id: str, cluster_metadata: Dict[str, Any], run_id: int) -> None:
-    """
-    Insert cluster secret scan results into the clusters_secret_scan_results table.
-    Only inserts records when secrets are actually found to avoid database bloat.
+    """Insert all secret findings for a single cluster in one statement.
 
-    Args:
-        workspace_id (str): Workspace ID being scanned
-        cluster_metadata (Dict[str, Any]): Cluster metadata with secret details
-        run_id (int): SAT run ID for tracking
+    Only clusters with secrets are persisted, to avoid table bloat. Rows go
+    through _persist_cluster_rows so a Delta concurrent-write conflict is retried
+    rather than silently dropping the finding, and the attempted/written counts
+    feed the completeness check so a lost finding fails the run.
     """
-    import time
-
-    # Extract metadata FIRST so variables are always defined (even if exception occurs)
     cluster_id = cluster_metadata.get("cluster_id", "Unknown")
     cluster_name = cluster_metadata.get("cluster_name", "Unknown")
     config_field = cluster_metadata.get("config_field", Config.CONFIG_FIELD)
     secrets_found = cluster_metadata.get("secrets_found", 0)
+    if secrets_found <= 0:
+        logger.debug(f"No secrets found in cluster {cluster_id}, skipping database insert")
+        return
 
+    scan_time = time.time()
+    rows: List[str] = []
+    for secret in cluster_metadata.get("secret_details", []):
+        rows.append(
+            "({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, cast({} as timestamp))".format(
+                _sql_str(workspace_id),
+                _sql_str(cluster_id),
+                _sql_str(cluster_name),
+                _sql_str(config_field),
+                _sql_str(secret.get("ConfigKey", "Unknown")),
+                _sql_str(secret.get("DetectorName", "Unknown")),
+                _sql_str(secret.get("Raw_SHA", "")),
+                _sql_str(secret.get("SourceFile", "")),
+                "true" if secret.get("Verified", False) else "false",
+                int(secrets_found),
+                int(run_id),
+                scan_time,
+            )
+        )
+
+    if not rows:
+        return
+
+    insert_stats["attempted"] += len(rows)
     try:
-        # Create the table if it doesn't exist (function loaded via %run ../../Utils/common)
-        create_clusters_secret_scan_results_table()
-
-        scan_time = time.time()
-
-        if secrets_found > 0:
-            # Only insert records when secrets are found
-            secret_details = cluster_metadata.get("secret_details", [])
-
-            for idx, secret in enumerate(secret_details, 1):
-                detector_name = secret.get("DetectorName", "Unknown")
-                secret_sha256 = secret.get("Raw_SHA", "")
-                source_file = secret.get("SourceFile", "")
-                verified = secret.get("Verified", False)
-                config_key = secret.get("ConfigKey", "Unknown")
-
-                # Escape single quotes in string values for SQL (replace ' with '')
-                workspace_id_escaped = workspace_id.replace("'", "''")
-                cluster_id_escaped = cluster_id.replace("'", "''")
-                cluster_name_escaped = cluster_name.replace("'", "''")
-                config_field_escaped = config_field.replace("'", "''")
-                config_key_escaped = config_key.replace("'", "''")
-                detector_name_escaped = detector_name.replace("'", "''")
-                secret_sha256_escaped = secret_sha256.replace("'", "''")
-                source_file_escaped = source_file.replace("'", "''")
-
-                # Insert individual secret record
-                sql = f"""
-                INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
-                (workspace_id, cluster_id, cluster_name, config_field, config_key, detector_name,
-                 secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-                VALUES ('{workspace_id_escaped}', '{cluster_id_escaped}', '{cluster_name_escaped}', '{config_field_escaped}',
-                        '{config_key_escaped}', '{detector_name_escaped}', '{secret_sha256_escaped}', '{source_file_escaped}',
-                        {verified}, {secrets_found}, {run_id}, cast({scan_time} as timestamp))
-                """
-
-                spark.sql(sql)
-        else:
-            # Don't insert anything for clean clusters to avoid database bloat
-            logger.debug(f"No secrets found in cluster {cluster_id}, skipping database insert")
-
+        ensure_results_table()
     except Exception as e:
-        logger.error(f"Failed to insert cluster secret scan results for cluster {cluster_id}: {str(e)}")
-        # Don't raise exception to avoid stopping the scan process
+        insert_stats["failed"] += len(rows)
+        logger.error(f"Could not ensure results table exists; dropping {len(rows)} finding(s): {str(e)}")
+        return
+
+    written, failed = _persist_cluster_rows(rows)
+    insert_stats["written"] += written
+    insert_stats["failed"] += failed
+    if written:
+        logger.info(f"Persisted {written} cluster secret finding(s) for cluster {cluster_id}")
 
 
 def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
@@ -727,8 +861,7 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
     Ensures only one row per run_id exists.
     """
     try:
-        # Ensure table exists (function loaded via %run ../../Utils/common)
-        create_clusters_secret_scan_results_table()
+        ensure_results_table()
 
         logger.info(f"Inserting no-secrets tracking row for workspace_id: {workspace_id}, run_id: {run_id}")
 
@@ -736,23 +869,20 @@ def insert_no_secrets_tracking_row(workspace_id: str, run_id: int) -> None:
         existing = spark.sql(f"""
             SELECT COUNT(*) as cnt
             FROM {json_["analysis_schema_name"]}.clusters_secret_scan_results
-            WHERE run_id = {run_id}
+            WHERE run_id = {int(run_id)}
         """).collect()[0]["cnt"]
 
         if existing > 0:
             logger.info(f"No-secrets row already exists for run_id {run_id}, skipping insert")
             return
 
-        # Escape single quotes in workspace_id for SQL
-        workspace_id_escaped = workspace_id.replace("'", "''")
-
-        # Insert placeholder row
-        spark.sql(f"""
-            INSERT INTO {json_["analysis_schema_name"]}.clusters_secret_scan_results
-            (workspace_id, cluster_id, cluster_name, config_field, config_key, detector_name,
-             secret_sha256, source_file, verified, secrets_found, run_id, scan_time)
-            VALUES ('{workspace_id_escaped}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {run_id}, current_timestamp())
-        """)
+        # Insert placeholder row (retried through the shared helper for
+        # concurrent-write safety).
+        _persist_cluster_rows([
+            "({}, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, {}, current_timestamp())".format(
+                _sql_str(workspace_id), int(run_id)
+            )
+        ])
         logger.info(f"No-secrets tracking row inserted successfully for run_id: {run_id}")
 
     except Exception as e:
@@ -781,12 +911,18 @@ def _scan_one_cluster_for_secrets(cluster: Dict[str, Any]) -> Dict[str, Any]:
     """
     cluster_id = cluster.get('cluster_id')
     cluster_name = cluster.get('cluster_name', 'Unknown')
-    result = {"cluster_id": cluster_id, "cluster_name": cluster_name, "scanned": False, "secrets": []}
+    result = {"cluster_id": cluster_id, "cluster_name": cluster_name,
+              "scanned": False, "config_fetch_failed": False, "secrets": []}
 
     try:
         cluster_config = get_cluster_config(cluster_id)
         if not cluster_config:
+            # Config could not be fetched (non-200 or throttled past retries).
+            # Count it as a coverage gap so a workspace that is silently losing
+            # clusters to sustained throttling fails the completeness check
+            # rather than reporting a clean scan.
             logger.warning(f"Failed to get config for cluster {cluster_id}, skipping")
+            result["config_fetch_failed"] = True
             return result
 
         env_vars = extract_spark_env_vars(cluster_config)
@@ -797,9 +933,9 @@ def _scan_one_cluster_for_secrets(cluster: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"Scanning {len(env_vars)} environment variables in cluster {cluster_name}")
         file_path = serialize_env_vars_to_file(cluster_id, cluster_name, env_vars)
         try:
-            built_in_results, custom_results = scan_cluster_config_for_secrets(file_path)
+            results = scan_cluster_config_for_secrets(file_path)
             secrets_found = process_trufflehog_output(
-                built_in_results, custom_results, cluster_id, cluster_name, file_path
+                results, cluster_id, cluster_name, file_path
             )
         finally:
             try:
@@ -834,21 +970,32 @@ def main_cluster_scanning_workflow():
     clusters_scanned = 0
     clusters_with_secrets = 0
     total_secrets_found = 0
+    insert_stats.update({"attempted": 0, "written": 0, "failed": 0})
 
     try:
-        # Get all clusters
-        clusters = get_all_clusters()
+        # Get all clusters, then collapse job clusters that share env vars so a
+        # busy workspace (tens of thousands of job clusters, a few env-var sets)
+        # doesn't blow the scan timeout.
+        all_clusters = get_all_clusters()
+        clusters = select_clusters_to_scan(all_clusters)
         total_clusters = len(clusters)
+        skipped_job_runs = len(all_clusters) - total_clusters
 
-        logger.info(f"📊 Found {total_clusters} clusters to scan")
+        logger.info(f"📊 Found {len(all_clusters)} clusters, {total_clusters} to scan")
+        if skipped_job_runs:
+            print(f"ℹ️  Skipping {skipped_job_runs} job cluster(s): no env vars, or the same env vars "
+                  f"as a more recent job cluster that is scanned.")
 
         # Scan clusters in parallel (config fetch + TruffleHog scan per cluster
         # are independent). The previous version scanned serially with a fixed
         # API_SLEEP_SECONDS pause between every cluster — that sleep is gone;
         # DB inserts are kept on the main thread for Spark safety.
+        config_fetch_failures = 0
         max_workers = min(Config.MAX_WORKERS, max(1, total_clusters))
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             for res in pool.map(_scan_one_cluster_for_secrets, clusters):
+                if res.get("config_fetch_failed"):
+                    config_fetch_failures += 1
                 if not res["scanned"]:
                     continue
 
@@ -877,6 +1024,39 @@ def main_cluster_scanning_workflow():
                         logger.error(f"Database insertion failed for cluster {res['cluster_id']}: {str(insert_error)}")
                         print(f"  ❌ Database insertion failed: {str(insert_error)}")
 
+        # Completeness check BEFORE recording a clean result, so an incomplete
+        # scan never writes a "no secrets" tracking row that reads as clean.
+        # A finding that failed to persist, or a large fraction of clusters whose
+        # config could not be fetched (sustained throttling), means the results
+        # are incomplete -- fail loudly rather than report a clean run.
+        unwritten = insert_stats["attempted"] - insert_stats["written"]
+        coverage_gap, tolerance, _partial, _fatal = completeness_verdict(
+            total_clusters, config_fetch_failures, 0, unwritten,
+            min_failures=Config.INCOMPLETE_SCAN_MIN,
+            max_fraction=Config.INCOMPLETE_SCAN_FRACTION,
+        )
+        if coverage_gap > 0:
+            note = (f"PARTIAL CLUSTER SCAN for workspace {workspace_id}: "
+                    f"{config_fetch_failures} of {total_clusters} cluster config(s) "
+                    f"could not be fetched; tolerance={tolerance}.")
+            print(f"⚠️  {note}")
+            logger.warning(note)
+        if _fatal:
+            problems = []
+            if coverage_gap > tolerance:
+                problems.append(
+                    f"{config_fetch_failures} of {total_clusters} cluster config(s) could not be "
+                    f"fetched (exceeds tolerance {tolerance}) — likely sustained throttling"
+                )
+            if unwritten > 0:
+                problems.append(
+                    f"{unwritten} of {insert_stats['attempted']} finding(s) failed to persist"
+                )
+            message = f"INCOMPLETE CLUSTER SCAN for workspace {workspace_id}: " + "; ".join(problems)
+            print(f"❌ {message}")
+            logger.error(message)
+            raise RuntimeError(message)
+
         # Insert tracking row if no secrets found anywhere
         if total_secrets_found == 0:
             insert_no_secrets_tracking_row(workspace_id, current_run_id)
@@ -888,6 +1068,7 @@ def main_cluster_scanning_workflow():
         print(f"🔍 Clusters scanned: {clusters_scanned}")
         print(f"🚨 Clusters with secrets: {clusters_with_secrets}")
         print(f"🔑 Total secrets detected: {total_secrets_found}")
+        print(f"💾 Findings written to table: {insert_stats['written']} of {insert_stats['attempted']}")
 
         if clusters_with_secrets > 0:
             print(f"⚠️  Security Alert: {clusters_with_secrets} cluster(s) contain potential secrets!")
@@ -898,6 +1079,8 @@ def main_cluster_scanning_workflow():
             "clusters_scanned": clusters_scanned,
             "clusters_with_secrets": clusters_with_secrets,
             "total_secrets_found": total_secrets_found,
+            "findings_written": insert_stats["written"],
+            "config_fetch_failures": config_fetch_failures,
             "run_id": current_run_id
         }
 
@@ -982,7 +1165,7 @@ print("📄 TruffleHog binary and config files:")
 # COMMAND ----------
 
 print("✅ Cleanup information:")
-print("   - Temporary cluster config files are stored in /tmp/clusters/")
+print(f"   - Temporary cluster config files are stored in {Config.TEMP_CLUSTERS_DIR}")
 print("   - These files will be automatically removed when the cluster terminates")
 print("   - TruffleHog binary installed at /tmp/trufflehog_cluster")
 

@@ -5,100 +5,13 @@
 
 # COMMAND ----------
 
-# MAGIC %run ../Includes/install_sat_sdk
-
-# COMMAND ----------
-
-# MAGIC %run ../Utils/initialize
-
-# COMMAND ----------
-
-# MAGIC %run ../Utils/common
-
-# COMMAND ----------
-
-secret_scopes = dbutils.secrets.listScopes()
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Let us check if there is an SAT scope configured
-
-# COMMAND ----------
-
-found = False
-for secret_scope in secret_scopes:
-   
-   if secret_scope.name == json_['master_name_scope']:
-      print('Your SAT configuration has the required scope name')
-      found=True
-      break
-if not found:
-   dbutils.notebook.exit(f'Your SAT configuration is missing required scope {json_["master_name_scope"]}, please review setup instructions')
-
-      
-
-# COMMAND ----------
-
-# replace values for accounts exec
-hostname = (
-    dbutils.notebook.entry_point.getDbutils()
-    .notebook()
-    .getContext()
-    .apiUrl()
-    .getOrElse(None)
-)
-cloud_type = getCloudType(hostname)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Let us check if there are required configs in the SAT scope
-
-# COMMAND ----------
-
-
-if cloud_type == "aws":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration is has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
-
-# COMMAND ----------
-
-if cloud_type == "azure":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='subscription-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='tenant-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')  
-
-# COMMAND ----------
-
-if cloud_type == "gcp":
-   try:
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='account-console-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='sql-warehouse-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-id')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='client-secret')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key='use-sp-auth')
-      dbutils.secrets.get(scope=json_['master_name_scope'], key="analysis_schema_name")
-      print("Your SAT configuration is has required secret names")
-   except Exception as e:
-      dbutils.notebook.exit(f'Your SAT configuration is missing required secret, please review setup instructions {e}')
+# This pre-flight only checks that the TruffleHog scanner is installed and that
+# the network it needs is reachable; it needs neither the SAT SDK nor the shared
+# config, so it does not %run install_sat_sdk / initialize / common (the secrets
+# scanner that runs this does that itself).
+# The SAT app supplies all configuration as job parameters and stores credentials
+# as Unity Catalog secrets, so there is no secret scope to validate here. The
+# checks below confirm the TruffleHog scanner is installed and reachable.
 
 # COMMAND ----------
 
@@ -147,9 +60,11 @@ else:
     print("2. Manual installation:")
     print("   %sh curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp")
     print()
-    print("Network Requirements:")
-    print("- Access to raw.githubusercontent.com (install script)")
-    print("- Access to github.com/trufflesecurity (binary download)")
+    print("Network Requirements (HTTPS/443 — the binary download redirects across these):")
+    print("- raw.githubusercontent.com            (install script)")
+    print("- github.com                           (release download URL / redirect)")
+    print("- release-assets.githubusercontent.com (the binary; current asset host)")
+    print("- objects.githubusercontent.com        (legacy asset host / fallback)")
 
 print()
 
@@ -164,15 +79,19 @@ print("=" * 80)
 print("NETWORK ACCESS CHECK (TRUFFLEHOG)")
 print("=" * 80)
 
-# Test access to GitHub raw content
+# Exercise the full install path. The install script lives on
+# raw.githubusercontent.com; the binary download starts at github.com and
+# redirects to the release-asset host (release-assets.githubusercontent.com),
+# so following redirects validates that host too -- the one most allowlists miss.
+_TH_VERSION = "v3.94.3"
 github_urls = [
     "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh",
-    "https://github.com/trufflesecurity/trufflehog/releases"
+    f"https://github.com/trufflesecurity/trufflehog/releases/download/{_TH_VERSION}/trufflehog_{_TH_VERSION[1:]}_linux_amd64.tar.gz",
 ]
 
 for url in github_urls:
     try:
-        response = requests.head(url, timeout=10)
+        response = requests.head(url, timeout=10, allow_redirects=True)
         if response.status_code == 200:
             print(f"✅ Access OK: {url}")
         else:

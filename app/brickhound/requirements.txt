@@ -1,6 +1,0 @@
-# Pins use compatible-release (`~=`) to allow patch updates within
-# tested minor versions but pin out unintended major bumps. Verified
-# at SAT 0.8.0 release on databricks-sdk 0.33.x and Flask 3.0.x.
-flask~=3.0
-werkzeug~=3.0
-databricks-sdk~=0.33.0
