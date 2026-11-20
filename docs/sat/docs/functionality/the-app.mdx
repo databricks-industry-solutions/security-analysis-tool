@@ -65,6 +65,14 @@ account admin.**
 Grant "Can Use" on the Databricks App only to the people who should operate SAT.
 App access is the boundary for running collection jobs; viewing results is
 further constrained per-user by Unity Catalog.
+
+**We strongly recommend limiting app access to administrators** — ideally having
+admins be the sole users of SAT. The app can trigger collection and secret-scan
+jobs and surfaces account-wide security posture (who can access what, and where
+credentials are exposed), which is sensitive. Keeping the operator set small and
+admin-only reduces the blast radius and keeps this security data on a need-to-know
+basis. Non-admins who only need to read findings should be granted Unity Catalog
+access to the results schema instead of "Can Use" on the app.
 </Admonition>
 
 ---
