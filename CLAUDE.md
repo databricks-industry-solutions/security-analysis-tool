@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The **Security Analysis Tool (SAT)** is a Databricks App that analyzes a Databricks account's security posture. It provides:
 
 - **Permission Analysis** (BrickHound) — a graph of who can access what, privilege-escalation paths, resources shared to the whole account, privileged non-IdP identities, and denylist candidates.
-- **Credential Exposure** — API keys and tokens found hardcoded in notebook source and cluster configurations (scanned with TruffleHog).
+- **Credential Exposure** — API keys and tokens found hardcoded in notebook source, workspace files, and cluster configurations (scanned with TruffleHog); each finding is typed Notebook / File / Cluster.
 - **Security Assistant** — natural-language questions over the findings, backed by a Databricks Genie space and a model-serving endpoint.
 
 The app is the **sole supported delivery**. The classic notebook + Lakeview-dashboard product (security checks, the driver job, dashboards, the DASF mapping) has been retired. The app serves its own UI, provisions its own collection jobs, and reads results from Unity Catalog.
@@ -64,6 +64,25 @@ Configuration (catalog/schema, SQL warehouse, account id) and account credential
 
 The app creates and re-creates its own serverless jobs from `PROVISION_SPECS` in `app.py`: the initializer plus five collection jobs (permissions, secrets, shared-to-account, privileged-non-IdP, denylist). Each job receives its configuration as **job parameters** (notably `analysis_schema_name`), so the notebooks need no secret scope. Jobs that read Unity Catalog secrets run on serverless environment **client ≥ 4** (client 3 cannot read them).
 
+### Workspace scan coverage (Sync workspaces)
+
+Which workspaces get scanned is driven by `account_workspaces.analysis_enabled`,
+maintained by the app's **Data Collection → Manage → Sync workspaces** action
+(`/api/collection/sync-workspaces`, admin-gated). Sync lists the account's
+workspaces via the `AccountClient` and sets `analysis_enabled = true` on the ones
+the SAT service principal is a **workspace admin** of (plus the current workspace,
+always). This replaced collector-driven registration — the collection notebooks no
+longer touch `account_workspaces`. Switching scope to "Multiple workspaces"
+auto-runs a sync.
+
+`scan_scope` (`current` / `all`) is a job parameter that gates **both** the
+permissions collector's resource breadth **and** the secret scanner: `current`
+scans only the current workspace; `all` scans every `analysis_enabled` workspace.
+At scan time each remote workspace is probed for reachability (a cross-workspace
+OAuth token mint); one the serverless compute can't reach — e.g. blocked by a
+network policy, or a different region — is **soft-skipped and recorded**, not
+failed. Classic compute reaches any workspace the SP administers.
+
 ### Changing the results schema
 
 The collection jobs bake `analysis_schema_name` (`{catalog}.{schema}`) into their parameters at provision time, so a catalog/schema change does not reach already-created jobs on its own. When the schema changes (setup or Settings), `app.py`'s `_on_schema_change` automatically (1) **migrates the account-credential UC secrets** (`client-id`/`client-secret`) into the new schema — they live *in* the schema, so they'd otherwise be stranded — and (2) **re-provisions the jobs** so they target the new schema (running the initializer to create its tables). The compare is case-insensitive (UC folds names to lowercase) and it won't clobber a credential already present in the new schema.
@@ -109,6 +128,29 @@ The `create_*_table()` functions in `notebooks/Utils/common.py` set table and co
 ```bash
 grep -n "<table_or_column_name>" notebooks/Utils/common.py
 ```
+
+## Gotchas
+
+### The app UI is one inline `<script>` — syntax-check the rendered JS
+
+`app/security-analysis-tool/app.py` returns the whole UI from `get_main_html()` as a
+single plain (non-raw) triple-quoted Python string with one big inline `<script>`.
+Python processes escapes in that string, so an apostrophe written `\'` (or a raw
+`'`) inside a **single-quoted JavaScript string** collapses to a bare quote and
+breaks the entire script — every page then fails to render, and `py_compile` won't
+catch it. Before deploying an `app.py` change, `ast.literal_eval` the template,
+extract each `<script>`, and run `node --check` on it. Prefer double-quoted JS
+strings / template literals and avoid apostrophes in single-quoted JS strings.
+
+### Secret-scanner temp files must use `mkdtemp()`, never a fixed `/tmp` path
+
+Serverless reuses containers across runs under different OS users, so a fixed
+`/tmp` path fails with `[Errno 13] Permission denied`. Each scanner creates
+`_SAT_SCAN_TMP = tempfile.mkdtemp(...)` and roots everything it writes under it, and
+must **not** honor a config-supplied scratch path (`settings.file_paths` in
+`configs/trufflehog_detectors.yaml` is intentionally ignored for this reason). The
+TruffleHog **binary** stays at a fixed path — it's only read/executed and the
+installer skips the download when present.
 
 ## Versioning
 
