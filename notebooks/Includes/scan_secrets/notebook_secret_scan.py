@@ -1418,6 +1418,8 @@ def main_scanning_workflow():
     total_notebooks_discovered = 0  # notebooks discovery returned
     total_secrets_found = 0
     notebooks_with_secrets = 0
+    # The coverage counters can't detect a pagination failure; this can.
+    discovery_truncated_at_page = None
 
     insert_stats.update({"attempted": 0, "written": 0, "failed": 0})
     materialize_stats.update({"ok": 0, "permission": 0, "notfound": 0, "error": 0, "skip": 0})
@@ -1493,7 +1495,13 @@ def main_scanning_workflow():
                 break  # fallback is single-pass; leave the pagination loop
 
             if response is None:
-                logger.warning(f"Failed to get response for page {page_number}")
+                discovery_truncated_at_page = page_number
+                logger.error(
+                    f"Discovery stopped at page {page_number} (HTTP {status_code}); objects "
+                    f"on later pages were never enumerated and are not covered by this scan"
+                )
+                print(f"❌ Discovery failed at page {page_number} (HTTP {status_code}); "
+                      f"the notebook list is incomplete.")
                 break
             
             # Record the pre-page length so per-page counters cover exactly the
@@ -1589,6 +1597,10 @@ def main_scanning_workflow():
             min_failures=Config.INCOMPLETE_SCAN_MIN,
             max_fraction=Config.INCOMPLETE_SCAN_FRACTION,
         )
+        # A truncated discovery leaves the real total unknown, so the
+        # tolerance can't be applied: always fatal.
+        if discovery_truncated_at_page is not None:
+            _fatal = True
 
         if coverage_gap > 0:
             detail = []
@@ -1604,6 +1616,12 @@ def main_scanning_workflow():
 
         if _fatal:
             problems = []
+            if discovery_truncated_at_page is not None:
+                problems.append(
+                    f"discovery stopped at page {discovery_truncated_at_page}, so only the "
+                    f"{total_notebooks_discovered} object(s) listed before that were scanned; "
+                    f"the true total is unknown"
+                )
             if coverage_gap > tolerance:
                 problems.append(
                     f"{coverage_gap} of {total_notebooks_discovered} discovered object(s) "
