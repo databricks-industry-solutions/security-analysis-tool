@@ -6,6 +6,8 @@
 #   - detectors here are ADDED to the shipped set
 #   - a detector whose `name` matches a shipped one OVERRIDES it
 #   - any settings.excluded_detectors here are appended to the shipped list
+#   - settings.rate_limiting and settings.performance keys here override the
+#     shipped values (notebook secret scanner)
 #
 # The real custom_trufflehog_detectors.yaml is git-ignored, so it survives
 # SAT upgrades and is never overwritten.
@@ -24,7 +26,12 @@ detectors:
     regex:
       id: '(?i)\b(acme_[a-z0-9]{32})\b'
 
-# Optionally exclude additional built-in TruffleHog detectors:
+# Optionally exclude additional built-in TruffleHog detectors, or tune API
+# throttling for large workspaces:
 # settings:
 #   excluded_detectors:
 #     - SomeNoisyDetector
+#   rate_limiting:
+#     api_sleep_seconds: 20  # backoff base on HTTP 429 (shipped: 10)
+#   performance:
+#     max_workers: 4         # concurrent API calls (shipped: 16)
