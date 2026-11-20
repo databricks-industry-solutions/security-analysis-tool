@@ -45,6 +45,19 @@ Use the app's built-in requirements check: open **Settings → Re-run setup** an
 
 </AccordionItem>
 
+<AccordionItem question="How do I rotate or update the service principal's credentials (client ID / secret)?">
+
+Do it from the app — no redeploy or re-provision:
+
+1. In the account console, create a **new OAuth secret** for the service principal.
+2. In SAT, open **Settings → Account credentials**.
+3. Paste the **client ID** and the **new secret**, then click **Update credentials**. They're verified before being stored (as **Unity Catalog secrets**), so a bad value is caught here rather than in a job log later.
+4. Once the next run succeeds, **revoke the old secret** in the account console.
+
+The collection jobs read the secret at run time, so the next run picks up the new value automatically — you don't redeploy the app or re-provision the jobs. The same flow lets you switch to a **different** service principal entirely (enter its client ID + secret); make sure that SP holds the **Account admin** role, and for multi-workspace scanning that it's a **workspace admin** on each workspace.
+
+</AccordionItem>
+
 <AccordionItem question="If SAT is already configured, how do we add/remove other workspaces in the same account/subscription?">
 
 Scan coverage is driven by whether the SAT service principal is a **workspace admin** of each workspace. To include a workspace, add the service principal as a workspace admin on it; to exclude one, remove it. Then open **Data Collection → Manage → Sync workspaces** in the app — Sync discovers the account's workspaces and enables the ones the service principal administers (`analysis_enabled` in the `account_workspaces` table). No manual SQL, no re-running a heavy collection job. Make sure collection scope is **Multiple workspaces** for the scanners to cover more than the current workspace.

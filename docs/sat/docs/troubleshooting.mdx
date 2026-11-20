@@ -38,6 +38,21 @@ Credentials are verified before they're stored, so a failed save points to one o
 
 </AccordionItem>
 
+<AccordionItem question="Account authentication failed / the OAuth secret expired or was revoked">
+
+**Symptom:** account-wide reports stop updating, or a collection run fails authenticating to the account API — the service principal's **OAuth secret** has most likely expired or been revoked.
+
+**Resolution:**
+
+1. In the account console, create a **new OAuth secret** for the service principal.
+2. In SAT, open **Settings → Account credentials**, paste the **client ID** and the **new secret**, and click **Update credentials** (verified before being stored as Unity Catalog secrets).
+3. Run data collection again. The jobs read the secret at run time, so the next run uses the new value — **no redeploy or re-provision needed**.
+4. Revoke the old secret in the account console.
+
+The setup requirements check (**Settings → Re-run setup**) verifies the account connection and the **Account admin** role live, so re-run it to confirm the fix is green.
+
+</AccordionItem>
+
 <AccordionItem question="A workspace isn't being scanned (or was skipped)">
 
 **Symptom:** A workspace you expect to see has no findings, or a scan run reports it as skipped.
