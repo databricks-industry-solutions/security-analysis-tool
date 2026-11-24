@@ -601,6 +601,66 @@ def exec_query(sql_query, params=None):
         return 0
 
 
+_STATEMENT_TIMEOUT_S = 300
+
+
+def _wait_statement(workspace_client, result, timeout_s=_STATEMENT_TIMEOUT_S):
+    """Poll a statement until it leaves PENDING/RUNNING.
+
+    `execute_statement` returns after `wait_timeout` even if the statement is
+    still running. If it is still running after `timeout_s`, cancel it so it
+    does not keep using the warehouse after the app has given up on it.
+    """
+    from databricks.sdk.service.sql import StatementState
+    running = (StatementState.PENDING, StatementState.RUNNING)
+    deadline = time.time() + timeout_s
+    while result.status and result.status.state in running and time.time() < deadline:
+        time.sleep(1)
+        result = workspace_client.statement_execution.get_statement(result.statement_id)
+    if result.status and result.status.state in running:
+        logger.warning("statement %s still %s after %ss; cancelling",
+                       result.statement_id, result.status.state, timeout_s)
+        try:
+            workspace_client.statement_execution.cancel_execution(result.statement_id)
+        except Exception:
+            logger.exception("cancelling statement %s", result.statement_id)
+    return result
+
+
+def _is_inline_limit_error(err_msg):
+    """True if the statement failed because the result is over the INLINE limit (25 MiB)."""
+    msg = (err_msg or "").lower()
+    return "external_links" in msg or ("inline" in msg and ("limit" in msg or "exceed" in msg))
+
+
+def _fetch_all_rows(workspace_client, result):
+    """Collect rows from every result chunk (inline data_array or external links)."""
+    import requests
+    rows = []
+    chunk = result.result
+    while chunk is not None:
+        if chunk.data_array:
+            rows.extend(chunk.data_array)
+        for link in (chunk.external_links or []):
+            # Presigned cloud storage URL: do not send the Databricks auth header.
+            resp = requests.get(link.external_link, timeout=120)
+            resp.raise_for_status()
+            rows.extend(resp.json())
+        next_idx = chunk.next_chunk_index
+        if next_idx is None and chunk.external_links:
+            next_idx = chunk.external_links[-1].next_chunk_index
+        if next_idx is None:
+            break
+        chunk = workspace_client.statement_execution.get_statement_result_chunk_n(
+            result.statement_id, next_idx)
+    return rows
+
+
+def _statement_error(result):
+    err = result.status.error if result.status else None
+    return (err.message if err else "") or ""
+
+
 def exec_query_df(sql_query, params=None):
     """Execute query and return results as list of dicts.
 
@@ -610,7 +670,13 @@ def exec_query_df(sql_query, params=None):
 
     UC permission errors are translated to NoAccessError so the Flask
     errorhandler can render a friendly banner instead of a 500.
+
+    Waits for statements that outlive `wait_timeout`, reads every result
+    chunk, and retries with EXTERNAL_LINKS when the result is over the
+    INLINE limit (25 MiB). Statements that do not succeed are logged
+    instead of silently returning an empty list.
     """
+    from databricks.sdk.service.sql import Disposition, Format, StatementState
     try:
         workspace_client, warehouse_id = get_connection()
         kwargs = {
@@ -624,27 +690,47 @@ def exec_query_df(sql_query, params=None):
         if sdk_params:
             kwargs["parameters"] = sdk_params
         result = workspace_client.statement_execution.execute_statement(**kwargs)
-        if hasattr(result, 'result') and result.result:
-            if hasattr(result.result, 'data_array') and result.result.data_array:
-                columns = []
-                try:
-                    if hasattr(result, 'manifest') and result.manifest:
-                        if hasattr(result.manifest, 'schema') and result.manifest.schema:
-                            for col in result.manifest.schema.columns:
-                                if hasattr(col, 'name'):
-                                    columns.append(col.name)
-                                elif isinstance(col, dict) and 'name' in col:
-                                    columns.append(col['name'])
-                except Exception:
-                    pass
-                rows = []
-                for row in result.result.data_array:
-                    if columns and len(columns) == len(row):
-                        rows.append(dict(zip(columns, row)))
-                    else:
-                        rows.append({f"col{i}": val for i, val in enumerate(row)})
-                return rows
-        return []
+        result = _wait_statement(workspace_client, result)
+
+        state = result.status.state if result.status else None
+        if state != StatementState.SUCCEEDED:
+            err_msg = _statement_error(result)
+            logger.warning("statement %s ended in state=%s error=%s",
+                           result.statement_id, state, err_msg)
+            if state != StatementState.FAILED:
+                return []
+            if _looks_like_no_access(Exception(err_msg)):
+                raise NoAccessError(_no_access_message(Exception(err_msg)))
+            if not _is_inline_limit_error(err_msg):
+                return []
+            logger.info("result over INLINE limit; retrying with EXTERNAL_LINKS")
+            kwargs["disposition"] = Disposition.EXTERNAL_LINKS
+            kwargs["format"] = Format.JSON_ARRAY
+            result = workspace_client.statement_execution.execute_statement(**kwargs)
+            result = _wait_statement(workspace_client, result)
+            state = result.status.state if result.status else None
+            if state != StatementState.SUCCEEDED:
+                logger.error("statement %s retry ended in state=%s error=%s",
+                             result.statement_id, state, _statement_error(result))
+                return []
+
+        manifest = result.manifest
+        logger.debug("statement %s chunks=%s rows=%s truncated=%s",
+                     result.statement_id,
+                     getattr(manifest, "total_chunk_count", None),
+                     getattr(manifest, "total_row_count", None),
+                     getattr(manifest, "truncated", None))
+
+        columns = []
+        if manifest and manifest.schema and manifest.schema.columns:
+            columns = [col.name for col in manifest.schema.columns]
+        rows = []
+        for row in _fetch_all_rows(workspace_client, result):
+            if columns and len(columns) == len(row):
+                rows.append(dict(zip(columns, row)))
+            else:
+                rows.append({f"col{i}": val for i, val in enumerate(row)})
+        return rows
     except NoAccessError:
         raise
     except Exception as e:
